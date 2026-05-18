@@ -165,6 +165,8 @@ Nota: `handleForzaEntregado` puo' comparire due volte in `countsByAction` perche
 
 ## Test 3 — Creazione operatore/manuale
 
+Stato: validato.
+
 Obiettivo: validare creation intent da flusso operatore/manuale.
 
 Passi:
@@ -203,7 +205,21 @@ Metadata da controllare nell'ultimo evento creation:
 - `hasDescuento`
 - `temp: true`
 
+Risultato validato:
+
+- `countsByAction.addOrden: 1`
+- `countsByType.order-creation: 1`
+- `creationBySource.operator: 1`
+- `creationByCanal.MANUAL: 1`
+- `countsByTransition`: vuoto
+- `invalidCount: 0`
+- `rollbackCount: 0`
+- `legacyBypassCount: 0`
+- `total: 1`
+
 ## Test 4 — Creazione telefono
+
+Stato: validato con nota.
 
 Obiettivo: validare creation intent da ordine telefonico.
 
@@ -224,7 +240,16 @@ Risultato atteso:
 - `invalidCount: 0`
 - `rollbackCount: 0`
 
+Risultato validato:
+
+- Creato dal bottone `Nuevo Pedido`.
+- `source: operator`
+- Canal effettivo registrato: `MANUAL`
+- Nota: il telefono oggi non ha canal dedicato in telemetry; viene tracciato come `MANUAL`.
+
 ## Test 5 — Creazione banco
+
+Stato: validato.
 
 Obiettivo: validare creation intent da banco/barra.
 
@@ -246,6 +271,17 @@ Risultato atteso:
 - `rollbackCount: 0`
 
 Nota: eventuale ambiguita' `BANCO/BARRA` va osservata, non corretta durante questo test.
+
+Risultato validato:
+
+- `source: operator`
+- `creationByCanal.BANCO: 1`
+- `countsByTransition`: vuoto
+- `invalidCount: 0`
+- `rollbackCount: 0`
+- `legacyBypassCount: 0`
+
+Nota tecnica: `creationBySource` indica chi o quale sistema crea l'ordine. Per `Nuevo Pedido` resta correttamente `operator`. `creationByCanal` indica il canale operativo dell'ordine. Il banco viene tracciato come `BANCO`. Il telefono per ora viene tracciato come `MANUAL`, non come canale separato.
 
 ## Test 6 — WhatsApp senza ordenRef
 
@@ -342,9 +378,9 @@ Nota: non forzare casi rischiosi su dati importanti.
 | --- | --- | --- | --- | --- | --- |
 | 1 | Pickup completo | Validato | `#014` | 3 transition pulite | `legacyBypassCount: 0` |
 | 2 | Delivery completo | Validato | `#009` | 4 transition pulite | Base telemetry validata |
-| 3 | Creazione operatore/manuale | Da testare | - | `order-creation: 1` | Controllare metadata |
-| 4 | Creazione telefono | Da testare | - | `creationBySource.operator: 1` | Controllare canal |
-| 5 | Creazione banco | Da testare | - | `creationBySource.operator: 1` | Osservare `BANCO/BARRA` |
+| 3 | Creazione operatore/manuale | Validato | - | `order-creation: 1` | `creationByCanal.MANUAL: 1` |
+| 4 | Creazione telefono | Validato con nota | - | `creationBySource.operator: 1` | Canal registrato come `MANUAL` |
+| 5 | Creazione banco | Validato | - | `creationBySource.operator: 1` | `creationByCanal.BANCO: 1` |
 | 6 | WhatsApp senza `ordenRef` | Da testare | - | creation in `EN_COCINA` | Nessuna transition iniziale |
 | 7 | Cambio pagamento | Validato | `#015` | `countsByTransition` invariato | `payment-update: 5`, `legacyBypassCount: 0` |
 | 8 | Transizione non valida | Da progettare | - | `invalidCount` aumenta | Solo se sicuro |
