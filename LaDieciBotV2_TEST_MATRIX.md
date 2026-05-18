@@ -394,9 +394,45 @@ Nota: `onCambiaPago` ora usa `logPaymentUpdate()` con type `payment-update`, com
 
 ## Test 8 — Transizione non valida
 
+Stato: validato in isolation.
+
 Obiettivo: verificare che la state machine segnali una transition non valida senza rompere runtime.
 
-Passi suggeriti:
+Modalita' test validata:
+
+- Eseguito in isolamento da terminale dentro `ladieci-app33`.
+- Nessuna UI.
+- Nessuna API.
+- Nessun DB.
+- Nessun file permanente modificato.
+- Moduli reali usati: `stateMachine.js` e `telemetry.js`.
+
+Transizione simulata:
+
+- `from: POR_CONFIRMAR`
+- `to: RETIRADO`
+- `action: simulateInvalidTransition`
+- `component: TestMatrix`
+- `orderId: TEST-INVALID`
+- `metadata: { dryRun: true }`
+
+Summary ottenuto:
+
+- `countsByType.invalid-transition: 1`
+- `countsByComponent.TestMatrix: 1`
+- `countsByAction.simulateInvalidTransition: 1`
+- `countsByTransition.POR_CONFIRMAR->RETIRADO: 1`
+- `invalidCount: 1`
+- `rollbackCount: 0`
+- `legacyBypassCount: 0`
+- `creationBySource: {}`
+- `creationByCanal: {}`
+- `lastEvent.valid: false`
+- `countsByType.transition` non compare
+
+Conclusione: il test e' stato validato in isolamento per evitare scritture UI/API/DB. La state machine/telemetry intercetta correttamente `POR_CONFIRMAR -> RETIRADO` come transizione invalida.
+
+Passi suggeriti per un futuro test UI, solo se davvero necessario:
 
 1. Pulire telemetry.
 2. Individuare un flusso legacy o manuale che provi una transizione fuori matrice.
@@ -423,7 +459,7 @@ Nota: non forzare casi rischiosi su dati importanti.
 | 5 | Creazione banco | Validato | - | `creationBySource.operator: 1` | `creationByCanal.BANCO: 1` |
 | 6 | Fallback WhatsApp senza `ordenRef` confermato da UI | Da testare | - | creation in `EN_COCINA` | Non e' il flusso naturale del bot |
 | 7 | Cambio pagamento | Validato | `#015` | `countsByTransition` invariato | `payment-update: 5`, `legacyBypassCount: 0` |
-| 8 | Transizione non valida | Da progettare | - | `invalidCount` aumenta | Solo se sicuro |
+| 8 | Transizione non valida | Validato in isolation | `TEST-INVALID` | `invalid-transition: 1` | Nessuna UI/API/DB |
 
 ## Criteri generali di validazione
 
