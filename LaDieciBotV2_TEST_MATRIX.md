@@ -283,9 +283,11 @@ Risultato validato:
 
 Nota tecnica: `creationBySource` indica chi o quale sistema crea l'ordine. Per `Nuevo Pedido` resta correttamente `operator`. `creationByCanal` indica il canale operativo dell'ordine. Il banco viene tracciato come `BANCO`. Il telefono per ora viene tracciato come `MANUAL`, non come canale separato.
 
-## Test 6 — WhatsApp senza ordenRef
+## Test 6 — Fallback WhatsApp senza ordenRef confermato da UI
 
 Obiettivo: validare creation intent per messaggio WhatsApp che crea direttamente un ordine in `EN_COCINA`.
+
+Nota importante: questo test non rappresenta il flusso naturale del bot, ma un fallback tecnico per messaggi WhatsApp confermabili dalla UI senza ordine gia' collegato.
 
 Passi:
 
@@ -314,6 +316,20 @@ Metadata da controllare:
 - `action`
 - `metadata.waMsgId` se disponibile
 - presenza o assenza di `ordenRef`
+
+Risultato verifica flusso WhatsApp naturale:
+
+- `wa_id` test: `34600111222`
+- Primo messaggio: `Hola, quiero una El Pelusa para recoger`
+- Risultato primo messaggio: `wa_msg` in `NUEVO`, `ia_items` presente, `ia_hora` vuoto, `ordine_ref` vuoto
+- Secondo messaggio: `A las 22:50`
+- Risultato secondo messaggio: backend completa il pedido naturale
+- Ordine creato: `#022`
+- `ordine_ref` valorizzato: `#022`
+- Stato ordine: `POR_CONFIRMAR`
+- Canal: `WA`
+
+Conclusione: il flusso WhatsApp naturale NON resta senza `ordenRef`. Quando il cliente fornisce l'ora, il backend crea un ordine collegato in `POR_CONFIRMAR`. Quindi l'operatore deve poi mandarlo in cucina con la normale azione `A Cocina`.
 
 ## Test 7 — Cambio pagamento senza rumore telemetry
 
@@ -381,7 +397,7 @@ Nota: non forzare casi rischiosi su dati importanti.
 | 3 | Creazione operatore/manuale | Validato | - | `order-creation: 1` | `creationByCanal.MANUAL: 1` |
 | 4 | Creazione telefono | Validato con nota | - | `creationBySource.operator: 1` | Canal registrato come `MANUAL` |
 | 5 | Creazione banco | Validato | - | `creationBySource.operator: 1` | `creationByCanal.BANCO: 1` |
-| 6 | WhatsApp senza `ordenRef` | Da testare | - | creation in `EN_COCINA` | Nessuna transition iniziale |
+| 6 | Fallback WhatsApp senza `ordenRef` confermato da UI | Da testare | - | creation in `EN_COCINA` | Non e' il flusso naturale del bot |
 | 7 | Cambio pagamento | Validato | `#015` | `countsByTransition` invariato | `payment-update: 5`, `legacyBypassCount: 0` |
 | 8 | Transizione non valida | Da progettare | - | `invalidCount` aumenta | Solo se sicuro |
 
