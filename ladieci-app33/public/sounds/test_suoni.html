@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Test Suoni — La Dieci</title>
+<style>
+  body { background: #0a0a0a; color: #fff; font-family: sans-serif;
+         display: flex; flex-direction: column; align-items: center;
+         justify-content: center; min-height: 100vh; gap: 16px; }
+  h2 { color: #CC1800; letter-spacing: 3px; margin-bottom: 8px; }
+  button {
+    background: #1a0800; border: 1.5px solid #CC4400; color: #ffaa88;
+    border-radius: 12px; padding: 16px 32px; font-size: 16px;
+    font-weight: 700; letter-spacing: 2px; cursor: pointer;
+    min-width: 320px; transition: all .2s;
+  }
+  button:hover { background: #2a1000; border-color: #ff6633; color: #fff; }
+  .desc { color: #555; font-size: 12px; margin-top: -10px; }
+</style>
+</head>
+<body>
+<h2>🔔 TEST SUONI — LA DIECI</h2>
+
+<button onclick="play('alarm10.mp3')">🕙 Campanella 10 minuti</button>
+<p class="desc">alarm10.mp3</p>
+
+<button onclick="play('notifica_wa.mp3')">📲 Nuovo ordine WhatsApp</button>
+<p class="desc">notifica_wa.mp3</p>
+
+<button onclick="play('preguntas.mp3')">❓ Nuova domanda WhatsApp</button>
+<p class="desc">preguntas.mp3</p>
+
+<button onclick="play('bell.mp3')">✅ Conferma / Listo cocina</button>
+<p class="desc">bell.mp3 (hotel bell)</p>
+
+<button onclick="play('consegna.mp3')">🛵 Consegna effettuata</button>
+<p class="desc">consegna.mp3</p>
+
+<button onclick="play('bell.mp3')">🔔 Hotel Bell (extra)</button>
+<p class="desc">bell.mp3</p>
+
+<script>
+function play(file) {
+  const a = new Audio(file);
+  a.volume = 1.0;
+  a.play().catch(e => alert("Errore: " + e.message));
+}
+</script>
+</body>
+</html>
