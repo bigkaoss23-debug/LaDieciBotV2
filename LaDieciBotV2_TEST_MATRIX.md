@@ -77,6 +77,10 @@ Valori importanti da controllare:
 
 ## Test 1 — Pickup completo
 
+Stato: validato.
+
+Ordine validato: `#014`.
+
 Obiettivo: validare un ordine ritiro/local completo senza delivery.
 
 Passi:
@@ -110,6 +114,17 @@ Risultato atteso:
 - `LISTO->RETIRADO: 1`
 - `invalidCount: 0`
 - `rollbackCount: 0`
+
+Risultato validato:
+
+- `order-creation: 1`
+- `transition: 3`
+- `POR_CONFIRMAR->EN_COCINA: 1`
+- `EN_COCINA->LISTO: 1`
+- `LISTO->RETIRADO: 1`
+- `invalidCount: 0`
+- `rollbackCount: 0`
+- `legacyBypassCount: 0`
 
 ## Test 2 — Delivery completo validato
 
@@ -266,6 +281,10 @@ Metadata da controllare:
 
 ## Test 7 — Cambio pagamento senza rumore telemetry
 
+Stato: validato.
+
+Ordine validato: `#015`.
+
 Obiettivo: verificare che il cambio metodo pagamento non sporchi `countsByTransition`.
 
 Passi:
@@ -281,9 +300,21 @@ Risultato atteso:
 - Non devono comparire:
   - `null->RETIRADO`
   - `RETIRADO->RETIRADO`
-- Puo' comparire `legacy-bypass` non contato come transition.
+- Deve comparire `payment-update` in `countsByType`.
+- Non deve comparire `legacy-bypass` per il cambio pagamento.
 - `invalidCount: 0`
 - `rollbackCount: 0`
+
+Risultato validato:
+
+- `payment-update: 5`
+- `transition` rimasto `3`
+- `countsByTransition` invariato
+- `legacyBypassCount: 0`
+- `invalidCount: 0`
+- `rollbackCount: 0`
+
+Nota: `onCambiaPago` ora usa `logPaymentUpdate()` con type `payment-update`, commit `04b8ac5 fix payment update telemetry type`.
 
 ## Test 8 — Transizione non valida
 
@@ -309,13 +340,13 @@ Nota: non forzare casi rischiosi su dati importanti.
 
 | Test | Scenario | Stato | Ultimo ordine | Esito atteso | Note |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Pickup completo | Da testare | - | 3 transition pulite | Validare `LISTO->RETIRADO: 1` |
+| 1 | Pickup completo | Validato | `#014` | 3 transition pulite | `legacyBypassCount: 0` |
 | 2 | Delivery completo | Validato | `#009` | 4 transition pulite | Base telemetry validata |
 | 3 | Creazione operatore/manuale | Da testare | - | `order-creation: 1` | Controllare metadata |
 | 4 | Creazione telefono | Da testare | - | `creationBySource.operator: 1` | Controllare canal |
 | 5 | Creazione banco | Da testare | - | `creationBySource.operator: 1` | Osservare `BANCO/BARRA` |
 | 6 | WhatsApp senza `ordenRef` | Da testare | - | creation in `EN_COCINA` | Nessuna transition iniziale |
-| 7 | Cambio pagamento | Da testare | - | `countsByTransition` invariato | No `RETIRADO->RETIRADO` |
+| 7 | Cambio pagamento | Validato | `#015` | `countsByTransition` invariato | `payment-update: 5`, `legacyBypassCount: 0` |
 | 8 | Transizione non valida | Da progettare | - | `invalidCount` aumenta | Solo se sicuro |
 
 ## Criteri generali di validazione
