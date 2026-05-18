@@ -24,6 +24,7 @@ function createDebugStore() {
     rollbackCount: 0,
     legacyBypassCount: 0,
     creationBySource: emptyCounts(),
+    creationByCanal: emptyCounts(),
     clear() {
       this.events.length = 0;
       this.countsByType = emptyCounts();
@@ -34,6 +35,7 @@ function createDebugStore() {
       this.rollbackCount = 0;
       this.legacyBypassCount = 0;
       this.creationBySource = emptyCounts();
+      this.creationByCanal = emptyCounts();
       return this.summary();
     },
     summary() {
@@ -47,6 +49,7 @@ function createDebugStore() {
         rollbackCount: this.rollbackCount,
         legacyBypassCount: this.legacyBypassCount,
         creationBySource: { ...this.creationBySource },
+        creationByCanal: { ...this.creationByCanal },
         lastEvent: this.events[this.events.length - 1] || null,
       };
     },
@@ -77,7 +80,10 @@ function recordEvent(event) {
   if (event.type === "invalid-transition") store.invalidCount += 1;
   if (event.type === "rollback") store.rollbackCount += 1;
   if (event.type === "legacy-bypass") store.legacyBypassCount += 1;
-  if (event.type === "order-creation") inc(store.creationBySource, event.source);
+  if (event.type === "order-creation") {
+    inc(store.creationBySource, event.source);
+    inc(store.creationByCanal, event.canal);
+  }
 }
 
 function buildEvent(type, data = {}) {
