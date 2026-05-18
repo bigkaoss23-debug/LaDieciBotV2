@@ -4,7 +4,7 @@ import Chip from '../ui/Chip';
 import Badge from '../ui/Badge';
 import DescuentoInput from '../ui/DescuentoInput';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
-import { ORDER_STATES, buildRetiradoTransition, logTransition } from '../../core/orders';
+import { ORDER_STATES } from '../../core/orders';
 
 const isPizzaItem = (it) => {
   if (!it || !it.n) return false;
@@ -26,12 +26,6 @@ const TabListos = ({ordenes,onRetirado,loadingIds=new Set(),waMsgs=[],onViewChat
   };
   const getDescuentoFor = (id) => descuentoPago[id] || { tipo: null, valor: 0 };
   const handleRetirado = (o, metodo, descuento) => {
-    const intent = buildRetiradoTransition(o, {
-      component: "TabListos",
-      action: "handleRetirado",
-      metadata: { metodo_pago: metodo || "", hasDescuento: !!descuento },
-    });
-    logTransition(intent);
     onRetirado(o.id, metodo, descuento);
   };
 
