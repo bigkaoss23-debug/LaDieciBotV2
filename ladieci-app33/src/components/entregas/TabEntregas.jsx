@@ -375,9 +375,11 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       component: "TabEntregas",
       action: "handleForzaEntregado",
       orderId: ordine.id,
-      from: ordine?.estado,
-      to: ORDER_STATES.RETIRADO,
-      metadata: { reason: "operatore marca consegna manualmente" },
+      metadata: {
+        reason: "operatore marca consegna manualmente",
+        estadoOriginale: ordine?.estado,
+        targetEstado: ORDER_STATES.RETIRADO,
+      },
     });
     logTransition({
       component: "TabEntregas",
