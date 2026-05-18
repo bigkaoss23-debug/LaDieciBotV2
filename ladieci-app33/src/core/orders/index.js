@@ -22,6 +22,7 @@ export {
   logInvalidTransition,
   logLegacyBypass,
   logOrderCreation,
+  logPaymentUpdate,
   logRollback,
   logTransition,
 } from "./telemetry";

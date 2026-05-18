@@ -121,6 +121,10 @@ export function logLegacyBypass(data = {}) {
   return emit("warn", "legacy-bypass", buildEvent("legacy-bypass", data));
 }
 
+export function logPaymentUpdate(data = {}) {
+  return emit("info", "payment-update", buildEvent("payment-update", data));
+}
+
 export function logOrderCreation(intent = {}) {
   return emit("info", "order-creation", {
     type: "order-creation",

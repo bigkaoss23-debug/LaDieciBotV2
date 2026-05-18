@@ -13,7 +13,7 @@ import NuevoPedidoModal from './NuevoPedidoModal';
 import ModificaOrdenModal from './ModificaOrdenModal';
 import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
-import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, logLegacyBypass, logOrderCreation, logRollback, logTransition } from '../core/orders';
+import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -861,7 +861,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       vipIds={vipIds}
       waMsgs={waMsgs}
       onCambiaPago={async (id, nuovoMetodo) => {
-        logLegacyBypass({
+        logPaymentUpdate({
           component: "ServicioPage",
           action: "onCambiaPago",
           orderId: id,
