@@ -376,7 +376,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       action: "handleForzaEntregado",
       orderId: ordine.id,
       metadata: {
-        reason: "operatore marca consegna manualmente",
+        reason: "delivery_force_entregado_legacy_bypass",
         estadoOriginale: ordine?.estado,
         targetEstado: ORDER_STATES.RETIRADO,
       },
