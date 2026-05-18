@@ -865,10 +865,12 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
           component: "ServicioPage",
           action: "onCambiaPago",
           orderId: id,
-          to: ORDER_STATES.RETIRADO,
-          metadata: { reason: "updateEstado usato anche per modificare metodo pagamento", nuovoMetodo },
+          metadata: {
+            reason: "updateEstado usato anche per modificare metodo pagamento",
+            estado: ORDER_STATES.RETIRADO,
+            nuovoMetodo,
+          },
         });
-        observeOrderTransition("onCambiaPago", id, ORDER_STATES.RETIRADO, { nuovoMetodo });
         setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: nuovoMetodo} : o));
         try { await api.updateEstado(id, ORDER_STATES.RETIRADO, nuovoMetodo); }
         catch(err) { console.error("cambiaPago:", err); }
