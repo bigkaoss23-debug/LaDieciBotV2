@@ -331,6 +331,30 @@ Risultato verifica flusso WhatsApp naturale:
 
 Conclusione: il flusso WhatsApp naturale NON resta senza `ordenRef`. Quando il cliente fornisce l'ora, il backend crea un ordine collegato in `POR_CONFIRMAR`. Quindi l'operatore deve poi mandarlo in cucina con la normale azione `A Cocina`.
 
+### WhatsApp natural flow — operator sends to kitchen: VALIDATED
+
+Dati validati:
+
+- `wa_id` test: `34600111222`
+- Ordine creato dal backend: `#022`
+- Stato iniziale ordine: `POR_CONFIRMAR`
+- Canal: `WA`
+- Azione UI: `waConfirm`
+
+Telemetry dopo conferma operatore:
+
+- `countsByAction.waConfirm: 1`
+- `countsByType.transition: 1`
+- `countsByTransition.POR_CONFIRMAR->EN_COCINA: 1`
+- `creationBySource`: vuoto
+- `creationByCanal`: vuoto
+- `invalidCount: 0`
+- `rollbackCount: 0`
+- `legacyBypassCount: 0`
+- `total: 1`
+
+Nota: in questo test non compare `order-creation` nella telemetry frontend perche' l'ordine `#022` era gia' stato creato dal backend durante il flusso WhatsApp naturale. La UI valida solo la transizione finale dell'operatore verso `EN_COCINA`.
+
 ## Test 7 — Cambio pagamento senza rumore telemetry
 
 Stato: validato.
