@@ -6,7 +6,7 @@ import { lookupMenu, orarioToMs, calcTimer, formatSub, FASE_CONFIG, notaCucina }
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import SnoozeButton from '../ui/SnoozeButton';
-import { ORDER_STATES, buildListoTransition, logTransition } from '../../core/orders';
+import { ORDER_STATES } from '../../core/orders';
 
 // hora = orario consegna cliente → horaForno = hora − tempoAndata(ordine)
 // = orario in cui la pizza esce dal forno = momento partenza driver.
@@ -36,11 +36,6 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
     setLocalOffsets(prev => ({ ...prev, [id]: val }));
   };
   const handleListo = (o) => {
-    const intent = buildListoTransition(o, {
-      component: "TabCocina",
-      action: "handleListo",
-    });
-    logTransition(intent);
     onListo(o.id);
   };
 
