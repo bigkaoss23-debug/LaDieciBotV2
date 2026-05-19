@@ -1009,7 +1009,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
                   whiteSpace:"nowrap",
                   overflow:headerPhone?"visible":"hidden",
                   textOverflow:headerPhone?"clip":"ellipsis"
-                }}>{headerPhone ? `${pctCarico}% ${caricoLbl}` : `🔥 Forno ${pctCarico}% ${caricoLbl}`}</span>
+                }}>{headerPhone ? `${pctCarico}% ${caricoLbl}` : `🔥 Horno ${pctCarico}% ${caricoLbl}`}</span>
               </div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,minWidth:0}}>
                 {/* Sync dot */}
