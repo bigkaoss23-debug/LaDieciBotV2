@@ -48,6 +48,38 @@ http://localhost:3010
 - `ladieci-app33/src/core/delivery/index.js`
 - `ladieci-app33/src/zones.js` resta facciata compatibile per UI e import esistenti.
 
+## Ready operativo delivery
+
+Commit validato:
+
+- `e90cee5 feat add operational ready helper`
+
+Dettagli:
+
+- Modificato solo `ladieci-app33/src/core/delivery/scheduling.js`.
+- Aggiunto ed esportato helper:
+  - `getOperationalReadyMinute(order, options = {}, deps = {})`
+- Scopo: calcolare il minuto operativo ready/dispatch senza modificare `hora` cliente.
+- `hora` resta l'orario promesso al cliente.
+- `ui_offset_min` rappresenta lo snooze/ritardo operativo interno.
+- Priorita' calcolo:
+  1. `forno_out + ui_offset_min`
+  2. fallback `hora - tempoAndata + ui_offset_min`
+  3. se `ui_offset_min` manca, vale `0`
+- Harness passato:
+  - `forno_out 20:20 + ui_offset 5` -> `20:25`
+  - fallback `hora 20:30 - tempoAndata 10 + ui_offset 5` -> `20:25`
+  - missing `ui_offset_min` defaults to `0`
+  - `hora` originale non modificata
+- `npm run build` passato.
+- Helper creato ed esportato soltanto.
+- Non e' ancora collegato a `simulateDriverSchedule()`.
+- Non e' ancora collegato a `proposeForNewOrder()`.
+- Comportamento runtime invariato.
+- `.env` non toccato.
+
+Nota: prossimo step futuro: decidere come usare questo helper dentro `simulateDriverSchedule()` per far rispettare `ui_offset_min` nei suggerimenti rider senza applicare offset due volte.
+
 ## Guardia fine servizio delivery
 
 Commit validato:
@@ -361,6 +393,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `eeaefde feat add telemetry export helper`
 - `570336e feat add kitchen capacity core`
 - `0d9bef9 fix guard delivery suggestions after service end`
+- `e90cee5 feat add operational ready helper`
 - `060bfeb fix remove duplicate delivery force button`
 - `3b7fa3f fix move pickup capacity feedback below address`
 - `008782b feat add operational info area for pickup feedback`
