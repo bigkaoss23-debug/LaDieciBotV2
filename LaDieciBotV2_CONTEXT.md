@@ -72,13 +72,46 @@ Dettagli:
   - missing `ui_offset_min` defaults to `0`
   - `hora` originale non modificata
 - `npm run build` passato.
-- Helper creato ed esportato soltanto.
-- Non e' ancora collegato a `simulateDriverSchedule()`.
-- Non e' ancora collegato a `proposeForNewOrder()`.
-- Comportamento runtime invariato.
+- Helper creato ed esportato inizialmente senza collegarlo alla simulazione.
 - `.env` non toccato.
 
-Nota: prossimo step futuro: decidere come usare questo helper dentro `simulateDriverSchedule()` per far rispettare `ui_offset_min` nei suggerimenti rider senza applicare offset due volte.
+## Ready operativo nel rider scheduling
+
+Commit validato:
+
+- `5599cc4 feat apply operational ready in driver schedule`
+
+Dettagli:
+
+- Modificato solo `ladieci-app33/src/core/delivery/scheduling.js`.
+- `simulateDriverSchedule()` ora usa `getOperationalReadyMinute()`.
+- `ui_offset_min` ora influenza disponibilita' rider e suggerimenti successivi.
+- `hora` cliente NON viene modificata.
+- Aggiunto concetto `operationalReadyMin`.
+- La partenza rider ora rispetta tre vincoli:
+  - driver libero
+  - partenza teorica `hora - tempoAndata`
+  - operational ready time
+- Se non c'e' offset, comportamento invariato.
+- Se c'e' `ui_offset_min`, la partenza operativa si sposta avanti.
+- Se c'e' `forno_out`, ha priorita' nel calcolo ready.
+- Fallback: `hora - tempoAndata + ui_offset_min`.
+
+Harness passato:
+
+- no offset: ready/partenza invariati
+- no offset: consegna resta orario promesso
+- offset `+5`: ready e partenza shiftano da `20:20` a `20:25`
+- offset `+5`: consegna operativa shiftata a `20:35` mentre `hora` resta `20:30`
+- `forno_out` ha priorita'
+- proposta successiva vede rider disponibile piu' tardi
+- suggested hour validato a `20:55`
+
+Build:
+
+- `npm run build` passato.
+
+Nota operativa: questo collega lo snooze/calibrazione cucina al core rider scheduling. Serve a evitare che il sistema proponga delivery successivi troppo ottimisti quando la cucina ha spostato avanti l'uscita operativa.
 
 ## Guardia fine servizio delivery
 
@@ -394,6 +427,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `570336e feat add kitchen capacity core`
 - `0d9bef9 fix guard delivery suggestions after service end`
 - `e90cee5 feat add operational ready helper`
+- `5599cc4 feat apply operational ready in driver schedule`
 - `060bfeb fix remove duplicate delivery force button`
 - `3b7fa3f fix move pickup capacity feedback below address`
 - `008782b feat add operational info area for pickup feedback`
