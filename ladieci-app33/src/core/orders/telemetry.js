@@ -53,8 +53,20 @@ function createDebugStore() {
         lastEvent: this.events[this.events.length - 1] || null,
       };
     },
+    export() {
+      return {
+        exportedAt: new Date().toISOString(),
+        summary: this.summary(),
+        events: cloneEvents(this.events),
+      };
+    },
   };
   return store;
+}
+
+function cloneEvents(events) {
+  if (typeof structuredClone === "function") return structuredClone(events);
+  return JSON.parse(JSON.stringify(events));
 }
 
 function getDebugStore() {
