@@ -192,6 +192,32 @@ Dettagli:
 
 Nota: questo e' un primo micro-step verso una futura area unica `info operative / alert`.
 
+## Area Info operativa pickup
+
+Commit validato:
+
+- `008782b feat add operational info area for pickup feedback`
+
+Dettagli:
+
+- Modificato solo `ladieci-app33/src/components/NuevoPedidoModal.jsx`.
+- Aggiunto wrapper discreto `Info operativa` attorno al feedback forno pickup/ritiro.
+- Testi e logica invariati:
+  - `Horno ok: X/8 pizzas en 10 min`
+  - `Horno sobrecargado: X/8 pizzas en 10 min. Sugerido: HH:mm`
+- Nuovo ordine visivo confermato:
+  - `cliente/telefono/ora` -> `indirizzo/zona` -> `Info operativa`
+- Delivery popup non toccato.
+- `Aplicar sugerencia` non toccato.
+- `Forzar como excepción` non toccato.
+- Core/backend/telemetry non toccati.
+- `.env` non toccato.
+- `npm run build` passato.
+- Test visuale locale su `http://localhost:3010` passato.
+- Nessun React error overlay.
+
+Nota: questo e' il primo step concreto verso una futura area unica degli alert operativi. Per ora contiene solo feedback forno pickup/ritiro; delivery resta nel popup.
+
 ## Transition intents integrati
 
 - `POR_CONFIRMAR -> EN_COCINA`
@@ -289,6 +315,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `0d9bef9 fix guard delivery suggestions after service end`
 - `060bfeb fix remove duplicate delivery force button`
 - `3b7fa3f fix move pickup capacity feedback below address`
+- `008782b feat add operational info area for pickup feedback`
 
 ## Regole di lavoro con Codex
 
