@@ -56,6 +56,41 @@ http://localhost:3010
 - `ladieci-app33/src/core/orders/telemetry.js`
 - `ladieci-app33/src/core/orders/index.js`
 
+## Core cucina creato
+
+File:
+
+- `ladieci-app33/src/core/kitchen/capacity.js`
+
+Funzioni pure:
+
+- `slot5()`
+- `slot10()`
+- `countPizzas()`
+- `countPizzasForKitchenWindow()`
+- `getKitchenCapacityStatus()`
+- `suggestNextAvailableKitchenSlot()`
+
+Regola operativa:
+
+- Non calcola il tempo singolo pizza-per-pizza.
+- Modella il throughput reale forno/pizzaiolo.
+- Il collo di bottiglia e' il forno.
+- Capacita' effettiva: 4 pizze ogni 5 minuti.
+- Default: 8 pizze ogni 10 minuti.
+- Se lo slot e' libero/non sovraccarico, `suggestedHora` torna `null`.
+- Se lo slot e' sovraccarico, suggerisce il prossimo slot disponibile.
+
+Validazione fatta:
+
+- 8 pizze alle 20:30 su finestra 10 min: non sovraccarico.
+- 10 pizze alle 20:30 su finestra 10 min: sovraccarico, suggerisce slot dopo.
+- 4 pizze su finestra 5 min: non sovraccarico.
+- 5 pizze su finestra 5 min: sovraccarico.
+- `npm run build` passato.
+
+Nota: per ora il core cucina e' puro e non collegato a UI, backend, WhatsApp o DB. Il prossimo step possibile sara' collegarlo a `NuevoPedidoModal`, ma non e' ancora da fare.
+
 ## Transition intents integrati
 
 - `POR_CONFIRMAR -> EN_COCINA`
@@ -149,6 +184,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `c5cd432 docs validate whatsapp natural kitchen transition`
 - `bde0085 docs validate invalid transition test`
 - `eeaefde feat add telemetry export helper`
+- `570336e feat add kitchen capacity core`
 
 ## Regole di lavoro con Codex
 
