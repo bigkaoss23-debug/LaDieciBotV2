@@ -76,7 +76,30 @@ Dettagli:
 - Pickup non toccato.
 - `.env` non toccato.
 
-Prossimo step: far leggere `outOfServiceWindow` a `NuevoPedidoModal` e mostrare un messaggio UI chiaro, senza cambiare ancora la logica backend.
+## Warning UI fine servizio delivery validato
+
+Commit validato:
+
+- `060bfeb fix remove duplicate delivery force button`
+
+Test manuale:
+
+- Eseguito su `http://localhost:3010`.
+- Flusso: `Nuevo Pedido` -> `Entrega a domicilio`.
+- Indirizzo: `C. Delfin, 45-47`.
+- Ora delivery: `23:30`.
+- Zona rilevata: `Q2 Buenavista`.
+- Warning visibile:
+  - `Delivery no disponible después de las 23:00. Puedes forzarlo solo como excepción especial.`
+- Testo secondario visibile:
+  - `No se aplicará ninguna sugerencia automática fuera del horario normal.`
+- `Aplicar sugerencia` non appare.
+- Resta un solo bottone:
+  - `Forzar como excepción`
+- La duplicazione del bottone e' risolta.
+- Nessun nuovo codice da modificare.
+
+Nota UX futura: gli alert operativi nel modal sono ancora da riorganizzare in una zona unica, perche' alcuni warning possono apparire in posizioni visivamente confuse.
 
 ## Core orders stabile
 
@@ -242,6 +265,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `eeaefde feat add telemetry export helper`
 - `570336e feat add kitchen capacity core`
 - `0d9bef9 fix guard delivery suggestions after service end`
+- `060bfeb fix remove duplicate delivery force button`
 
 ## Regole di lavoro con Codex
 
