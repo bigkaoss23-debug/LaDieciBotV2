@@ -76,58 +76,73 @@ const SnoozeButton = ({ orden, onUpdate }) => {
   return (
     <div
       style={{
-        display: "inline-flex", alignItems: "center", gap: 4,
+        display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 2,
         userSelect: "none"
       }}
       onClick={(e) => e.stopPropagation()}
     >
-      <button
-        onClick={handleAdd}
-        disabled={saving}
-        title={atCap ? `Max ${UI_OFFSET_MAX} min` : `+${UI_OFFSET_STEP} min snooze`}
-        style={{
-          background: maxFlash ? "#FEE2E2" : bg,
-          border: `1.5px solid ${maxFlash ? "#DC2626" : border}`,
-          color: maxFlash ? "#7F1D1D" : text,
-          borderRadius: 8,
-          padding: "3px 9px",
-          fontWeight: 800,
-          fontSize: 13,
-          fontFamily: "'DM Mono', monospace",
-          cursor: saving ? "wait" : "pointer",
-          display: "inline-flex", alignItems: "center",
-          minWidth: 36,
-          justifyContent: "center",
-          transition: "background 0.15s, border-color 0.15s",
-        }}
-      >
-        <span
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <button
+          onClick={handleAdd}
+          disabled={saving}
+          title={atCap ? `Max ${UI_OFFSET_MAX} min` : `+${UI_OFFSET_STEP} min snooze`}
           style={{
-            display: "inline-block",
-            transform: pulse ? "scale(1.8)" : "scale(1)",
-            transition: "transform 0.32s cubic-bezier(.34,1.56,.64,1)",
-            color: pulse ? "#D97706" : text,
+            background: maxFlash ? "#FEE2E2" : bg,
+            border: `1.5px solid ${maxFlash ? "#DC2626" : border}`,
+            color: maxFlash ? "#7F1D1D" : text,
+            borderRadius: 8,
+            padding: "3px 9px",
+            fontWeight: 800,
+            fontSize: 13,
+            fontFamily: "'DM Mono', monospace",
+            cursor: saving ? "wait" : "pointer",
+            display: "inline-flex", alignItems: "center",
+            minWidth: 36,
+            justifyContent: "center",
+            transition: "background 0.15s, border-color 0.15s",
           }}
         >
-          {hasOffset ? `+${current}` : `+${UI_OFFSET_STEP}`}
-        </span>
-      </button>
-      {hasOffset && (
-        <button
-          onClick={handleReset}
-          disabled={saving}
-          title="Annulla snooze"
+          <span
+            style={{
+              display: "inline-block",
+              transform: pulse ? "scale(1.8)" : "scale(1)",
+              transition: "transform 0.32s cubic-bezier(.34,1.56,.64,1)",
+              color: pulse ? "#D97706" : text,
+            }}
+          >
+            {hasOffset ? `+${current}` : `+${UI_OFFSET_STEP}`}
+          </span>
+        </button>
+        {hasOffset && (
+          <button
+            onClick={handleReset}
+            disabled={saving}
+            title="Annulla snooze"
+            style={{
+              background: "transparent",
+              border: "1px solid #9CA3AF",
+              color: "#6B7280", borderRadius: "50%",
+              width: 20, height: 20,
+              padding: 0,
+              fontWeight: 700, fontSize: 12, lineHeight: 1,
+              cursor: saving ? "wait" : "pointer",
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+            }}
+          >×</button>
+        )}
+      </div>
+      {atCap && (
+        <div
           style={{
-            background: "transparent",
-            border: "1px solid #9CA3AF",
-            color: "#6B7280", borderRadius: "50%",
-            width: 20, height: 20,
-            padding: 0,
-            fontWeight: 700, fontSize: 12, lineHeight: 1,
-            cursor: saving ? "wait" : "pointer",
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            color: "#92400E",
+            fontSize: 10,
+            fontWeight: 700,
+            lineHeight: 1.15,
+            maxWidth: 120,
           }}
-        >×</button>
+        >
+          Máximo +{UI_OFFSET_MAX} min. Usa × para reiniciar.
+        </div>
       )}
     </div>
   );
