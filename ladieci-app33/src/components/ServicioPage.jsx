@@ -13,7 +13,7 @@ import NuevoPedidoModal from './NuevoPedidoModal';
 import ModificaOrdenModal from './ModificaOrdenModal';
 import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
-import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
+import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isTerminalState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -271,10 +271,17 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   const waTotBadge = waNoLei + pregNoLei;
   const listosN  = useMemo(() => ordenes.filter(o=>o.estado===ORDER_STATES.LISTO || o.estado===ORDER_STATES.EN_ENTREGA).length, [ordenes]);
   const cocinaNC = useMemo(() => ordenes.filter(o=>o.estado===ORDER_STATES.EN_COCINA).length, [ordenes]);
+  const repartoOffsetMax = useMemo(() => ordenes
+    .filter(o => o.tipo_consegna === "DOMICILIO" && !isTerminalState(o.estado))
+    .reduce((max, o) => Math.max(max, Number(o.ui_offset_min) || 0), 0),
+  [ordenes]);
   const totPizze  = useMemo(() => caricoTotale(ordenes), [ordenes]);
   const pctCarico = Math.min(100, Math.round((totPizze / MAX_PIZZE_ORA) * 100));
   const caricoCol = pctCarico >= 90 ? "#C0392B" : pctCarico >= 65 ? "#E67E22" : "#27AE60";
   const caricoLbl = pctCarico >= 90 ? "SATURO" : pctCarico >= 65 ? "Cargado" : "Libre";
+  const repartoCol = repartoOffsetMax >= 20 ? "#C0392B" : repartoOffsetMax >= 10 ? "#E67E22" : "#27AE60";
+  const repartoPct = Math.min(100, Math.round((repartoOffsetMax / 20) * 100));
+  const repartoTxt = repartoOffsetMax > 0 ? `+${repartoOffsetMax} min` : "OK";
   const ordineImpossibile = pctCarico >= 90 && waMsgsOrdini.some(m=>!m.stato||m.stato==="NUEVO");
 
   const handleTabChange = useCallback((t) => setTab(t), []);
@@ -974,7 +981,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
             {/* Status compatto: forno | sync/AI | spazio futura delivery bar */}
             <div style={{
               display:"grid",
-              gridTemplateColumns: headerPhone ? "auto auto" : "minmax(0,1fr) auto minmax(0,1fr)",
+              gridTemplateColumns: headerPhone ? "auto auto auto" : "minmax(0,1fr) auto minmax(0,1fr)",
               alignItems:"center",
               justifyContent: headerPhone ? "center" : "stretch",
               columnGap:6,
@@ -1038,7 +1045,37 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
                   </span>
                 </div>
               </div>
-              {!headerPhone && <div aria-hidden="true" style={{minWidth:0}} />}
+              <div style={{
+                display:"flex",alignItems:"center",justifyContent:headerPhone?"flex-start":"flex-start",
+                gap:headerPhone?3:6,minWidth:0,overflow:headerPhone?"visible":"hidden"
+              }}>
+                {!headerPhone && (
+                  <div style={{
+                    width:"clamp(58px, 10vw, 100px)",height:6,
+                    background:"rgba(255,255,255,0.08)",
+                    borderRadius:3,overflow:"hidden",
+                    border:"1px solid rgba(255,255,255,0.06)",
+                    boxShadow:"inset 0 1px 2px rgba(0,0,0,0.4)",
+                    flexShrink:1
+                  }}>
+                    <div style={{
+                      width:`${repartoPct}%`,height:"100%",
+                      background:`linear-gradient(90deg,${repartoCol}88,${repartoCol})`,
+                      borderRadius:3,
+                      boxShadow:`0 0 6px ${repartoCol}88`,
+                      transition:"width .6s ease"
+                    }}/>
+                  </div>
+                )}
+                <span style={{
+                  fontSize:10,fontWeight:800,letterSpacing:.2,
+                  color:repartoCol,
+                  textShadow:`0 0 10px ${repartoCol}88`,
+                  whiteSpace:"nowrap",
+                  overflow:headerPhone?"visible":"hidden",
+                  textOverflow:headerPhone?"clip":"ellipsis"
+                }}>{headerPhone ? `🛵 ${repartoOffsetMax > 0 ? `+${repartoOffsetMax}` : "OK"}` : `🛵 Reparto ${repartoTxt}`}</span>
+              </div>
             </div>
           </div>
 
