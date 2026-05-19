@@ -81,6 +81,7 @@ Espone:
 - `events`
 - `summary()`
 - `clear()`
+- `export()`
 - `countsByType`
 - `countsByComponent`
 - `countsByAction`
@@ -90,6 +91,8 @@ Espone:
 - `legacyBypassCount`
 - `creationBySource`
 - `creationByCanal`
+
+`export()` restituisce un oggetto copiabile con `exportedAt`, `summary` ed `events`. La `summary` usa `summary()` e `events` e' una copia snapshot, non un riferimento vivo all'array interno. Serve solo a rendere piu' ordinati i test manuali da console: non cambia runtime operativo, conteggi, eventi, backend, UI o DB.
 
 ## Stato validato
 
@@ -145,6 +148,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `8a0778b fix delivery legacy telemetry transition count`
 - `c5cd432 docs validate whatsapp natural kitchen transition`
 - `bde0085 docs validate invalid transition test`
+- `eeaefde feat add telemetry export helper`
 
 ## Regole di lavoro con Codex
 
