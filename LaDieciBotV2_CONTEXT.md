@@ -48,6 +48,36 @@ http://localhost:3010
 - `ladieci-app33/src/core/delivery/index.js`
 - `ladieci-app33/src/zones.js` resta facciata compatibile per UI e import esistenti.
 
+## Guardia fine servizio delivery
+
+Commit validato:
+
+- `0d9bef9 fix guard delivery suggestions after service end`
+
+Dettagli:
+
+- Modificato solo `ladieci-app33/src/core/delivery/scheduling.js`.
+- `proposeForNewOrder()` ora supporta `latestDeliveryMinute`.
+- Default: `23 * 60`.
+- Se la proposta delivery supera fine servizio, ritorna:
+  - `ok: false`
+  - `outOfServiceWindow: true`
+  - `consegnaPropostaH: null`
+  - `motivo: "Delivery non disponibile oltre le 23:00"`
+- Supporta limite custom via `options`.
+- Harness passato:
+  - proposta entro le 23:00 valida
+  - proposta oltre le 23:00 bloccata
+  - default senza opzione OK
+  - limite custom OK
+- `npm run build` passato.
+- Nessuna UI modificata.
+- Nessun backend modificato.
+- Pickup non toccato.
+- `.env` non toccato.
+
+Prossimo step: far leggere `outOfServiceWindow` a `NuevoPedidoModal` e mostrare un messaggio UI chiaro, senza cambiare ancora la logica backend.
+
 ## Core orders stabile
 
 - `ladieci-app33/src/core/orders/stateMachine.js`
@@ -211,6 +241,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `bde0085 docs validate invalid transition test`
 - `eeaefde feat add telemetry export helper`
 - `570336e feat add kitchen capacity core`
+- `0d9bef9 fix guard delivery suggestions after service end`
 
 ## Regole di lavoro con Codex
 
