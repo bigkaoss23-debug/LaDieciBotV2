@@ -40,7 +40,7 @@ http://localhost:3010
 - `.env` non va mai committato.
 - `RAILWAY_API_KEY` deve corrispondere al `DASHBOARD_API_KEY` configurato nel backend Railway.
 
-## Core delivery creato
+## Core delivery stabile
 
 - `ladieci-app33/src/core/delivery/geo.js`
 - `ladieci-app33/src/core/delivery/scheduling.js`
@@ -48,7 +48,7 @@ http://localhost:3010
 - `ladieci-app33/src/core/delivery/index.js`
 - `ladieci-app33/src/zones.js` resta facciata compatibile per UI e import esistenti.
 
-## Core orders creato
+## Core orders stabile
 
 - `ladieci-app33/src/core/orders/stateMachine.js`
 - `ladieci-app33/src/core/orders/transitionIntents.js`
@@ -89,24 +89,23 @@ Espone:
 - `rollbackCount`
 - `legacyBypassCount`
 - `creationBySource`
+- `creationByCanal`
 
-## Stato validato telemetry base
+## Stato validato
 
-Test manuale delivery completato con ordine `#009`.
+La base core orders + delivery telemetry e' validata.
 
-Risultato validato:
+Test validati:
 
-- `order-creation: 1`
-- `transition: 4`
-- `legacy-bypass: 1`
-- `POR_CONFIRMAR->EN_COCINA: 1`
-- `EN_COCINA->LISTO: 1`
-- `LISTO->EN_ENTREGA: 1`
-- `EN_ENTREGA->RETIRADO: 1`
-- `invalidCount: 0`
-- `rollbackCount: 0`
-- `legacyBypassCount: 1`
-- `total: 6`
+- Test 1 pickup completo: `VALIDATED` (`#014`).
+- Test 2 delivery completo: `VALIDATED` (`#009`).
+- Test 3 creazione manual/operator: `VALIDATED`.
+- Test 4 telefono: `VALIDATED` con nota, oggi tracciato come `MANUAL`.
+- Test 5 banco/barra: `VALIDATED`.
+- Test 7 cambio pagamento: `VALIDATED` (`payment-update`).
+- WhatsApp natural flow: `VALIDATED`.
+- WhatsApp operator sends to kitchen: `VALIDATED`.
+- Test 8 transizione non valida: `VALIDATED in isolation`.
 
 Conclusione:
 
@@ -114,12 +113,28 @@ Conclusione:
 Core orders + delivery telemetry base: VALIDATED
 ```
 
+## WhatsApp: chiarimento operativo
+
+- "Confermato al cliente" non significa "mandato in cucina".
+- Il bot puo' preparare/completare il pedido e il backend puo' creare l'ordine WA in `POR_CONFIRMAR`.
+- Solo l'operatore manda davvero in cucina tramite `POR_CONFIRMAR -> EN_COCINA`.
+- `EN_COCINA` resta lo stato unico della cucina.
+- Nel flusso naturale testato, il backend ha creato l'ordine `#022` in `POR_CONFIRMAR`; la UI ha poi validato `waConfirm` come `POR_CONFIRMAR -> EN_COCINA`.
+
 ## Fix importanti fatti
 
 - Rimosso doppio `RETIRADO` da `TabListos`.
 - Rimosso doppio `LISTO` da `TabCocina`.
-- Rimosso rumore pagamento da `onCambiaPago`.
+- I cambi pagamento sono registrati come `payment-update`, non come transition o legacy-bypass.
 - Fixato legacy-bypass delivery: `logLegacyBypass` non ha piu' `from/to` top-level; from/to legacy sono in `metadata`.
+- Aggiunto `creationByCanal` al summary telemetry.
+- La transizione invalida `POR_CONFIRMAR -> RETIRADO` viene intercettata come `invalid-transition`.
+
+## Stato non bloccante
+
+- Test 6 fallback WhatsApp senza `ordenRef` resta secondario/non bloccante: non rappresenta il flusso naturale del bot.
+- Il telefono resta tracciato come `MANUAL` per ora.
+- Non serve un test UI reale per la transizione invalida adesso: il core e' gia' validato in isolation senza UI/API/DB.
 
 ## Commit recenti importanti
 
@@ -128,6 +143,8 @@ Core orders + delivery telemetry base: VALIDATED
 - `f123c29 fix duplicate listo transition telemetry`
 - `2fbdc4e fix payment update telemetry noise`
 - `8a0778b fix delivery legacy telemetry transition count`
+- `c5cd432 docs validate whatsapp natural kitchen transition`
+- `bde0085 docs validate invalid transition test`
 
 ## Regole di lavoro con Codex
 
@@ -151,8 +168,7 @@ Regole:
 
 ## Prossimi step possibili
 
-- Creare matrice test stati ordini.
-- Verificare flusso WhatsApp creation intent.
-- Verificare ordine manuale/banco/telefono.
-- Consolidare telemetry dev panel o export leggibile.
-- Solo dopo pensare a UI/debug dashboard.
+- Aggiornare la matrice solo quando vengono validati nuovi micro-test.
+- Consolidare, se serve, una lettura/export dev della telemetry senza cambiare runtime operativo.
+- Valutare solo piu' avanti una UI/debug dashboard.
+- Continuare con micro-step mirati, niente refactor massivi.
