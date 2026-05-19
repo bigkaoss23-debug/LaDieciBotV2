@@ -170,6 +170,28 @@ Test visuale locale:
 - Nota ambiente: `build/` ignorata rimossa perche' Netlify Dev serviva HTML al posto di bundle JS.
 - Rischio residuo: verificare da UI reale che cambiando manualmente l'orario il feedback si ricalcoli correttamente.
 
+## Cleanup layout feedback pickup
+
+Commit validato:
+
+- `3b7fa3f fix move pickup capacity feedback below address`
+
+Dettagli:
+
+- Modificato solo `ladieci-app33/src/components/NuevoPedidoModal.jsx`.
+- Spostato il render di `pickupKitchenStatus`.
+- Nessuna modifica a testo, condizioni, calcoli o stile interno.
+- Nuovo ordine visivo:
+  - `Nome / telefono / ora` -> `indirizzo/zona` -> `feedback forno`
+- `npm run build` passato.
+- Test visuale locale su `http://localhost:3010` passato.
+- Il feedback `Horno ok: 0/8 pizzas en 10 min` ora appare sotto la riga indirizzo.
+- Delivery/popup non toccati.
+- Nessun React error overlay.
+- `.env` non toccato.
+
+Nota: questo e' un primo micro-step verso una futura area unica `info operative / alert`.
+
 ## Transition intents integrati
 
 - `POR_CONFIRMAR -> EN_COCINA`
@@ -266,6 +288,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `570336e feat add kitchen capacity core`
 - `0d9bef9 fix guard delivery suggestions after service end`
 - `060bfeb fix remove duplicate delivery force button`
+- `3b7fa3f fix move pickup capacity feedback below address`
 
 ## Regole di lavoro con Codex
 
