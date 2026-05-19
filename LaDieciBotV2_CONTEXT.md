@@ -91,6 +91,32 @@ Validazione fatta:
 
 Nota: per ora il core cucina e' puro e non collegato a UI, backend, WhatsApp o DB. Il prossimo step possibile sara' collegarlo a `NuevoPedidoModal`, ma non e' ancora da fare.
 
+## Feedback cucina pickup validato
+
+Commit validato:
+
+- `c82539d feat show pickup kitchen capacity feedback`
+
+Test visuale locale:
+
+- Netlify Dev su `http://localhost:3010`.
+- PIN `123456` OK.
+- `Nuevo Pedido` pickup/ritiro mostra il feedback vicino all'orario.
+- Stati visti:
+  - `Horno ok: 0/8 pizzas en 10 min`
+  - `Horno ok: 1/8 pizzas en 10 min`
+  - `Horno sobrecargado: 9/8 pizzas en 10 min. Sugerido: 10:10`
+- Aggiungendo pizze in bozza il numero aumenta live.
+- Delivery/domicilio nasconde il feedback pickup.
+- Popup/logica delivery resta invariata.
+- Salvataggio pickup OK con ordine test `#001`.
+- Nessun blocco su slot sovraccarico.
+- Nessun React error overlay.
+- Auth/API/create order `200`.
+- Git status pulito, solo ignored `.env`, `.netlify`, `node_modules`.
+- Nota ambiente: `build/` ignorata rimossa perche' Netlify Dev serviva HTML al posto di bundle JS.
+- Rischio residuo: verificare da UI reale che cambiando manualmente l'orario il feedback si ricalcoli correttamente.
+
 ## Transition intents integrati
 
 - `POR_CONFIRMAR -> EN_COCINA`
