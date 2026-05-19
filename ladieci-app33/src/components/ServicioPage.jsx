@@ -71,6 +71,8 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   const [ordenModifica, setOrdenModifica] = useState(null);
   const [aiForza, setAiForza] = useState("BASIC");
   const [chiudiModal, setChiudiModal] = useState(null); // null | { completati, attivi, loading, step }
+  const headerWidth = useWidth();
+  const headerCompact = headerWidth < 760;
   // VIP set — cliente_id dei clienti che oggi sono sopra soglia (calcolata su Railway).
   // Si aggiorna alla mount + ogni 5 min. Usato dalle card per mostrare la ⭐.
   const [vipIds, setVipIds] = useState(() => new Set());
@@ -969,52 +971,74 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
             <div style={{fontSize:9,fontWeight:800,letterSpacing:"3px",
               textTransform:"uppercase",color:"rgba(255,255,255,0.3)",lineHeight:1,marginBottom:1}}>SERVICIO</div>
             <LiveTime/>
-            {/* Barra carico forno */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:7,marginTop:4}}>
+            {/* Status compatto: forno | sync/AI | spazio futura delivery bar */}
+            <div style={{
+              display:"grid",
+              gridTemplateColumns: headerCompact ? "auto auto" : "minmax(0,1fr) auto minmax(0,1fr)",
+              alignItems:"center",
+              justifyContent: headerCompact ? "center" : "stretch",
+              columnGap:6,
+              margin:"4px auto 0",
+              maxWidth:360,
+              minWidth:0
+            }}>
               <div style={{
-                width:80,height:5,
-                background:"rgba(255,255,255,0.08)",
-                borderRadius:3,overflow:"hidden",
-                border:"1px solid rgba(255,255,255,0.06)",
-                boxShadow:"inset 0 1px 2px rgba(0,0,0,0.4)"
+                display:"flex",alignItems:"center",justifyContent:"flex-end",
+                gap:headerCompact?3:5,minWidth:0,overflow:headerCompact?"visible":"hidden"
               }}>
                 <div style={{
-                  width:`${pctCarico}%`,height:"100%",
-                  background:`linear-gradient(90deg,${caricoCol}88,${caricoCol})`,
-                  borderRadius:3,
-                  boxShadow:`0 0 6px ${caricoCol}88`,
-                  transition:"width .6s ease"
-                }}/>
+                  width: headerCompact ? 30 : "clamp(42px, 14vw, 80px)",height:5,
+                  background:"rgba(255,255,255,0.08)",
+                  borderRadius:3,overflow:"hidden",
+                  border:"1px solid rgba(255,255,255,0.06)",
+                  boxShadow:"inset 0 1px 2px rgba(0,0,0,0.4)",
+                  flexShrink:1
+                }}>
+                  <div style={{
+                    width:`${pctCarico}%`,height:"100%",
+                    background:`linear-gradient(90deg,${caricoCol}88,${caricoCol})`,
+                    borderRadius:3,
+                    boxShadow:`0 0 6px ${caricoCol}88`,
+                    transition:"width .6s ease"
+                  }}/>
+                </div>
+                <span style={{
+                  fontSize:10,fontWeight:800,letterSpacing:.2,
+                  color:caricoCol,
+                  textShadow:`0 0 10px ${caricoCol}88`,
+                  whiteSpace:"nowrap",
+                  overflow:headerCompact?"visible":"hidden",
+                  textOverflow:headerCompact?"clip":"ellipsis"
+                }}>{headerCompact ? `${pctCarico}% ${caricoLbl}` : `🔥 ${pctCarico}% ${caricoLbl}`}</span>
               </div>
-              <span style={{
-                fontSize:10,fontWeight:800,letterSpacing:.3,
-                color:caricoCol,
-                textShadow:`0 0 10px ${caricoCol}88`
-              }}>🔥 {pctCarico}% {caricoLbl}</span>
-              {/* Sync dot */}
-              <div style={{display:"flex",alignItems:"center",gap:3,marginLeft:4}}>
-                <div style={{width:5,height:5,borderRadius:"50%",
-                  background:syncStatus==="ok"?C.verde:syncStatus==="syncing"?C.giallo:C.rosso,
-                  boxShadow:syncStatus==="ok"?`0 0 6px ${C.verde}cc`:"none",
-                  animation:syncStatus==="syncing"?"pulse 1s infinite":"none"}}/>
-                <span style={{fontSize:9,fontWeight:600,letterSpacing:.3,
-                  color:syncStatus==="ok"?C.verde:syncStatus==="syncing"?C.giallo:"#888"}}>
-                  {syncStatus==="ok"?"live":syncStatus==="syncing"?"sync":"off"}
-                </span>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,minWidth:0}}>
+                {/* Sync dot */}
+                <div style={{display:"flex",alignItems:"center",gap:3,whiteSpace:"nowrap"}}>
+                  <div style={{width:5,height:5,borderRadius:"50%",
+                    background:syncStatus==="ok"?C.verde:syncStatus==="syncing"?C.giallo:C.rosso,
+                    boxShadow:syncStatus==="ok"?`0 0 6px ${C.verde}cc`:"none",
+                    animation:syncStatus==="syncing"?"pulse 1s infinite":"none"}}/>
+                  <span style={{fontSize:9,fontWeight:600,letterSpacing:.2,
+                    color:syncStatus==="ok"?C.verde:syncStatus==="syncing"?C.giallo:"#888"}}>
+                    {syncStatus==="ok"?"live":syncStatus==="syncing"?"sync":"off"}
+                  </span>
+                </div>
+                <span style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontWeight:700}}>·</span>
+                {/* AI Forza toggle */}
+                <div onClick={toggleAiForza} style={{
+                  display:"flex",alignItems:"center",gap:3,
+                  background:aiForza==="STRONG"?"rgba(39,174,96,0.18)":"rgba(230,126,34,0.18)",
+                  border:`1px solid ${aiForza==="STRONG"?"#27AE6055":"#E67E2255"}`,
+                  borderRadius:7,padding:"2px 7px",cursor:"pointer",
+                  transition:"all .2s",whiteSpace:"nowrap"
+                }}>
+                  <span style={{fontSize:9,fontWeight:800,letterSpacing:.2,
+                    color:aiForza==="STRONG"?"#27AE60":"#E67E22"}}>
+                    {aiForza}
+                  </span>
+                </div>
               </div>
-              {/* AI Forza toggle */}
-              <div onClick={toggleAiForza} style={{
-                display:"flex",alignItems:"center",gap:3,marginLeft:6,
-                background:aiForza==="STRONG"?"rgba(39,174,96,0.18)":"rgba(230,126,34,0.18)",
-                border:`1px solid ${aiForza==="STRONG"?"#27AE6055":"#E67E2255"}`,
-                borderRadius:7,padding:"2px 7px",cursor:"pointer",
-                transition:"all .2s"
-              }}>
-                <span style={{fontSize:9,fontWeight:800,letterSpacing:.3,
-                  color:aiForza==="STRONG"?"#27AE60":"#E67E22"}}>
-                  🤖 {aiForza}
-                </span>
-              </div>
+              {!headerCompact && <div aria-hidden="true" style={{minWidth:0}} />}
             </div>
           </div>
 
