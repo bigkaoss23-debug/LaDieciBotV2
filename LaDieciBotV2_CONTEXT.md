@@ -216,7 +216,29 @@ Dettagli:
 - Test visuale locale su `http://localhost:3010` passato.
 - Nessun React error overlay.
 
-Nota: questo e' il primo step concreto verso una futura area unica degli alert operativi. Per ora contiene solo feedback forno pickup/ritiro; delivery resta nel popup.
+Nota: questo e' il primo step concreto verso una futura area unica degli alert operativi.
+
+## Delivery alert in Info operativa
+
+Commit validato:
+
+- `6aa65b1 feat show delivery service alert in operational info`
+
+Validazione visuale:
+
+- Dopo restart pulito Netlify Dev, `http://localhost:3010` funziona.
+- Test manuale con nuovo ordine `Entrega a domicilio`.
+- Ora delivery: `23:30`.
+- Nella pagina principale del modal, dentro `Info operativa`, appare il riepilogo delivery fuori orario.
+- Il messaggio indica di aprire il dettaglio domicilio per forzare/cambiare.
+- Aprendo il menu/tab domicilio, appare il warning completo fuori servizio.
+- Dentro domicilio resta la possibilita' di forzare come eccezione tramite bottone sotto.
+- Nessuna duplicazione dei bottoni nella pagina principale.
+
+Modello UX confermato:
+
+- `Info operativa` = riepilogo visibile subito.
+- Popup/dettaglio domicilio = warning completo + azioni.
 
 ## Transition intents integrati
 
@@ -316,6 +338,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `060bfeb fix remove duplicate delivery force button`
 - `3b7fa3f fix move pickup capacity feedback below address`
 - `008782b feat add operational info area for pickup feedback`
+- `6aa65b1 feat show delivery service alert in operational info`
 
 ## Regole di lavoro con Codex
 
