@@ -1403,24 +1403,6 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, paddingLeft: 26, lineHeight: 1.45 }}>
                           No se aplicará ninguna sugerencia automática fuera del horario normal.
                         </div>
-                        <div style={{ paddingLeft: 26 }}>
-                          {forzaHora ? (
-                            <button onClick={() => setForzaHora(false)} style={{
-                              background: "transparent", border: "1px solid rgba(255,255,255,0.25)",
-                              color: "rgba(255,255,255,0.7)", borderRadius: 6, padding: "4px 12px",
-                              fontSize: 12, fontWeight: 700, cursor: "pointer"
-                            }}>↩ Quitar excepción</button>
-                          ) : (
-                            <button onClick={() => setForzaHora(true)} style={{
-                              background: "rgba(251,191,36,0.12)", border: "1.5px solid rgba(251,191,36,0.6)",
-                              color: "#fde68a", borderRadius: 8, padding: "5px 12px",
-                              fontSize: 12, fontWeight: 800, cursor: "pointer",
-                              display: "inline-flex", alignItems: "center", gap: 5
-                            }} title="Forzar fuera del horario normal solo como excepción especial">
-                              ⚠️ Forzar como excepción
-                            </button>
-                          )}
-                        </div>
                       </div>
                     );
                   }
