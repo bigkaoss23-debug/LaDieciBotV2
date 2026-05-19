@@ -100,6 +100,21 @@ export function proposeForNewOrder(orders, newOrder, options = {}, deps = {}) {
   } = deps;
   const toMin = (t) => { if (!t) return null; const [h,m]=String(t).split(":").map(Number); return h*60+(m||0); };
   const toH = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+  const latestDeliveryMinute = Number.isFinite(Number(options.latestDeliveryMinute))
+    ? Number(options.latestDeliveryMinute)
+    : 23 * 60;
+  const serviceEndH = toH(latestDeliveryMinute);
+  const outOfService = (extra = {}) => ({
+    ok: false,
+    consegnaPropostaMin: null,
+    consegnaPropostaH: null,
+    motivo: `Delivery non disponibile oltre le ${serviceEndH}`,
+    aggregato: false,
+    giroEsistente: null,
+    outOfServiceWindow: true,
+    latestDeliveryMinute,
+    ...extra,
+  });
   const slot10 = (min) => {
     const mArr = Math.round(min / 10) * 10;
     const h = Math.floor(mArr / 60), m = mArr % 60;
@@ -107,7 +122,7 @@ export function proposeForNewOrder(orders, newOrder, options = {}, deps = {}) {
   };
 
   const zona = zoneDelivery.find(z => z.id === newOrder.zona);
-  if (!zona) return { ok: true, consegnaPropostaMin: toMin(newOrder.hora), consegnaPropostaH: newOrder.hora, motivo: null, aggregato: false };
+  if (!zona) return { ok: true, consegnaPropostaMin: toMin(newOrder.hora), consegnaPropostaH: newOrder.hora, motivo: null, aggregato: false, outOfServiceWindow: false };
 
   const tgNew = risolviTempoAndata(newOrder.durata_andata_min ?? null, newOrder.zona_lat, newOrder.zona_lon, zona, calcolaTempoGiroFn);
   const horaNewMin = toMin(newOrder.hora);
@@ -122,12 +137,19 @@ export function proposeForNewOrder(orders, newOrder, options = {}, deps = {}) {
     .sort((a, b) => Math.abs(a.horaMin - horaNewMin) - Math.abs(b.horaMin - horaNewMin))[0];
 
   if (giroEsistente) {
+    if (giroEsistente.horaMin > latestDeliveryMinute) {
+      return outOfService({
+        driverLiberoMin: sim.driverLiberoMin,
+        sim,
+      });
+    }
     return {
       ok: true,
       consegnaPropostaMin: giroEsistente.horaMin,
       consegnaPropostaH: toH(giroEsistente.horaMin),
       motivo: `Se agrupa al giro ${zona.id} ${toH(giroEsistente.horaMin)} (${giroEsistente.count + 1}/${zona.maxOrdiniPerGiro})`,
       aggregato: true,
+      outOfServiceWindow: false,
       giroEsistente: { hora: toH(giroEsistente.horaMin), count: giroEsistente.count },
       driverLiberoMin: sim.driverLiberoMin,
       sim,
@@ -155,12 +177,21 @@ export function proposeForNewOrder(orders, newOrder, options = {}, deps = {}) {
     }
   }
 
+  if (consegnaProposta > latestDeliveryMinute) {
+    return outOfService({
+      driverLiberoMin: sim.driverLiberoMin,
+      tgNew,
+      sim,
+    });
+  }
+
   return {
     ok,
     consegnaPropostaMin: consegnaProposta,
     consegnaPropostaH: toH(consegnaProposta),
     motivo,
     aggregato: false,
+    outOfServiceWindow: false,
     giroEsistente: null,
     driverLiberoMin: sim.driverLiberoMin,
     tgNew,
