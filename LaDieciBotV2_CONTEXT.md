@@ -154,6 +154,25 @@ Conclusione:
 - Git status pulito sui file tracciati.
 - Netlify Dev fermato dopo il test.
 
+## Warning limite snooze operativo
+
+Commit validato:
+
+- `ff1c1c4 feat show snooze max offset warning`
+
+Dettagli:
+
+- Modificato solo `ladieci-app33/src/components/ui/SnoozeButton.jsx`.
+- Quando `current >= 20`, ora appare un messaggio persistente:
+  - `Máximo +20 min. Usa × para reiniciar.`
+- Il messaggio chiarisce all'operatore che il limite massimo dello snooze operativo e' raggiunto.
+- Il limite massimo `20` esisteva gia'.
+- Il click oltre `+20` era gia' bloccato e lampeggiava rosso, ma mancava un messaggio visibile stabile.
+- `SnoozeButton` e' condiviso da `TabCocina` e `PanelCocina`, quindi il warning vale sia per cucina normale sia per fullscreen/panel.
+- Non sono stati cambiati API, backend, scheduling, `uiOffset.js`, reset `x`, parent components o `.env`.
+- `npm run build` passato con solo warning Node/react-scripts gia' noto.
+- Git status pulito sui file tracciati.
+
 ## Guardia fine servizio delivery
 
 Commit validato:
@@ -474,6 +493,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `008782b feat add operational info area for pickup feedback`
 - `6aa65b1 feat show delivery service alert in operational info`
 - `9cfe756 feat show delivery availability loading in operational info`
+- `ff1c1c4 feat show snooze max offset warning`
 
 ## Regole di lavoro con Codex
 
