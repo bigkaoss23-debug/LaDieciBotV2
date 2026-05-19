@@ -526,17 +526,20 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // con il vincolo forno. Il bottone "Aplicar sugerencia" usa questo.
   const deliveryStatus = useMemo(() => {
     const sf = slotFeedback;
-    if (!sf || !hora) return { isBlocked: false, sugeridoH: null };
+    if (!sf || !hora) return { isBlocked: false, sugeridoH: null, outOfServiceWindow: false };
+    if (sf.propose?.outOfServiceWindow) {
+      return { isBlocked: true, sugeridoH: null, outOfServiceWindow: true };
+    }
     const toM = (t) => { if (!t) return null; const [h,m]=String(t).split(":").map(Number); return h*60+(m||0); };
     const toH = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
     const horaMin = toM(hora);
     // Vincoli combinati: driver schedule (propose) + forno (consegnaSuggerita)
     const limits = [];
-    if (sf.propose && !sf.propose.ok) limits.push(sf.propose.consegnaPropostaMin);
+    if (sf.propose && !sf.propose.ok && Number.isFinite(sf.propose.consegnaPropostaMin)) limits.push(sf.propose.consegnaPropostaMin);
     if (!sf.slotOk && sf.consegnaSuggerita) limits.push(toM(sf.consegnaSuggerita));
-    if (limits.length === 0) return { isBlocked: false, sugeridoH: null };
+    if (limits.length === 0) return { isBlocked: false, sugeridoH: null, outOfServiceWindow: false };
     const sugMin = Math.ceil(Math.max(...limits) / 5) * 5;
-    return { isBlocked: horaMin < sugMin, sugeridoH: toH(sugMin) };
+    return { isBlocked: horaMin < sugMin, sugeridoH: toH(sugMin), outOfServiceWindow: false };
   }, [slotFeedback, hora]);
 
   const pickupKitchenStatus = useMemo(() => {
@@ -1383,6 +1386,44 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   const toM = (t) => { if (!t) return null; const [h,m]=String(t).split(":").map(Number); return h*60+(m||0); };
                   const toH = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
                   const horaMin = toM(hora);
+                  const isOutOfService = deliveryStatus.outOfServiceWindow || sf.propose?.outOfServiceWindow;
+
+                  if (isOutOfService) {
+                    return (
+                      <div style={{ borderRadius: 10, padding: "12px 14px",
+                        background: forzaHora ? "rgba(251,191,36,0.10)" : "rgba(239,68,68,0.12)",
+                        border: forzaHora ? "1.5px solid rgba(251,191,36,0.5)" : "2px solid rgba(239,68,68,0.6)",
+                        display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 18 }}>{forzaHora ? "⚠️" : "🚨"}</span>
+                          <span style={{ color: forzaHora ? "#fde68a" : "#fca5a5", fontWeight: 800, fontSize: 14 }}>
+                            Delivery no disponible después de las 23:00. Puedes forzarlo solo como excepción especial.
+                          </span>
+                        </div>
+                        <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, paddingLeft: 26, lineHeight: 1.45 }}>
+                          No se aplicará ninguna sugerencia automática fuera del horario normal.
+                        </div>
+                        <div style={{ paddingLeft: 26 }}>
+                          {forzaHora ? (
+                            <button onClick={() => setForzaHora(false)} style={{
+                              background: "transparent", border: "1px solid rgba(255,255,255,0.25)",
+                              color: "rgba(255,255,255,0.7)", borderRadius: 6, padding: "4px 12px",
+                              fontSize: 12, fontWeight: 700, cursor: "pointer"
+                            }}>↩ Quitar excepción</button>
+                          ) : (
+                            <button onClick={() => setForzaHora(true)} style={{
+                              background: "rgba(251,191,36,0.12)", border: "1.5px solid rgba(251,191,36,0.6)",
+                              color: "#fde68a", borderRadius: 8, padding: "5px 12px",
+                              fontSize: 12, fontWeight: 800, cursor: "pointer",
+                              display: "inline-flex", alignItems: "center", gap: 5
+                            }} title="Forzar fuera del horario normal solo como excepción especial">
+                              ⚠️ Forzar como excepción
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
 
                   // ── Sintesi vincoli per il render (display) ─────────────────────
                   // Costruiti da: sf.propose (driver schedule cascade) + forno
@@ -1566,7 +1607,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     3. BLOCKED forzato    → arancione/giallo, conferma hora forzata
                 */}
                 {(() => {
-                  const { isBlocked, sugeridoH } = deliveryStatus;
+                  const { isBlocked, sugeridoH, outOfServiceWindow } = deliveryStatus;
                   const zonaOk = zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
                   let bg, label, onClick;
                   if (isBlocked && forzaHora) {
@@ -1574,6 +1615,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     bg = "linear-gradient(135deg, #F59E0B, #D97706)";
                     label = `⚠️ Confirmar ${hora} forzado`;
                     onClick = () => setShowDeliveryPopup(false);
+                  } else if (isBlocked && outOfServiceWindow) {
+                    // Fuori orario servizio: nessuna sugerencia da applicare, solo forzatura esplicita.
+                    bg = "linear-gradient(135deg, #F59E0B, #D97706)";
+                    label = "⚠️ Forzar como excepción";
+                    onClick = () => setForzaHora(true);
                   } else if (isBlocked && sugeridoH) {
                     // Caso BLOCKED non forzato — il click applica la sugerencia
                     bg = "linear-gradient(135deg, #16A34A, #15803D)";
