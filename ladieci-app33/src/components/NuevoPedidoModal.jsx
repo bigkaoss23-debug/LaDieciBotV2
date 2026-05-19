@@ -553,7 +553,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     return getKitchenCapacityStatus([...(ordenes || []), draftOrder], hora);
   }, [tipoConsegna, hora, items, ordenes]);
   const showDeliveryOutOfServiceAlert = tipoConsegna === "DOMICILIO" && deliveryStatus.outOfServiceWindow;
-  const hasOperationalInfo = pickupKitchenStatus || showDeliveryOutOfServiceAlert;
+  const showDeliveryAvailabilityLoading = tipoConsegna === "DOMICILIO" && !!direccion && zonaLoading === true;
+  const hasOperationalInfo = pickupKitchenStatus || showDeliveryOutOfServiceAlert || showDeliveryAvailabilityLoading;
 
   return (
     <>
@@ -821,6 +822,18 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         <span style={{ color: "rgba(255,255,255,0.68)", fontWeight: 600 }}>
                           Abre el detalle de domicilio para forzarlo como excepción.
                         </span>
+                      </span>
+                    </div>
+                  )}
+                  {showDeliveryAvailabilityLoading && (
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "rgba(255,255,255,0.72)",
+                    }}>
+                      <span style={{ flex: 1 }}>
+                        Calculando zona y disponibilidad de delivery...
                       </span>
                     </div>
                   )}
