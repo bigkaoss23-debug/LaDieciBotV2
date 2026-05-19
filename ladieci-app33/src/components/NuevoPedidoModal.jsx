@@ -774,21 +774,34 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
               {pickupKitchenStatus && (
                 <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  background: pickupKitchenStatus.overloaded ? "rgba(239,68,68,0.10)" : "rgba(34,197,94,0.08)",
-                  border: pickupKitchenStatus.overloaded ? "1.5px solid rgba(239,68,68,0.45)" : "1.5px solid rgba(34,197,94,0.35)",
+                  display: "flex", flexDirection: "column", gap: 6,
+                  background: pickupKitchenStatus.overloaded ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.03)",
+                  border: pickupKitchenStatus.overloaded ? "1.5px solid rgba(239,68,68,0.40)" : "1px solid rgba(255,255,255,0.10)",
                   borderRadius: 9,
-                  padding: "7px 10px",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: pickupKitchenStatus.overloaded ? "#fca5a5" : "#86efac",
+                  padding: "8px 10px",
                 }}>
-                  <span>{pickupKitchenStatus.overloaded ? "⚠️" : "✅"}</span>
-                  <span style={{ flex: 1 }}>
-                    {pickupKitchenStatus.overloaded
-                      ? <>Horno sobrecargado: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min.{pickupKitchenStatus.suggestedHora ? <> Sugerido: {pickupKitchenStatus.suggestedHora}</> : null}</>
-                      : <>Horno ok: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min</>}
-                  </span>
+                  <div style={{
+                    color: "rgba(255,255,255,0.45)",
+                    fontSize: 9,
+                    fontWeight: 800,
+                    letterSpacing: .8,
+                    textTransform: "uppercase",
+                  }}>
+                    Info operativa
+                  </div>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: pickupKitchenStatus.overloaded ? "#fca5a5" : "#86efac",
+                  }}>
+                    <span>{pickupKitchenStatus.overloaded ? "⚠️" : "✅"}</span>
+                    <span style={{ flex: 1 }}>
+                      {pickupKitchenStatus.overloaded
+                        ? <>Horno sobrecargado: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min.{pickupKitchenStatus.suggestedHora ? <> Sugerido: {pickupKitchenStatus.suggestedHora}</> : null}</>
+                        : <>Horno ok: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min</>}
+                    </span>
+                  </div>
                 </div>
               )}
 
