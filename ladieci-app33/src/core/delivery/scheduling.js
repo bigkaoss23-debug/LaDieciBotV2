@@ -100,6 +100,7 @@ export function simulateDriverSchedule(orders, options = {}, deps = {}) {
         horaMin: minOra,
         count: 0, pizze: 0,
         tg: 0,
+        operationalReadyMin: null,
       });
     }
     const g = giriMap.get(key);
@@ -108,6 +109,12 @@ export function simulateDriverSchedule(orders, options = {}, deps = {}) {
     g.horaMin = Math.min(g.horaMin, minOra);
     const tgO = tempoAndata(o, zona, calcolaTempoGiroFn);
     g.tg = Math.max(g.tg, tgO);
+    const readyMin = getOperationalReadyMinute(o, { zonaObj: zona, tempoAndataMin: tgO }, deps);
+    if (readyMin != null) {
+      g.operationalReadyMin = g.operationalReadyMin == null
+        ? readyMin
+        : Math.max(g.operationalReadyMin, readyMin);
+    }
   }
 
   const giri = Array.from(giriMap.values()).sort((a, b) => a.horaMin - b.horaMin);
@@ -115,7 +122,8 @@ export function simulateDriverSchedule(orders, options = {}, deps = {}) {
   let t = toMin(options.startTime || "00:00") || 0;
   for (const g of giri) {
     const partTeorica = g.horaMin - g.tg;
-    g.partenzaMin = Math.max(t, partTeorica);
+    const readyMin = g.operationalReadyMin == null ? partTeorica : Math.max(partTeorica, g.operationalReadyMin);
+    g.partenzaMin = Math.max(t, readyMin);
     g.consegnaMin = g.partenzaMin + g.tg;
     g.rientroMin  = g.consegnaMin + bufferOpsDriverMin + g.tg;
     t = g.rientroMin;
