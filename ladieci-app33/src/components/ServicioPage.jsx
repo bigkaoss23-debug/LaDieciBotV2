@@ -72,7 +72,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   const [aiForza, setAiForza] = useState("BASIC");
   const [chiudiModal, setChiudiModal] = useState(null); // null | { completati, attivi, loading, step }
   const headerWidth = useWidth();
-  const headerCompact = headerWidth < 760;
+  const headerPhone = headerWidth < 520;
   // VIP set — cliente_id dei clienti che oggi sono sopra soglia (calcolata su Railway).
   // Si aggiorna alla mount + ogni 5 min. Usato dalle card per mostrare la ⭐.
   const [vipIds, setVipIds] = useState(() => new Set());
@@ -974,20 +974,20 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
             {/* Status compatto: forno | sync/AI | spazio futura delivery bar */}
             <div style={{
               display:"grid",
-              gridTemplateColumns: headerCompact ? "auto auto" : "minmax(0,1fr) auto minmax(0,1fr)",
+              gridTemplateColumns: headerPhone ? "auto auto" : "minmax(0,1fr) auto minmax(0,1fr)",
               alignItems:"center",
-              justifyContent: headerCompact ? "center" : "stretch",
+              justifyContent: headerPhone ? "center" : "stretch",
               columnGap:6,
               margin:"4px auto 0",
-              maxWidth:360,
+              maxWidth:headerPhone?360:520,
               minWidth:0
             }}>
               <div style={{
                 display:"flex",alignItems:"center",justifyContent:"flex-end",
-                gap:headerCompact?3:5,minWidth:0,overflow:headerCompact?"visible":"hidden"
+                gap:headerPhone?3:6,minWidth:0,overflow:headerPhone?"visible":"hidden"
               }}>
                 <div style={{
-                  width: headerCompact ? 30 : "clamp(42px, 14vw, 80px)",height:5,
+                  width: headerPhone ? 30 : "clamp(80px, 14vw, 130px)",height:headerPhone?5:6,
                   background:"rgba(255,255,255,0.08)",
                   borderRadius:3,overflow:"hidden",
                   border:"1px solid rgba(255,255,255,0.06)",
@@ -1007,9 +1007,9 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
                   color:caricoCol,
                   textShadow:`0 0 10px ${caricoCol}88`,
                   whiteSpace:"nowrap",
-                  overflow:headerCompact?"visible":"hidden",
-                  textOverflow:headerCompact?"clip":"ellipsis"
-                }}>{headerCompact ? `${pctCarico}% ${caricoLbl}` : `🔥 ${pctCarico}% ${caricoLbl}`}</span>
+                  overflow:headerPhone?"visible":"hidden",
+                  textOverflow:headerPhone?"clip":"ellipsis"
+                }}>{headerPhone ? `${pctCarico}% ${caricoLbl}` : `🔥 Forno ${pctCarico}% ${caricoLbl}`}</span>
               </div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,minWidth:0}}>
                 {/* Sync dot */}
@@ -1038,7 +1038,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
                   </span>
                 </div>
               </div>
-              {!headerCompact && <div aria-hidden="true" style={{minWidth:0}} />}
+              {!headerPhone && <div aria-hidden="true" style={{minWidth:0}} />}
             </div>
           </div>
 
