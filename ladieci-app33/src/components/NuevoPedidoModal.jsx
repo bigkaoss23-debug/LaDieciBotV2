@@ -552,6 +552,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     };
     return getKitchenCapacityStatus([...(ordenes || []), draftOrder], hora);
   }, [tipoConsegna, hora, items, ordenes]);
+  const showDeliveryOutOfServiceAlert = tipoConsegna === "DOMICILIO" && deliveryStatus.outOfServiceWindow;
+  const hasOperationalInfo = pickupKitchenStatus || showDeliveryOutOfServiceAlert;
 
   return (
     <>
@@ -772,11 +774,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 );
               })()}
 
-              {pickupKitchenStatus && (
+              {hasOperationalInfo && (
                 <div style={{
                   display: "flex", flexDirection: "column", gap: 6,
-                  background: pickupKitchenStatus.overloaded ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.03)",
-                  border: pickupKitchenStatus.overloaded ? "1.5px solid rgba(239,68,68,0.40)" : "1px solid rgba(255,255,255,0.10)",
+                  background: (pickupKitchenStatus?.overloaded || showDeliveryOutOfServiceAlert) ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.03)",
+                  border: (pickupKitchenStatus?.overloaded || showDeliveryOutOfServiceAlert) ? "1.5px solid rgba(239,68,68,0.40)" : "1px solid rgba(255,255,255,0.10)",
                   borderRadius: 9,
                   padding: "8px 10px",
                 }}>
@@ -789,19 +791,39 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   }}>
                     Info operativa
                   </div>
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: pickupKitchenStatus.overloaded ? "#fca5a5" : "#86efac",
-                  }}>
-                    <span>{pickupKitchenStatus.overloaded ? "⚠️" : "✅"}</span>
-                    <span style={{ flex: 1 }}>
-                      {pickupKitchenStatus.overloaded
-                        ? <>Horno sobrecargado: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min.{pickupKitchenStatus.suggestedHora ? <> Sugerido: {pickupKitchenStatus.suggestedHora}</> : null}</>
-                        : <>Horno ok: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min</>}
-                    </span>
-                  </div>
+                  {pickupKitchenStatus && (
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: pickupKitchenStatus.overloaded ? "#fca5a5" : "#86efac",
+                    }}>
+                      <span>{pickupKitchenStatus.overloaded ? "⚠️" : "✅"}</span>
+                      <span style={{ flex: 1 }}>
+                        {pickupKitchenStatus.overloaded
+                          ? <>Horno sobrecargado: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min.{pickupKitchenStatus.suggestedHora ? <> Sugerido: {pickupKitchenStatus.suggestedHora}</> : null}</>
+                          : <>Horno ok: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min</>}
+                      </span>
+                    </div>
+                  )}
+                  {showDeliveryOutOfServiceAlert && (
+                    <div style={{
+                      display: "flex", alignItems: "flex-start", gap: 8,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "#fca5a5",
+                      lineHeight: 1.4,
+                    }}>
+                      <span>🚨</span>
+                      <span style={{ flex: 1 }}>
+                        Delivery no disponible después de las 23:00.
+                        <br />
+                        <span style={{ color: "rgba(255,255,255,0.68)", fontWeight: 600 }}>
+                          Abre el detalle de domicilio para forzarlo como excepción.
+                        </span>
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
