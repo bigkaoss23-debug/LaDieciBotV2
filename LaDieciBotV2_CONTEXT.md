@@ -113,6 +113,47 @@ Build:
 
 Nota operativa: questo collega lo snooze/calibrazione cucina al core rider scheduling. Serve a evitare che il sistema proponga delivery successivi troppo ottimisti quando la cucina ha spostato avanti l'uscita operativa.
 
+## Validazione manuale ready operativo rider
+
+Commit validato:
+
+- `5599cc4 feat apply operational ready in driver schedule`
+
+Test manuale completato:
+
+- Ordine delivery test: `#002`
+- Stato: `EN_COCINA`
+- Zona: `Q2`
+- `hora`: `21:00`
+- `forno_out`: `20:50`
+- `ui_offset_min` iniziale: `0`
+
+Risultato in `Cocina`:
+
+- Prima del click `+5`, la card mostrava orario operativo `20:50`.
+- Dopo click `+5`, la card mostrava `20:55`.
+- Bottone `+5` attivo e reset `x` visibile.
+- Richiesta `POST /api/proxy` con risposta `200`.
+- Dopo refresh, `ui_offset_min: 5` persisteva e la card restava su `20:55`.
+- `hora` cliente restava `21:00`.
+
+Verifica scheduling rider:
+
+- Delivery B con cliente salvato `STRESS_A_Q1`, zona `Q1`, ora richiesta `21:00`.
+- Con A offset `0`: popup `Driver en Q2 21:00 · vuelve ~21:13`, suggerenza `21:20`.
+- Con A offset `+5`: popup `Driver en Q2 21:00 · vuelve ~21:18`, suggerenza `21:25`.
+
+Conclusione:
+
+- `simulateDriverSchedule()` considera correttamente `ui_offset_min`.
+- Il suggerimento rider diventa piu' prudente di 5 minuti.
+- `hora` cliente non viene modificata.
+- Nessun React overlay.
+- Nessun errore console bloccante.
+- API/server `POST /api/proxy` `200`.
+- Git status pulito sui file tracciati.
+- Netlify Dev fermato dopo il test.
+
 ## Guardia fine servizio delivery
 
 Commit validato:
