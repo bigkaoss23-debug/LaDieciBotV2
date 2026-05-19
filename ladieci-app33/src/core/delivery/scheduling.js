@@ -28,6 +28,37 @@ export function tempoAndata(o, zonaObj, calcolaTempoGiroFn = calcolaTempoGiro) {
   );
 }
 
+const horaToMinute = (t) => {
+  if (!t) return null;
+  const [h, m] = String(t).split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + (m || 0);
+};
+
+export function getOperationalReadyMinute(order, options = {}, deps = {}) {
+  const {
+    zoneDelivery = [],
+    calcolaTempoGiroFn = calcolaTempoGiro,
+  } = deps;
+  const offsetMin = Number.isFinite(Number(order?.ui_offset_min))
+    ? Number(order.ui_offset_min)
+    : 0;
+  const fornoOutMin = horaToMinute(order?.forno_out);
+  if (fornoOutMin != null) return fornoOutMin + offsetMin;
+
+  const horaMin = horaToMinute(order?.hora);
+  if (horaMin == null) return null;
+
+  const zonaObj = options.zonaObj
+    || zoneDelivery.find(z => z.id === order?.zona)
+    || null;
+  const tg = Number.isFinite(Number(options.tempoAndataMin))
+    ? Number(options.tempoAndataMin)
+    : tempoAndata(order, zonaObj, calcolaTempoGiroFn);
+
+  return horaMin - tg + offsetMin;
+}
+
 export function simulateDriverSchedule(orders, options = {}, deps = {}) {
   const {
     zoneDelivery = [],
