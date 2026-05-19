@@ -240,6 +240,32 @@ Modello UX confermato:
 - `Info operativa` = riepilogo visibile subito.
 - Popup/dettaglio domicilio = warning completo + azioni.
 
+## Loading disponibilita' delivery in Info operativa
+
+Commit validato:
+
+- `9cfe756 feat show delivery availability loading in operational info`
+
+Dettagli:
+
+- Modificato solo `ladieci-app33/src/components/NuevoPedidoModal.jsx`.
+- Aggiunto `showDeliveryAvailabilityLoading`.
+- Condizione:
+  - `tipoConsegna === "DOMICILIO" && direccion && zonaLoading === true`
+- Incluso in `hasOperationalInfo`.
+- Testo UI spagnolo:
+  - `Calculando zona y disponibilidad de delivery...`
+- Serve per il flusso clienti abituali/preferiti con indirizzo auto-compilato.
+- Quando l'operatore seleziona un cliente salvato, l'app mostra che sta calcolando zona/disponibilita' delivery.
+- Quando il calcolo finisce, il messaggio sparisce e compaiono dati reali zona/tempo o alert.
+- Validato su `http://localhost:3010` con cliente salvato `STRESS_E_Q2`.
+- Pickup invariato.
+- Popup delivery invariato.
+- `npm run build` passato.
+- Nessun errore console bloccante.
+- `.env` non toccato.
+- Netlify Dev fermato dopo verifica.
+
 ## Transition intents integrati
 
 - `POR_CONFIRMAR -> EN_COCINA`
@@ -339,6 +365,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `3b7fa3f fix move pickup capacity feedback below address`
 - `008782b feat add operational info area for pickup feedback`
 - `6aa65b1 feat show delivery service alert in operational info`
+- `9cfe756 feat show delivery availability loading in operational info`
 
 ## Regole di lavoro con Codex
 
