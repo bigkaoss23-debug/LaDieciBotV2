@@ -708,26 +708,6 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 </div>
               </div>
 
-              {pickupKitchenStatus && (
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  background: pickupKitchenStatus.overloaded ? "rgba(239,68,68,0.10)" : "rgba(34,197,94,0.08)",
-                  border: pickupKitchenStatus.overloaded ? "1.5px solid rgba(239,68,68,0.45)" : "1.5px solid rgba(34,197,94,0.35)",
-                  borderRadius: 9,
-                  padding: "7px 10px",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: pickupKitchenStatus.overloaded ? "#fca5a5" : "#86efac",
-                }}>
-                  <span>{pickupKitchenStatus.overloaded ? "⚠️" : "✅"}</span>
-                  <span style={{ flex: 1 }}>
-                    {pickupKitchenStatus.overloaded
-                      ? <>Horno sobrecargado: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min.{pickupKitchenStatus.suggestedHora ? <> Sugerido: {pickupKitchenStatus.suggestedHora}</> : null}</>
-                      : <>Horno ok: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min</>}
-                  </span>
-                </div>
-              )}
-
               {/* Badge cliente abituale */}
               {clienteAbitual && (
                 <div style={{
@@ -791,6 +771,26 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   </button>
                 );
               })()}
+
+              {pickupKitchenStatus && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: pickupKitchenStatus.overloaded ? "rgba(239,68,68,0.10)" : "rgba(34,197,94,0.08)",
+                  border: pickupKitchenStatus.overloaded ? "1.5px solid rgba(239,68,68,0.45)" : "1.5px solid rgba(34,197,94,0.35)",
+                  borderRadius: 9,
+                  padding: "7px 10px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: pickupKitchenStatus.overloaded ? "#fca5a5" : "#86efac",
+                }}>
+                  <span>{pickupKitchenStatus.overloaded ? "⚠️" : "✅"}</span>
+                  <span style={{ flex: 1 }}>
+                    {pickupKitchenStatus.overloaded
+                      ? <>Horno sobrecargado: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min.{pickupKitchenStatus.suggestedHora ? <> Sugerido: {pickupKitchenStatus.suggestedHora}</> : null}</>
+                      : <>Horno ok: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min</>}
+                  </span>
+                </div>
+              )}
 
               {/* ── Pill zona delivery (solo nel popup) ── */}
               {false && tipoConsegna === "DOMICILIO" && direccion.trim().length >= 5 && (() => {
