@@ -173,6 +173,8 @@ Dettagli:
 - `npm run build` passato con solo warning Node/react-scripts gia' noto.
 - Git status pulito sui file tracciati.
 
+Nota locale: dopo un falso allarme in cui `+5` sembrava non aggiornare l'orario, il problema e' stato ricondotto all'ambiente/proxy locale. Con Netlify Dev e `/api/proxy` correttamente attivi, `SnoozeButton` funziona: cliccando `+5`, l'orario operativo avanza di 5 minuti e `ui_offset_min` viene applicato.
+
 ## Guardia fine servizio delivery
 
 Commit validato:
