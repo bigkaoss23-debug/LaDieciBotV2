@@ -14,6 +14,7 @@ import ModificaOrdenModal from './ModificaOrdenModal';
 import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
 import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isTerminalState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
+import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -605,6 +606,46 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       notify("❌ Errore di rete — riprova", C.rosso);
     }
   };
+  const volverACocina = async (id, metadata = {}) => {
+    const orden = ordenes.find(o => o.id === id);
+    const previousEstado = orden?.estado || ORDER_STATES.LISTO;
+    const intent = buildVolverACocinaTransition(orden, {
+      origin: "TabListos",
+      actor: "operador",
+      ...metadata,
+    });
+    logTransition({
+      ...intent,
+      component: "ServicioPage",
+    });
+
+    let failed = false;
+    await optimisticOrden(id, { estado: ORDER_STATES.EN_COCINA }, async () => {
+      try {
+        const res = await api.updateEstado(id, ORDER_STATES.EN_COCINA);
+        if (!res || res.error || res.success === false) failed = true;
+      } catch(err) {
+        failed = true;
+        console.error("volverACocina:", err);
+      }
+    });
+
+    if (failed) {
+      logRollback({
+        component: "ServicioPage",
+        action: "volverACocina.rollback",
+        orderId: id,
+        from: ORDER_STATES.EN_COCINA,
+        to: previousEstado,
+        metadata: { reason: "api.updateEstado failed" },
+      });
+      setOrdenes(prev => prev.map(o => o.id === id ? { ...o, estado: previousEstado } : o));
+      notify("❌ Error al volver a cocina", C.rosso);
+      return;
+    }
+
+    notify("↩ Pedido devuelto a cocina", C.orange);
+  };
   const modificaOrden = async (o) => {
     setOrdenModifica(null);
     notify("✏️ Ordine aggiornato",C.blu);
@@ -867,7 +908,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     />;
     if(tab==="manual") return <TabManual ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds}/>;
     if(tab==="banco")  return <TabBanco  ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds}/>;
-    if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} loadingIds={loadingIds}
+    if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} loadingIds={loadingIds}
       vipIds={vipIds}
       waMsgs={waMsgs}
       onCambiaPago={async (id, nuovoMetodo) => {
