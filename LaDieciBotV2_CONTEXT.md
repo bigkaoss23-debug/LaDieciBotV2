@@ -256,6 +256,7 @@ Controlli tecnici:
 Commit validato:
 
 - `2be997b feat align entregas with delivery semantic states`
+- `856de02 fix clarify operator salida action`
 
 Flusso operativo:
 
@@ -275,7 +276,7 @@ Nota UI:
 
 - L'app deve restare in spagnolo.
 - Non introdurre label italiane nella UI.
-- Termini corretti usati: `Entregado`, `Salgo`, `Reparto`, `Horno`.
+- Termini corretti usati: `Entregado`, `Registrar salida`, `Reparto`, `Horno`.
 
 Modifiche introdotte:
 
@@ -290,19 +291,28 @@ Modifiche introdotte:
 - Badge `Entregas` in `ServicioPage` usa la stessa semantica della lista visibile.
 - `RITIRO + LISTO` non appare in `Entregas`.
 - `RETIRADO` non appare nella lista attiva, ma resta nel riepilogo `Entregados esta noche`.
+- Il tab Entregas resta anche pannello operatore di supervisione/override.
+- Se il repartidor dimentica di registrare la salida o ha problemi tecnici, l'operatore puo' registrarla manualmente.
+- In `TabEntregas.jsx`, il bottone visibile e' stato cambiato:
+  - da `⚠️ Salgo`
+  - a `⚠️ Registrar salida`
+- Title aggiornato:
+  - `Registrar manualmente la salida del repartidor`
+- `✓ Entregado` e' rimasto invariato.
+- Nessuna logica, handler, API, backend o transizione cambiata.
 
 Validazione:
 
 - `DOMICILIO + EN_COCINA`: OK, non appare in Entregas; resta contato in Cocina.
 - `DOMICILIO + LISTO`: OK, appare in Entregas, conta nel badge, bottone `🛵` presente.
-- `DOMICILIO + EN_ENTREGA`: OK, appare in Entregas, conta nel badge, bottoni `⚠️ Salgo` se manca salida e `✓ Entregado` presenti.
+- `DOMICILIO + EN_ENTREGA`: OK, appare in Entregas, conta nel badge, bottoni `⚠️ Registrar salida` se manca salida e `✓ Entregado` presenti.
 - `RITIRO + LISTO`: OK, non appare e non conta nel badge Entregas.
 - `RETIRADO`: OK, non appare nella lista attiva; resta solo nel riepilogo `Entregados esta noche`.
 - Controllo lingua: OK, nessuna nuova label italiana visibile.
 - `npm run build`: OK.
 - Nessun React error overlay.
 - API `POST /api/proxy`: OK.
-- Ordini test `#001`-`#005` eliminati via API.
+- Ordini test eliminati via API.
 - `.env` non toccato.
 - Git pulito sui file tracciati.
 
@@ -634,6 +644,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `d31098b fix mirror horno reparto header layout`
 - `200464a feat add delivery semantic state helpers`
 - `2be997b feat align entregas with delivery semantic states`
+- `856de02 fix clarify operator salida action`
 
 ## Regole di lavoro con Codex
 

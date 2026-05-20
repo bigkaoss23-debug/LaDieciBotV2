@@ -592,6 +592,7 @@ Commit collegati:
 
 - `200464a feat add delivery semantic state helpers`
 - `2be997b feat align entregas with delivery semantic states`
+- `856de02 fix clarify operator salida action`
 
 Flusso operativo:
 
@@ -611,7 +612,7 @@ Nota UI:
 
 - L'app deve restare in spagnolo.
 - Non introdurre label italiane nella UI.
-- Termini corretti usati: `Entregado`, `Salgo`, `Reparto`, `Horno`.
+- Termini corretti usati: `Entregado`, `Registrar salida`, `Reparto`, `Horno`.
 
 ### Caso 1 — DOMICILIO + EN_COCINA
 
@@ -636,7 +637,7 @@ Risultato: `VALIDATED`
 - Appare in `Entregas`.
 - Conta nel badge `Entregas`.
 - Bottoni esistenti presenti:
-  - `⚠️ Salgo` se manca salida.
+  - `⚠️ Registrar salida` se manca salida.
   - `✓ Entregado`.
 
 ### Caso 4 — RITIRO + LISTO
@@ -662,6 +663,19 @@ Controlli tecnici:
 - Ordini test `#001`-`#005` eliminati via API.
 - `.env` non toccato.
 - Git pulito sui file tracciati.
+
+Nota override operatore:
+
+- Il repartidor normalmente registra la partenza dalla sua pagina.
+- `TabEntregas` resta pannello operatore di supervisione/override.
+- Se il repartidor dimentica la salida o ha problemi tecnici, l'operatore puo' registrarla manualmente.
+- Bottone visibile in `TabEntregas.jsx`:
+  - prima: `⚠️ Salgo`
+  - ora: `⚠️ Registrar salida`
+- Title:
+  - `Registrar manualmente la salida del repartidor`
+- `✓ Entregado` resta invariato.
+- Nessuna logica, handler, API, backend o transizione cambiata.
 
 ## Tabella stato test
 
