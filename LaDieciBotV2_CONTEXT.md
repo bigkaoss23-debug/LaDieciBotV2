@@ -175,6 +175,54 @@ Dettagli:
 
 Nota locale: dopo un falso allarme in cui `+5` sembrava non aggiornare l'orario, il problema e' stato ricondotto all'ambiente/proxy locale. Con Netlify Dev e `/api/proxy` correttamente attivi, `SnoozeButton` funziona: cliccando `+5`, l'orario operativo avanza di 5 minuti e `ui_offset_min` viene applicato.
 
+## Header servizio: indicatore Reparto
+
+Commit validato:
+
+- `1ac3fc1 feat show reparto load in service header`
+
+Contesto:
+
+- Aggiunta nella header servizio una barra/indicatore `🛵 Reparto`.
+- La header ora mostra:
+  - sinistra: `🔥 Horno`
+  - centro: `live · BASIC`
+  - destra: `🛵 Reparto`
+- Target UX principale: iPad/tablet e desktop.
+- Telefono solo fallback compatto.
+
+Logica:
+
+- `repartoOffsetMax` viene calcolato localmente in `ladieci-app33/src/components/ServicioPage.jsx`.
+- Usa il massimo `ui_offset_min` tra ordini `DOMICILIO` attivi.
+- Esclude stati terminali tramite helper esistente `isTerminalState`.
+- Stati terminali esclusi: `RETIRADO`, `COMPLETATO`, `CHIUSO_FORZATO`.
+- Ordini non-delivery, tipo `RITIRO`, non influenzano la barra.
+
+Valori UI:
+
+- `0` / nessun offset -> `🛵 Reparto OK`
+- `5` -> `🛵 Reparto +5 min`
+- `10` -> `🛵 Reparto +10 min`
+- `15` -> `🛵 Reparto +15 min`
+- `20` -> `🛵 Reparto +20 min`
+
+Validazione manuale:
+
+- Funzionale OK: `OK`, `+5`, `+10`, `+15`, `+20` mostrati correttamente.
+- Piu' delivery attivi OK: con `+5`, `+15`, `0`, la header mostra il massimo `+15`.
+- Stati terminali OK: delivery `RETIRADO` con `+20` non influenza la barra.
+- Non-delivery OK: ordine `RITIRO` con `+20` non influenza `Reparto`.
+- Layout iPad/desktop OK: `Horno`, `live · BASIC`, `Reparto` leggibili; header non cresce troppo.
+- Nessun React error overlay.
+- Nessun errore console bloccante.
+- API `POST /api/proxy` `200` durante cambi offset e pulizia.
+- Ordini test temporanei `#001`-`#005` creati e poi eliminati via API.
+- Nessun file modificato durante il test.
+- `.env` non toccato.
+- Git status pulito sui file tracciati.
+- Netlify Dev fermato dopo il test.
+
 ## Guardia fine servizio delivery
 
 Commit validato:
@@ -496,6 +544,7 @@ Core orders + delivery telemetry base: VALIDATED
 - `6aa65b1 feat show delivery service alert in operational info`
 - `9cfe756 feat show delivery availability loading in operational info`
 - `ff1c1c4 feat show snooze max offset warning`
+- `1ac3fc1 feat show reparto load in service header`
 
 ## Regole di lavoro con Codex
 
