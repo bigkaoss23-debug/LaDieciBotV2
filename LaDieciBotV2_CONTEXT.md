@@ -366,6 +366,65 @@ Migrazione preparata ma NON applicata:
   4. salvare i metadata `listo_origin/listo_actor/listo_at` quando stato passa a `LISTO`
   5. validare che dopo refresh i campi persistano
 
+## Operational checklist — Apply LISTO audit migration
+
+Checklist futura per applicare in modo sicuro la migrazione `listo_audit_fields`.
+
+Nota critica: questa checklist e' solo documentazione. Non applicare nessuna migrazione, non collegarsi a Supabase, non toccare DB/live/production senza conferma esplicita.
+
+1. Confermare esplicitamente il DB target
+   - staging/dev oppure production
+   - verificare URL/progetto Supabase corretto
+   - non usare mai credenziali `.env` senza controllo manuale
+
+2. Backup / safety
+   - fare export o snapshot prima della migrazione
+   - verificare accesso rollback
+   - annotare timestamp e ambiente
+
+3. Applicare migrazione SQL
+   - usare il file `ladieci-bot/migrations/2026-05-20_add_listo_audit_fields.sql`
+   - verificare che usa `ADD COLUMN IF NOT EXISTS`
+   - non modificare dati esistenti
+
+4. Verificare colonne
+   - controllare che `ordenes` abbia:
+     - `listo_origin`
+     - `listo_actor`
+     - `listo_at`
+   - verificare che ordini esistenti restino validi con valori `NULL`
+
+5. Collegare backend in step separato
+   - whitelist `listo_origin/listo_actor/listo_at`
+   - `cambiaStato()` salva i campi solo quando nuovo stato e' `LISTO`
+   - non alterare altri stati
+
+6. Collegare frontend in step separato
+   - `api.updateEstado` accetta metadata opzionali
+   - `setListo` invia metadata persistenti gia' usati in telemetry
+   - nessuna UI visibile cambiata in questa fase
+
+7. Test persistenza
+   - creare ordine `EN_COCINA`
+   - premere `LISTO` da `TabCocina`
+   - verificare DB:
+     - `listo_origin = TabCocina`
+     - `listo_actor = cocina`
+     - `listo_at` valorizzato
+   - ripetere da `PanelCocina`
+   - refresh pagina e verificare che i campi restino
+
+8. Test regressione
+   - `EN_COCINA -> LISTO` funziona
+   - Entregas riceve ordine `LISTO`
+   - Cocina lo rimuove
+   - nessun errore API
+   - `.env` non committato
+
+9. Nota futura
+   - questi campi sono audit minimo dell'ultimo `LISTO`
+   - per audit completo servira' tabella eventi ordine tipo `order_events`
+
 ## Guardia fine servizio delivery
 
 Commit validato:
