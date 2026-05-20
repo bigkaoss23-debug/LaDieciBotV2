@@ -596,6 +596,9 @@ Commit collegati:
 - `8873c40 fix confirm operator entregado action`
 - `e5514f1 feat track listo action origin in telemetry`
 - `c2968f4 db add listo audit fields migration`
+- `aca870a feat allow listo rollback to cocina`
+- `cf81340 feat add volver a cocina handler`
+- `6884277 feat add volver a cocina action in listos`
 
 Flusso operativo:
 
@@ -734,6 +737,97 @@ Migrazione audit `LISTO` preparata ma NON applicata:
   4. salvare `listo_origin/listo_actor/listo_at` quando stato passa a `LISTO`
   5. validare che dopo refresh i campi persistano
 
+## Listos — Rollback `LISTO -> EN_COCINA`
+
+Commit collegati:
+
+- `aca870a feat allow listo rollback to cocina`
+- `cf81340 feat add volver a cocina handler`
+- `6884277 feat add volver a cocina action in listos`
+
+Contesto operativo:
+
+- Se un ordine viene marcato `LISTO` per errore dalla cucina/pizzeria, l'operatore deve poterlo riportare in cucina.
+- Questa azione appartiene alla pagina/tab `Listos`, NON a `Entregas`.
+- `Entregas` resta dedicata al flusso reparto/delivery.
+- `Listos` e' la vista generale degli ordini usciti dalla cucina.
+
+Flusso validato:
+
+```text
+LISTO -> EN_COCINA
+```
+
+Core/state machine:
+
+- Transizione `LISTO -> EN_COCINA` resa valida.
+- Helper aggiunto:
+  - `buildVolverACocinaTransition(order, metadata = {})`
+- Telemetry:
+  - action `volverACocina`
+  - from `LISTO`
+  - to `EN_COCINA`
+  - metadata.reason `manual_operator_rollback`
+
+UI:
+
+- Bottone in `TabListos`:
+  - `↩ Volver a cocina`
+- Visibile solo su ordini `LISTO`.
+- Non visibile su `EN_ENTREGA`.
+- Non visibile su `RETIRADO`.
+- Confirm:
+  - `¿Volver el pedido a cocina? Esta acción quitará el pedido de Listos y lo devolverá a Cocina.`
+
+Comportamento:
+
+- Se annulla: guardia a codice prima dell'handler, nessuna API e nessun cambio stato.
+- Se conferma:
+  - chiama `onVolverACocina(o.id, { origin: "TabListos", actor: "operador", reason: "manual_operator_rollback" })`
+  - stato torna a `EN_COCINA`
+  - sparisce da `Listos`
+  - riappare in `Cocina`
+  - se era delivery `LISTO`, sparisce anche da `Entregas`
+
+### Caso rollback 1 — LISTO generico
+
+Risultato: `VALIDATED`
+
+- Bottone `↩ Volver a cocina` visibile.
+- Confirm OK: ordine passato a `EN_COCINA`.
+- Sparisce da `Listos`.
+- Riappare in `Cocina`.
+
+### Caso rollback 2 — Delivery LISTO
+
+Risultato: `VALIDATED`
+
+- Bottone `↩ Volver a cocina` visibile.
+- Confirm OK: ordine passato a `EN_COCINA`.
+- Sparisce da `Listos`.
+- Sparisce anche da lista/badge `Entregas`.
+
+### Caso rollback 3 — EN_ENTREGA
+
+Risultato: `VALIDATED`
+
+- Bottone `↩ Volver a cocina` non visibile.
+
+### Caso rollback 4 — RETIRADO
+
+Risultato: `VALIDATED`
+
+- Bottone `↩ Volver a cocina` non visibile.
+
+Controlli tecnici:
+
+- `npm run build`: OK.
+- Cancel: guardia presente a codice; non validato al 100% via UI per limite confirm nativo nel browser integrato.
+- Nessuna label italiana aggiunta.
+- Ordini test eliminati via API.
+- `.env` non toccato.
+- Git pulito sui file tracciati.
+
 ## Tabella stato test
 
 | Test | Scenario | Stato | Ultimo ordine | Esito atteso | Note |
@@ -750,6 +844,7 @@ Migrazione audit `LISTO` preparata ma NON applicata:
 | Entregas | Semantica delivery/reparto | Validato | - | Solo `LISTO` e `EN_ENTREGA` delivery visibili | `EN_COCINA` resta in Cocina |
 | Entregas | Confirm `✓ Entregado` | Validato con nota | ordine test | Confirm prima di `RETIRADO` | Cancel validato a codice |
 | Cocina | Origin telemetry `✅ LISTO` | Validato con nota | ordine test | Metadata origin/actor in intent LISTO | Export browser non leggibile da automazione |
+| Listos | Rollback `LISTO -> EN_COCINA` | Validato con nota | ordine test | `↩ Volver a cocina` riporta ordine in Cocina | Cancel validato a codice |
 | DB | Migrazione audit `LISTO` | Preparata non applicata | - | Campi `listo_*` disponibili dopo migration | Nessun DB toccato |
 
 ## Criteri generali di validazione
