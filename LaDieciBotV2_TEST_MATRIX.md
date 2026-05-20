@@ -593,6 +593,7 @@ Commit collegati:
 - `200464a feat add delivery semantic state helpers`
 - `2be997b feat align entregas with delivery semantic states`
 - `856de02 fix clarify operator salida action`
+- `8873c40 fix confirm operator entregado action`
 
 Flusso operativo:
 
@@ -639,6 +640,15 @@ Risultato: `VALIDATED`
 - Bottoni esistenti presenti:
   - `⚠️ Registrar salida` se manca salida.
   - `✓ Entregado`.
+- `✓ Entregado` e' azione terminale operatore: porta l'ordine a `RETIRADO` e puo' chiudere il giro se e' l'ultimo ordine.
+- Prima di chiamare `onForzaEntregado`, richiede confirm nativo:
+  - `¿Confirmar entrega? Esta acción cerrará el pedido como entregado.`
+- Se il confirm torna `false`, il codice fa `return` e non chiama l'handler.
+- Se conferma, il comportamento resta invariato.
+- Validazione:
+  - Build `npm run build`: OK.
+  - Confirm OK: ordine test passato a `RETIRADO` e finito in `Entregados esta noche`.
+  - Cancel: guardia validata a codice; non validata manualmente al 100% per limite dell'automazione sul confirm nativo.
 
 ### Caso 4 — RITIRO + LISTO
 
@@ -674,8 +684,8 @@ Nota override operatore:
   - ora: `⚠️ Registrar salida`
 - Title:
   - `Registrar manualmente la salida del repartidor`
-- `✓ Entregado` resta invariato.
-- Nessuna logica, handler, API, backend o transizione cambiata.
+- `✓ Entregado` ora richiede conferma prima dell'azione terminale.
+- Nessuna logica, API, backend o transizione cambiata.
 
 ## Tabella stato test
 
@@ -691,6 +701,7 @@ Nota override operatore:
 | 8 | Transizione non valida | Validato in isolation | `TEST-INVALID` | `invalid-transition: 1` | Nessuna UI/API/DB |
 | Header | Horno/Reparto mirror | Validato | - | Header simmetrica e carichi coerenti | Horno e Reparto validati |
 | Entregas | Semantica delivery/reparto | Validato | - | Solo `LISTO` e `EN_ENTREGA` delivery visibili | `EN_COCINA` resta in Cocina |
+| Entregas | Confirm `✓ Entregado` | Validato con nota | ordine test | Confirm prima di `RETIRADO` | Cancel validato a codice |
 
 ## Criteri generali di validazione
 

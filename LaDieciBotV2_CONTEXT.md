@@ -257,6 +257,7 @@ Commit validato:
 
 - `2be997b feat align entregas with delivery semantic states`
 - `856de02 fix clarify operator salida action`
+- `8873c40 fix confirm operator entregado action`
 
 Flusso operativo:
 
@@ -298,8 +299,12 @@ Modifiche introdotte:
   - a `⚠️ Registrar salida`
 - Title aggiornato:
   - `Registrar manualmente la salida del repartidor`
-- `✓ Entregado` e' rimasto invariato.
-- Nessuna logica, handler, API, backend o transizione cambiata.
+- `✓ Entregado` e' un'azione terminale operatore: porta l'ordine a `RETIRADO` e puo' chiudere il giro se e' l'ultimo ordine.
+- Per evitare click accidentali, il click su `✓ Entregado` passa prima da confirm nativo:
+  - `¿Confirmar entrega? Esta acción cerrará el pedido como entregado.`
+- Se il confirm torna `false`, il codice fa `return` prima di chiamare `onForzaEntregado`.
+- Se conferma, comportamento invariato.
+- Nessuna logica, API, backend o transizione cambiata.
 
 Validazione:
 
@@ -308,6 +313,8 @@ Validazione:
 - `DOMICILIO + EN_ENTREGA`: OK, appare in Entregas, conta nel badge, bottoni `⚠️ Registrar salida` se manca salida e `✓ Entregado` presenti.
 - `RITIRO + LISTO`: OK, non appare e non conta nel badge Entregas.
 - `RETIRADO`: OK, non appare nella lista attiva; resta solo nel riepilogo `Entregados esta noche`.
+- Confirm `✓ Entregado`: OK, ordine test passato a `RETIRADO` e finito in `Entregados esta noche`.
+- Cancel `✓ Entregado`: guardia validata a codice; non validata manualmente al 100% per limite dell'automazione sul confirm nativo.
 - Controllo lingua: OK, nessuna nuova label italiana visibile.
 - `npm run build`: OK.
 - Nessun React error overlay.
