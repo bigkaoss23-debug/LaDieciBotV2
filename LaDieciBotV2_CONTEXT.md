@@ -251,6 +251,61 @@ Controlli tecnici:
 - Git pulito sui file tracciati.
 - `.env` non toccato.
 
+## Entregas: semantica delivery/reparto
+
+Commit validato:
+
+- `2be997b feat align entregas with delivery semantic states`
+
+Flusso operativo:
+
+```text
+POR_CONFIRMAR -> EN_COCINA -> LISTO -> EN_ENTREGA -> RETIRADO
+```
+
+Semantica:
+
+- `POR_CONFIRMAR` = da confermare.
+- `EN_COCINA` = cucina sta lavorando.
+- `LISTO + DOMICILIO` = ordine pronto, in attesa del repartidor.
+- `EN_ENTREGA + DOMICILIO` = repartidor/en camino.
+- `RETIRADO` = ciclo chiuso / consegnato.
+
+Nota UI:
+
+- L'app deve restare in spagnolo.
+- Non introdurre label italiane nella UI.
+- Termini corretti usati: `Entregado`, `Salgo`, `Reparto`, `Horno`.
+
+Modifiche introdotte:
+
+- Aggiunti/exportati helper semantici delivery:
+  - `isWaitingDriverState(order)`
+  - `isDriverOnTheWayState(order)`
+  - `isDeliveryActiveState(order)`
+- `TabEntregas` ora mostra solo:
+  - `DOMICILIO + LISTO`
+  - `DOMICILIO + EN_ENTREGA`
+- `DOMICILIO + EN_COCINA` non appare piu' in `Entregas`.
+- Badge `Entregas` in `ServicioPage` usa la stessa semantica della lista visibile.
+- `RITIRO + LISTO` non appare in `Entregas`.
+- `RETIRADO` non appare nella lista attiva, ma resta nel riepilogo `Entregados esta noche`.
+
+Validazione:
+
+- `DOMICILIO + EN_COCINA`: OK, non appare in Entregas; resta contato in Cocina.
+- `DOMICILIO + LISTO`: OK, appare in Entregas, conta nel badge, bottone `🛵` presente.
+- `DOMICILIO + EN_ENTREGA`: OK, appare in Entregas, conta nel badge, bottoni `⚠️ Salgo` se manca salida e `✓ Entregado` presenti.
+- `RITIRO + LISTO`: OK, non appare e non conta nel badge Entregas.
+- `RETIRADO`: OK, non appare nella lista attiva; resta solo nel riepilogo `Entregados esta noche`.
+- Controllo lingua: OK, nessuna nuova label italiana visibile.
+- `npm run build`: OK.
+- Nessun React error overlay.
+- API `POST /api/proxy`: OK.
+- Ordini test `#001`-`#005` eliminati via API.
+- `.env` non toccato.
+- Git pulito sui file tracciati.
+
 ## Guardia fine servizio delivery
 
 Commit validato:
@@ -577,6 +632,8 @@ Core orders + delivery telemetry base: VALIDATED
 - `41ef0cd fix spanish horno label in service header`
 - `1ac3fc1 feat show reparto load in service header`
 - `d31098b fix mirror horno reparto header layout`
+- `200464a feat add delivery semantic state helpers`
+- `2be997b feat align entregas with delivery semantic states`
 
 ## Regole di lavoro con Codex
 

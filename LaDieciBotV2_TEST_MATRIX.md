@@ -586,6 +586,83 @@ Controlli tecnici:
 - Git pulito sui file tracciati.
 - `.env` non toccato.
 
+## Entregas — Semantica delivery/reparto
+
+Commit collegati:
+
+- `200464a feat add delivery semantic state helpers`
+- `2be997b feat align entregas with delivery semantic states`
+
+Flusso operativo:
+
+```text
+POR_CONFIRMAR -> EN_COCINA -> LISTO -> EN_ENTREGA -> RETIRADO
+```
+
+Semantica validata:
+
+- `POR_CONFIRMAR` = da confermare.
+- `EN_COCINA` = cucina sta lavorando.
+- `LISTO + DOMICILIO` = ordine pronto, in attesa del repartidor.
+- `EN_ENTREGA + DOMICILIO` = repartidor/en camino.
+- `RETIRADO` = ciclo chiuso / consegnato.
+
+Nota UI:
+
+- L'app deve restare in spagnolo.
+- Non introdurre label italiane nella UI.
+- Termini corretti usati: `Entregado`, `Salgo`, `Reparto`, `Horno`.
+
+### Caso 1 — DOMICILIO + EN_COCINA
+
+Risultato: `VALIDATED`
+
+- Non appare in `Entregas`.
+- Non conta nel badge `Entregas`.
+- Resta contato in `Cocina`.
+
+### Caso 2 — DOMICILIO + LISTO
+
+Risultato: `VALIDATED`
+
+- Appare in `Entregas`.
+- Conta nel badge `Entregas`.
+- Bottone `🛵` presente.
+
+### Caso 3 — DOMICILIO + EN_ENTREGA
+
+Risultato: `VALIDATED`
+
+- Appare in `Entregas`.
+- Conta nel badge `Entregas`.
+- Bottoni esistenti presenti:
+  - `⚠️ Salgo` se manca salida.
+  - `✓ Entregado`.
+
+### Caso 4 — RITIRO + LISTO
+
+Risultato: `VALIDATED`
+
+- Non appare in `Entregas`.
+- Non conta nel badge `Entregas`.
+
+### Caso 5 — RETIRADO
+
+Risultato: `VALIDATED`
+
+- Non appare nella lista attiva `Entregas`.
+- Resta solo nel riepilogo `Entregados esta noche`.
+
+Controlli tecnici:
+
+- Controllo lingua: OK, nessuna nuova label italiana visibile.
+- `npm run build`: OK.
+- Nessun React error overlay.
+- API `POST /api/proxy`: OK.
+- Ordini test `#001`-`#005` eliminati via API.
+- `.env` non toccato.
+- Git pulito sui file tracciati.
+
 ## Tabella stato test
 
 | Test | Scenario | Stato | Ultimo ordine | Esito atteso | Note |
@@ -599,6 +676,7 @@ Controlli tecnici:
 | 7 | Cambio pagamento | Validato | `#015` | `countsByTransition` invariato | `payment-update: 5`, `legacyBypassCount: 0` |
 | 8 | Transizione non valida | Validato in isolation | `TEST-INVALID` | `invalid-transition: 1` | Nessuna UI/API/DB |
 | Header | Horno/Reparto mirror | Validato | - | Header simmetrica e carichi coerenti | Horno e Reparto validati |
+| Entregas | Semantica delivery/reparto | Validato | - | Solo `LISTO` e `EN_ENTREGA` delivery visibili | `EN_COCINA` resta in Cocina |
 
 ## Criteri generali di validazione
 
