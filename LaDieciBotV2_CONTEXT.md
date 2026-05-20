@@ -259,6 +259,7 @@ Commit validato:
 - `856de02 fix clarify operator salida action`
 - `8873c40 fix confirm operator entregado action`
 - `e5514f1 feat track listo action origin in telemetry`
+- `c2968f4 db add listo audit fields migration`
 
 Flusso operativo:
 
@@ -340,6 +341,30 @@ Nota futura: per sapere "chi ha premuto LISTO" anche dopo refresh/giornata o in 
 
 - campi ordine tipo `listo_origin`, `listo_actor`, `listo_at`
 - oppure tabella eventi ordine/audit log.
+
+Migrazione preparata ma NON applicata:
+
+- File: `ladieci-bot/migrations/2026-05-20_add_listo_audit_fields.sql`
+- Campi previsti su `ordenes`:
+  - `listo_origin TEXT`
+  - `listo_actor TEXT`
+  - `listo_at TIMESTAMPTZ`
+- Scopo:
+  - audit minimo dell'ultimo evento `LISTO` dell'ordine
+  - sapere se `LISTO` arriva da `TabCocina`, `PanelCocina`, ecc.
+  - non sostituisce una futura tabella audit/eventi completa
+- Nota critica:
+  - migrazione NON applicata
+  - nessun collegamento Supabase
+  - nessun DB live/production toccato
+  - backend/frontend/API non ancora collegati a questi campi
+  - `.env` non toccato
+- Prima di usare questi campi serve:
+  1. applicare la migrazione sul DB giusto con conferma esplicita
+  2. aggiornare backend whitelist/update
+  3. aggiornare frontend `api.updateEstado`
+  4. salvare i metadata `listo_origin/listo_actor/listo_at` quando stato passa a `LISTO`
+  5. validare che dopo refresh i campi persistano
 
 ## Guardia fine servizio delivery
 

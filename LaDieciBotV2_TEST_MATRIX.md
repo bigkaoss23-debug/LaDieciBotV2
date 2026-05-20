@@ -595,6 +595,7 @@ Commit collegati:
 - `856de02 fix clarify operator salida action`
 - `8873c40 fix confirm operator entregado action`
 - `e5514f1 feat track listo action origin in telemetry`
+- `c2968f4 db add listo audit fields migration`
 
 Flusso operativo:
 
@@ -709,6 +710,30 @@ Nota audit futura:
   - campi ordine tipo `listo_origin`, `listo_actor`, `listo_at`
   - oppure tabella eventi ordine/audit log.
 
+Migrazione audit `LISTO` preparata ma NON applicata:
+
+- File: `ladieci-bot/migrations/2026-05-20_add_listo_audit_fields.sql`
+- Campi previsti su `ordenes`:
+  - `listo_origin TEXT`
+  - `listo_actor TEXT`
+  - `listo_at TIMESTAMPTZ`
+- Scopo:
+  - audit minimo dell'ultimo evento `LISTO` dell'ordine
+  - distinguere se `LISTO` arriva da `TabCocina`, `PanelCocina`, ecc.
+  - non sostituire una futura tabella audit/eventi completa
+- Stato:
+  - migrazione NON applicata
+  - nessun collegamento Supabase
+  - nessun DB live/production toccato
+  - backend/frontend/API non ancora collegati a questi campi
+  - `.env` non toccato
+- Prima di validare persistenza reale:
+  1. applicare la migrazione sul DB giusto con conferma esplicita
+  2. aggiornare backend whitelist/update
+  3. aggiornare frontend `api.updateEstado`
+  4. salvare `listo_origin/listo_actor/listo_at` quando stato passa a `LISTO`
+  5. validare che dopo refresh i campi persistano
+
 ## Tabella stato test
 
 | Test | Scenario | Stato | Ultimo ordine | Esito atteso | Note |
@@ -725,6 +750,7 @@ Nota audit futura:
 | Entregas | Semantica delivery/reparto | Validato | - | Solo `LISTO` e `EN_ENTREGA` delivery visibili | `EN_COCINA` resta in Cocina |
 | Entregas | Confirm `✓ Entregado` | Validato con nota | ordine test | Confirm prima di `RETIRADO` | Cancel validato a codice |
 | Cocina | Origin telemetry `✅ LISTO` | Validato con nota | ordine test | Metadata origin/actor in intent LISTO | Export browser non leggibile da automazione |
+| DB | Migrazione audit `LISTO` | Preparata non applicata | - | Campi `listo_*` disponibili dopo migration | Nessun DB toccato |
 
 ## Criteri generali di validazione
 
