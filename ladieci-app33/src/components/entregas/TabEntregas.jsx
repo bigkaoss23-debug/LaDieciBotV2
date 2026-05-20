@@ -137,7 +137,10 @@ const ZonaOrderRow = ({ o, zona, onSendRepartidor, loadingId, driverStato, onFor
 
       {/* Override: marcar entregado manualmente */}
       {isEnEntrega && (
-        <button disabled={isLoading} onClick={() => onForzaEntregado && onForzaEntregado(o)}
+        <button disabled={isLoading} onClick={() => {
+          if (!window.confirm("¿Confirmar entrega? Esta acción cerrará el pedido como entregado.")) return;
+          onForzaEntregado && onForzaEntregado(o);
+        }}
           style={{
             padding: "5px 10px",
             background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.3)",
