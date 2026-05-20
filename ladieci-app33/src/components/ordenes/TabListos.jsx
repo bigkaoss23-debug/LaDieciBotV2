@@ -15,7 +15,7 @@ const isPizzaItem = (it) => {
   return true;
 };
 
-const TabListos = ({ordenes,onRetirado,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds}) => {
+const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds}) => {
   const [pendingPago,      setPendingPago]      = useState(null);
   const [filterPago,       setFilterPago]       = useState("todos");
   const [pendingCambioPago, setPendingCambioPago] = useState(null); // id ordine in modifica
@@ -27,6 +27,14 @@ const TabListos = ({ordenes,onRetirado,loadingIds=new Set(),waMsgs=[],onViewChat
   const getDescuentoFor = (id) => descuentoPago[id] || { tipo: null, valor: 0 };
   const handleRetirado = (o, metodo, descuento) => {
     onRetirado(o.id, metodo, descuento);
+  };
+  const handleVolverACocina = (o) => {
+    if (!window.confirm("¿Volver el pedido a cocina? Esta acción quitará el pedido de Listos y lo devolverá a Cocina.")) return;
+    onVolverACocina && onVolverACocina(o.id, {
+      origin: "TabListos",
+      actor: "operador",
+      reason: "manual_operator_rollback",
+    });
   };
 
   const listos    = ordenes.filter(o=>o.estado===ORDER_STATES.LISTO || o.estado===ORDER_STATES.EN_ENTREGA);
@@ -212,17 +220,43 @@ const TabListos = ({ordenes,onRetirado,loadingIds=new Set(),waMsgs=[],onViewChat
                     }}>
                       Gestión en página driver
                     </div>
+                    {o.estado === ORDER_STATES.LISTO && onVolverACocina && (
+                      <button
+                        onClick={e=>{e.stopPropagation();handleVolverACocina(o);}}
+                        style={{
+                          background:"rgba(255,255,255,0.10)", color:"#fff",
+                          border:"1.5px solid rgba(255,255,255,0.22)",
+                          borderRadius:10, padding:"8px 12px",
+                          fontWeight:800, fontSize:12, cursor:"pointer",
+                        }}>
+                        ↩ Volver a cocina
+                      </button>
+                    )}
                   </div>
                 ) : o.ya_pagado ? (
-                  <button
-                    onClick={e=>{e.stopPropagation();handleRetirado(o, o.metodo_pago);}}
-                    style={{
-                      background:C.verde,color:"#fff",border:"none",
-                      borderRadius:11,padding:"13px 20px",fontWeight:800,fontSize:14,
-                      boxShadow:`0 4px 14px ${C.verde}44`,flexShrink:0,cursor:"pointer",
-                    }}>
-                    🛍 Retirado
-                  </button>
+                  <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,alignItems:"stretch"}}>
+                    {o.estado === ORDER_STATES.LISTO && onVolverACocina && (
+                      <button
+                        onClick={e=>{e.stopPropagation();handleVolverACocina(o);}}
+                        style={{
+                          background:"rgba(255,255,255,0.10)", color:"#fff",
+                          border:"1.5px solid rgba(255,255,255,0.22)",
+                          borderRadius:10, padding:"8px 12px",
+                          fontWeight:800, fontSize:12, cursor:"pointer",
+                        }}>
+                        ↩ Volver a cocina
+                      </button>
+                    )}
+                    <button
+                      onClick={e=>{e.stopPropagation();handleRetirado(o, o.metodo_pago);}}
+                      style={{
+                        background:C.verde,color:"#fff",border:"none",
+                        borderRadius:11,padding:"13px 20px",fontWeight:800,fontSize:14,
+                        boxShadow:`0 4px 14px ${C.verde}44`,cursor:"pointer",
+                      }}>
+                      🛍 Retirado
+                    </button>
+                  </div>
                 ) : pendingPago === o.id ? (
                   (() => {
                     const desc = getDescuentoFor(o.id);
@@ -275,15 +309,29 @@ const TabListos = ({ordenes,onRetirado,loadingIds=new Set(),waMsgs=[],onViewChat
                     );
                   })()
                 ) : (
-                  <button
-                    onClick={e=>{e.stopPropagation();setPendingPago(o.id);}}
-                    style={{
-                      background:C.verde,color:"#fff",border:"none",
-                      borderRadius:11,padding:"13px 20px",fontWeight:800,fontSize:14,
-                      boxShadow:`0 4px 14px ${C.verde}44`,flexShrink:0,cursor:"pointer",
-                    }}>
-                    🛍 Retirado
-                  </button>
+                  <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,alignItems:"stretch"}}>
+                    {o.estado === ORDER_STATES.LISTO && onVolverACocina && (
+                      <button
+                        onClick={e=>{e.stopPropagation();handleVolverACocina(o);}}
+                        style={{
+                          background:"rgba(255,255,255,0.10)", color:"#fff",
+                          border:"1.5px solid rgba(255,255,255,0.22)",
+                          borderRadius:10, padding:"8px 12px",
+                          fontWeight:800, fontSize:12, cursor:"pointer",
+                        }}>
+                        ↩ Volver a cocina
+                      </button>
+                    )}
+                    <button
+                      onClick={e=>{e.stopPropagation();setPendingPago(o.id);}}
+                      style={{
+                        background:C.verde,color:"#fff",border:"none",
+                        borderRadius:11,padding:"13px 20px",fontWeight:800,fontSize:14,
+                        boxShadow:`0 4px 14px ${C.verde}44`,cursor:"pointer",
+                      }}>
+                      🛍 Retirado
+                    </button>
+                  </div>
                 )
               )}
             </div>
