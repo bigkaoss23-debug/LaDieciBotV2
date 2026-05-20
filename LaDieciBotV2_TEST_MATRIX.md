@@ -448,6 +448,144 @@ Risultato atteso:
 
 Nota: non forzare casi rischiosi su dati importanti.
 
+## Header servizio — Horno/Reparto mirror
+
+Commit collegati:
+
+- `2919a55 feat prepare service header status layout`
+- `85852e1 fix prioritize tablet service header layout`
+- `41ef0cd fix spanish horno label in service header`
+- `1ac3fc1 feat show reparto load in service header`
+- `d31098b fix mirror horno reparto header layout`
+- `797e70c docs validate mirrored service header loads`
+
+### Caso 1 — Layout mirror base
+
+Struttura validata:
+
+```text
+🔥 Horno ... -> barra Horno -> live · BASIC -> barra Reparto -> 🛵 Reparto ...
+```
+
+Risultato: `VALIDATED`
+
+Note:
+
+- Horno, live, BASIC, Reparto visibili.
+- Layout simmetrico.
+- iPad/tablet OK.
+- Desktop OK.
+- Telefono sotto 520px solo fallback.
+
+### Caso 2 — Reparto offset
+
+Valori validati:
+
+- `Reparto OK` con offset `0`
+- `Reparto +5 min`
+- `Reparto +10 min`
+- `Reparto +15 min`
+- `Reparto +20 min`
+
+Risultato: `VALIDATED`
+
+### Caso 3 — Reparto massimo tra piu' delivery attivi
+
+Dati validati:
+
+- Delivery attivi con `ui_offset_min`: `+5`, `+15`, `0`
+- Header mostra `Reparto +15 min`
+
+Risultato: `VALIDATED`
+
+### Caso 4 — Reparto ignora terminali
+
+Dati validati:
+
+- Delivery `RETIRADO` con `ui_offset_min +20`
+- Non influenza barra Reparto
+
+Risultato: `VALIDATED`
+
+### Caso 5 — Reparto ignora non-delivery
+
+Dati validati:
+
+- Ordine `RITIRO` con `ui_offset_min +20`
+- Non influenza barra Reparto
+
+Risultato: `VALIDATED`
+
+### Caso 6 — Horno basso carico
+
+Dati validati:
+
+- `Horno 0% Libre`
+- Barra quasi vuota
+
+Risultato: `VALIDATED`
+
+### Caso 7 — Horno medio/alto carico
+
+Dati validati:
+
+- 30 pizze attive -> `Horno 75% Cargado`
+- 40 pizze attive -> `Horno 100% SATURO`
+
+Risultato: `VALIDATED`
+
+### Caso 8 — Horno cambio label
+
+Label validate:
+
+- `Libre`
+- `Cargado`
+- `SATURO`
+
+Risultato: `VALIDATED`
+
+### Caso 9 — Horno ignora terminali
+
+Dati validati:
+
+- Ordini `RETIRADO`, anche con molte pizze.
+- Non lasciano Horno falsamente carico.
+
+Risultato: `VALIDATED`
+
+### Caso 10 — Reparto offset non influenza Horno
+
+Dati validati:
+
+- `ui_offset_min +20` cambia Reparto.
+- Percentuale Horno resta invariata.
+
+Risultato: `VALIDATED`
+
+### Caso 11 — Horno + Reparto combinati
+
+Dati validati:
+
+- `Horno 100% SATURO`
+- `Reparto +20 min`
+- `live · BASIC` resta visibile
+
+Risultato: `VALIDATED`
+
+Problema minore noto:
+
+- Su viewport stretto/browser in-app, `SATURO` puo' essere ellissato come `SATU...`.
+- Non rompe layout.
+- Accettato perche' telefono/viewport stretto e' fallback.
+
+Controlli tecnici:
+
+- Nessun React error overlay.
+- API OK.
+- Ordini test eliminati.
+- Git pulito sui file tracciati.
+- `.env` non toccato.
+
 ## Tabella stato test
 
 | Test | Scenario | Stato | Ultimo ordine | Esito atteso | Note |
@@ -460,6 +598,7 @@ Nota: non forzare casi rischiosi su dati importanti.
 | 6 | Fallback WhatsApp senza `ordenRef` confermato da UI | Da testare | - | creation in `EN_COCINA` | Non e' il flusso naturale del bot |
 | 7 | Cambio pagamento | Validato | `#015` | `countsByTransition` invariato | `payment-update: 5`, `legacyBypassCount: 0` |
 | 8 | Transizione non valida | Validato in isolation | `TEST-INVALID` | `invalid-transition: 1` | Nessuna UI/API/DB |
+| Header | Horno/Reparto mirror | Validato | - | Header simmetrica e carichi coerenti | Horno e Reparto validati |
 
 ## Criteri generali di validazione
 
