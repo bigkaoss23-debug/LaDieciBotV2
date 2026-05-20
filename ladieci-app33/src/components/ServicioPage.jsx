@@ -583,12 +583,13 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     } catch(err) { console.error("waAddicion:", err); notify("❌ Error al añadir", C.rosso); }
   };
 
-  const setListo = async (id) => {
+  const setListo = async (id, metadata = {}) => {
     Suoni.conferma();
     const orden = ordenes.find(o => o.id === id);
     const intent = buildListoTransition(orden, {
       component: "ServicioPage",
       action: "setListo",
+      metadata,
     });
     logTransition(intent);
     try {
@@ -1440,7 +1441,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       {showCocina&&<PanelCocina
         ordenes={ordenes}
         convConfermata={convConfermata}
-        onListo={(id)=>{ setListo(id); }}
+        onListo={(id, metadata)=>{ setListo(id, metadata); }}
         onClose={()=>setShowCocina(false)}
         loadingIds={loadingIds}
         pizzeFatte={pizzeFatteStasera}

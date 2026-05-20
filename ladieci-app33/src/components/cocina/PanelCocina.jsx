@@ -397,7 +397,10 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                   {/* Footer LISTO */}
                   <div style={{padding:"11px 16px 14px",borderTop:`1px solid ${fc.border}44`,background:"#f5f5f5"}}>
                     <button
-                      onClick={()=>{ Suoni.campanellaDieci(); onListo(o.id); }}
+                      onClick={()=>{ Suoni.campanellaDieci(); onListo(o.id, {
+                        origin: "PanelCocina",
+                        actor: "cocina_fullscreen",
+                      }); }}
                       style={{width:"100%",
                         background:"linear-gradient(145deg,#27AE60,#1A7A44)",
                         border:"none",color:"#fff",borderRadius:12,padding:"14px 0",

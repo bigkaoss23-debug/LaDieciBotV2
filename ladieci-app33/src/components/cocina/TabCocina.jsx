@@ -36,7 +36,10 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
     setLocalOffsets(prev => ({ ...prev, [id]: val }));
   };
   const handleListo = (o) => {
-    onListo(o.id);
+    onListo(o.id, {
+      origin: "TabCocina",
+      actor: "cocina",
+    });
   };
 
   useEffect(()=>{
