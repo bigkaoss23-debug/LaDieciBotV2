@@ -118,6 +118,23 @@ export function isDeliveryState(state) {
   return DELIVERY_ORDER_STATES.includes(normalizeOrderState(state));
 }
 
+function isDeliveryOrder(order) {
+  const tipoConsegna = String(order?.tipo_consegna || order?.tipoConsegna || "").trim().toUpperCase();
+  return tipoConsegna === "DOMICILIO";
+}
+
+export function isWaitingDriverState(order) {
+  return isDeliveryOrder(order) && normalizeOrderState(order?.estado) === ORDER_STATES.LISTO;
+}
+
+export function isDriverOnTheWayState(order) {
+  return isDeliveryOrder(order) && normalizeOrderState(order?.estado) === ORDER_STATES.EN_ENTREGA;
+}
+
+export function isDeliveryActiveState(order) {
+  return isDeliveryOrder(order) && !isTerminalState(order?.estado);
+}
+
 export function orderStateRank(state, fallback = 5) {
   const normalized = normalizeOrderState(state);
   return ORDER_STATE_RANK[normalized] ?? fallback;
