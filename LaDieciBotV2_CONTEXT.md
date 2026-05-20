@@ -390,6 +390,18 @@ Flusso:
 LISTO -> EN_COCINA
 ```
 
+Regola operativa validata sul ciclo delivery completo:
+
+- `POR_CONFIRMAR` e' nascosto da `Cocina`, `Listos` ed `Entregas`.
+- `EN_COCINA` appare in `Cocina` ed e' nascosto da `Listos`/`Entregas`.
+- `LISTO + DOMICILIO` appare in `Listos` + `Entregas`.
+- `LISTO` mostra `↩ Volver a cocina`.
+- Il rollback `LISTO -> EN_COCINA` riporta l'ordine in `Cocina` e lo rimuove da `Listos`/`Entregas`.
+- Tornando di nuovo a `LISTO`, il delivery riappare in `Listos` + `Entregas`.
+- `EN_ENTREGA` resta visibile in `Entregas`; `RETIRADO` sparisce dalle liste attive `Listos`/`Entregas`.
+- `RITIRO + LISTO` non appare in `Entregas`, ma puo' usare `↩ Volver a cocina` da `Listos`.
+- `EN_ENTREGA` e `RETIRADO` non mostrano il bottone rollback.
+
 Core/state machine:
 
 - Aggiunta transizione valida `LISTO -> EN_COCINA`.
@@ -440,7 +452,9 @@ Validazione:
 - Delivery `LISTO`: OK, sparito da `Listos` e dal badge/lista `Entregas`.
 - `EN_ENTREGA`: bottone non visibile.
 - `RETIRADO`: bottone non visibile.
+- Ciclo delivery completo con rollback: OK.
 - Cancel: guardia presente a codice; non validato al 100% via UI per limite confirm nativo nel browser integrato.
+  - Runtime corretto: cancel ritorna prima di API/cambio stato.
 - Nessuna label italiana aggiunta.
 - Ordini test eliminati via API.
 - `.env` non toccato.

@@ -758,6 +758,19 @@ Flusso validato:
 LISTO -> EN_COCINA
 ```
 
+Lifecycle delivery completo validato:
+
+- `POR_CONFIRMAR` nascosto da `Cocina`, `Listos` ed `Entregas`.
+- `EN_COCINA` appare in `Cocina` ed e' nascosto da `Listos`/`Entregas`.
+- `LISTO + DOMICILIO` appare in `Listos` + `Entregas`.
+- `LISTO` mostra `↩ Volver a cocina`.
+- Rollback `LISTO -> EN_COCINA`: riappare in `Cocina`, sparisce da `Listos`, sparisce da `Entregas`.
+- Di nuovo `LISTO`: riappare in `Listos` + `Entregas`.
+- `EN_ENTREGA` appare in `Entregas`.
+- `RETIRADO` sparisce dalle liste attive `Listos`/`Entregas`.
+- `RITIRO + LISTO` non appare in `Entregas`, ma puo' usare `↩ Volver a cocina` da `Listos`.
+- `EN_ENTREGA` e `RETIRADO` non mostrano il bottone rollback.
+
 Core/state machine:
 
 - Transizione `LISTO -> EN_COCINA` resa valida.
@@ -819,10 +832,19 @@ Risultato: `VALIDATED`
 
 - Bottone `↩ Volver a cocina` non visibile.
 
+### Caso rollback 5 — Lifecycle delivery completo
+
+Risultato: `VALIDATED`
+
+- `POR_CONFIRMAR -> EN_COCINA -> LISTO -> EN_COCINA -> LISTO -> EN_ENTREGA -> RETIRADO` coerente.
+- Dopo rollback, l'ordine torna in `Cocina` e sparisce da `Listos`/`Entregas`.
+- Dopo nuovo `LISTO`, il delivery riappare in `Listos` + `Entregas`.
+
 Controlli tecnici:
 
 - `npm run build`: OK.
 - Cancel: guardia presente a codice; non validato al 100% via UI per limite confirm nativo nel browser integrato.
+  - Runtime corretto: cancel ritorna prima di API/cambio stato.
 - Nessuna label italiana aggiunta.
 - Ordini test eliminati via API.
 - `.env` non toccato.
