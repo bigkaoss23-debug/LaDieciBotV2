@@ -130,8 +130,8 @@ const ZonaOrderRow = ({ o, zona, onSendRepartidor, loadingId, driverStato, onFor
             borderRadius: 8, color: "#fbbf24", fontWeight: 700, fontSize: 11,
             cursor: "pointer", flexShrink: 0
           }}
-          title="El driver salió sin registrar la salida">
-          ⚠️ Salgo
+          title="Registrar manualmente la salida del repartidor">
+          ⚠️ Registrar salida
         </button>
       )}
 
