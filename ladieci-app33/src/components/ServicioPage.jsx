@@ -13,7 +13,7 @@ import NuevoPedidoModal from './NuevoPedidoModal';
 import ModificaOrdenModal from './ModificaOrdenModal';
 import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
-import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isTerminalState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
+import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isTerminalState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -692,7 +692,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   const bancoN  = useMemo(() => ordenes.filter(o=>o.canal==="BANCO" &&(o.estado===ORDER_STATES.POR_CONFIRMAR||o.estado===ORDER_STATES.EN_COCINA)).length, [ordenes]);
   const manualN   = useMemo(() => ordenes.filter(o=>o.canal==="MANUAL"&& o.estado===ORDER_STATES.POR_CONFIRMAR).length, [ordenes]);
   const entregasN = useMemo(() => ordenes.filter(o=>
-    o.tipo_consegna==="DOMICILIO" && !isCompletedState(o.estado)
+    isWaitingDriverState(o) || isDriverOnTheWayState(o)
   ).length, [ordenes]);
 
   const isPizzaItem = (it) => {

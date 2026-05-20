@@ -4,7 +4,7 @@ import { api } from '../../api';
 import { sb } from '../../api';
 import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
-import { ORDER_STATES, buildEnEntregaTransition, isCompletedState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
+import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
 
 // Helpers tempi: hora consegna ↔ horaForno (= partenza driver = uscita pizza forno)
 const _tm = (t) => { if (!t) return null; const [h,m] = t.split(":").map(Number); return h*60+m; };
@@ -267,11 +267,9 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     return () => { mounted = false; clearInterval(poll); };
   }, []);
 
-  // Filtra solo delivery attivi (escludi POR_CONFIRMAR: l'operatore deve prima confermare in Pedidos)
+  // Reparto operativo: pronto in attesa driver o driver già in cammino.
   const entregas = ordenes.filter(o =>
-    o.tipo_consegna === "DOMICILIO" &&
-    !isCompletedState(o.estado) &&
-    o.estado !== ORDER_STATES.POR_CONFIRMAR
+    isWaitingDriverState(o) || isDriverOnTheWayState(o)
   );
 
   const consegnati = ordenes.filter(o =>
