@@ -870,6 +870,7 @@ Controlli tecnici:
 | Cocina | Origin telemetry `✅ LISTO` | Validato con nota | ordine test | Metadata origin/actor in intent LISTO | Export browser non leggibile da automazione |
 | Listos | Rollback `LISTO -> EN_COCINA` | Validato | ordine test | `↩ Volver a cocina` riporta ordine in Cocina | Cancel confirm validato con Playwright/Chrome |
 | DB | Migrazione audit `LISTO` | Preparata non applicata | - | Campi `listo_*` disponibili dopo migration | Nessun DB toccato |
+| DB | Readiness audit `LISTO` | Completato non applicato | - | Migration SQL compatibile/additiva | Confermare Supabase target prima di applicare |
 
 ## Criteri generali di validazione
 

@@ -468,39 +468,64 @@ Checklist futura per applicare in modo sicuro la migrazione `listo_audit_fields`
 
 Nota critica: questa checklist e' solo documentazione. Non applicare nessuna migrazione, non collegarsi a Supabase, non toccare DB/live/production senza conferma esplicita.
 
+Readiness inspection:
+
+- Backend DB access usa Supabase REST helpers in `ladieci-bot/src/utils/supabase.js`.
+- Env backend coinvolte: `SUPABASE_URL`, `SUPABASE_KEY`.
+- Proxy/dashboard prima di Railway: `RAILWAY_API_KEY`, `JWT_SECRET`, `DASHBOARD_API_KEY`.
+- Non esiste migration runner in `package.json`: le migrazioni sono SQL plain.
+- Target table identificata: `ordenes`.
+- `creaOrdine()` inserisce in `ordenes`; `cambiaStato()` aggiorna `ordenes.estado`; `LISTO` passa da `cambiaStato()`.
+- Nessun campo persistente `listo_origin/listo_actor/listo_at` trovato oggi.
+- Campi simili gia' esistenti: `hora_salida`, `hora_entrega`, `cucina_check`.
+
 1. Confermare esplicitamente il DB target
    - staging/dev oppure production
    - verificare URL/progetto Supabase corretto
    - non usare mai credenziali `.env` senza controllo manuale
+   - non applicare la migrazione finche' il proprietario non conferma il progetto Supabase esatto
 
 2. Backup / safety
    - fare export o snapshot prima della migrazione
    - verificare accesso rollback
    - annotare timestamp e ambiente
 
-3. Applicare migrazione SQL
+3. Verifica schema read-only pre-apply
+   - prima di applicare, eseguire solo questa query di controllo:
+
+```sql
+select column_name, data_type
+from information_schema.columns
+where table_name = 'ordenes'
+  and column_name in ('listo_origin','listo_actor','listo_at');
+```
+
+   - se le colonne esistono gia', non applicare nulla prima di capire da dove arrivano
+
+4. Applicare migrazione SQL
    - usare il file `ladieci-bot/migrations/2026-05-20_add_listo_audit_fields.sql`
    - verificare che usa `ADD COLUMN IF NOT EXISTS`
    - non modificare dati esistenti
+   - applicare solo dopo conferma esplicita del DB target
 
-4. Verificare colonne
+5. Verificare colonne
    - controllare che `ordenes` abbia:
      - `listo_origin`
      - `listo_actor`
      - `listo_at`
    - verificare che ordini esistenti restino validi con valori `NULL`
 
-5. Collegare backend in step separato
+6. Collegare backend in step separato
    - whitelist `listo_origin/listo_actor/listo_at`
    - `cambiaStato()` salva i campi solo quando nuovo stato e' `LISTO`
    - non alterare altri stati
 
-6. Collegare frontend in step separato
+7. Collegare frontend in step separato
    - `api.updateEstado` accetta metadata opzionali
    - `setListo` invia metadata persistenti gia' usati in telemetry
    - nessuna UI visibile cambiata in questa fase
 
-7. Test persistenza
+8. Test persistenza
    - creare ordine `EN_COCINA`
    - premere `LISTO` da `TabCocina`
    - verificare DB:
@@ -510,16 +535,17 @@ Nota critica: questa checklist e' solo documentazione. Non applicare nessuna mig
    - ripetere da `PanelCocina`
    - refresh pagina e verificare che i campi restino
 
-8. Test regressione
+9. Test regressione
    - `EN_COCINA -> LISTO` funziona
    - Entregas riceve ordine `LISTO`
    - Cocina lo rimuove
    - nessun errore API
    - `.env` non committato
 
-9. Nota futura
+10. Nota futura
    - questi campi sono audit minimo dell'ultimo `LISTO`
    - per audit completo servira' tabella eventi ordine tipo `order_events`
+   - migrazione DB e wiring app devono restare micro-step separati
 
 ## Guardia fine servizio delivery
 
