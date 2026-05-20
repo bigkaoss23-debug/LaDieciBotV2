@@ -843,8 +843,10 @@ Risultato: `VALIDATED`
 Controlli tecnici:
 
 - `npm run build`: OK.
-- Cancel: guardia presente a codice; non validato al 100% via UI per limite confirm nativo nel browser integrato.
-  - Runtime corretto: cancel ritorna prima di API/cambio stato.
+- Cancel confirm rollback: `VALIDATED` con Playwright/Chrome locale.
+  - Confirm nativo mostrato con testo corretto.
+  - `dialog.dismiss()` lascia l'ordine `LISTO`, in `Listos` + `Entregas`, fuori da `Cocina`.
+  - Delta richieste `/api/proxy`: `0`.
 - Nessuna label italiana aggiunta.
 - Ordini test eliminati via API.
 - `.env` non toccato.
@@ -866,7 +868,7 @@ Controlli tecnici:
 | Entregas | Semantica delivery/reparto | Validato | - | Solo `LISTO` e `EN_ENTREGA` delivery visibili | `EN_COCINA` resta in Cocina |
 | Entregas | Confirm `✓ Entregado` | Validato con nota | ordine test | Confirm prima di `RETIRADO` | Cancel validato a codice |
 | Cocina | Origin telemetry `✅ LISTO` | Validato con nota | ordine test | Metadata origin/actor in intent LISTO | Export browser non leggibile da automazione |
-| Listos | Rollback `LISTO -> EN_COCINA` | Validato con nota | ordine test | `↩ Volver a cocina` riporta ordine in Cocina | Cancel validato a codice |
+| Listos | Rollback `LISTO -> EN_COCINA` | Validato | ordine test | `↩ Volver a cocina` riporta ordine in Cocina | Cancel confirm validato con Playwright/Chrome |
 | DB | Migrazione audit `LISTO` | Preparata non applicata | - | Campi `listo_*` disponibili dopo migration | Nessun DB toccato |
 
 ## Criteri generali di validazione

@@ -453,8 +453,10 @@ Validazione:
 - `EN_ENTREGA`: bottone non visibile.
 - `RETIRADO`: bottone non visibile.
 - Ciclo delivery completo con rollback: OK.
-- Cancel: guardia presente a codice; non validato al 100% via UI per limite confirm nativo nel browser integrato.
-  - Runtime corretto: cancel ritorna prima di API/cambio stato.
+- Cancel confirm rollback: OK, validato con Playwright/Chrome locale.
+  - Confirm nativo mostrato con testo corretto.
+  - `dialog.dismiss()` lascia l'ordine `LISTO`, in `Listos` + `Entregas`, fuori da `Cocina`.
+  - Delta richieste `/api/proxy`: `0`.
 - Nessuna label italiana aggiunta.
 - Ordini test eliminati via API.
 - `.env` non toccato.
