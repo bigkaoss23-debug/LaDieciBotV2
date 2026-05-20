@@ -978,7 +978,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
             <div style={{fontSize:9,fontWeight:800,letterSpacing:"3px",
               textTransform:"uppercase",color:"rgba(255,255,255,0.3)",lineHeight:1,marginBottom:1}}>SERVICIO</div>
             <LiveTime/>
-            {/* Status compatto: forno | sync/AI | spazio futura delivery bar */}
+            {/* Status compatto: horno | sync/AI | reparto */}
             <div style={{
               display:"grid",
               gridTemplateColumns: headerPhone ? "auto auto auto" : "minmax(0,1fr) auto minmax(0,1fr)",
@@ -993,8 +993,16 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
                 display:"flex",alignItems:"center",justifyContent:"flex-end",
                 gap:headerPhone?3:6,minWidth:0,overflow:headerPhone?"visible":"hidden"
               }}>
+                <span style={{
+                  fontSize:10,fontWeight:800,letterSpacing:.2,
+                  color:caricoCol,
+                  textShadow:`0 0 10px ${caricoCol}88`,
+                  whiteSpace:"nowrap",
+                  overflow:headerPhone?"visible":"hidden",
+                  textOverflow:headerPhone?"clip":"ellipsis"
+                }}>{headerPhone ? `${pctCarico}% ${caricoLbl}` : `🔥 Horno ${pctCarico}% ${caricoLbl}`}</span>
                 <div style={{
-                  width: headerPhone ? 30 : "clamp(80px, 14vw, 130px)",height:headerPhone?5:6,
+                  width: headerPhone ? 30 : "clamp(72px, 11vw, 118px)",height:headerPhone?5:6,
                   background:"rgba(255,255,255,0.08)",
                   borderRadius:3,overflow:"hidden",
                   border:"1px solid rgba(255,255,255,0.06)",
@@ -1009,14 +1017,6 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
                     transition:"width .6s ease"
                   }}/>
                 </div>
-                <span style={{
-                  fontSize:10,fontWeight:800,letterSpacing:.2,
-                  color:caricoCol,
-                  textShadow:`0 0 10px ${caricoCol}88`,
-                  whiteSpace:"nowrap",
-                  overflow:headerPhone?"visible":"hidden",
-                  textOverflow:headerPhone?"clip":"ellipsis"
-                }}>{headerPhone ? `${pctCarico}% ${caricoLbl}` : `🔥 Horno ${pctCarico}% ${caricoLbl}`}</span>
               </div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,minWidth:0}}>
                 {/* Sync dot */}
@@ -1051,7 +1051,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
               }}>
                 {!headerPhone && (
                   <div style={{
-                    width:"clamp(58px, 10vw, 100px)",height:6,
+                    width:"clamp(72px, 11vw, 118px)",height:6,
                     background:"rgba(255,255,255,0.08)",
                     borderRadius:3,overflow:"hidden",
                     border:"1px solid rgba(255,255,255,0.06)",
