@@ -594,6 +594,7 @@ Commit collegati:
 - `2be997b feat align entregas with delivery semantic states`
 - `856de02 fix clarify operator salida action`
 - `8873c40 fix confirm operator entregado action`
+- `e5514f1 feat track listo action origin in telemetry`
 
 Flusso operativo:
 
@@ -630,6 +631,20 @@ Risultato: `VALIDATED`
 - Appare in `Entregas`.
 - Conta nel badge `Entregas`.
 - Bottone `🛵` presente.
+- Telemetry/debug locale inizia a tracciare l'origine del click `✅ LISTO`, senza login utenti e senza audit persistente DB.
+- Metadata per `LISTO`:
+  - `TabCocina.jsx`: `{ origin: "TabCocina", actor: "cocina" }`
+  - `PanelCocina.jsx`: `{ origin: "PanelCocina", actor: "cocina_fullscreen" }`
+  - `ServicioPage.setListo(id, metadata)` passa il metadata a `buildListoTransition`.
+  - `buildListoTransition` mantiene il metadata dentro intent telemetry.
+- Stato ordine invariato: `EN_COCINA -> LISTO`.
+- UI, API, backend e DB invariati.
+- Validazione:
+  - Build `npm run build`: OK.
+  - Test UI `TabCocina`: ordine `EN_COCINA`, click `✅ LISTO`, ordine uscito da Cocina come previsto.
+  - Metadata chain OK: `TabCocina -> ServicioPage -> buildListoTransition`.
+  - Metadata chain OK: `PanelCocina -> ServicioPage -> buildListoTransition`.
+  - Limite noto: non e' stato possibile leggere direttamente `window.__ORDER_TELEMETRY__.export()` dal browser integrato perche' non esposto nello stesso contesto automazione; validazione fatta tramite click reale + catena codice completa.
 
 ### Caso 3 — DOMICILIO + EN_ENTREGA
 
@@ -687,6 +702,13 @@ Nota override operatore:
 - `✓ Entregado` ora richiede conferma prima dell'azione terminale.
 - Nessuna logica, API, backend o transizione cambiata.
 
+Nota audit futura:
+
+- Questo step distingue solo origine/actor nella telemetry/debug locale.
+- Per sapere "chi ha premuto LISTO" anche dopo refresh/giornata o in produzione, servira' audit persistente:
+  - campi ordine tipo `listo_origin`, `listo_actor`, `listo_at`
+  - oppure tabella eventi ordine/audit log.
+
 ## Tabella stato test
 
 | Test | Scenario | Stato | Ultimo ordine | Esito atteso | Note |
@@ -702,6 +724,7 @@ Nota override operatore:
 | Header | Horno/Reparto mirror | Validato | - | Header simmetrica e carichi coerenti | Horno e Reparto validati |
 | Entregas | Semantica delivery/reparto | Validato | - | Solo `LISTO` e `EN_ENTREGA` delivery visibili | `EN_COCINA` resta in Cocina |
 | Entregas | Confirm `✓ Entregado` | Validato con nota | ordine test | Confirm prima di `RETIRADO` | Cancel validato a codice |
+| Cocina | Origin telemetry `✅ LISTO` | Validato con nota | ordine test | Metadata origin/actor in intent LISTO | Export browser non leggibile da automazione |
 
 ## Criteri generali di validazione
 

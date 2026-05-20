@@ -258,6 +258,7 @@ Commit validato:
 - `2be997b feat align entregas with delivery semantic states`
 - `856de02 fix clarify operator salida action`
 - `8873c40 fix confirm operator entregado action`
+- `e5514f1 feat track listo action origin in telemetry`
 
 Flusso operativo:
 
@@ -304,6 +305,13 @@ Modifiche introdotte:
   - `¿Confirmar entrega? Esta acción cerrará el pedido como entregado.`
 - Se il confirm torna `false`, il codice fa `return` prima di chiamare `onForzaEntregado`.
 - Se conferma, comportamento invariato.
+- Per distinguere da dove viene premuto `✅ LISTO`, senza login utenti e senza audit persistente DB:
+  - `TabCocina.jsx` passa metadata `{ origin: "TabCocina", actor: "cocina" }`
+  - `PanelCocina.jsx` passa metadata `{ origin: "PanelCocina", actor: "cocina_fullscreen" }`
+  - `ServicioPage.setListo(id, metadata)` riceve il metadata e lo passa a `buildListoTransition`.
+  - `buildListoTransition` mantiene il metadata dentro l'intent telemetry.
+- Stato ordine invariato: `EN_COCINA -> LISTO`.
+- UI invariata.
 - Nessuna logica, API, backend o transizione cambiata.
 
 Validazione:
@@ -315,6 +323,11 @@ Validazione:
 - `RETIRADO`: OK, non appare nella lista attiva; resta solo nel riepilogo `Entregados esta noche`.
 - Confirm `✓ Entregado`: OK, ordine test passato a `RETIRADO` e finito in `Entregados esta noche`.
 - Cancel `✓ Entregado`: guardia validata a codice; non validata manualmente al 100% per limite dell'automazione sul confirm nativo.
+- Telemetry origin `LISTO`: OK.
+  - Test UI `TabCocina`: ordine `EN_COCINA`, click `✅ LISTO`, ordine uscito da Cocina come previsto.
+  - Metadata chain OK: `TabCocina -> ServicioPage -> buildListoTransition`.
+  - Metadata chain OK: `PanelCocina -> ServicioPage -> buildListoTransition`.
+  - Limite noto: non e' stato possibile leggere direttamente `window.__ORDER_TELEMETRY__.export()` dal browser integrato perche' non esposto nello stesso contesto automazione; validazione fatta tramite click reale + catena codice completa.
 - Controllo lingua: OK, nessuna nuova label italiana visibile.
 - `npm run build`: OK.
 - Nessun React error overlay.
@@ -322,6 +335,11 @@ Validazione:
 - Ordini test eliminati via API.
 - `.env` non toccato.
 - Git pulito sui file tracciati.
+
+Nota futura: per sapere "chi ha premuto LISTO" anche dopo refresh/giornata o in produzione, servira' audit persistente:
+
+- campi ordine tipo `listo_origin`, `listo_actor`, `listo_at`
+- oppure tabella eventi ordine/audit log.
 
 ## Guardia fine servizio delivery
 
