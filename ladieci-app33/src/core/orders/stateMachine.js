@@ -67,6 +67,7 @@ export const VALID_ORDER_TRANSITIONS = Object.freeze({
     ORDER_STATES.CHIUSO_FORZATO,
   ]),
   [ORDER_STATES.LISTO]: Object.freeze([
+    ORDER_STATES.EN_COCINA,
     ORDER_STATES.EN_ENTREGA,
     ORDER_STATES.RETIRADO,
     ORDER_STATES.CHIUSO_FORZATO,
@@ -133,6 +134,21 @@ export function isDriverOnTheWayState(order) {
 
 export function isDeliveryActiveState(order) {
   return isDeliveryOrder(order) && !isTerminalState(order?.estado);
+}
+
+export function buildVolverACocinaTransition(order, metadata = {}) {
+  return {
+    orderId: order?.id || null,
+    from: ORDER_STATES.LISTO,
+    to: ORDER_STATES.EN_COCINA,
+    action: "volverACocina",
+    component: "unknown",
+    timestamp: new Date().toISOString(),
+    metadata: {
+      ...metadata,
+      reason: "manual_operator_rollback",
+    },
+  };
 }
 
 export function orderStateRank(state, fallback = 5) {
