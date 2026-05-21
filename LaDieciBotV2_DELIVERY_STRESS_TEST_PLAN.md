@@ -334,17 +334,59 @@ Scenario riproducibile:
 - Riproducibilità: aumenta in modo lineare con la divergenza di `durata_andata` tra gli ordini aggregati nello stesso slot. Nel test: durate 8 vs 14 → delta +6 min driver, +11 min forno_out O2.
 - Conseguenza concreta: pizza pronta troppo presto, freddezza progressiva sul bancone, **non è un crash** ma un degrado qualità nei servizi affollati.
 
-### Non patchare ora
+### Non patchare ora ~~(superato — vedi sezione fix sotto)~~
 
-- Servirebbe prima un **test golden** che fissi il comportamento atteso post-fix (`risincronizzaGiro` esteso o nuovo `risincronizzaSchedule(zonaPartenza)` con recompute downstream).
-- Decisione business aperta: quando ricomputare (sincrono nel POST, asincrono via job, on-demand a `/api/scanServizio`)? Se notificare la cucina del cambio `forno_out` o silenzioso?
-- Possibili patch future:
-  - **DS-5-A** (estensione): `risincronizzaGiro` ricalcola anche i giri con `partenzaMin >= rientroMin_modificato`.
-  - **DS-5-B** (separazione): nuovo `risincronizzaScheduleDownstream(fromZona, fromSlot)` chiamato esplicitamente dopo `creaOrdine`/`modificaOrdine` quando il giro target ha visto cambio di `tg`.
-- Nessuna delle due in scope oggi.
+- ~~Servirebbe prima un **test golden** che fissi il comportamento atteso post-fix.~~ ✅ Aggiunto in DS-5-A (commit `09d4c55`) e convertito in regression in DS-5-C (commit `d7eb2ef`).
+- Decisione business aperta storica (quando ricomputare): risolta scegliendo **sincrono** dentro `risincronizzaGiro`, già invocato dopo `creaOrdine`/`modificaOrdine`. Niente nuovo job, niente notifica esplicita alla cucina (i forno_out aggiornati sono già letti via polling/WS dal frontend, vedi CLAUDE.md bug #1 Step B).
+- ~~Possibili patch future: DS-5-A estensione / DS-5-B separazione.~~ Scelta Opzione A in DS-5-B (planning, read-only), implementata in DS-5-C.
 
 ### Stato test DS-5
 
 - Harness offline: scenario "bug #4 stress" riprodotto con delta misurabile.
 - Caso Paco (scenario base cascade): regressione **non** osservata, confermato che Step A `685749b` ha chiuso il sotto-caso.
-- Test commit-abile rinviato finché non c'è decisione business sulla forma del fix.
+- ~~Test commit-abile rinviato finché non c'è decisione business sulla forma del fix.~~ ✅ Test committato in DS-5-A e poi convertito a regression in DS-5-C.
+
+---
+
+## Bug #4 FIXED — 2026-05-21
+
+### Commit chain
+
+- **DS-5-A** — `09d4c55 test reproduce delivery schedule cascade bug`: bug-repro Node puro che dimostra il mismatch (`forno_out` persistito O2 = `21:56` vs ricalcolato = `22:02` dopo aggregazione Q2 tg 8→14).
+- **DS-5-B** — planning read-only: confronto Opzione A (estendere `risincronizzaGiro`) vs Opzione B (nuova funzione downstream). Scelta **Opzione A**.
+- **DS-5-C** — `d7eb2ef fix sync downstream forno out after delivery aggregation`: fix + test convertito a regression.
+
+### Forma del fix
+
+- File toccato: [agentOrdini.js](ladieci-bot/src/agents/agentOrdini.js).
+- Estratta funzione pura `planFornoOutSync(rows)`: data una snapshot di ordenes, ritorna l'elenco di update `{id, forno_out_old, forno_out_new}` necessari per allineare TUTTI i giri attivi al partenzaMin ricalcolato dalla sim.
+- `risincronizzaGiro(zona, hora)` mantiene firma per compatibilità coi 4 call-site (in `creaOrdine`, `modificaOrdine`, `cambiaStato`); ora è un thin wrapper sb-aware che chiama `planFornoOutSync` e applica gli update.
+- **Filtro stati**: si aggiorna solo `NUEVO` ed `EN_COCINA`. Esclusi `POR_CONFIRMAR`, `LISTO`, `EN_ENTREGA`, `RETIRADO`, `COMPLETATO`. Le pizze già uscite dal forno (`LISTO+`) non vengono mosse.
+- `try/catch` best-effort mantenuto: errori non bloccano il flusso ordine.
+- Nessuna modifica a `simulateDriverSchedule`, `calcolaFornoOut`, `proposeForNewOrder`, né al frontend.
+
+### Regression test
+
+[scheduleCascade.bug4.test.js](ladieci-bot/tests/scheduleCascade.bug4.test.js) testa `planFornoOutSync` (pura, no DB, no rete, no .env):
+
+1. **Pre-aggregazione**: snapshot `[O1, O2 EN_COCINA]` → 0 update per O2.
+2. **Post-aggregazione**: snapshot `[O1, O2 EN_COCINA, O3 NUEVO Q2 d14]` → update O2 da `21:56` a `22:02`.
+3. **Guardia LISTO**: O2 in `LISTO` non viene mosso anche con O3 aggregante.
+4. **No-aggregation**: O3 in `Q5 22:30 d30` (zona diversa, ora più tarda) non genera update inutile su O2.
+5. **Stati esclusi**: O2 in `POR_CONFIRMAR / EN_ENTREGA / RETIRADO / COMPLETATO` non riceve update.
+
+Esecuzione: `node ladieci-bot/tests/scheduleCascade.bug4.test.js` → `5 PASS / 0 FAIL`.
+
+### Stato finale
+
+- **Bug #4**: FIXED con regression test.
+- Nessun DB reale, nessuna rete, nessuna lettura `.env`.
+- Nessun frontend toccato.
+
+### Rischi residui
+
+- `risincronizzaGiro` ha ancora nome storico, anche se ora sincronizza l'intero schedule attivo (sibling + downstream). Rename rinviato a un eventuale DS-5-D per separare il rename dal cambio di comportamento.
+- Firma `(zona, hora)` mantenuta per non toccare i 4 call-sites; parametri internamente inutilizzati nel nuovo path. Pulizia rinviata.
+- Possibili salti visibili in `TabCocina` su ordini in `EN_COCINA` downstream quando arriva un'aggregazione che alza `tg`: è il comportamento desiderato (countdown corretto), ma da osservare in V2 test prima del rollout produzione.
+- Il wrapper sb-aware (loop `sbUpdate`) non è coperto da test automatico (vincolo "no DB / no rete"): 3 righe triviali, accettabile.
+- Aggregazioni che non passano da `creaOrdine`/`modificaOrdine` (es. update DB diretti) non triggerano la sync. Fuori scope.
