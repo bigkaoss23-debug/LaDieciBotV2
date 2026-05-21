@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { C, useWidth, blockedTels, MAX_PIZZE_ORA, LOGO_RED_SRC, genId, tot, calcTotale } from '../constants';
 import { sb, api, auth } from '../api';
+import { parseEstadoTerminalError } from '../utils/orderModifyError';
 import Suoni from '../sounds';
 import TabWA from './wa/TabWA';
 import TabManual from './ordenes/TabManual';
@@ -651,7 +652,6 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   };
   const modificaOrden = async (o) => {
     setOrdenModifica(null);
-    notify("✏️ Ordine aggiornato",C.blu);
     logLegacyBypass({
       component: "ServicioPage",
       action: "modificaOrden",
@@ -672,9 +672,10 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         zona_manuale: !!o.zona_manuale
       } : {})
     };
+    let blockedTerminal = null;
     await optimisticOrden(o.id, patch, async () => {
       try {
-        await Promise.all([
+        const [, resOrden] = await Promise.all([
           api.updateEstado(o.id, o.estado),
           api.post({ action:"updateOrden", id:o.id,
             items: o.items, nota: o.nota, hora: o.hora,
@@ -687,8 +688,15 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
             } : {})
           })
         ]);
+        const parsed = parseEstadoTerminalError(resOrden);
+        if (parsed.blocked) blockedTerminal = parsed;
       } catch(err) { console.error("modificaOrden:", err); }
     });
+    if (blockedTerminal) {
+      notify("❌ " + blockedTerminal.message, C.rosso);
+    } else {
+      notify("✏️ Pedido actualizado", C.blu);
+    }
   };
 
   const setRetirado = async (id, metodo_pago = "", descuento = null) => {
