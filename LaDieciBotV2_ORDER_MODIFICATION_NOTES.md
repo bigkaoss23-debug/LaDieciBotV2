@@ -113,3 +113,58 @@ Queste note non devono confondersi con note cucina.
    - verifica Cocina live
 3. Solo dopo, progettare badge `MODIFICADO` / `Revisar cambios`.
 
+## Stato fix MOD-1 — 2026-05-21
+
+Audit Order Modification ha identificato il rischio **M1**: il flusso WhatsApp F2 (`statoOrd.haOrdine === true`) chiamava `aggiungiItems` in automatico e inviava un riepilogo "Ya lo añadimos a tu pedido en cocina" al cliente, **anche se l'ordine era già in `EN_COCINA`/`LISTO`**. Questo bypassava la regola assoluta "il bot WhatsApp non deve mandare ordini direttamente in cucina senza review umana".
+
+Fix applicato: commit `25f00f3 fix prevent whatsapp auto modifications for kitchen orders`.
+
+### Prima del fix
+
+- Cliente WhatsApp con ordine aperto invia un nuovo item → orchestrator F2 ([orchestrator.js:165-181](ladieci-bot/src/agents/orchestrator.js)).
+- Branch chiamava `aggiungiItems(statoOrd.ordenId, ia.items)` senza guardia sullo stato.
+- Se `autoOn`, inviava al cliente "Anotado, X! Aquí el pedido actualizado..." con totale aggiornato.
+- Ordine già in cucina/listo poteva quindi essere modificato senza che l'operatore lo sapesse.
+
+### Dopo il fix
+
+Nel branch `if (statoOrd.haOrdine)` aggiunto check su `statoOrd.estado` contro un set di stati bloccati:
+
+- Stati bloccati per modifica automatica: `EN_COCINA`, `LISTO`, `EN_ENTREGA`, `RETIRADO`, `COMPLETADO`.
+- Se l'ordine esistente è in uno di questi stati:
+  - **non** viene chiamato `aggiungiItems`
+  - **non** viene inviato il riepilogo automatico al cliente
+  - `wa_msgs` viene scritto come `IN_TRATTAMENTO`
+  - `motivo: "modificacion_orden_en_cocina"`
+  - l'operatore decide manualmente da Preguntas
+- L'ordine esistente resta **invariato**.
+
+### Stato `POR_CONFIRMAR`
+
+- Comportamento precedente **invariato**: aggiunte automatiche su ordine pre-cucina restano consentite se già previste dal flow.
+- Non rientra negli stati bloccati.
+- Flussi 2B (correccion/aggiunta su `POR_CONFIRMAR`) e 2C (cambio orario) non sono toccati dal fix.
+
+### Rischi residui (NON coperti da questo fix)
+
+- **RR1**: il cliente non riceve ancora alcun messaggio automatico tipo "Recibimos tu cambio, lo revisa un operario". Possibile percezione di silenzio del bot. Fix proposto in micro-step separato (MOD-1b).
+- **RR2**: `getStatoCliente` ([agentCucina.js:36](ladieci-bot/src/agents/agentCucina.js)) oggi seleziona solo `EN_COCINA,LISTO`. Gli stati `EN_ENTREGA/RETIRADO/COMPLETADO` nel set bloccato sono difensivi/future-proof: oggi non possono attivare la guardia perché `haOrdine` resta `false`. Nessuna azione richiesta finché la query non viene allargata.
+- **RR3**: badge `MODIFICADO` / `Revisar cambios` in Cocina ancora non implementato (vedi sezione "UX future da investigare").
+- **RR4**: nessun `mod_ts` / `mod_count` su `ordenes`, nessuna audit log delle modifiche.
+- **RR5**: il fix include anche `tipo=correccion` su ordine già in cucina (entrava nello stesso branch F2). Coerente con "review umana per ordini in cucina", ma cambia comportamento secondario rispetto al solo `tipo=ordine`.
+
+### Test eseguiti
+
+- `node --check orchestrator.js`: SYNTAX OK.
+- Harness mock (no DB, no rete, no `.env`) con 5 scenari:
+  1. `statoOrd.estado=POR_CONFIRMAR` → `aggiungiItems` ancora chiamato, flusso 2 NUEVO (regressione zero).
+  2. `statoOrd.estado=EN_COCINA` → `aggiungiItems` NON chiamato, `invia` NON chiamato, `wa_msg` IN_TRATTAMENTO con `msg=null`, motivo `modificacion_orden_en_cocina`.
+  3. `statoOrd.estado=LISTO` → idem.
+  4. `statoOrd.estado=EN_ENTREGA` (difensivo) → bloccato.
+  5. `tipo=modifica_complessa` con `haOrdine:true` → routing precedente intatto, non entra in F2.
+- Esito: PASS 5/5.
+
+### File toccati
+
+- `ladieci-bot/src/agents/orchestrator.js` (+9 / −0).
+- Nessun cambio a frontend, schema DB, prompt WhatsApp, classificazione IA, altri flussi.
