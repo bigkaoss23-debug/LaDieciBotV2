@@ -29,6 +29,16 @@ app.use("/api", (req, res, next) => {
 const WA_VERIFY_TOKEN = process.env.WA_VERIFY_TOKEN || "ladieci_webhook_2026";
 const PORT = process.env.PORT || 3000;
 
+// Fail-closed locale per endpoint Bot IA: se manca DASHBOARD_API_KEY, blocca le azioni mutative
+// senza toccare il middleware globale (che resta fail-open per non rompere dev).
+const requireDashboardKey = (res) => {
+  if (!process.env.DASHBOARD_API_KEY) {
+    res.status(503).json({ ok: false, error: "bot_ia_disabled_no_auth" });
+    return false;
+  }
+  return true;
+};
+
 // --- WEBHOOK WHATSAPP ---
 
 app.get("/webhook", (req, res) => {
@@ -85,8 +95,10 @@ app.get("/api", async (req, res) => {
         result = await backupSerata();
       }
     } else if (action === "rigeneraSuggerimenti") {
+      if (!requireDashboardKey(res)) return;
       result = await rigeneraSuggerimenti();
     } else if (action === "approvaSuggerimento") {
+      if (!requireDashboardKey(res)) return;
       result = await approvaSuggerimento(req.query.id, req.query.stato);
     } else if (action === "getConvThread") {
       const rows = await sbSelect("conv", `wa_id=eq.${req.query.wa_id}&select=chat`);
