@@ -23,6 +23,44 @@ Catena attesa o da confermare nel codice:
 
 Se tutti i provider esterni falliscono, usare fallback zona/manuale.
 
+## Fallback manuale zona validato
+
+Commit validato:
+
+- `6b8e01c fix allow manual delivery zone fallback`
+
+Scenario testato:
+
+- Indirizzo unknown/non geocodabile:
+  - `Calle Inventada Codex 999 Roquetas de Mar`
+
+Risultato: `VALIDATED`
+
+- Se `resolveAddress` fallisce o ritorna senza zona, `NuevoPedidoModal` mantiene stato `manual_required`.
+- UI mostra alert zona non detectada.
+- Pulsante mappa `Ver ruta` resta disponibile.
+- Bottoni manuali `Q1`-`Q5` visibili.
+- Selezione manuale `Q2 BUENAVISTA` validata.
+- `Confirmar pedido` si abilita dopo la selezione manuale.
+- Payload salvato con:
+  - `zona: Q2`
+  - `zona_manuale: true`
+  - `zona_lat: null`
+  - `zona_lon: null`
+  - `durata_andata_min: 20`
+  - `durata_google_min: null`
+  - `durata_haversine_min: null`
+  - `geo_source: null`
+  - `delivery_fee: 2.5`
+- Indirizzo e `direccion_note` preservati.
+- Flusso operativo verificato:
+  - ordine creato da UI
+  - visibile in `Cocina`
+  - dopo `LISTO`, visibile in `Entregas`
+  - visibile in `Repartidor`
+
+Nota: nel fallback manuale `lat/lon` possono restare `null`; la zona manuale e il tempo giro sono il paracadute operativo.
+
 ## Zone delivery
 
 - Le zone sono 5.
@@ -155,4 +193,3 @@ Per ogni test salvare:
 - stato Supabase
 - eventuale fallback
 - note su errore o correzione
-

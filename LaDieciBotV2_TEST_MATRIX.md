@@ -852,6 +852,46 @@ Controlli tecnici:
 - `.env` non toccato.
 - Git pulito sui file tracciati.
 
+## Delivery/geocoding — Fallback manuale zona
+
+Commit:
+
+- `6b8e01c fix allow manual delivery zone fallback`
+
+Scenario: unknown/unresolvable address.
+
+- Input: `Calle Inventada Codex 999 Roquetas de Mar`
+- Ordine test: `#001`
+- Risultato: `VALIDATED`
+
+Validazioni:
+
+- Alert zona non detectada visibile.
+- Pulsante mappa `Ver ruta` visibile.
+- Bottoni `Q1`-`Q5` visibili.
+- Selezione manuale `Q2 BUENAVISTA` OK.
+- `Confirmar pedido` abilitato.
+- Ordine creato da UI, non solo via API.
+- Payload salvato:
+  - `zona: Q2`
+  - `zona_manuale: true`
+  - `zona_lat: null`
+  - `zona_lon: null`
+  - `durata_andata_min: 20`
+  - `durata_google_min: null`
+  - `durata_haversine_min: null`
+  - `geo_source: null`
+  - `delivery_fee: 2.5`
+  - indirizzo e `direccion_note` preservati
+- Flusso operativo:
+  - `POR_CONFIRMAR` creato correttamente
+  - `EN_COCINA` visibile in `Cocina`
+  - `LISTO` visibile in `Entregas`
+  - visibile in `Repartidor` con indirizzo, nota e zona coerenti
+- Ordine test eliminato via API.
+
+Nota: nel fallback manuale `lat/lon` possono restare `null`; la zona manuale e il tempo giro configurato sono sufficienti per chiudere operativamente l'ordine.
+
 ## Tabella stato test
 
 | Test | Scenario | Stato | Ultimo ordine | Esito atteso | Note |
@@ -869,6 +909,7 @@ Controlli tecnici:
 | Entregas | Confirm `✓ Entregado` | Validato con nota | ordine test | Confirm prima di `RETIRADO` | Cancel validato a codice |
 | Cocina | Origin telemetry `✅ LISTO` | Validato con nota | ordine test | Metadata origin/actor in intent LISTO | Export browser non leggibile da automazione |
 | Listos | Rollback `LISTO -> EN_COCINA` | Validato | ordine test | `↩ Volver a cocina` riporta ordine in Cocina | Cancel confirm validato con Playwright/Chrome |
+| Delivery/geocoding | Fallback manuale zona | Validato | `#001` | Q1-Q5 manuale dopo geocode KO | `zona_manuale: true`, fee 2.5 |
 | DB | Migrazione audit `LISTO` | Preparata non applicata | - | Campi `listo_*` disponibili dopo migration | Nessun DB toccato |
 | DB | Readiness audit `LISTO` | Completato non applicato | - | Migration SQL compatibile/additiva | Confermare Supabase target prima di applicare |
 | Future | Delivery/geocoding stress | Da pianificare | - | Fallback e persistenza robusti | Vedi `LaDieciBotV2_DELIVERY_STRESS_TEST_PLAN.md` |

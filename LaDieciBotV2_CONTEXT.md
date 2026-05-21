@@ -794,6 +794,35 @@ Dettagli:
 - `.env` non toccato.
 - Netlify Dev fermato dopo verifica.
 
+## Fallback manuale zona delivery
+
+Commit validato:
+
+- `6b8e01c fix allow manual delivery zone fallback`
+
+Dettagli:
+
+- Modificato solo `ladieci-app33/src/components/NuevoPedidoModal.jsx`.
+- Se `resolveAddress` fallisce o ritorna senza zona, la UI mantiene stato `manual_required`.
+- L'operatore vede alert zona non detectada, pulsante mappa `Ver ruta` e bottoni manuali `Q1`-`Q5`.
+- Selezionando una zona manuale, l'ordine diventa confermabile.
+- Validato con indirizzo non geocodabile:
+  - `Calle Inventada Codex 999 Roquetas de Mar`
+- Dati verificati:
+  - `zona: Q2`
+  - `zona_manuale: true`
+  - `zona_lat/zona_lon: null`
+  - `durata_andata_min: 20`
+  - `delivery_fee: 2.5`
+  - indirizzo e `direccion_note` preservati
+- Flusso operativo verificato da UI:
+  - ordine creato
+  - visibile in `Cocina`
+  - dopo `LISTO`, visibile in `Entregas`
+  - visibile in `Repartidor`
+
+Nota: nel fallback manuale `lat/lon` possono restare `null`; il paracadute operativo e' la zona manuale con tempo giro configurato.
+
 ## Transition intents integrati
 
 - `POR_CONFIRMAR -> EN_COCINA`
