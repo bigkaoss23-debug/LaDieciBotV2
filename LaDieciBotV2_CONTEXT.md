@@ -974,3 +974,84 @@ Regole:
 - Consolidare, se serve, una lettura/export dev della telemetry senza cambiare runtime operativo.
 - Valutare solo piu' avanti una UI/debug dashboard.
 - Continuare con micro-step mirati, niente refactor massivi.
+
+## Sessione 2026-05-21 — Sintesi stato moduli
+
+Sessione di audit e mitigazioni mirate su 3 blocchi V2. Tutti i micro-step chiusi come commit isolati, niente push, niente refactor, `.env` mai letto, niente modifiche DB. Dettagli completi nei file dedicati:
+`LaDieciBotV2_WHATSAPP_REVIEW_AGENT.md`, `LaDieciBotV2_TEST_MATRIX.md`, `LaDieciBotV2_ORDER_MODIFICATION_NOTES.md`.
+
+### Bot IA / WhatsApp Review Agent
+
+Modulo auditato, mitigato e documentato. Commit chiusi:
+
+- `f4e4226 fix bot ia sanitize regole_apprese against prompt injection`
+- `8527994 fix bot ia fail closed when dashboard api key missing`
+- `25c6b71 i18n translate bot ia review panel to spanish`
+- `87948b5 docs update whatsapp review agent with audit and mitigations`
+- `2d03177 docs add whatsapp interpreta golden corpus to test matrix`
+
+Stato:
+
+- `REGOLE_APPRESE` ora sanitizzato + cap 200 char + denylist token pericolosi.
+- Endpoint Bot IA (`rigeneraSuggerimenti`, `approvaSuggerimento`) fail-closed senza `DASHBOARD_API_KEY`.
+- UI Bot IA / Suggerimenti tradotta in spagnolo.
+- Golden corpus 18 casi WhatsApp salvato in `LaDieciBotV2_TEST_MATRIX.md` per test futuri su `agentWhatsapp.interpreta()`.
+
+Debiti tecnici rimasti (micro-step futuri separati):
+
+- Rendere `REGOLE_APPRESE` "suggerimenti non vincolanti" nel prompt WhatsApp (richiede golden test prima).
+- Preview / diff / versioning di `REGOLE_APPRESE` prima dell'apply.
+- Sostituire `sbDelete pending` con stato `obsoleto_auto`.
+- Valutare POST per endpoint mutativi Bot IA.
+- Audit approvazione (`approvato_da`, `approvato_at`, `versione_regole`).
+
+### LISTO audit
+
+Backend già completato in sessioni precedenti (`5b7ff08`). Gap frontend chiuso oggi. Commit:
+
+- `d717501 fix wire listo audit metadata from ui to backend`
+- `173887c docs update listo audit status after frontend wiring fix`
+
+Stato:
+
+- `api.updateEstado(id, estado, metodo_pago, descuento, extras)` ora accetta `extras` opzionale.
+- `ServicioPage.setListo` invia `listo_origin` / `listo_actor` al backend.
+- `listo_at` NON inviato dal frontend: resta fallback server-side in `agentOrdini.cambiaStato`.
+- `READY_FOR_REAL_VALIDATION: YES`, condizionato a deploy backend (`5b7ff08`) e frontend (`d717501`) su V2 test.
+
+Vincoli per la validazione reale (NON eseguire senza):
+
+- URL backend V2 test confermato e diverso da `ladiecibot-production.up.railway.app`.
+- Ordine test isolato creato per l'occasione (canal BANCO/MANUAL).
+- Checklist S0-S9 documentata in `LaDieciBotV2_TEST_MATRIX.md`.
+
+### Order Modification
+
+Audit e prima mitigazione (MOD-1) chiusi. Commit:
+
+- `25f00f3 fix prevent whatsapp auto modifications for kitchen orders`
+- `524f65c docs update order modification notes with mod-1 fix`
+
+Stato:
+
+- Bot WhatsApp **non** modifica più automaticamente ordini in stato `EN_COCINA / LISTO / EN_ENTREGA / RETIRADO / COMPLETADO`.
+- In quegli stati `wa_msg` va in `IN_TRATTAMENTO` con `motivo: "modificacion_orden_en_cocina"`, operatore decide da Preguntas.
+- `POR_CONFIRMAR` invariato (no regressione).
+
+Debiti tecnici rimasti (micro-step futuri separati):
+
+- Avviso automatico cliente "Recibimos tu cambio, lo revisa un operario" (MOD-1b).
+- Badge `MODIFICADO` / `Revisar cambios` in Cocina (MOD-3).
+- `mod_ts` / audit log delle modifiche su `ordenes` (richiede migration, MOD-2).
+- Guardia server-side `modificaOrdine` per stati terminali (MOD-4).
+- Surface `slittato` / `hora_finale` al frontend dopo `modificaOrdine` (MOD-5).
+- Aggiornare TEST_MATRIX con casi M-01..M-08 per modifica post-creazione (MOD-6).
+
+### Regola operativa
+
+- **Non toccare questi 3 blocchi con patch larghe.** Ogni evoluzione deve essere micro-step singolo, testato, separato.
+- Niente refactor massivi.
+- Live / production intoccata.
+- `.env` mai letto, stampato o modificato.
+- Niente push automatici: commit chiusi restano locali finché operatore decide.
+- Niente migration DB / cambio schema senza piano e approvazione esplicita.
