@@ -192,8 +192,9 @@ Dettaglio fix in `LaDieciBotV2_ORDER_MODIFICATION_NOTES.md` sezione "Stato fix M
 
 ### Prossimi blocchi consigliati (Order Modification residuo)
 
-- **MOD-3** badge `MODIFICADO` / `Revisar cambios` in Cocina UI. Sblocca M-02 / M-03 / M-05 (P2 gated). Richiede prima audit read-only di `OrdenCard.jsx` per decidere se badge è derivabile live (es. `updated_at > started_cocina_at`) o se serve campo `mod_ts` (MOD-2).
-- **MOD-2** migration `mod_ts` / `mod_count` su `ordenes`. Richiede approvazione esplicita per migration DB.
+- **MOD-2 apply** migration `2026-05-21_add_mod_audit_fields.sql` (file pending creato, **NON applicato**). Aggiunge `mod_ts`, `mod_count`, `cocina_started_at` su `ordenes`. Richiede approvazione esplicita per migration DB.
+- **MOD-2 wiring backend** in `agentOrdini.cambiaStato` (su `EN_COCINA` setta `cocina_started_at` con COALESCE) + `agentOrdini.modificaOrdine` (su success setta `mod_ts` e incrementa `mod_count`). Da fare DOPO apply.
+- **MOD-3** render badge `MODIFICADO` in `TabCocina.jsx` + `PanelCocina.jsx` (logica già pronta in `ladieci-app33/src/utils/orderModBadge.js`, testata 20/20). Sblocca M-02 / M-03 / M-05 (P2 gated). Stringa spagnola breve. Dismiss UX da decidere.
 - **MOD-5** UX warning forte o rollback esplicito a `EN_COCINA` quando modifica items con impatto cucina su `LISTO`. UI-heavy.
 - **MOD-1b** avviso automatico cliente "Recibimos tu cambio, lo revisa un operario" su path WhatsApp F2.
 - **RR1 MOD-4**: estensione guardia anche ad `aggiungiItems` (oggi consumato solo da orchestrator F2 chiuso da MOD-1, ma è export pubblico).

@@ -223,3 +223,17 @@ Esecuzione: 11/11 PASS.
 - **RR3**: badge `MODIFICADO` / `Revisar cambios` in Cocina (MOD-3) ancora non implementato — M-02/M-03 restano P2 gated.
 - **RR4**: nessun `mod_ts` / `mod_count` su `ordenes` (MOD-2). M-02/M-03/M-05 gated.
 - **RR5**: la guardia fallisce in modo silenzioso (fall-through al path legacy) se `sbSelect` lancia. Accettato per non amplificare incident sui flussi legittimi; va monitorato via `console.warn` log.
+
+## Prep MOD-2 / MOD-3 — 2026-05-21
+
+Setup pending per il badge "MODIFICADO" in Cocina (vedi audit nella sessione corrente). Tre artefatti creati, **nessuna migration applicata, nessun wiring backend, nessun render UI**.
+
+- **Migration pending**: [ladieci-bot/migrations/2026-05-21_add_mod_audit_fields.sql](ladieci-bot/migrations/2026-05-21_add_mod_audit_fields.sql) — aggiunge `mod_ts TIMESTAMPTZ NULL`, `mod_count INT NOT NULL DEFAULT 0`, `cocina_started_at TIMESTAMPTZ NULL`. Idempotente (`IF NOT EXISTS`). File creato ma NON eseguito su Supabase: applicazione manuale su V2 test richiede approvazione esplicita (regola progetto, vedi LaDieciBotV2_NEXT_CRITICAL_AREAS.md §"Update 2026-05-21").
+- **Utility frontend pura**: [ladieci-app33/src/utils/orderModBadge.js](ladieci-app33/src/utils/orderModBadge.js) — `isModifiedAfterCocina(orden)` ritorna `true` solo se `mod_ts > cocina_started_at` con date valide. Robusta a `null/undefined/{}/Array/Date/Number/ISO offsets`. CJS export per consentire test Node puro (l'import frontend funziona via webpack).
+- **Test pure Node**: [ladieci-app33/src/utils/orderModBadge.test.js](ladieci-app33/src/utils/orderModBadge.test.js) — 20 asserzioni (degenerati, campi mancanti, date invalide, confronti =/</>, ISO timezone, Date object, epoch ms). Esecuzione: 20/20 PASS.
+
+### Cosa resta da fare (micro-step separati)
+
+- **Apply migration `2026-05-21_add_mod_audit_fields.sql`** su V2 test → richiede approvazione esplicita.
+- **Backend wiring** in [agentOrdini.js](ladieci-bot/src/agents/agentOrdini.js): `cambiaStato` su `EN_COCINA` scrive `cocina_started_at = COALESCE(cocina_started_at, now())`; `modificaOrdine` dopo guardia MOD-4 setta `mod_ts = now()` e incrementa `mod_count`.
+- **Render badge** in [TabCocina.jsx](ladieci-app33/src/components/cocina/TabCocina.jsx) e [PanelCocina.jsx](ladieci-app33/src/components/cocina/PanelCocina.jsx) usando `isModifiedAfterCocina(o)`. Stringa spagnola breve. Dismiss UX da decidere (RR2 MOD-4: anche gestione errore `estado_terminal` lato modal).
