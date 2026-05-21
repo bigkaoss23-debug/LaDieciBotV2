@@ -377,7 +377,7 @@ async function modificaOrdine(ordenId, updates) {
   return { success: true };
 }
 
-// extras: { metodo_pago, cobrado, hora_entrega, hora_salida, repartidor, llegado, cucina_check }
+// extras: { metodo_pago, cobrado, hora_entrega, hora_salida, repartidor, llegado, cucina_check, listo_origin, listo_actor, listo_at }
 // Scrittura atomica singola — niente cerotti, niente race tra metodo_pago e estado.
 async function cambiaStato(ordenId, nuovoStato, extras = {}) {
   const upd = { estado: nuovoStato };
@@ -389,6 +389,11 @@ async function cambiaStato(ordenId, nuovoStato, extras = {}) {
   if (extras.repartidor   !== undefined) upd.repartidor   = extras.repartidor || null;
   if (extras.llegado      !== undefined) upd.llegado      = extras.llegado === true;
   if (extras.cucina_check !== undefined) upd.cucina_check = extras.cucina_check;
+  if (nuovoStato === "LISTO") {
+    if (extras.listo_origin !== undefined) upd.listo_origin = extras.listo_origin || null;
+    if (extras.listo_actor  !== undefined) upd.listo_actor  = extras.listo_actor || null;
+    upd.listo_at = extras.listo_at || new Date().toISOString();
+  }
 
   // Descuento applicato al RETIRADO (cliente davanti, operatore incassa): ricalcoliamo totale.
   // Funziona anche se chiamato con stato diverso da RETIRADO — applica e basta.

@@ -167,7 +167,7 @@ app.post("/api", async (req, res) => {
     } else if (action === "updateEstado") {
       // Accetta campi pagamento/timing/repartidor/descuento in unica scrittura atomica
       const extras = {};
-      for (const k of ["metodo_pago","cobrado","ya_pagado","hora_entrega","hora_salida","repartidor","llegado","cucina_check","descuento_tipo","descuento_valor"]) {
+      for (const k of ["metodo_pago","cobrado","ya_pagado","hora_entrega","hora_salida","repartidor","llegado","cucina_check","descuento_tipo","descuento_valor","listo_origin","listo_actor","listo_at"]) {
         if (req.body[k] !== undefined) extras[k] = req.body[k];
       }
       result = await cambiaStato(req.body.id, req.body.estado, extras);
