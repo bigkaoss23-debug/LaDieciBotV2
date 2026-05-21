@@ -1047,6 +1047,49 @@ Debiti tecnici rimasti (micro-step futuri separati):
 - Surface `slittato` / `hora_finale` al frontend dopo `modificaOrdine` (MOD-5).
 - Aggiornare TEST_MATRIX con casi M-01..M-08 per modifica post-creazione (MOD-6).
 
+### Delivery Stress (DS-1..DS-5)
+
+Blocco di audit e fix mirati sulla pipeline delivery (geocoding → schedule cascade). Tutti micro-step isolati, niente push, niente DB, niente `.env`. Documentazione completa: `LaDieciBotV2_DELIVERY_STRESS_TEST_PLAN.md`.
+
+Commit chiusi:
+
+- `461c4c1 docs document geo resolver cache priority from ds-1`
+- `3764355 i18n translate snooze button titles to spanish`
+- `40cc4f4 docs record delivery harness findings for cache keys and schedule cascade`
+- `0947e03 test add cache key parity check for delivery geocoding`
+- `09d4c55 test reproduce delivery schedule cascade bug`
+- `d7eb2ef fix sync downstream forno out after delivery aggregation`
+- `00c686d docs mark delivery schedule cascade bug fixed`
+
+**DS-1 / DS-1b — geoResolver priority**
+
+- Catena risolta osservata: cache esatta → cache-street → cliente salvato → Google → Nominatim → Photon → keyword/manual/null.
+- Rischio stale cache / cache-street documentato come decisione business aperta (TTL? invalidazione su cambio nome via?). Non patchato.
+
+**DS-2 — SnoozeButton i18n**
+
+- `title` italiani residui in `SnoozeButton.jsx` tradotti in spagnolo.
+
+**DS-4 — cache key parity FE/BE**
+
+- Test committabile: `ladieci-bot/tests/cacheKey.parity.test.js`.
+- `direccionToCacheKey` frontend ([api.js](ladieci-app33/src/api.js)) vs backend ([helpers.js](ladieci-bot/src/utils/helpers.js)): **20/20 PASS**, 0 mismatch sui 20 input "sporchi" (abbreviazioni `C/`, `Av.`, suffissi località/CAP, accenti, `nº`/`numero`, whitespace).
+
+**DS-5 — bug #4 schedule cascade**
+
+- Test: `ladieci-bot/tests/scheduleCascade.bug4.test.js` (prima bug-repro DS-5-A, poi regression DS-5-C).
+- Fix: [agentOrdini.js](ladieci-bot/src/agents/agentOrdini.js) — estratta funzione pura `planFornoOutSync(rows)`; `risincronizzaGiro` ora aggiorna sibling + downstream attivi sull'intera sim.
+- Filtro stati: aggiorna solo `NUEVO` / `EN_COCINA`. Non tocca `POR_CONFIRMAR` / `LISTO` / `EN_ENTREGA` / `RETIRADO` / `COMPLETADO`.
+- Niente modifica a `simulateDriverSchedule`, `calcolaFornoOut`, `proposeForNewOrder`, frontend.
+- **Bug #4 stato: FIXED con regression test (5/5 PASS).**
+
+Debiti tecnici / decisioni aperte (micro-step futuri separati):
+
+- geo cache TTL, validità `cache-street`, freschezza cliente salvato: decisioni business aperte.
+- `risincronizzaGiro` mantiene nome/firma storici; rename + cleanup parametri `(zona, hora)` inutilizzati rinviato a DS-5-D.
+- Da osservare in V2 test: eventuali salti visibili in `TabCocina` su ordini `EN_COCINA` downstream quando un'aggregazione spinge avanti il loro forno_out (comportamento desiderato).
+- Mini-service "10 delivery formale" sul V2 test resta da rifare post-deploy: il fix attuale è coperto solo dal regression in-memory.
+
 ### Regola operativa
 
 - **Non toccare questi 3 blocchi con patch larghe.** Ogni evoluzione deve essere micro-step singolo, testato, separato.
