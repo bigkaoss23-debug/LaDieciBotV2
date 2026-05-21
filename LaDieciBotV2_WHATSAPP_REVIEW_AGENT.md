@@ -100,3 +100,81 @@ Decisione: pending approval
 - No uso di conversazioni fuori retention.
 - No esposizione segreti.
 - No modifica produzione senza micro-step e test.
+
+## Stato audit e mitigazioni — 2026-05-21
+
+### 1. Audit completati
+
+- Audit read-only Bot IA / WhatsApp Review Agent completato con Claude.
+- Deep dive completato su `REGOLE_APPRESE`, prompt WhatsApp, endpoint Bot IA, UI operativa.
+- Nessuna modifica fatta durante gli audit.
+- Nessun DB toccato manualmente.
+- Nessun `.env` letto/modificato.
+
+### 2. Rischi identificati
+
+- `REGOLE_APPRESE` entra nel prompt WhatsApp tramite `agentWhatsapp.js`.
+- `REGOLE_APPRESE` era trattato come blocco forte "APLICAR SIEMPRE".
+- Suggerimenti approvati potevano finire nel prompt senza sanitize/cap/denylist.
+- Endpoint `rigeneraSuggerimenti` / `approvaSuggerimento` erano GET mutativi.
+- Se `DASHBOARD_API_KEY` mancava, gli endpoint Bot IA potevano restare fail-open.
+- UI Bot IA era operativa reale ma aveva label italiane.
+- `rigeneraSuggerimenti` cancella ancora i pending con `sbDelete`.
+- Mancano ancora preview/diff/versioning per `REGOLE_APPRESE`.
+- Una regola filtrata può risultare approvata in UI ma non entrare nel prompt, perché il micro-step 1 non ha cambiato schema/UI.
+
+### 3. Mitigazioni applicate
+
+**Commit `f4e4226` — `fix bot ia sanitize regole_apprese against prompt injection`**
+- File: `ladieci-bot/src/agents/agenteMiglioramento.js`
+- Cosa fa:
+  - `sanitize()` sul testo della regola approvata
+  - cap 200 caratteri
+  - denylist su token pericolosi (`ignora|olvida|system|tipo_consegna|conf=|tipo=|EN_COCINA|sin operador|JSON`)
+  - skip + `console.warn("[bot-ia] regola scartata", s.id)` per regole sospette
+  - `sbUpsert("config", { chiave: "REGOLE_APPRESE", ... })` invariato come firma
+  - nessun cambio schema / API / frontend / prompt WhatsApp
+
+**Commit `8527994` — `fix bot ia fail closed when dashboard api key missing`**
+- File: `ladieci-bot/index.js`
+- Cosa fa:
+  - controllo locale `requireDashboardKey(res)` sui soli endpoint Bot IA mutativi
+  - se manca `DASHBOARD_API_KEY` risponde `503 { ok:false, error:"bot_ia_disabled_no_auth" }`
+  - middleware globale `app.use("/api", …)` invariato
+  - nessun altro endpoint toccato
+  - GET resta GET in questo step
+
+**Commit `25c6b71` — `i18n translate bot ia review panel to spanish`**
+- File: `ladieci-app33/src/App.jsx`
+- Cosa fa:
+  - traduce in spagnolo la UI Bot IA / Suggerimenti (modal `sugModal` + `detailSug` + 5 notify)
+  - solo stringhe letterali
+  - nessuna logica / state / chiamata API / className cambiata
+
+### 4. Stato attuale
+
+- Working tree pulito dopo i commit.
+- Nessun push eseguito.
+- Branch `main` avanti di 78 commit rispetto a `origin/main`.
+- Modulo Bot IA migliorato ma non completamente chiuso.
+
+### 5. Debiti tecnici rimasti
+
+Da fare in micro-step futuri:
+
+- Rendere `REGOLE_APPRESE` "suggerimenti non vincolanti" nel prompt WhatsApp, senza spostamenti rischiosi finché non esiste golden test.
+- Creare golden test su `agentWhatsapp.interpreta()` per verificare che `REGOLE_APPRESE` non possa alzare `conf`/`tipo` in modo pericoloso.
+- Sostituire `sbDelete pending` in `rigeneraSuggerimenti` con stato `obsoleto`/`scartato_auto`.
+- Aggiungere preview/diff prima di promuovere `REGOLE_APPRESE`.
+- Aggiungere versioning / backup / rollback di `REGOLE_APPRESE`.
+- Valutare POST per endpoint mutativi Bot IA.
+- Valutare audit approvazione: `approvato_da`, `approvato_at`, `versione_regole`.
+- Gestire meglio il caso "regola approvata ma filtrata": oggi la UI può mostrarla come applicata anche se la sanitize/denylist l'ha esclusa dal prompt.
+
+### 6. Regola operativa futura
+
+- Non toccare più il modulo Bot IA con patch larghe.
+- Ogni modifica futura deve essere micro-step separato.
+- Nessuna modifica diretta al prompt WhatsApp senza test/golden corpus.
+- Nessuna modifica DB/schema senza piano e approvazione.
+- Live/production intoccata.
