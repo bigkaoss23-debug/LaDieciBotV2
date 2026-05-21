@@ -236,4 +236,28 @@ Setup pending per il badge "MODIFICADO" in Cocina (vedi audit nella sessione cor
 
 - **Apply migration `2026-05-21_add_mod_audit_fields.sql`** su V2 test → richiede approvazione esplicita.
 - **Backend wiring** in [agentOrdini.js](ladieci-bot/src/agents/agentOrdini.js): `cambiaStato` su `EN_COCINA` scrive `cocina_started_at = COALESCE(cocina_started_at, now())`; `modificaOrdine` dopo guardia MOD-4 setta `mod_ts = now()` e incrementa `mod_count`.
-- **Render badge** in [TabCocina.jsx](ladieci-app33/src/components/cocina/TabCocina.jsx) e [PanelCocina.jsx](ladieci-app33/src/components/cocina/PanelCocina.jsx) usando `isModifiedAfterCocina(o)`. Stringa spagnola breve. Dismiss UX da decidere (RR2 MOD-4: anche gestione errore `estado_terminal` lato modal).
+- **Render badge** in [TabCocina.jsx](ladieci-app33/src/components/cocina/TabCocina.jsx) e [PanelCocina.jsx](ladieci-app33/src/components/cocina/PanelCocina.jsx) usando `isModifiedAfterCocina(o)`. Stringa spagnola breve. Dismiss UX da decidere.
+
+## UI handling `estado_terminal` — 2026-05-21
+
+Chiusura parziale di RR2 MOD-4 (gestione lato UI dell'errore `{success:false, error:"estado_terminal"}` ritornato da `agentOrdini.modificaOrdine`). Backend invariato; tre commit UI/utility consecutivi.
+
+Commit chain:
+
+- **`2d8e36e test add terminal order modify error parser`** — parser puro [orderModifyError.js](ladieci-app33/src/utils/orderModifyError.js) → `parseEstadoTerminalError(res)` ritorna `{blocked, estado, message}` in spagnolo. Test pure Node 20/20 ([orderModifyError.test.js](ladieci-app33/src/utils/orderModifyError.test.js)). Nessun import React, nessuna dipendenza.
+- **`129ad21 fix show terminal state error on order edit`** — wiring nel path modal `modificaOrden` di [ServicioPage.jsx:653-700](ladieci-app33/src/components/ServicioPage.jsx:653). Rimosso notify ottimistico precoce `"✏️ Ordine aggiornato"` (italiano residuo); ora il notify avviene DOPO il risultato server. Se `blocked` → notify rosso con `parsed.message`; altrimenti → notify success `"✏️ Pedido actualizado"` (spagnolo).
+- **`3abd493 fix show terminal error on whatsapp addition`** — wiring nel path `waAddicion` (Preguntas, replace items / merge) di [ServicioPage.jsx:584-587](ladieci-app33/src/components/ServicioPage.jsx:584). Espanso il ramo `else` esistente per usare `parseEstadoTerminalError(res)`: notify rosso specifico se terminale, generico `"Error al actualizar pedido"` altrimenti. Branch success invariato.
+
+### Stato attuale UI handling
+
+- ✅ `modificaOrden` (modal edit) — coperto.
+- ✅ `waAddicion` (Preguntas) — coperto.
+- ⏳ **P3 aperti** (intent del path = ordini pre-cucina, blast radius basso, edge case race-condition):
+  - `waConfirm` cambio hora rapido ([ServicioPage.jsx:398-407](ladieci-app33/src/components/ServicioPage.jsx:398)) — risultato `api.post updateOrden` ignorato.
+  - `onConfirmaDaConfermare` ([ServicioPage.jsx:818-826](ladieci-app33/src/components/ServicioPage.jsx:818)) — risultato `api.post updateOrden` ignorato.
+
+### Rischi residui (NON coperti)
+
+- I 2 path P3 sopra restano silent su `estado_terminal` (race condition). Sintomo: notify ottimistico verde mostrato, UI riallineata al polling successivo. Patch micro stessa forma dei due fix sopra.
+- Frontend `OrdenCard.jsx:104` non blocca il click di modify su stati terminali (`isTerminalState(estado)`): il modal può ancora aprirsi → operatore lavora sul modal, salva, vede ora correttamente l'errore rosso. UX prevention rinviata.
+- `modificaOrden` non rollba il patch ottimistico locale su blocked: aspetta polling/WS reconcile. Comportamento accettato (notify rosso informa l'operatore).
