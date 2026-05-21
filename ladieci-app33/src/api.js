@@ -306,13 +306,16 @@ const api = {
   updateOrden: function(id, patch) {
     return proxyPost({ action:'updateOrden', id, ...patch });
   },
-  updateEstado: function(id, estado, metodo_pago, descuento) {
+  updateEstado: function(id, estado, metodo_pago, descuento, extras) {
     const body = { action:'updateEstado', id, estado };
     if (metodo_pago !== undefined) body.metodo_pago = metodo_pago;
     // Descuento applicato al cambio stato (es. RETIRADO con sconto last-minute).
     // Il backend ricalcola `totale` server-side e salva i 3 campi DB.
     if (descuento?.tipo)        body.descuento_tipo  = descuento.tipo;
     if (descuento?.valor != null) body.descuento_valor = descuento.valor;
+    // Audit LISTO: il frontend invia solo origin/actor; listo_at è fallback server-side.
+    if (extras?.listo_origin != null) body.listo_origin = extras.listo_origin;
+    if (extras?.listo_actor  != null) body.listo_actor  = extras.listo_actor;
     return proxyPost(body);
   },
   updateNotaCucina: function(id, nota_cucina) {

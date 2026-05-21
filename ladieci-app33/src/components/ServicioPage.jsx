@@ -594,7 +594,10 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     });
     logTransition(intent);
     try {
-      const res = await api.updateEstado(id, ORDER_STATES.LISTO);
+      const res = await api.updateEstado(id, ORDER_STATES.LISTO, undefined, undefined, {
+        listo_origin: metadata?.origin,
+        listo_actor:  metadata?.actor,
+      });
       if (!res || !res.success) {
         notify("❌ Errore — riprova", C.rosso);
       } else {
