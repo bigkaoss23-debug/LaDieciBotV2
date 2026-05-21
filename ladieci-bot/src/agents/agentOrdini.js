@@ -313,7 +313,31 @@ async function creaOrdine(params) {
   return { success: false, error: "troppi tentativi ID collision (max 8)" };
 }
 
+// Stati post-cucina / terminali: il pedido è già consegnato/chiuso e nessuna
+// modifica server-side deve poter mutarlo. Chiude MOD-4 (M-06 EN_ENTREGA,
+// M-07 RETIRADO/COMPLETADO). Vedi LaDieciBotV2_TEST_MATRIX.md.
+const MODIFICA_TERMINAL_STATES = new Set(["EN_ENTREGA", "RETIRADO", "COMPLETADO"]);
+
 async function modificaOrdine(ordenId, updates) {
+  // Guardia server-side: se l'ordine è in uno stato terminale, rifiuta
+  // l'operazione PRIMA di costruire `upd` o emettere update. Best-effort
+  // sul fetch: se sbSelect fallisce/non torna estado, cade nel path legacy
+  // (non aumentiamo la superficie d'errore di flussi legittimi).
+  try {
+    const cur = await sbSelect("ordenes", `id=eq.${encodeURIComponent(ordenId)}&select=estado`);
+    const estadoActual = cur?.[0]?.estado;
+    if (estadoActual && MODIFICA_TERMINAL_STATES.has(estadoActual)) {
+      return {
+        success: false,
+        error: "estado_terminal",
+        estado: estadoActual,
+        message: "No se puede modificar un pedido en estado terminal.",
+      };
+    }
+  } catch (e) {
+    console.warn(`[modificaOrdine ${ordenId}] guardia estado fallita:`, e?.message || e);
+  }
+
   const upd = {};
   // Items: filtra sempre il fake item (sicurezza retrocompatibile con chiamate vecchie)
   if (updates.items) upd.items = updates.items.filter(i => i.n !== "Entrega a domicilio");

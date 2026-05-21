@@ -1,9 +1,8 @@
-// M-06 + M-07 bug-repro (vedi LaDieciBotV2_TEST_MATRIX.md sezione Order
-// Modification). `modificaOrdine` oggi NON ha guardia su `estado`: emette
-// `sbUpdate("ordenes", id=eq.X, ...)` anche se l'ordine è in EN_ENTREGA,
-// RETIRADO o COMPLETADO. Questo test documenta il bug in modo
-// controllato; diventerà regression invertendo l'asserzione quando MOD-4
-// chiuderà la guardia in `agentOrdini.modificaOrdine`.
+// M-06 + M-07 regression (vedi LaDieciBotV2_TEST_MATRIX.md sezione Order
+// Modification). Storia: nato come bug-repro (commit ab51982) per
+// documentare che `modificaOrdine` NON aveva guardia su `estado`. MOD-4 ha
+// chiuso il gap in `agentOrdini.modificaOrdine` aggiungendo
+// MODIFICA_TERMINAL_STATES. Ora il test verifica la regressione del fix.
 //
 // Niente DB, niente rete, niente .env. Solo Node + mock di `supabase`
 // (e mock difensivo di `claude.js`) via require.cache, stesso pattern di
@@ -103,18 +102,19 @@ const TERMINALI = [
     catch (e) { threw = e; }
 
     const updates = ordenUpdatesFor(t.id);
-    const bodyHasNewItems = updates.some(u =>
-      Array.isArray(u.body?.items) && u.body.items.some(i => i.n === "Diavola"));
 
-    // BUG CORRENTE atteso: nessun errore, sbUpdate emesso, items modificati.
-    check(`${t.caso} (${t.estado}): modificaOrdine NON lancia errore (bug: dovrebbe rifiutare)`,
+    // MOD-4 atteso: rifiuta con success=false, error="estado_terminal",
+    // nessun update emesso su ordenes per il pedido bloccato.
+    check(`${t.caso} (${t.estado}): modificaOrdine non lancia eccezione`,
       threw == null, threw ? threw.message : "");
-    check(`${t.caso} (${t.estado}): sbUpdate("ordenes") viene emesso (bug: non dovrebbe)`,
-      updates.length >= 1, `updates=${updates.length}`);
-    check(`${t.caso} (${t.estado}): items mutati persistiti (bug: dovevano essere bloccati)`,
-      bodyHasNewItems, JSON.stringify(updates.map(u => u.body?.items)));
-    check(`${t.caso} (${t.estado}): res.success === true (bug: oggi ritorna successo)`,
-      res && res.success === true, JSON.stringify(res));
+    check(`${t.caso} (${t.estado}): res.success === false`,
+      res && res.success === false, JSON.stringify(res));
+    check(`${t.caso} (${t.estado}): res.error === "estado_terminal"`,
+      res && res.error === "estado_terminal", JSON.stringify(res));
+    check(`${t.caso} (${t.estado}): res.estado riflette lo stato bloccato`,
+      res && res.estado === t.estado, JSON.stringify(res));
+    check(`${t.caso} (${t.estado}): nessun sbUpdate("ordenes") emesso`,
+      updates.length === 0, `updates=${updates.length}: ${JSON.stringify(updates.map(u=>u.body))}`);
   }
 
   // Sanity sul controllo: lo stesso scenario con ordine in EN_COCINA deve
@@ -132,11 +132,6 @@ const TERMINALI = [
 
   console.log("");
   console.log("Totale: " + (pass + fail) + " | PASS: " + pass + " | FAIL: " + fail);
-  console.log("");
-  console.log("PASS qui = bug riprodotto: modificaOrdine permette update su stati");
-  console.log("terminali. Quando MOD-4 chiuderà la guardia, invertire l'asserzione");
-  console.log("(threw != null || updates.length === 0 || !res.success) e questo test");
-  console.log("diventa regression.");
 
   process.exit(fail === 0 ? 0 : 1);
 })();
