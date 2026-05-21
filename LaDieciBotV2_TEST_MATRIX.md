@@ -749,6 +749,55 @@ Migrazione audit `LISTO` preparata e applicata manualmente su V2 test:
   4. stato non `LISTO` con metadata diversi
   5. verificare che `listo_*` non vengano sovrascritti/cancellati
 
+### Audit S2 frontend wiring — 2026-05-21
+
+Audit read-only sul path frontend per il bottone LISTO. Trovato il gap che avrebbe fatto fallire la validazione reale.
+
+Gap rilevato (pre-`d717501`):
+
+- `TabCocina` ([TabCocina.jsx:38-43](ladieci-app33/src/components/cocina/TabCocina.jsx)) e `PanelCocina` ([PanelCocina.jsx:400-403](ladieci-app33/src/components/cocina/PanelCocina.jsx)) passavano già `{origin, actor}` a `onListo`.
+- `ServicioPage.setListo` ([ServicioPage.jsx:587-608](ladieci-app33/src/components/ServicioPage.jsx)) li propagava al `logTransition` (telemetry locale).
+- La chiamata HTTP reale era `api.updateEstado(id, ORDER_STATES.LISTO)` — senza `extras`.
+- `api.updateEstado` ([api.js:309](ladieci-app33/src/api.js)) aveva signature `(id, estado, metodo_pago, descuento)` — nessuno slot per `listo_*`.
+- Conseguenza: il backend whitelistava `listo_origin/listo_actor/listo_at` ma il frontend non li inviava mai. La real API/DB validation sarebbe fallita deterministicamente con i 3 campi `null`.
+
+Mitigazione (commit `d717501 fix wire listo audit metadata from ui to backend`):
+
+- File: `ladieci-app33/src/api.js`, `ladieci-app33/src/components/ServicioPage.jsx`.
+- `updateEstado(id, estado, metodo_pago, descuento, extras)`: parametro `extras` opzionale come ultimo argomento, back-compatible per i 7 call site esistenti.
+- `setListo` ora chiama `api.updateEstado(id, LISTO, undefined, undefined, { listo_origin: metadata.origin, listo_actor: metadata.actor })`.
+- `listo_at` NON viene inviato dal frontend: fallback server-side `new Date().toISOString()` in `agentOrdini.cambiaStato` ([agentOrdini.js:395](ladieci-bot/src/agents/agentOrdini.js)).
+- Nessun cambio a backend, schema, telemetry, UI visiva, logica stati, rollback `LISTO -> EN_COCINA`, `TabCocina`, `PanelCocina`.
+
+Verifiche eseguite sul commit `d717501`:
+
+- Babel parse OK su `api.js` e `ServicioPage.jsx`.
+- 7 call site di `api.updateEstado` ancora validi (righe 299, 400, 597, 628, 678, 705, 929 in `ServicioPage.jsx`).
+- `listo_at` non presente in `ladieci-app33/src` (solo commento esplicativo in `api.js:316`).
+- Harness body con 8 scenari (back-compat 2/3/4-arg, nuovo wiring 5-arg per `TabCocina`/`PanelCocina`, extras vuoto/parziale/undefined, rifiuto `listo_at` anche se passato): PASS 8/8.
+
+Stato di prontezza:
+
+- `READY_FOR_REAL_VALIDATION: YES`, condizionato a:
+  - backend V2 test deployato con `5b7ff08`
+  - frontend V2 test deployato con `d717501`
+  - URL backend V2 test confermato e diverso da produzione (`ladiecibot-production.up.railway.app`)
+  - ordine test in stato `EN_COCINA` creato apposta su V2 test (canal BANCO/MANUAL)
+
+Prossimo step reale (NON eseguito):
+
+- Eseguire la checklist S0-S9 del piano LISTO audit su V2 test, mai produzione.
+- S0: identificare URL backend V2 test.
+- S1: confermare deploy backend con `5b7ff08`.
+- S2: già completato — gap chiuso da `d717501`.
+- S3: creare ordine test su V2 test.
+- S4: snapshot pre-LISTO dei campi audit (atteso: tutti `null`).
+- S5: click `✅ LISTO` da UI operatore V2 test.
+- S6: verifica DB via `getOrdenes` API — atteso `listo_origin="TabCocina"`, `listo_actor="cocina"`, `listo_at` ISO non-null.
+- S7: verifica fallback `listo_at` server-side via curl che omette il campo.
+- S8: verifica negativa — `volverACocina` non azzera `listo_*`.
+- S9: cleanup ordini test.
+
 ## Listos — Rollback `LISTO -> EN_COCINA`
 
 Commit collegati:
