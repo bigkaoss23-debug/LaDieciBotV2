@@ -193,3 +193,71 @@ Per ogni test salvare:
 - stato Supabase
 - eventuale fallback
 - note su errore o correzione
+
+## Priorità risoluzione zona — verificato 2026-05-21 (DS-1)
+
+Audit harness offline read-only su `risolviIndirizzo()` ([ladieci-bot/src/utils/geoResolver.js](ladieci-bot/src/utils/geoResolver.js)). Nessuna chiamata DB o rete reale: `sbSelect` e `fetch` mockati. Output testuale dell'harness validato su 5 scenari.
+
+### Ordine reale di precedenza osservato
+
+1. **`loadFromCache` chiave esatta** — vince sempre se `lat/lon/zona/durata_andata_min` presenti.
+2. **`loadFromCache` street fallback** — quando la chiave esatta è miss ma esiste un'altra riga con `direccion_key ILIKE '<via>%'` con lat/lon/durata completi. Selezione: `n_ordini_consegnati DESC, hit_count DESC, updated_at DESC`.
+3. **`loadFromCliente`** — vince solo se cache miss totale **E** cliente ha `direccion_confermata_il + zona + zona_lat + zona_lon + durata_andata_min` **E** `direccionToCacheKey(cli.direccion) === direccionToCacheKey(direccion)`.
+4. **Google** (se `GEO_PROVIDER` ∈ `google|shadow` e `KEY` presente).
+5. **Nominatim**.
+6. **Photon**.
+7. **Keyword zona** (`assegnaZonaDaKeyword`, no lat/lon, no cache).
+8. **`null` / fallback manuale UI** (alert + Q1-Q5 manuali).
+
+Conclusione sintetica: **cache esatta > cache-street > cliente > provider esterni > keyword > null**.
+
+### Concetto "cache blindata"
+
+- Riga in `geo_cache` con `n_ordini_consegnati >= 1` è considerata "blindata": autorità assoluta sopra anche Google.
+- `n_ordini_consegnati` viene incrementato in `chiudiServizio` (servizio.js) sugli ordini archiviati.
+- `forceRefresh=true` su cache blindata: viene loggato come warn ma esegue comunque (escape hatch operatore).
+
+### Cache-street fallback — NON precedentemente documentato in questo plan
+
+- File: [geoResolver.js:88-115](ladieci-bot/src/utils/geoResolver.js).
+- Quando la chiave esatta è miss, il sistema estrae il prefisso "tipo + nome via" (rimuove il numero civico finale via regex `\s+\d.*$`) e cerca con `ILIKE '<prefisso>%'` altre righe della stessa via con dato Google completo.
+- Razionale documentato nel codice: "dentro la stessa via, i tempi macchina dalla pizzeria variano di 1-2 min — più affidabile dell'haversine × 1.70 (vedi Bug A, ordine #001 Avenida Playa Serena: 23 min haversine vs ~10 min reali)".
+- Mancano guard rail su:
+  - distanza massima tra civici nella stessa via;
+  - lunghezza della via (vie lunghe come Avenida del Mar / Avenida Reino de España possono avere civici in zone diverse).
+- Output `source: "cache-street"` in `buildResult`.
+
+### Scenari osservati DS-1
+
+| # | Scenario | Sorgente osservata | Provider chiamato | Risultato |
+|---|----------|--------------------|--------------------|-----------|
+| 1 | cache miss + cliente miss + provider KO | `null` (emptyResult) | sì (Nominatim, Photon) | `zona=null` → UI fallback manuale |
+| 2 | cache hit esatta + cliente miss | `google` (cached:true) | no | `zona` dalla cache |
+| 3 | cache miss + cliente con `direccion_confermata_il` + dati completi | `cliente` (cached:true) | no | `zona` dal cliente |
+| 4 | cache blindata Q3 (`n_ord_consegnati=3`) + cliente aggiornato Q5 | `google` (dalla cache) | no | `zona=Q3` — **cliente più recente IGNORATO** |
+| 5 | cache miss esatto `Calle Mayor 200` + cache-street fallback su `Calle Mayor 1` | `cache-street` (cached:true) | no | `zona/durata` del civico 1 applicate al civico 200 |
+
+### Decisioni business aperte (NON automatizzare senza approvazione)
+
+1. **TTL / invalidazione cache blindata**: oggi nessuna. Se l'indirizzo è stato "trasferito" tra zone (errore geocode storico o ristrutturazione zone Q1-Q5), la riga non viene mai rivalutata finché qualcuno non fa `forceRefresh` esplicito.
+2. **Soglia civico-distanza per cache-street**: oggi match libero su prefisso via. Da decidere se introdurre vincolo (`|civico_richiesto - civico_match| <= N`) o vincolo zona stabile (tutti i match in una via devono avere stessa `zona`).
+3. **Re-verifica cliente con `direccion_confermata_il` vecchio**: oggi nessun TTL. Cliente confermato 12 mesi fa è trattato come fresco.
+
+### Pre-flight fuori zona
+
+Aggiunto per chiarezza: prima di chiamare cache/cliente/provider, [geoResolver.js:445-458](ladieci-bot/src/utils/geoResolver.js) blocca esplicitamente località come `aguadulce, almería, vícar, mojonera, el ejido, adra, berja, dalías`. Più affidabile di qualsiasi geocoder che può avere dati misti tra comuni limitrofi.
+
+### Stato test
+
+- Harness offline DS-1: `PASS 5/5` osservati.
+- Nessun test in `LaDieciBotV2_TEST_MATRIX.md` formalizza ancora questi scenari come golden.
+- Nessuna patch al codice. Comportamento "cache blindata vince" è intenzionale e va decisa business prima di toccare.
+
+### Prossimi micro-step proposti (NON eseguiti)
+
+- **DS-2** (i18n `SnoozeButton.jsx`, 2 `title=` italiani → spagnolo). Indipendente.
+- **DS-3** (questo step se non già coperto: aggiunta cache-street nel plan — fatta qui).
+- **DS-4** (golden test `direccionToCacheKey` frontend vs backend). Harness offline.
+- **DS-5** (scenario "bug #4 cascade" su `simulateDriverSchedule`). Harness offline.
+- **DS-6** (surface `hora_finale` slittato al frontend). Tocca 3 file.
+- **DS-7** (mini-service 10 delivery formale su V2 test). Solo dopo deploy.
