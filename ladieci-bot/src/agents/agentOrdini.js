@@ -35,30 +35,44 @@ async function calcolaFornoOutFallback({ tipoConsegna, hora, durataAndataMin, zo
   return calcolaFornoOut({ tipoConsegna, hora, durataAndataMin, driverLiberoMin: sim.driverLiberoMin });
 }
 
-// Sibling-sync: tutti gli ordini dello stesso giro (zona+slot) escono dal forno
-// nello STESSO istante — il driver parte una volta sola. Quando un ordine si
-// aggrega, i fratelli già in DB possono avere un forno_out vecchio (calcolato
-// quando il giro aveva max-durata diversa). Qui riallineo tutti al partenzaMin
-// del giro: zero scarto, stesso countdown in cucina = stessa comanda a colpo
-// d'occhio. Best-effort: errori loggati, non bloccano il flusso ordine.
+// Schedule-sync: tutti gli ordini delivery attivi escono dal forno all'orario
+// di partenza del loro giro come ricalcolato dalla sim corrente. Risolve due
+// drift:
+//   1) sibling stesso giro con forno_out vecchio (max-durata cambiata)
+//   2) downstream giri spostati da un'aggregazione a monte che ha allungato
+//      tg del giro precedente (bug #4)
+// Limitato a ordini in NUEVO / EN_COCINA: pizze già in LISTO / EN_ENTREGA non
+// vengono mosse (sono già uscite dal forno). Best-effort: errori loggati,
+// non bloccano il flusso ordine.
+//
+// Firma (zona, hora) mantenuta per compatibilità call-site: oggi non vengono
+// più usati per filtrare un giro target, ma è un dettaglio interno.
+function planFornoOutSync(rows) {
+  const sim = simulateDriverSchedule(rows || []);
+  const toMinL = (t) => { const [h,m] = String(t).split(":").map(Number); return h*60+(m||0); };
+  const toHL   = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+  const slot10L = (min) => { const r = Math.round(min/10)*10; return toHL(r); };
+  const byKey = new Map();
+  for (const g of sim.giri) byKey.set(`${g.zona}|${g.slot}`, toHL(g.partenzaMin));
+  const SYNCABLE = new Set(["NUEVO", "EN_COCINA"]);
+  const updates = [];
+  for (const o of rows || []) {
+    if (!o || o.tipo_consegna !== "DOMICILIO") continue;
+    if (!SYNCABLE.has(o.estado)) continue;
+    if (!o.zona || !o.hora) continue;
+    const want = byKey.get(`${o.zona}|${slot10L(toMinL(o.hora))}`);
+    if (!want || o.forno_out === want) continue;
+    updates.push({ id: o.id, forno_out_old: o.forno_out, forno_out_new: want });
+  }
+  return updates;
+}
+
 async function risincronizzaGiro(zona, hora) {
   if (!zona || !hora) return;
   try {
     const rows = await sbSelect("ordenes", "tipo_consegna=eq.DOMICILIO&estado=not.in.(RETIRADO,COMPLETATO)") || [];
-    const sim = simulateDriverSchedule(rows);
-    const toMinL = (t) => { const [h,m] = String(t).split(":").map(Number); return h*60+(m||0); };
-    const toHL   = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
-    const slot10L = (min) => { const r = Math.round(min/10)*10; return toHL(r); };
-    const targetSlot = slot10L(toMinL(hora));
-    const giro = sim.giri.find(g => g.zona === zona && g.slot === targetSlot);
-    if (!giro) return;
-    const fornoGiro = toHL(giro.partenzaMin);
-    const fratelli = rows.filter(o =>
-      o.zona === zona && o.hora && slot10L(toMinL(o.hora)) === targetSlot
-      && o.forno_out !== fornoGiro
-    );
-    for (const f of fratelli) {
-      await sbUpdate("ordenes", `id=eq.${encodeURIComponent(f.id)}`, { forno_out: fornoGiro });
+    for (const u of planFornoOutSync(rows)) {
+      await sbUpdate("ordenes", `id=eq.${encodeURIComponent(u.id)}`, { forno_out: u.forno_out_new });
     }
   } catch (e) {
     console.warn("[risincronizzaGiro] fallita per", zona, hora, e?.message || e);
@@ -469,4 +483,4 @@ async function getById(id) {
   return (rows && rows.length > 0) ? rows[0] : null;
 }
 
-module.exports = { creaOrdine, modificaOrdine, cambiaStato, aggiungiItems, getById };
+module.exports = { creaOrdine, modificaOrdine, cambiaStato, aggiungiItems, getById, planFornoOutSync };

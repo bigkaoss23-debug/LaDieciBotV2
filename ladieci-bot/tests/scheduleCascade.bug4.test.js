@@ -1,110 +1,92 @@
-// DS-5-A — Bug #4 reproduction: cascade aggregation NON propaga forno_out a
-// valle. Quando si aggiunge O3 stesso Q2/slot10 di O1 (worst-case tg sale),
-// il rientro Q2 slitta ⇒ partenza Q3 slitta ⇒ il forno_out di O2 dovrebbe
-// muoversi avanti, ma quello PERSISTITO in DB resta calcolato sullo stato
-// vecchio. Risultato reale visto in produzione: pizza O2 esce dal forno
-// troppo presto e resta fredda sul bancone.
+// DS-5-C — Regression: schedule-sync downstream after delivery aggregation.
 //
-// NOTA: questo test è un BUG REPRO. È atteso che diventi obsoleto / vada
-// aggiornato quando il bug #4 sarà fixato (forno_out cascade-aware in scrittura
-// o ricalcolato server-side ad ogni aggregazione). Niente fix qui — solo prova
-// controllata e deterministica del mismatch.
+// Storia: questo test nasceva come bug-repro (DS-5-A, commit 09d4c55) e
+// dimostrava il bug #4: aggregando un ordine same-zone-slot che alza tg, il
+// giro a valle slittava ma il forno_out persistito dei suoi ordini restava
+// vecchio. DS-5-C ha esteso `risincronizzaGiro` in agentOrdini.js per
+// propagare la sync a TUTTI i giri attivi (non solo il giro target).
+// Ora il test verifica la regressione del fix.
 //
-// Nessun DB, nessuna rete, nessuna env. Solo le funzioni reali esportate da
-// ladieci-bot/src/utils/zones.js.
+// Nessun DB, nessuna rete, nessuna env. Si testa la funzione pura
+// `planFornoOutSync(rows)` esportata da agentOrdini.js, che è il core
+// cascade-aware estratto da `risincronizzaGiro`. Il wrapper sb-aware è un
+// thin loop di sbUpdate sulle update calcolate qui.
 
-const { simulateDriverSchedule, calcolaFornoOut } =
-  require("../src/utils/zones.js");
+const { planFornoOutSync } = require("../src/agents/agentOrdini.js");
 
-// Scenario fisso (vedi DELIVERY_STRESS_TEST_PLAN, bug #4).
+let pass = 0, fail = 0;
+const log = (ok, name, detail) => {
+  if (ok) { pass++; console.log("PASS  " + name); }
+  else    { fail++; console.log("FAIL  " + name + (detail ? " — " + detail : "")); }
+};
+
+// ---- Scenario fissi (vedi DELIVERY_STRESS_TEST_PLAN, bug #4) ----------------
 const O1 = {
   id: "O1", tipo_consegna: "DOMICILIO", estado: "EN_COCINA",
-  zona: "Q2", zona_lat: null, zona_lon: null,
-  hora: "21:45", durata_andata_min: 8,
+  zona: "Q2", hora: "21:45", durata_andata_min: 8, forno_out: "21:37",
 };
-const O2 = {
+const O2_EN_COCINA = {
   id: "O2", tipo_consegna: "DOMICILIO", estado: "EN_COCINA",
-  zona: "Q3", zona_lat: null, zona_lon: null,
-  hora: "22:00", durata_andata_min: 10,
+  zona: "Q3", hora: "22:00", durata_andata_min: 10, forno_out: "21:56",
 };
-const O3 = {
-  id: "O3", tipo_consegna: "DOMICILIO", estado: "EN_COCINA",
-  zona: "Q2", zona_lat: null, zona_lon: null,
-  hora: "21:45", durata_andata_min: 14,
+const O2_LISTO = { ...O2_EN_COCINA, estado: "LISTO" };
+const O3_AGGREGA = {
+  id: "O3", tipo_consegna: "DOMICILIO", estado: "NUEVO",
+  zona: "Q2", hora: "21:45", durata_andata_min: 14, forno_out: null,
+};
+const O3_NO_AGGREGATE = {
+  id: "O3", tipo_consegna: "DOMICILIO", estado: "NUEVO",
+  zona: "Q5", hora: "22:30", durata_andata_min: 30, forno_out: null,
 };
 
-function fmt(m) {
-  if (m == null) return "—";
-  return String(Math.floor(m/60)).padStart(2,"0") + ":" + String(m%60).padStart(2,"0");
+// ---- 1) pre aggregazione: nessuna drift, nessun update ---------------------
+{
+  const u = planFornoOutSync([O1, O2_EN_COCINA]);
+  const touchO2 = u.find(x => x.id === "O2");
+  log(!touchO2, "pre-aggregazione: O2 (EN_COCINA) non viene mosso",
+    touchO2 ? `update inatteso: ${JSON.stringify(touchO2)}` : "");
 }
 
-// 1) Stato iniziale (solo O1, O2).
-const simA = simulateDriverSchedule([O1, O2]);
-const giroQ2_A = simA.giri.find(g => g.zona === "Q2");
-const giroQ3_A = simA.giri.find(g => g.zona === "Q3");
+// ---- 2) post aggregazione: O2 downstream deve essere allineato a 22:02 ----
+//
+// Atteso: Q2 con tg=14 → rientro 21:45+3+14 = 22:02. Q3 partenza = max(22:02,
+// 22:00-10=21:50) = 22:02. O2.forno_out deve passare da "21:56" a "22:02".
+{
+  const u = planFornoOutSync([O1, O2_EN_COCINA, O3_AGGREGA]);
+  const upd = u.find(x => x.id === "O2");
+  const ok = upd && upd.forno_out_old === "21:56" && upd.forno_out_new === "22:02";
+  log(ok, "post-aggregazione: O2 viene allineato a 22:02",
+    upd ? JSON.stringify(upd) : "nessun update emesso per O2");
+}
 
-// 2) forno_out PERSISTITO di O2: come fu calcolato quando O2 fu creato,
-//    cioè con driver_libero = rientro di O1 (stato pre-O3).
-const driverLiberoPreO2 = simulateDriverSchedule([O1]).driverLiberoMin;
-const fornoO2_persisted = calcolaFornoOut({
-  tipoConsegna: "DOMICILIO",
-  hora: O2.hora,
-  durataAndataMin: O2.durata_andata_min,
-  driverLiberoMin: driverLiberoPreO2,
-}).forno_out;
+// ---- 3) guardia LISTO: O2 in LISTO non deve essere toccato -----------------
+{
+  const u = planFornoOutSync([O1, O2_LISTO, O3_AGGREGA]);
+  const touchO2 = u.find(x => x.id === "O2");
+  log(!touchO2, "guardia LISTO: O2 in LISTO non viene mosso",
+    touchO2 ? `update vietato emesso: ${JSON.stringify(touchO2)}` : "");
+}
 
-// 3) Aggregazione: arriva O3 stesso Q2 stesso slot10 di O1.
-const simB = simulateDriverSchedule([O1, O2, O3]);
-const giroQ2_B = simB.giri.find(g => g.zona === "Q2");
-const giroQ3_B = simB.giri.find(g => g.zona === "Q3");
+// ---- 4) no-aggregation: O3 in zona diversa e ora più tarda → no update O2 -
+{
+  const u = planFornoOutSync([O1, O2_EN_COCINA, O3_NO_AGGREGATE]);
+  const touchO2 = u.find(x => x.id === "O2");
+  log(!touchO2, "no-aggregation: O3 in Q5 22:30 lascia O2 invariato",
+    touchO2 ? `update inutile: ${JSON.stringify(touchO2)}` : "");
+}
 
-// 4) forno_out CORRETTO di O2 dopo aggregazione: driver_libero = rientro Q2 nuovo.
-const fornoO2_corretto = calcolaFornoOut({
-  tipoConsegna: "DOMICILIO",
-  hora: O2.hora,
-  durataAndataMin: O2.durata_andata_min,
-  driverLiberoMin: giroQ2_B.rientroMin,
-}).forno_out;
-
-console.log("Stato A — pre aggregazione (O1, O2)");
-console.log("  Q2: part " + fmt(giroQ2_A.partenzaMin) + " · consegna " + fmt(giroQ2_A.consegnaMin) + " · rientro " + fmt(giroQ2_A.rientroMin) + " (tg=" + giroQ2_A.tg + ")");
-console.log("  Q3: part " + fmt(giroQ3_A.partenzaMin) + " · consegna " + fmt(giroQ3_A.consegnaMin) + " · rientro " + fmt(giroQ3_A.rientroMin) + " (tg=" + giroQ3_A.tg + ")");
-console.log("  forno_out O2 (persistito allo stato A): " + fornoO2_persisted);
+// ---- 5) guardie aggiuntive: stati esclusi non ricevono update --------------
+{
+  const variants = ["POR_CONFIRMAR", "EN_ENTREGA", "RETIRADO", "COMPLETATO"];
+  let allGuarded = true;
+  for (const st of variants) {
+    const rows = [O1, { ...O2_EN_COCINA, estado: st }, O3_AGGREGA];
+    const touchO2 = planFornoOutSync(rows).find(x => x.id === "O2");
+    if (touchO2) { allGuarded = false; console.log("    bleed-through stato=" + st + ": " + JSON.stringify(touchO2)); }
+  }
+  log(allGuarded, "guardia stati esclusi (POR_CONFIRMAR/EN_ENTREGA/RETIRADO/COMPLETATO)");
+}
 
 console.log("");
-console.log("Stato B — post aggregazione (O1, O2, O3 same-zone-slot di O1)");
-console.log("  Q2: part " + fmt(giroQ2_B.partenzaMin) + " · consegna " + fmt(giroQ2_B.consegnaMin) + " · rientro " + fmt(giroQ2_B.rientroMin) + " (tg=" + giroQ2_B.tg + ")");
-console.log("  Q3: part " + fmt(giroQ3_B.partenzaMin) + " · consegna " + fmt(giroQ3_B.consegnaMin) + " · rientro " + fmt(giroQ3_B.rientroMin) + " (tg=" + giroQ3_B.tg + ")");
-console.log("  forno_out O2 (ricalcolato dopo aggregazione): " + fornoO2_corretto);
-
-console.log("");
-console.log("Atteso bug #4: forno_out persistito di O2 ≠ ricalcolato.");
-console.log("  persistito:  " + fornoO2_persisted);
-console.log("  ricalcolato: " + fornoO2_corretto);
-
-// Sanity: i due giri sono effettivamente cambiati (Q2 tg da 8 a 14, Q3 partenza slittata).
-const q2TgSalito  = giroQ2_B.tg > giroQ2_A.tg;
-const q3Slittato  = giroQ3_B.partenzaMin > giroQ3_A.partenzaMin;
-const fornoMismatch = fornoO2_persisted !== fornoO2_corretto;
-
-const bugRiprodotto = q2TgSalito && q3Slittato && fornoMismatch;
-
-if (bugRiprodotto) {
-  console.log("");
-  console.log("PASS — bug #4 riprodotto: aggregazione Q2 spinge avanti Q3 e il");
-  console.log("forno_out persistito di O2 (" + fornoO2_persisted + ") è anticipato di " +
-    ((toMinLocal(fornoO2_corretto) - toMinLocal(fornoO2_persisted))) + " min rispetto al ricalcolato (" + fornoO2_corretto + ").");
-  process.exit(0);
-} else {
-  console.log("");
-  console.log("FAIL — scenario non riprodotto come atteso:");
-  console.log("  q2_tg_salito="  + q2TgSalito);
-  console.log("  q3_slittato="   + q3Slittato);
-  console.log("  forno_mismatch=" + fornoMismatch);
-  process.exit(1);
-}
-
-function toMinLocal(t) {
-  const [h,m] = String(t).split(":").map(Number);
-  return h*60 + (m||0);
-}
+console.log("Totale: " + (pass + fail) + " | PASS: " + pass + " | FAIL: " + fail);
+process.exit(fail === 0 ? 0 : 1);
