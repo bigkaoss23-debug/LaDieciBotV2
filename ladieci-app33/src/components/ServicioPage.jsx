@@ -581,7 +581,10 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
           await api.post({ action: "aggiornaRispostaBot", id: msgId, bot_risposta: botMsg });
         }
         if (ordenEstado === ORDER_STATES.LISTO) notify("⚠️ Pedido ya LISTO — avisa al cliente!", C.orange);
-      } else { notify("❌ Error al añadir", C.rosso); }
+      } else {
+        const parsed = parseEstadoTerminalError(res);
+        notify("❌ " + (parsed.blocked ? parsed.message : "Error al actualizar pedido"), C.rosso);
+      }
     } catch(err) { console.error("waAddicion:", err); notify("❌ Error al añadir", C.rosso); }
   };
 
