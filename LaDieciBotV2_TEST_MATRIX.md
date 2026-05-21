@@ -871,6 +871,12 @@ Controlli tecnici:
 | Listos | Rollback `LISTO -> EN_COCINA` | Validato | ordine test | `↩ Volver a cocina` riporta ordine in Cocina | Cancel confirm validato con Playwright/Chrome |
 | DB | Migrazione audit `LISTO` | Preparata non applicata | - | Campi `listo_*` disponibili dopo migration | Nessun DB toccato |
 | DB | Readiness audit `LISTO` | Completato non applicato | - | Migration SQL compatibile/additiva | Confermare Supabase target prima di applicare |
+| Future | Delivery/geocoding stress | Da pianificare | - | Fallback e persistenza robusti | Vedi `LaDieciBotV2_DELIVERY_STRESS_TEST_PLAN.md` |
+| Future | Order modification visibility | Da pianificare | - | Cocina nota modifiche importanti | Vedi `LaDieciBotV2_ORDER_MODIFICATION_NOTES.md` |
+| Future | Nuevo Pedido builder | Da pianificare | - | Builder stabile con extras/quantita/orari | Vedi `LaDieciBotV2_NEXT_CRITICAL_AREAS.md` |
+| Future | WhatsApp Bot Basic | Da pianificare | - | Pickup/basic guardrail validati | Vedi `LaDieciBotV2_BOT_DELIVERY_STRATEGY.md` |
+| Future | WhatsApp Bot Delivery Q1 | Da pianificare | - | Solo casi Q1 semplici/autonomi | Vedi `LaDieciBotV2_BOT_DELIVERY_STRATEGY.md` |
+| Future | WhatsApp Review Agent | Da ispezionare | - | Report settimanale con approvazione umana | Vedi `LaDieciBotV2_WHATSAPP_REVIEW_AGENT.md` |
 
 ## Criteri generali di validazione
 

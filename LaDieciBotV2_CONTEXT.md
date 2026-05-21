@@ -12,6 +12,35 @@
 - Frontend: `ladieci-app33`
 - Backend: `ladieci-bot`
 
+## Planning docs operativi
+
+Questi file sono il punto di ripartenza per le prossime sessioni. Non sostituiscono questo contesto, ma raccolgono la pianificazione per i blocchi ancora aperti.
+
+- `LaDieciBotV2_NEXT_CRITICAL_AREAS.md`
+- `LaDieciBotV2_DELIVERY_STRESS_TEST_PLAN.md`
+- `LaDieciBotV2_ORDER_MODIFICATION_NOTES.md`
+- `LaDieciBotV2_BOT_DELIVERY_STRATEGY.md`
+- `LaDieciBotV2_WHATSAPP_REVIEW_AGENT.md`
+
+Stato stabile gia' validato:
+
+- Delivery lifecycle completo: `POR_CONFIRMAR -> EN_COCINA -> LISTO -> EN_ENTREGA -> RETIRADO`.
+- Rollback `LISTO -> EN_COCINA` da `Listos`.
+- Confirm OK e Cancel del rollback validati.
+- Entregas allineato: solo `DOMICILIO + LISTO` e `DOMICILIO + EN_ENTREGA`.
+- Snooze cucina `ui_offset_min` validato fino a `+20`.
+- Header servizio `Horno / live BASIC / Reparto` validata.
+
+Prossime aree critiche:
+
+- Delivery/geocoding manual pipeline + stress matrix.
+- WhatsApp bot from-zero behavior tests.
+- Visibilita' modifiche ordine in Cocina.
+- Guardrail WhatsApp Delivery Q1.
+- Nuevo Pedido/menu builder inspection.
+- Supabase LISTO audit solo quando il DB target e' confermato.
+- Chiusura servizio/end-of-night piu' avanti.
+
 ## Avvio locale frontend
 
 ```bash
