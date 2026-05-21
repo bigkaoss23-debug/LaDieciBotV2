@@ -145,19 +145,26 @@ Obiettivo: rendere persistente origine/actor/timestamp del click `LISTO`.
 
 Stato:
 
-- migrazione pronta:
+- migrazione pronta e applicata manualmente su V2 test:
   - `ladieci-bot/migrations/2026-05-20_add_listo_audit_fields.sql`
 - campi:
   - `listo_origin`
   - `listo_actor`
   - `listo_at`
-- migrazione NON applicata
-- wiring NON fatto
+- backend wiring commit:
+  - `5b7ff08 fix persist listo audit fields on backend`
+- validato:
+  - schema DB presente
+  - syntax check backend
+  - harness mock Supabase
+- pending:
+  - real API/DB validation su backend V2 test deployato o backend locale con service key corretta
+  - frontend wiring `setListo -> api.updateEstado` con metadata persistenti
 
 Regole:
 
-- non applicare senza conferma esplicita del progetto Supabase target
-- non cablare backend/frontend prima della migrazione e verifica schema
+- non fare ulteriori wiring prima del test reale backend
+- test SQL diretto non basta: non valida la guardia backend `nuovoStato === "LISTO"`
 - migration e wiring devono restare micro-step separati
 
 ### 8. Chiusura servizio/end-of-night
@@ -173,4 +180,3 @@ Da trattare piu' avanti. Non e' priorita' immediata rispetto a delivery/geocodin
 5. Nuevo Pedido/menu builder inspection
 6. Supabase LISTO audit quando il DB target e' sicuro
 7. Cierre servicio/end-of-night piu' avanti
-

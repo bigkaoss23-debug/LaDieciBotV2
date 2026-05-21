@@ -713,10 +713,11 @@ Nota audit futura:
   - campi ordine tipo `listo_origin`, `listo_actor`, `listo_at`
   - oppure tabella eventi ordine/audit log.
 
-Migrazione audit `LISTO` preparata ma NON applicata:
+Migrazione audit `LISTO` preparata e applicata manualmente su V2 test:
 
 - File: `ladieci-bot/migrations/2026-05-20_add_listo_audit_fields.sql`
-- Campi previsti su `ordenes`:
+- Target verificato: Supabase project ref `wnswassgfuuivmfwjxsf`, ambiente `V2 test`.
+- Campi presenti su `ordenes`:
   - `listo_origin TEXT`
   - `listo_actor TEXT`
   - `listo_at TIMESTAMPTZ`
@@ -724,18 +725,29 @@ Migrazione audit `LISTO` preparata ma NON applicata:
   - audit minimo dell'ultimo evento `LISTO` dell'ordine
   - distinguere se `LISTO` arriva da `TabCocina`, `PanelCocina`, ecc.
   - non sostituire una futura tabella audit/eventi completa
-- Stato:
-  - migrazione NON applicata
-  - nessun collegamento Supabase
-  - nessun DB live/production toccato
-  - backend/frontend/API non ancora collegati a questi campi
-  - `.env` non toccato
-- Prima di validare persistenza reale:
-  1. applicare la migrazione sul DB giusto con conferma esplicita
-  2. aggiornare backend whitelist/update
-  3. aggiornare frontend `api.updateEstado`
-  4. salvare `listo_origin/listo_actor/listo_at` quando stato passa a `LISTO`
-  5. validare che dopo refresh i campi persistano
+- Backend commit:
+  - `5b7ff08 fix persist listo audit fields on backend`
+- Implementato:
+  - `updateEstado` whitelista `listo_origin/listo_actor/listo_at`
+  - `cambiaStato()` scrive `listo_*` solo quando `nuovoStato === "LISTO"`
+  - `listo_at` fallback server-side se assente
+  - stati non `LISTO` non scrivono/cancellano `listo_*`
+- Validato:
+  - schema DB presente su V2 test
+  - `node --check` OK
+  - harness mock Supabase OK
+- Non ancora validato:
+  - real API/DB endpoint `updateEstado` su backend V2 test deployato
+- Motivo pending:
+  - backend locale non aveva env/service key backend corretta
+  - patch non ancora deployata su backend V2 test durante il tentativo
+  - test SQL diretto non valida la guardia backend `nuovoStato === "LISTO"`
+- Prossimo test richiesto:
+  1. deploy backend V2 test oppure backend locale con env/service key corretta
+  2. `updateEstado` a `LISTO` con `listo_origin/listo_actor`
+  3. verificare persistenza DB
+  4. stato non `LISTO` con metadata diversi
+  5. verificare che `listo_*` non vengano sovrascritti/cancellati
 
 ## Listos — Rollback `LISTO -> EN_COCINA`
 
@@ -910,8 +922,8 @@ Nota: nel fallback manuale `lat/lon` possono restare `null`; la zona manuale e i
 | Cocina | Origin telemetry `✅ LISTO` | Validato con nota | ordine test | Metadata origin/actor in intent LISTO | Export browser non leggibile da automazione |
 | Listos | Rollback `LISTO -> EN_COCINA` | Validato | ordine test | `↩ Volver a cocina` riporta ordine in Cocina | Cancel confirm validato con Playwright/Chrome |
 | Delivery/geocoding | Fallback manuale zona | Validato | `#001` | Q1-Q5 manuale dopo geocode KO | `zona_manuale: true`, fee 2.5 |
-| DB | Migrazione audit `LISTO` | Preparata non applicata | - | Campi `listo_*` disponibili dopo migration | Nessun DB toccato |
-| DB | Readiness audit `LISTO` | Completato non applicato | - | Migration SQL compatibile/additiva | Confermare Supabase target prima di applicare |
+| DB | Migrazione audit `LISTO` | Applicata su V2 test | - | Campi `listo_*` presenti in `ordenes` | Project ref `wnswassgfuuivmfwjxsf` |
+| Backend | Persistenza audit `LISTO` | Harness validato, real API pending | - | `LISTO` scrive `listo_*`, altri stati no | Commit `5b7ff08`; serve test su backend V2 |
 | Future | Delivery/geocoding stress | Da pianificare | - | Fallback e persistenza robusti | Vedi `LaDieciBotV2_DELIVERY_STRESS_TEST_PLAN.md` |
 | Future | Order modification visibility | Da pianificare | - | Cocina nota modifiche importanti | Vedi `LaDieciBotV2_ORDER_MODIFICATION_NOTES.md` |
 | Future | Nuevo Pedido builder | Da pianificare | - | Builder stabile con extras/quantita/orari | Vedi `LaDieciBotV2_NEXT_CRITICAL_AREAS.md` |

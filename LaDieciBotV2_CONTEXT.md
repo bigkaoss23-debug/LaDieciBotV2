@@ -374,10 +374,11 @@ Nota futura: per sapere "chi ha premuto LISTO" anche dopo refresh/giornata o in 
 - campi ordine tipo `listo_origin`, `listo_actor`, `listo_at`
 - oppure tabella eventi ordine/audit log.
 
-Migrazione preparata ma NON applicata:
+Migrazione preparata e poi applicata manualmente su V2 test:
 
 - File: `ladieci-bot/migrations/2026-05-20_add_listo_audit_fields.sql`
-- Campi previsti su `ordenes`:
+- Target verificato: Supabase project ref `wnswassgfuuivmfwjxsf`, ambiente `V2 test`.
+- Campi presenti su `ordenes`:
   - `listo_origin TEXT`
   - `listo_actor TEXT`
   - `listo_at TIMESTAMPTZ`
@@ -385,18 +386,30 @@ Migrazione preparata ma NON applicata:
   - audit minimo dell'ultimo evento `LISTO` dell'ordine
   - sapere se `LISTO` arriva da `TabCocina`, `PanelCocina`, ecc.
   - non sostituisce una futura tabella audit/eventi completa
-- Nota critica:
-  - migrazione NON applicata
-  - nessun collegamento Supabase
-  - nessun DB live/production toccato
-  - backend/frontend/API non ancora collegati a questi campi
-  - `.env` non toccato
-- Prima di usare questi campi serve:
-  1. applicare la migrazione sul DB giusto con conferma esplicita
-  2. aggiornare backend whitelist/update
-  3. aggiornare frontend `api.updateEstado`
-  4. salvare i metadata `listo_origin/listo_actor/listo_at` quando stato passa a `LISTO`
-  5. validare che dopo refresh i campi persistano
+- Backend commit:
+  - `5b7ff08 fix persist listo audit fields on backend`
+- Cosa fa il backend:
+  - `updateEstado` whitelista `listo_origin/listo_actor/listo_at`
+  - `cambiaStato()` scrive `listo_*` solo quando `nuovoStato === "LISTO"`
+  - `listo_at` usa fallback server-side se non arriva
+  - stati non `LISTO` non scrivono e non cancellano `listo_*`
+- Validato:
+  - schema DB presente su V2 test
+  - `node --check` OK
+  - harness mock Supabase OK
+- Non ancora validato:
+  - real API/DB endpoint `updateEstado` su backend deployato o backend locale con service key corretta
+- Motivo:
+  - backend locale non aveva env/service key backend corretta
+  - patch non ancora deployata su backend V2 test al momento del test
+  - test SQL diretto via Supabase non valida la guardia backend `nuovoStato === "LISTO"`
+- Prima di considerare chiuso l'audit persistente serve:
+  1. deploy backend V2 test oppure backend locale con env/service key corretta
+  2. test reale `updateEstado` a `LISTO` con `listo_origin/listo_actor`
+  3. verificare persistenza di `listo_*`
+  4. cambiare a stato non `LISTO` passando metadata diversi
+  5. verificare che `listo_*` non vengano sovrascritti o cancellati
+  6. cablare frontend `api.updateEstado`/`setListo` in micro-step separato
 
 ## Listos: rollback operativo a Cocina
 
@@ -505,7 +518,7 @@ Readiness inspection:
 - Non esiste migration runner in `package.json`: le migrazioni sono SQL plain.
 - Target table identificata: `ordenes`.
 - `creaOrdine()` inserisce in `ordenes`; `cambiaStato()` aggiorna `ordenes.estado`; `LISTO` passa da `cambiaStato()`.
-- Nessun campo persistente `listo_origin/listo_actor/listo_at` trovato oggi.
+- Campi persistenti `listo_origin/listo_actor/listo_at` verificati su V2 test dopo applicazione manuale.
 - Campi simili gia' esistenti: `hora_salida`, `hora_entrega`, `cucina_check`.
 
 1. Confermare esplicitamente il DB target
