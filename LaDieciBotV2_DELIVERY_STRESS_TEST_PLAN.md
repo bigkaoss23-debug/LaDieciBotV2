@@ -261,3 +261,90 @@ Aggiunto per chiarezza: prima di chiamare cache/cliente/provider, [geoResolver.j
 - **DS-5** (scenario "bug #4 cascade" su `simulateDriverSchedule`). Harness offline.
 - **DS-6** (surface `hora_finale` slittato al frontend). Tocca 3 file.
 - **DS-7** (mini-service 10 delivery formale su V2 test). Solo dopo deploy.
+
+## Harness offline DS-4 — `direccionToCacheKey` parity — 2026-05-21
+
+Harness offline read-only su `direccionToCacheKey` frontend ([api.js:25-54](ladieci-app33/src/api.js)) vs backend ([helpers.js:299-345](ladieci-bot/src/utils/helpers.js)). Nessun DB, nessuna rete, nessun `.env`. Le due funzioni sono estratte testualmente dai source e invocate come funzioni anonime in-process.
+
+### Risultato parità FE↔BE
+
+- **20 input sporchi → 20 match. Drift FE↔BE: zero.**
+- Differenza sui source: BE 2683 char vs FE 1735 char, **solo per via dei commenti** più verbosi sul backend. Logica regex identica.
+
+### Collisioni desiderate confermate
+
+Input diversi → stessa key, comportamento atteso (la chiave è progettata per accomunare varianti sporche dello stesso indirizzo):
+
+| Key | Input che vi collassano |
+|---|---|
+| `calle mayor 1` | `Calle Mayor 1` · `calle mayor, 1` · `C/ Mayor 1` |
+| `avenida reino de espana 200` | `Avenida Reino de España 200` · `Av. Reino de España, 200` |
+| `calle cervantes 12` | `Calle Cervantes 12` · `C. Cervantes, 12` |
+| `calle jose ojeda 8` | `Calle José Ojeda 8` · `Calle Jose Ojeda 8` |
+| `calle andalucia 7` | `Calle Andalucía 7` · `Calle Andalucia 7` |
+
+### Rischio drift
+
+- **Oggi**: nessuno. Le due funzioni sono allineate byte-per-byte (modulo commenti).
+- **Futuro**: nessun test automatico previene il drift se uno dei due file viene editato senza aggiornare l'altro. Il commento `Mirror di direccionToCacheKey() in helpers.js — DEVE restare allineata` in [api.js:23-24](ladieci-app33/src/api.js) è una guardia documentale, non meccanica.
+
+### Ambiguità funzionale separata (non drift)
+
+`Calle Cuba 5`, `Calle Cuba nº5`, `Calle Cuba numero 5` producono **3 key diverse** (`calle cuba 5`, `calle cuba nº5`, `calle cuba numero 5`):
+
+- Entrambi BE e FE si comportano allo stesso modo → **non è drift**.
+- È un'ambiguità del normalizer in sé: il pattern `nº` / `numero` davanti al civico non viene rimosso.
+- Conseguenza: la `geo_cache` può finire con 3 righe per lo stesso indirizzo fisico, e cliente/operatore che scrivono la stessa via in modo diverso non condividono il cache hit.
+
+### Stato test e prossimi passi DS-4
+
+- Harness offline: PASS 20/20.
+- Nessuna patch al codice.
+- Proposta micro-step futuro: file `ladieci-bot/tests/cacheKey.parity.test.js` (~60 righe, runner `node` puro, niente Jest) che esegue i 20 input contro entrambi i source come CI guard contro drift futuro. Non eseguito ora.
+- Decisione business aperta: normalizzare `nº` / `numero` come prefisso civico (oggi no). Patch non urgente.
+
+## Harness offline DS-5 — `simulateDriverSchedule` bug #4 — 2026-05-21
+
+Harness offline read-only su `simulateDriverSchedule` ([zones.js:277-327](ladieci-bot/src/utils/zones.js)) e `proposeForNewOrder` ([zones.js:374+](ladieci-bot/src/utils/zones.js)). Nessun DB, nessuna rete. Scenario costruito per riprodurre il "Bug #4 cascade" già citato in CLAUDE.md come noto e aperto.
+
+### Risultato real-time
+
+- `simulateDriverSchedule` è **cascade-aware corretto** quando rilanciato: ricalcola tutti i giri da capo basandosi sullo stato corrente del DB, senza side-effect.
+- Il caso "Paco" (commit `685749b` Step A backend) è confermato risolto: forno_out per Paco Q2 21:40 durata 11 con giro Q1 21:30 in corso = `21:39`, hora_finale = `21:50`, slittato `true`. Pizza non fredda.
+
+### Bug #4 CONFERMATO sul persistito DB
+
+Scenario riproducibile:
+
+| Step | Ordini in DB | Schedule simulato |
+|---|---|---|
+| 1 | O1 Q2 21:45 d8 + O2 Q3 22:00 d10 | Giro Q2: parte 21:37, rientro **21:56**. Giro Q3: parte **21:56**, rientro 22:19. `forno_out` O2 corretto = `21:51`. |
+| 2 | + aggiunta O3 Q2 21:45 **d14** (aggregato same-zone-slot Q2 21:50) | Giro Q2 ora tg max(8,14)=14, rientro **22:02** (+6 min). Giro Q3 partenza **22:02** (+6 min). `forno_out` O2 corretto post-aggregazione = `22:02` (+11 min vs originale). |
+| 3 | O2 nel DB ha però ancora il vecchio `forno_out` salvato al momento della sua creazione | **Mismatch**: pizza O2 esce dal forno al vecchio orario ma il driver è ancora impegnato nel giro Q2 esteso → pizza in attesa sul bancone. |
+
+### Causa del bug
+
+- `risincronizzaGiro` ([agentOrdini.js:44-65](ladieci-bot/src/agents/agentOrdini.js:44)) aggiorna i `forno_out` dei **sibling** dello stesso giro (es. fratelli dell'ordine appena aggregato in Q2 21:50), ma **non** dei giri successivi (Q3 22:00).
+- `proposeForNewOrder` ([zones.js:374+](ladieci-bot/src/utils/zones.js)) ritorna `{ok:true, aggregato:true, motivo:"Aggregado al giro Q2 …"}` senza alcun avviso di downstream impact sul giro Q3.
+- Il caller non riceve mai segnale "altri ordini sui giri seguenti necessitano di ricomputo forno_out".
+
+### Rischio
+
+- Severity dichiarata `bassa` in CLAUDE.md `bug #4`.
+- Riproducibilità: aumenta in modo lineare con la divergenza di `durata_andata` tra gli ordini aggregati nello stesso slot. Nel test: durate 8 vs 14 → delta +6 min driver, +11 min forno_out O2.
+- Conseguenza concreta: pizza pronta troppo presto, freddezza progressiva sul bancone, **non è un crash** ma un degrado qualità nei servizi affollati.
+
+### Non patchare ora
+
+- Servirebbe prima un **test golden** che fissi il comportamento atteso post-fix (`risincronizzaGiro` esteso o nuovo `risincronizzaSchedule(zonaPartenza)` con recompute downstream).
+- Decisione business aperta: quando ricomputare (sincrono nel POST, asincrono via job, on-demand a `/api/scanServizio`)? Se notificare la cucina del cambio `forno_out` o silenzioso?
+- Possibili patch future:
+  - **DS-5-A** (estensione): `risincronizzaGiro` ricalcola anche i giri con `partenzaMin >= rientroMin_modificato`.
+  - **DS-5-B** (separazione): nuovo `risincronizzaScheduleDownstream(fromZona, fromSlot)` chiamato esplicitamente dopo `creaOrdine`/`modificaOrdine` quando il giro target ha visto cambio di `tg`.
+- Nessuna delle due in scope oggi.
+
+### Stato test DS-5
+
+- Harness offline: scenario "bug #4 stress" riprodotto con delta misurabile.
+- Caso Paco (scenario base cascade): regressione **non** osservata, confermato che Step A `685749b` ha chiuso il sotto-caso.
+- Test commit-abile rinviato finché non c'è decisione business sulla forma del fix.
