@@ -325,11 +325,25 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
             source: res.source || null
           });
         } else {
-          setZonaInfo(null);
+          setZonaInfo({
+            zona: null,
+            lat: null,
+            lon: null,
+            metodo: "manual_required",
+            source: res?.source || null,
+            error: res?.error || "not_detected"
+          });
         }
       } catch (e) {
         console.warn("[resolveAddress] failed:", e?.message || e);
-        setZonaInfo(null);
+        setZonaInfo({
+          zona: null,
+          lat: null,
+          lon: null,
+          metodo: "manual_required",
+          source: null,
+          error: "resolve_failed"
+        });
       } finally {
         setZonaLoading(false);
       }
