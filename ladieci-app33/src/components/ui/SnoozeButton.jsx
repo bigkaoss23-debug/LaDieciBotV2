@@ -85,7 +85,7 @@ const SnoozeButton = ({ orden, onUpdate }) => {
         <button
           onClick={handleAdd}
           disabled={saving}
-          title={atCap ? `Max ${UI_OFFSET_MAX} min` : `+${UI_OFFSET_STEP} min snooze`}
+          title={atCap ? `Max ${UI_OFFSET_MAX} min` : `+${UI_OFFSET_STEP} min`}
           style={{
             background: maxFlash ? "#FEE2E2" : bg,
             border: `1.5px solid ${maxFlash ? "#DC2626" : border}`,
@@ -117,7 +117,7 @@ const SnoozeButton = ({ orden, onUpdate }) => {
           <button
             onClick={handleReset}
             disabled={saving}
-            title="Annulla snooze"
+            title="Cancelar snooze"
             style={{
               background: "transparent",
               border: "1px solid #9CA3AF",
