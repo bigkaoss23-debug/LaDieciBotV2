@@ -180,3 +180,21 @@ Da trattare piu' avanti. Non e' priorita' immediata rispetto a delivery/geocodin
 5. Nuevo Pedido/menu builder inspection
 6. Supabase LISTO audit quando il DB target e' sicuro
 7. Cierre servicio/end-of-night piu' avanti
+
+## Update 2026-05-21 — Order Modification P1 chiusi
+
+I 3 casi P1 di `Order Modification` (vedi `LaDieciBotV2_TEST_MATRIX.md` sezione M-01..M-08) sono ora coperti:
+
+- **M-06** (`EN_ENTREGA`) e **M-07** (`RETIRADO` / `COMPLETADO`): chiusi con commit `0163cfd fix reject order modifications in terminal states`. Guardia server-side `MODIFICA_TERMINAL_STATES` in `agentOrdini.modificaOrdine`. Regression test: `ladieci-bot/tests/orderModification.terminalStates.bug.test.js` (16/16 PASS).
+- **M-08** (cambio `hora` delivery in `EN_COCINA` con cascade downstream): coperto con commit `8e5b240 test order modification delivery hora cascade`. Test-only, nessuna patch produzione: la cascade era già attiva via `risincronizzaGiro` → `planFornoOutSync` post DS-5-C. Test: `ladieci-bot/tests/orderModification.deliveryHoraCascade.test.js` (11/11 PASS).
+
+Dettaglio fix in `LaDieciBotV2_ORDER_MODIFICATION_NOTES.md` sezione "Stato fix MOD-4 — 2026-05-21".
+
+### Prossimi blocchi consigliati (Order Modification residuo)
+
+- **MOD-3** badge `MODIFICADO` / `Revisar cambios` in Cocina UI. Sblocca M-02 / M-03 / M-05 (P2 gated). Richiede prima audit read-only di `OrdenCard.jsx` per decidere se badge è derivabile live (es. `updated_at > started_cocina_at`) o se serve campo `mod_ts` (MOD-2).
+- **MOD-2** migration `mod_ts` / `mod_count` su `ordenes`. Richiede approvazione esplicita per migration DB.
+- **MOD-5** UX warning forte o rollback esplicito a `EN_COCINA` quando modifica items con impatto cucina su `LISTO`. UI-heavy.
+- **MOD-1b** avviso automatico cliente "Recibimos tu cambio, lo revisa un operario" su path WhatsApp F2.
+- **RR1 MOD-4**: estensione guardia anche ad `aggiungiItems` (oggi consumato solo da orchestrator F2 chiuso da MOD-1, ma è export pubblico).
+- **RR2 MOD-4**: gestione lato UI dell'errore `estado_terminal` ritornato da `modificaOrdine` (oggi il modal può aprirsi su stati terminali e il backend risponde silenziosamente errore).

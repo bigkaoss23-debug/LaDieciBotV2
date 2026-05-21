@@ -168,3 +168,58 @@ Nel branch `if (statoOrd.haOrdine)` aggiunto check su `statoOrd.estado` contro u
 
 - `ladieci-bot/src/agents/orchestrator.js` (+9 / −0).
 - Nessun cambio a frontend, schema DB, prompt WhatsApp, classificazione IA, altri flussi.
+
+## Stato fix MOD-4 — 2026-05-21
+
+Guardia server-side che rifiuta modifiche su pedidos in stato terminale. Chiude i gap M-06 (EN_ENTREGA) e M-07 (RETIRADO/COMPLETADO) documentati in [LaDieciBotV2_TEST_MATRIX.md](LaDieciBotV2_TEST_MATRIX.md) sezione Order Modification. Estende la copertura MOD-1 (bot WhatsApp) al path API dashboard/REST.
+
+Commit chain:
+
+- `ab51982 test reproduce order modification terminal state bug` — bug-repro DS-pattern.
+- `0163cfd fix reject order modifications in terminal states` — fix + test convertito a regression.
+- `8e5b240 test order modification delivery hora cascade` — regression M-08 cascade post-modify (test-only, nessuna patch produzione necessaria).
+
+### Forma del fix
+
+- File toccato: [agentOrdini.js](ladieci-bot/src/agents/agentOrdini.js).
+- Module-level: `const MODIFICA_TERMINAL_STATES = new Set(["EN_ENTREGA", "RETIRADO", "COMPLETADO"]);`
+- All'ingresso di `modificaOrdine(ordenId, updates)`: `sbSelect` minimo (`id=eq.X&select=estado`); se `estado ∈ MODIFICA_TERMINAL_STATES` → return:
+  ```json
+  { "success": false, "error": "estado_terminal", "estado": "<actual>", "message": "No se puede modificar un pedido en estado terminal." }
+  ```
+- Niente costruzione di `upd`, niente `sbUpdate`, niente `risincronizzaGiro` quando bloccato.
+- Best-effort sul fetch: se `sbSelect` fallisce/non torna estado, fall-through al path legacy (non irrigidiamo flussi legittimi su transient failure).
+- `POR_CONFIRMAR`, `NUEVO`, `EN_COCINA`, `LISTO` restano modificabili. Le regole di visibilità su `EN_COCINA`/`LISTO` (badge, warning) restano da implementare in MOD-2/MOD-3/MOD-5.
+- `index.js` non toccato (sia action `modificaOrdine` sia alias `updateOrden` passano dalla stessa funzione).
+- UI non toccata.
+
+### Regression test
+
+[orderModification.terminalStates.bug.test.js](ladieci-bot/tests/orderModification.terminalStates.bug.test.js) — pure Node + mock supabase via `require.cache`. Verifica:
+
+1. `EN_ENTREGA`: `res.success === false`, `error === "estado_terminal"`, nessun `sbUpdate("ordenes")` emesso.
+2. `RETIRADO`: idem.
+3. `COMPLETADO`: idem.
+4. `res.estado` riflette lo stato bloccato corrente.
+5. Sanity: `EN_COCINA` resta modificabile e produce update legittimo.
+
+Esecuzione: 16/16 PASS.
+
+### M-08 cascade post-modify
+
+[orderModification.deliveryHoraCascade.test.js](ladieci-bot/tests/orderModification.deliveryHoraCascade.test.js) — pure Node + mock supabase stateful. Verifica che una modifica `hora` su delivery in `EN_COCINA`:
+
+1. NON viene bloccata da MOD-4 (`success=true`).
+2. Ricalcola `forno_out` coerentemente con `calcolaFornoOutFallback`.
+3. Attiva `risincronizzaGiro` → cascade-sync su `forno_out` downstream stale (riusa `planFornoOutSync` di DS-5-C).
+4. Sanity guard: stesso ordine in `EN_ENTREGA` continua a essere bloccato da MOD-4 (no regressione).
+
+Esecuzione: 11/11 PASS.
+
+### Rischi residui (NON coperti da questo fix)
+
+- **RR1**: la guardia copre solo `modificaOrdine`. `aggiungiItems` ([agentOrdini.js:466](ladieci-bot/src/agents/agentOrdini.js:466)) resta path separato, oggi consumato solo dall'orchestrator WhatsApp F2 (chiuso da MOD-1). Estensione MOD-4 ad `aggiungiItems` rinviata.
+- **RR2**: il frontend `ModificaOrdenModal.jsx` non gestisce ancora l'errore `estado_terminal`. Oggi può permettere l'apertura del modal su stati terminali; il backend risponde errore ma l'UX non lo surface in modo chiaro. Va affrontato dentro MOD-3/MOD-5.
+- **RR3**: badge `MODIFICADO` / `Revisar cambios` in Cocina (MOD-3) ancora non implementato — M-02/M-03 restano P2 gated.
+- **RR4**: nessun `mod_ts` / `mod_count` su `ordenes` (MOD-2). M-02/M-03/M-05 gated.
+- **RR5**: la guardia fallisce in modo silenzioso (fall-through al path legacy) se `sbSelect` lancia. Accettato per non amplificare incident sui flussi legittimi; va monitorato via `console.warn` log.

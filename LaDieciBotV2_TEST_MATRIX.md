@@ -1099,19 +1099,19 @@ Convenzioni:
 | M-03 | EN_COCINA | modifica `nota_cucina` su nota già esistente (rossa) | nota aggiornata; **evidenza "nota cambiata" persistente fino a presa visione** | P2 | parziale (UI) | MOD-3 |
 | M-04 | LISTO | aggiunta drink / dessert non-cucina | consentita; `totale` aggiornato; **niente warning** | P3 | sì | nessuno |
 | M-05 | LISTO | modifica items con impatto cucina (es. pizza diversa) | **warning forte oppure rollback esplicito a `EN_COCINA`** | P2 | parziale (UI/UX) | MOD-5 |
-| M-06 | EN_ENTREGA | qualsiasi modifica `items` / `hora` | **server rifiuta con `403 stato_terminale`** — oggi NON rifiuta (bug aperto) | **P1** | **sì** (bug-repro) | nessuno per il repro; MOD-4 chiude il bug |
-| M-07 | RETIRADO / COMPLETADO | qualsiasi modifica | **server rifiuta con `403 stato_terminale`** — oggi NON rifiuta (bug aperto) | **P1** | **sì** (bug-repro) | nessuno per il repro; MOD-4 chiude il bug |
-| M-08 | EN_COCINA (DOMICILIO) | cambio `hora` delivery | `forno_out` ricalcolato; `risincronizzaGiro` propaga downstream mantenendo invariant DS-5-C | **P1** | **sì** (regression) | nessuno; estensione del pattern `scheduleCascade.bug4.test.js` |
+| M-06 | EN_ENTREGA | qualsiasi modifica `items` / `hora` | **server rifiuta con `success:false, error:"estado_terminal"`** | **P1** ✅ closed (`0163cfd`) | sì — [orderModification.terminalStates.bug.test.js](ladieci-bot/tests/orderModification.terminalStates.bug.test.js) regression |
+| M-07 | RETIRADO / COMPLETADO | qualsiasi modifica | **server rifiuta con `success:false, error:"estado_terminal"`** | **P1** ✅ closed (`0163cfd`) | sì — [orderModification.terminalStates.bug.test.js](ladieci-bot/tests/orderModification.terminalStates.bug.test.js) regression |
+| M-08 | EN_COCINA (DOMICILIO) | cambio `hora` delivery | `forno_out` ricalcolato; `risincronizzaGiro` propaga downstream mantenendo invariant DS-5-C | **P1** ✅ covered (`8e5b240`, test-only) | sì — [orderModification.deliveryHoraCascade.test.js](ladieci-bot/tests/orderModification.deliveryHoraCascade.test.js) |
 
 ### Priorità globale
 
-- **P1**: M-06, M-07, M-08. Tutti pure-Node, nessuno richiede migration DB. M-06+M-07 sono bug-repro che documentano il gap MOD-4; M-08 è regression coperture cascade DS-5-C lato modifica.
-- **P2**: M-02, M-03, M-05. Bloccati da migration `mod_ts` (MOD-2), badge UI (MOD-3) o UX warning/rollback (MOD-5).
-- **P3**: M-01, M-04. Baseline pure-Node, nessun rischio. Scrivibili in qualsiasi momento, valore principale = anti-regressione su flussi già OK.
+- **P1 ✅ chiusi**: M-06, M-07 (commit `0163cfd` MOD-4 server guard) + M-08 (commit `8e5b240` regression test-only, nessuna patch produzione necessaria — la cascade era già attiva via `risincronizzaGiro` post DS-5-C).
+- **P2 aperti**: M-02, M-03, M-05. Bloccati da migration `mod_ts` (MOD-2), badge UI (MOD-3) o UX warning/rollback (MOD-5).
+- **P3 aperti**: M-01, M-04. Baseline pure-Node, nessun rischio. Scrivibili in qualsiasi momento, valore principale = anti-regressione su flussi già OK.
 
 ### Note operative
 
-- **Primo test raccomandato dopo questa docs patch**: M-06 + M-07 combinati come bug-repro Node + mock (stesso pattern di `scheduleCascade.bug4.test.js` DS-5-A). Mockare `supabase` via `require.cache`, fixture di un ordine in `EN_ENTREGA` / `RETIRADO`, chiamare `modificaOrdine`, asserire che oggi `sbUpdate` su `ordenes` viene comunque emesso (= bug). Diventa regression quando MOD-4 chiude il gap, invertendo l'asserzione.
-- **Dove va la futura guardia MOD-4**: in `agentOrdini.modificaOrdine` ([agentOrdini.js:316](ladieci-bot/src/agents/agentOrdini.js:316)), **non** in `index.js`. Sia l'action `modificaOrdine` sia l'alias `updateOrden` passano dalla stessa funzione ([index.js:156-178](ladieci-bot/index.js:156)); mettere la guardia nell'endpoint duplicherebbe il check e lascerebbe scoperto chi importa `modificaOrdine` da Node.
-- **`aggiungiItems` è path separato** ([agentOrdini.js:466](ladieci-bot/src/agents/agentOrdini.js:466)): è esportato e oggi consumato dall'orchestrator WhatsApp F2 (chiuso da MOD-1, commit `25f00f3`). Non è esposto come endpoint REST distinto, ma resta un vettore se in futuro qualcuno lo wrappa. Scope successivo: estendere MOD-4 anche ad `aggiungiItems` o renderlo wrapper di `modificaOrdine`.
-- **M-08 cascade**: la propagazione downstream è già attiva in `modificaOrdine` ([agentOrdini.js:385](ladieci-bot/src/agents/agentOrdini.js:385) → `risincronizzaGiro` → `planFornoOutSync`). M-08 verifica che il path "modifica hora" produca lo stesso allineamento del path "creazione" già coperto da DS-5-C.
+- **Implementazione MOD-4** (commit `0163cfd`): set `MODIFICA_TERMINAL_STATES = {"EN_ENTREGA", "RETIRADO", "COMPLETADO"}` module-level in [agentOrdini.js](ladieci-bot/src/agents/agentOrdini.js); guardia all'ingresso di `modificaOrdine` con `sbSelect` minimo (`select=estado`), return `{success:false, error:"estado_terminal", estado, message}` se bloccato. Best-effort sul fetch: errore di lettura → `console.warn` + fall-through al path legacy.
+- **Dove NON è la guardia**: NON in `index.js`. Sia l'action `modificaOrdine` sia l'alias `updateOrden` ([index.js:156-178](ladieci-bot/index.js:156)) passano dalla stessa funzione, quindi il check in `agentOrdini.modificaOrdine` copre entrambi.
+- **`aggiungiItems` resta path separato** ([agentOrdini.js:466](ladieci-bot/src/agents/agentOrdini.js:466)): esportato e oggi consumato dall'orchestrator WhatsApp F2 (chiuso da MOD-1, commit `25f00f3`). Non esposto come endpoint REST distinto, ma resta un vettore se in futuro qualcuno lo wrappa. Scope successivo: estendere MOD-4 anche ad `aggiungiItems` o renderlo wrapper di `modificaOrdine`.
+- **M-08 cascade**: la propagazione downstream era già attiva via `risincronizzaGiro` → `planFornoOutSync` post DS-5-C (commit `d7eb2ef`). Il test `8e5b240` verifica che il path "modifica hora" produca lo stesso allineamento del path "creazione" già coperto da `scheduleCascade.bug4.test.js`.
