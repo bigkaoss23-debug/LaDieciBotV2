@@ -140,16 +140,16 @@ export default function App() {
   const [rigenerando, setRigenerando] = useState(false);
   const handleRigenera = async () => {
     setRigenerando(true);
-    notify("🔄 Analizzando storico...", C.viola);
+    notify("🔄 Analizando historial...", C.viola);
     try {
       const res = await api.get("rigeneraSuggerimenti");
       if (res && res.ok) {
-        notify("✅ " + (res.n_suggerimenti||0) + " nuovi suggerimenti generati", C.verde);
+        notify("✅ " + (res.n_suggerimenti||0) + " nuevas sugerencias generadas", C.verde);
         await loadSuggerimenti();
       } else {
-        notify("❌ " + (res?.error || "Errore"), C.rosso);
+        notify("❌ " + (res?.error || "Error"), C.rosso);
       }
-    } catch(e) { notify("❌ Errore di rete", C.rosso); }
+    } catch(e) { notify("❌ Error de red", C.rosso); }
     setRigenerando(false);
   };
 
@@ -160,8 +160,8 @@ export default function App() {
       setSugList(updated);
       const newPending = updated.filter(s => s.stato === "pending").length;
       setPendingSug(newPending);
-      notify(stato === "approvato" ? "✅ Regola applicata al bot" : "🚫 Suggerimento rifiutato", stato === "approvato" ? C.verde : C.grigio);
-    } catch(e) { notify("❌ Errore", C.rosso); }
+      notify(stato === "approvato" ? "✅ Regla aplicada al bot" : "🚫 Sugerencia rechazada", stato === "approvato" ? C.verde : C.grigio);
+    } catch(e) { notify("❌ Error", C.rosso); }
   };
 
   // ── Supabase Realtime + initial load (ZERO POLLING) ──
@@ -426,9 +426,9 @@ export default function App() {
             {/* Header */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:28,paddingBottom:20,borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
               <div>
-                <div style={{fontSize:11,fontWeight:700,letterSpacing:3,textTransform:"uppercase",color:"rgba(168,85,247,0.7)",marginBottom:6}}>Analisi IA · La Dieci</div>
-                <div style={{fontSize:22,fontWeight:700,color:"#f0f0f0",letterSpacing:-0.3}}>Suggerimenti per il Bot</div>
-                {sugList.length > 0 && <div style={{fontSize:13,color:"rgba(255,255,255,0.3)",marginTop:4}}>{sugList.filter(s=>s.stato==="pending").length} in attesa · Clicca una card per approfondire</div>}
+                <div style={{fontSize:11,fontWeight:700,letterSpacing:3,textTransform:"uppercase",color:"rgba(168,85,247,0.7)",marginBottom:6}}>Análisis IA · La Dieci</div>
+                <div style={{fontSize:22,fontWeight:700,color:"#f0f0f0",letterSpacing:-0.3}}>Sugerencias para el Bot</div>
+                {sugList.length > 0 && <div style={{fontSize:13,color:"rgba(255,255,255,0.3)",marginTop:4}}>{sugList.filter(s=>s.stato==="pending").length} pendientes · Toca una tarjeta para ver más</div>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:12}}>
                 <button onClick={handleRigenera} disabled={rigenerando} style={{
@@ -436,7 +436,7 @@ export default function App() {
                   borderRadius:8,padding:"8px 16px",color:"rgba(168,85,247,0.85)",fontWeight:600,fontSize:12,
                   letterSpacing:0.5,cursor:rigenerando?"not-allowed":"pointer",opacity:rigenerando?0.5:1,
                   transition:"opacity .15s"}}>
-                  {rigenerando ? "Analizzando…" : "↻ Rigenera"}
+                  {rigenerando ? "Analizando…" : "↻ Regenerar"}
                 </button>
                 <button onClick={()=>setSugModal(false)} style={{background:"transparent",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"rgba(255,255,255,0.4)",fontSize:16,cursor:"pointer",width:34,height:34,lineHeight:"32px",textAlign:"center"}}>✕</button>
               </div>
@@ -444,12 +444,12 @@ export default function App() {
 
             {/* Cards griglia — compatte, cliccabili */}
             {sugList.length === 0 ? (
-              <div style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"40px 0",fontSize:14,letterSpacing:0.3}}>Nessun suggerimento in attesa.<br/><span style={{fontSize:12,opacity:0.6}}>Clicca ↻ Rigenera per analizzare lo storico.</span></div>
+              <div style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"40px 0",fontSize:14,letterSpacing:0.3}}>No hay sugerencias pendientes.<br/><span style={{fontSize:12,opacity:0.6}}>Toca ↻ Regenerar para analizar el historial.</span></div>
             ) : (
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:14}}>
                 {sugList.map(s => {
                   const tipoColor = s.tipo==="prompt" ? "#6ea8fe" : s.tipo==="menu" ? "#f0c060" : "#b07ff5";
-                  const tipoLabel = s.tipo==="prompt" ? "PROMPT" : s.tipo==="menu" ? "MENU" : "COMPORTAMENTO";
+                  const tipoLabel = s.tipo==="prompt" ? "PROMPT" : s.tipo==="menu" ? "MENÚ" : "COMPORTAMIENTO";
                   const isApproved = s.stato==="approvato";
                   const isRifiutato = s.stato==="rifiutato";
 
@@ -482,9 +482,9 @@ export default function App() {
                         {/* Tipo + stato */}
                         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                           <span style={{fontSize:10,fontWeight:800,letterSpacing:2,color:tipoColor,textTransform:"uppercase"}}>{tipoLabel}</span>
-                          {isApproved && <span style={{fontSize:10,color:"#2ed573",fontWeight:600}}>✓ Applicato</span>}
-                          {isRifiutato && <span style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>Rifiutato</span>}
-                          {s.stato==="pending" && <span style={{fontSize:10,color:"rgba(255,255,255,0.2)"}}>In attesa</span>}
+                          {isApproved && <span style={{fontSize:10,color:"#2ed573",fontWeight:600}}>✓ Aplicado</span>}
+                          {isRifiutato && <span style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>Rechazado</span>}
+                          {s.stato==="pending" && <span style={{fontSize:10,color:"rgba(255,255,255,0.2)"}}>Pendiente</span>}
                         </div>
                         {/* Testo regola (breve) */}
                         <div style={{color:"#e0e0e0",fontSize:13,fontWeight:500,lineHeight:1.6,letterSpacing:0.05,display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{s.testo}</div>
@@ -493,8 +493,8 @@ export default function App() {
                         {/* Badge casi */}
                         {casi.length > 0 && (
                           <div style={{marginTop:"auto",paddingTop:8,display:"flex",alignItems:"center",gap:6}}>
-                            <span style={{fontSize:10,color:tipoColor+"99",fontWeight:600,letterSpacing:0.5}}>{casi.length} {casi.length===1?"caso reale":"casi reali"}</span>
-                            <span style={{fontSize:10,color:"rgba(255,255,255,0.2)"}}>· Apri per leggere →</span>
+                            <span style={{fontSize:10,color:tipoColor+"99",fontWeight:600,letterSpacing:0.5}}>{casi.length} {casi.length===1?"caso real":"casos reales"}</span>
+                            <span style={{fontSize:10,color:"rgba(255,255,255,0.2)"}}>· Abrir para leer →</span>
                           </div>
                         )}
                       </div>
@@ -510,7 +510,7 @@ export default function App() {
                 background:"transparent",border:"1px solid rgba(255,255,255,0.1)",
                 borderRadius:8,padding:"10px 24px",color:"rgba(255,255,255,0.3)",fontSize:13,
                 fontWeight:500,letterSpacing:0.3,cursor:"pointer"}}>
-                Chiudi
+                Cerrar
               </button>
             </div>
           </div>
@@ -521,8 +521,8 @@ export default function App() {
       {detailSug && (() => {
         const s = detailSug;
         const tipoColor = s.tipo==="prompt" ? "#6ea8fe" : s.tipo==="menu" ? "#f0c060" : "#b07ff5";
-        const tipoLabel = s.tipo==="prompt" ? "Miglioramento Prompt" : s.tipo==="menu" ? "Aggiornamento Menu" : "Comportamento Bot";
-        const tipoDesc  = s.tipo==="prompt" ? "Cambia come il bot si esprime e risponde" : s.tipo==="menu" ? "Riguarda nomi, prezzi o disponibilità prodotti" : "Modifica il flusso di gestione ordine";
+        const tipoLabel = s.tipo==="prompt" ? "Mejora del prompt" : s.tipo==="menu" ? "Actualización del menú" : "Comportamiento del bot";
+        const tipoDesc  = s.tipo==="prompt" ? "Cambia cómo el bot se expresa y responde" : s.tipo==="menu" ? "Sobre nombres, precios o disponibilidad de productos" : "Modifica el flujo de gestión del pedido";
 
         let motivTxt = s.motivazione || "";
         let casi = [];
@@ -562,7 +562,7 @@ export default function App() {
                   <div style={{display:"flex",flexDirection:"column",gap:6}}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
                       <span style={{fontSize:10,fontWeight:800,letterSpacing:2,color:tipoColor,textTransform:"uppercase",background:`${tipoColor}15`,border:`1px solid ${tipoColor}30`,borderRadius:4,padding:"3px 8px"}}>{tipoLabel}</span>
-                      {s.stato==="approvato" && <span style={{fontSize:11,color:"#2ed573",fontWeight:600,background:"rgba(46,213,115,0.1)",border:"1px solid rgba(46,213,115,0.25)",borderRadius:4,padding:"3px 8px"}}>✓ Già applicato</span>}
+                      {s.stato==="approvato" && <span style={{fontSize:11,color:"#2ed573",fontWeight:600,background:"rgba(46,213,115,0.1)",border:"1px solid rgba(46,213,115,0.25)",borderRadius:4,padding:"3px 8px"}}>✓ Ya aplicado</span>}
                     </div>
                     <div style={{fontSize:12,color:"rgba(255,255,255,0.3)",letterSpacing:0.2}}>{tipoDesc}</div>
                   </div>
@@ -571,14 +571,14 @@ export default function App() {
 
                 {/* Regola — riquadro centrale */}
                 <div style={{background:`${tipoColor}08`,border:`1px solid ${tipoColor}22`,borderRadius:12,padding:"20px 22px"}}>
-                  <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:`${tipoColor}99`,textTransform:"uppercase",marginBottom:10}}>Regola suggerita</div>
+                  <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:`${tipoColor}99`,textTransform:"uppercase",marginBottom:10}}>Regla sugerida</div>
                   <div style={{color:"#f0f0f0",fontSize:16,fontWeight:500,lineHeight:1.7,letterSpacing:0.1}}>{s.testo}</div>
                 </div>
 
                 {/* Perché cambiarlo — motivazione estesa */}
                 {motivTxt && (
                   <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                    <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Perché cambiarlo</div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Por qué cambiarlo</div>
                     <div style={{color:"rgba(255,255,255,0.75)",fontSize:14,lineHeight:1.8,letterSpacing:0.15,background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"16px 18px",borderLeft:`3px solid ${tipoColor}40`}}>
                       {motivTxt}
                     </div>
@@ -589,9 +589,9 @@ export default function App() {
                 {casi.length > 0 && (
                   <div style={{display:"flex",flexDirection:"column",gap:12}}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Casi reali osservati</div>
+                      <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Casos reales observados</div>
                       <div style={{flex:1,height:1,background:"rgba(255,255,255,0.06)"}}/>
-                      <span style={{fontSize:11,color:"rgba(255,255,255,0.2)"}}>{casi.length} {casi.length===1?"conversazione":"conversazioni"}</span>
+                      <span style={{fontSize:11,color:"rgba(255,255,255,0.2)"}}>{casi.length} {casi.length===1?"conversación":"conversaciones"}</span>
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:10}}>
                       {casi.map((c,i) => (
@@ -606,7 +606,7 @@ export default function App() {
                           {c.highlight && (
                             <div style={{display:"flex",alignItems:"center",gap:6,paddingLeft:2}}>
                               <span style={{width:8,height:8,borderRadius:2,background:"rgba(251,191,36,0.5)",flexShrink:0}}/>
-                              <span style={{fontSize:11,color:"rgba(253,230,138,0.6)",letterSpacing:0.2}}>Il punto critico: <em style={{color:"#fde68a",fontStyle:"normal"}}>"{c.highlight}"</em></span>
+                              <span style={{fontSize:11,color:"rgba(253,230,138,0.6)",letterSpacing:0.2}}>El punto crítico: <em style={{color:"#fde68a",fontStyle:"normal"}}>"{c.highlight}"</em></span>
                             </div>
                           )}
                         </div>
@@ -624,19 +624,19 @@ export default function App() {
                       letterSpacing:0.3,cursor:"pointer",transition:"background .15s"}}
                       onMouseEnter={e=>e.currentTarget.style.background="rgba(46,213,115,0.18)"}
                       onMouseLeave={e=>e.currentTarget.style.background="rgba(46,213,115,0.1)"}>
-                      ✓ Applica al Bot
+                      ✓ Aplicar al Bot
                     </button>
                     <button onClick={()=>{ handleApprova(s.id,"rifiutato"); setDetailSug(null); }} style={{
                       background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",
                       borderRadius:10,padding:"14px 20px",color:"rgba(255,255,255,0.3)",fontWeight:500,fontSize:13,cursor:"pointer",transition:"background .15s"}}
                       onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"}
                       onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.04)"}>
-                      Rifiuta
+                      Rechazar
                     </button>
                   </div>
                 )}
                 {s.stato === "approvato" && (
-                  <div style={{textAlign:"center",color:"rgba(46,213,115,0.6)",fontSize:13,padding:"8px 0"}}>Questa regola è già attiva nel bot.</div>
+                  <div style={{textAlign:"center",color:"rgba(46,213,115,0.6)",fontSize:13,padding:"8px 0"}}>Esta regla ya está activa en el bot.</div>
                 )}
 
               </div>
