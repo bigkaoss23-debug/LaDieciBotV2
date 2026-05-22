@@ -270,9 +270,13 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     return () => { mounted = false; clearInterval(poll); };
   }, []);
 
-  // Reparto operativo: pronto in attesa driver o driver già in cammino.
+  // Reparto operativo: include EN_COCINA per pianificazione operatore di sala
+  // (badge "🔥" + nessun bottone d'azione finché non passa a LISTO).
+  // POR_CONFIRMAR e NUEVO restano in Pedidos: l'operatore deve prima confermare.
   const entregas = ordenes.filter(o =>
-    isWaitingDriverState(o) || isDriverOnTheWayState(o)
+    isWaitingDriverState(o) ||
+    isDriverOnTheWayState(o) ||
+    (o.tipo_consegna === "DOMICILIO" && o.estado === ORDER_STATES.EN_COCINA)
   );
 
   const consegnati = ordenes.filter(o =>
