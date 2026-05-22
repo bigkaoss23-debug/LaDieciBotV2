@@ -200,3 +200,19 @@ Dettaglio fix in `LaDieciBotV2_ORDER_MODIFICATION_NOTES.md` sezione "Stato fix M
 - **RR1 MOD-4**: estensione guardia anche ad `aggiungiItems` (oggi consumato solo da orchestrator F2 chiuso da MOD-1, ma è export pubblico).
 - **RR2 MOD-4**: ✅ chiuso per i 4 path UI principali. Parser puro `parseEstadoTerminalError` (`2d8e36e`) + wiring modal `modificaOrden` (`129ad21`) + `waAddicion` (`3abd493`) + `waConfirm` cambio hora rapido e `onConfirmaDaConfermare` (`13afb55`, 2026-05-22). Rischio residuo opzionale: prevenzione click su `OrdenCard` per stati terminali (UX-only, non bloccante).
 - **Vincolo operativo durante servizio**: push/deploy/migration apply su Supabase rimangono **vietati**. Apply migration `2026-05-21_add_mod_audit_fields.sql` e backend wiring MOD-2 vanno schedulati fuori servizio con approvazione esplicita. MOD-3 render badge pending da MOD-2 apply + wiring.
+
+## Update 2026-05-22 — Golden corpus WhatsApp `interpreta()` ✅ COMPLETO
+
+Corpus G01..G18 chiuso e committato. Test `ladieci-bot/tests/interpreta.golden.test.js` → **37/37 PASS** (18 casi × 2 varianti `REGOLE_APPRESE` vuota/malevola + 1 stab). Niente API Claude reale (mock via `require.cache`), niente DB, niente `.env`.
+
+Commit chain: `364cefe` (5 anti-regressione) → `5257922` (Batch 1: G02/G03/G11/G17/G18) → `ea18dc1` (Batch 2: G05/G06/G07/G10) → `496a0f0` (Batch 3: G08/G09/G13/G14). Dettaglio in `LaDieciBotV2_TEST_MATRIX.md` sezione "Golden corpus WhatsApp" → "Stato attuale (2026-05-22)".
+
+### Prossimi blocchi consigliati
+
+Tre opzioni a scelta dell'operatore, tutte sicure durante servizio finché non si tocca DB/push/deploy:
+
+1. **MOD-2/MOD-3 badge `MODIFICADO`** — sblocca M-02/M-03/M-05 (P2 gated). Step preliminari fattibili durante servizio: ulteriori test puri sull'utility `isModifiedAfterCocina`, eventuale prep UI sub-component. Step bloccanti (fuori servizio): apply migration `2026-05-21_add_mod_audit_fields.sql`, wiring backend `cambiaStato`/`modificaOrdine`, render in `TabCocina`/`PanelCocina`. **Decisione migration richiede approvazione esplicita.**
+2. **Audit/build frontend offline-safety** — capire se `npm run build` può girare offline (cache npm già popolata, nessun fetch live) per poter validare `.jsx` patches durante servizio. Solo lettura `package.json`/`node_modules`, niente install/build se rete. **Sicuro come audit read-only.**
+3. **Piano push/branch per i ~100+ commit locali** — branch strategy, ordine push (backend vs frontend), eventuali commit da splittare/squashare, target di deploy (Railway backend, Netlify frontend) e finestra fuori servizio. **Solo planning docs, niente push/deploy in questo step.**
+
+Raccomandazione: opzione **2** (audit offline build) come prossimo step a basso rischio durante servizio — sblocca validazione UI per i micro-step futuri senza nessuna azione esterna. Opzione **3** quando si decide finestra fuori servizio. Opzione **1** quando c'è approvazione per migration.

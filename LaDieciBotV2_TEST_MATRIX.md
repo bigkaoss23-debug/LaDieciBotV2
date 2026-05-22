@@ -998,6 +998,17 @@ Un test e' pulito se:
 
 ## Golden corpus WhatsApp — `agentWhatsapp.interpreta()` — 2026-05-21
 
+### Stato attuale (2026-05-22) — ✅ COMPLETO 18/18
+
+Corpus completo, test committabile [ladieci-bot/tests/interpreta.golden.test.js](ladieci-bot/tests/interpreta.golden.test.js). Esecuzione: `node ladieci-bot/tests/interpreta.golden.test.js` → **37/37 PASS** (18 casi × 2 varianti `REGOLE_APPRESE` vuota/malevola + 1 guardia stabilità). Nessuna API Claude reale.
+
+Commit chain:
+
+- **`364cefe test add whatsapp interpreta golden anti regression cases`** — 5 anti-regressione: G01, G04, G12, G15, G16.
+- **`5257922 test extend whatsapp interpreta golden batch one`** — Batch 1: G02 (refresco generico), G03 (refresco specifico Fanta), G11 (`sin cebolla` sub), G17 (injection system role), G18 (solo_ora con `chatHistory`).
+- **`ea18dc1 test extend whatsapp interpreta golden batch two`** — Batch 2: G05 (delivery+ora items vuoti), G06 (KEYWORDS_ZONA Las Marinas q=2), G07 (domicilio senza indirizzo), G10 (modifica_complessa).
+- **`496a0f0 test complete whatsapp interpreta golden corpus`** — Batch 3: G08 (orari), G09 (prezzo), G13 (ambiguous), G14 (saluto puro).
+
 ### Scopo
 
 - Corpus read-only per futuri test su `agentWhatsapp.interpreta()`.
@@ -1065,13 +1076,13 @@ Da inserire in qualsiasi golden suite minima prima di toccare `REGOLE_APPRESE`:
 - Casi che dipendono da `cfg["REGOLE_APPRESE"]`: il valore va iniettato come stringa nel `cfg` mock, non scritto su DB.
 - Casi che dipendono da `clienteInfo` / `chatHistory`: passati come argomenti diretti a `interpreta(testo, cfg, clienteInfo, chatHistory)`, non da DB.
 
-### Futuro test suggerito (NON da creare in questo step)
+### Test implementato (era "Futuro test suggerito")
 
-- File futuro: `ladieci-bot/tests/interpreta.golden.test.js`.
+- File: [ladieci-bot/tests/interpreta.golden.test.js](ladieci-bot/tests/interpreta.golden.test.js). ✅ Implementato (vedi "Stato attuale" sopra).
 - Runner: `node` semplice, niente Jest, niente nuove dipendenze.
-- Mock di `chiamaClaude` via `require.cache` o equivalente.
-- Niente DB.
-- Niente `.env`.
+- Mock di `chiamaClaude` via `require.cache` (`agentWhatsapp.js` non modificato).
+- Mock difensivo di `supabase` via `require.cache`.
+- Niente DB, niente `.env`, nessuna chiave API.
 - Niente chiamate live.
 - Set `REGOLE_APPRESE` di prova:
   - **R-vuota**: `""` → baseline.
