@@ -216,3 +216,40 @@ Tre opzioni a scelta dell'operatore, tutte sicure durante servizio finché non s
 3. **Piano push/branch per i ~100+ commit locali** — branch strategy, ordine push (backend vs frontend), eventuali commit da splittare/squashare, target di deploy (Railway backend, Netlify frontend) e finestra fuori servizio. **Solo planning docs, niente push/deploy in questo step.**
 
 Raccomandazione: opzione **2** (audit offline build) come prossimo step a basso rischio durante servizio — sblocca validazione UI per i micro-step futuri senza nessuna azione esterna. Opzione **3** quando si decide finestra fuori servizio. Opzione **1** quando c'è approvazione per migration.
+
+## Update 2026-05-22 — Verifica build frontend (post patch UI)
+
+Verifica offline-safe della toolchain CRA dopo le patch UI accumulate (`129ad21`, `3abd493`, `13afb55`, parser `2d8e36e`, utility `e0e7689`).
+
+### Pre-checks read-only
+
+- ESLint diretto su `node_modules/.bin/eslint`: non utilizzabile (config CRA vive dentro `react-scripts`, niente `.eslintrc` standalone e niente `"eslintConfig"` in `package.json`).
+- Parse-only via `@babel/parser` (locale): `PARSE OK` per `ServicioPage.jsx`, `orderModifyError.js`, `orderModBadge.js`. Sintassi e plugin `jsx` validi.
+
+### Build CRA locale
+
+Comando:
+```
+BROWSERSLIST_IGNORE_OLD_DATA=true CI=true npm --prefix ladieci-app33 run build
+```
+Flag rationale: `BROWSERSLIST_IGNORE_OLD_DATA=true` previene fetch silenzioso di `caniuse-lite`; `CI=true` rende il build deterministico (warning → errori) e disabilita prompt/progress interattivi. Nessun `npm install` eseguito.
+
+### Risultato
+
+- **Compiled successfully.**
+- Bundle gzip: `206.8 kB` in `build/static/js/main.<hash>.js`.
+- 0 errori, 0 warning bloccanti (con `CI=true` qualunque warning ESLint/build avrebbe fatto FAIL).
+- 1 deprecation warning Node innocua: `fs.F_OK is deprecated` (proviene da `react-scripts@5.0.1` sotto Node moderno, non riguarda V2). Non bloccante.
+- `ladieci-app33/build/` generato e **ignorato da `.gitignore`** (`build/` pattern in root). `git status --short` resta pulito.
+- I 3 file V2 modificati/aggiunti risultano **compatibili col bundle CRA**: tutti gli `import` risolvono, JSX compone, le utility CJS (`orderModifyError.js`, `orderModBadge.js`) sono consumate senza problemi.
+
+### Implicazioni
+
+- Toolchain di build frontend è **offline-safe** e usabile durante servizio per validare future patch UI con la stessa modalità (no rete, no deploy).
+- Nessun `npm install` necessario fintanto che `node_modules/` resta popolato (verificato 2026-05-22).
+- Niente `netlify deploy`, niente push: il build resta artefatto locale.
+
+### Limiti
+
+- Build verifica statica/sintattica e bundle resolution, **non** runtime behavior (no smoke test browser, no e2e). I path UI gestiscono `estado_terminal` ma il comportamento end-to-end resta da osservare in V2 test post-deploy quando l'operatore lo decide.
+- CRA 5.0.1 + Node moderno: la deprecation `fs.F_OK` è cosmetica ma indica che il toolchain non è recentemente aggiornato. Non bloccante oggi.
