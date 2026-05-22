@@ -253,3 +253,56 @@ Flag rationale: `BROWSERSLIST_IGNORE_OLD_DATA=true` previene fetch silenzioso di
 
 - Build verifica statica/sintattica e bundle resolution, **non** runtime behavior (no smoke test browser, no e2e). I path UI gestiscono `estado_terminal` ma il comportamento end-to-end resta da osservare in V2 test post-deploy quando l'operatore lo decide.
 - CRA 5.0.1 + Node moderno: la deprecation `fs.F_OK` è cosmetica ma indica che il toolchain non è recentemente aggiornato. Non bloccante oggi.
+
+## Update 2026-05-22 — Pre-flight green-state + backup remoto
+
+Snapshot consolidato dell'intero branch V2 prima di qualsiasi decisione di merge/PR/sync.
+
+### Backup remoto
+
+- Branch backup creato e pushato: **`origin/backup/v2-session-2026-05-22`** → punta a `238bfa3 docs record frontend build verification`.
+- 112 commit locali ora hanno backup remoto su GitHub.
+- **`origin/main` invariato** (= `d70df9c`): nessun trigger possibile di auto-deploy collegato al production branch.
+- Bundle locale aggiuntivo (volatile): `/tmp/LaDieciBotV2-session-2026-05-22.bundle` (139 KB, verificato `is okay`).
+
+### Pre-flight test batch
+
+Eseguito 2026-05-22, 9 verifiche offline-safe.
+
+| # | Suite / Comando | Risultato |
+|---|---|---|
+| 1 | `node ladieci-bot/tests/cacheKey.parity.test.js` | 20/20 PASS |
+| 2 | `node ladieci-bot/tests/scheduleCascade.bug4.test.js` | 5/5 PASS |
+| 3 | `node ladieci-bot/tests/sanitizeRegoleApprese.test.js` | 22/22 PASS |
+| 4 | `node ladieci-bot/tests/orderModification.terminalStates.bug.test.js` | 16/16 PASS |
+| 5 | `node ladieci-bot/tests/orderModification.deliveryHoraCascade.test.js` | 11/11 PASS |
+| 6 | `node ladieci-bot/tests/interpreta.golden.test.js` | 37/37 PASS |
+| 7 | `node ladieci-app33/src/utils/orderModBadge.test.js` | 20/20 PASS |
+| 8 | `node ladieci-app33/src/utils/orderModifyError.test.js` | 20/20 PASS |
+| 9 | `BROWSERSLIST_IGNORE_OLD_DATA=true CI=true npm --prefix ladieci-app33 run build` | Compiled successfully — `206.8 kB` gzip `build/static/js/main.e64d88db.js` |
+
+- **Totale aggregato Node**: 151/151 PASS, 0 FAIL.
+- **CRA build**: OK, 0 errori, 0 warning bloccanti (`CI=true` promote warning→error → niente FAIL).
+- 1 deprecation warning Node `fs.F_OK` cosmetica preesistente da `react-scripts@5.0.1`.
+- Working tree pulito post-batch. `ladieci-app33/build/` rigenerato ma ignorato da `.gitignore`.
+
+### Pre-requisiti esterni prima di PR/merge → main
+
+Tre check fuori-banda che richiedono accesso a sistemi esterni (NON gestibili dal repo):
+
+1. **Netlify dashboard del sito V2** (`02bd4c7a-a50b-4964-90da-8c1af1122932`): verificare (a) production branch, (b) branch deploys / deploy contexts attivi, (c) build hooks. Se production branch è `main`, un futuro merge su `main` triggererà build automatico Netlify.
+2. **Stato migration `2026-05-20_add_listo_audit_fields.sql` su Supabase prod**: docs storici dichiarano "applicata manualmente su V2 test", non chiarito se anche su prod. Il backend `5b7ff08` scrive `listo_origin/listo_actor/listo_at` → se prod Supabase non ha quei campi e Railway redeploya da repo live `ladieci_bot` con quel codice, **PostgREST risponde 400**. Da chiarire prima di sync backend.
+3. **Decisione sync backend → repo live `ladieci_bot`**: Railway osserva `bigkaoss23-debug/ladieci_bot`, non `LaDieciBotV2`. Le patch backend in V2 (6 file `ladieci-bot/src/...` + `index.js` + 2 migrations) **non arrivano in prod** automaticamente. Va deciso se/come riportarle (cherry-pick selettivo, sync diretto, repo unificato).
+
+### Stato migration MOD-2
+
+- `ladieci-bot/migrations/2026-05-21_add_mod_audit_fields.sql` resta **pending / non applicata** né su V2 test né su prod. Nessun codice attivo la consuma (wiring backend MOD-2 non scritto). Merge a main **non causa break** per questa migration.
+
+### Green-state checkpoint
+
+- ✅ Backup remoto + bundle locale presenti.
+- ✅ 151/151 test Node PASS.
+- ✅ CRA build OK.
+- ✅ Working tree pulito, HEAD = `238bfa3`.
+- ⏳ 3 pre-requisiti esterni da chiarire prima di qualsiasi merge a `main`.
+- ⏳ Decisione PR (Opzione A senza squash raccomandata) rinviata a finestra fuori servizio + verifica Netlify.
