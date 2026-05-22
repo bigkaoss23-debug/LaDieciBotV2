@@ -554,27 +554,27 @@ const formatSub = (sub) => {
 const FASE_CONFIG = {
   espera: {
     bg:"#1C3A2A", border:"#2D6A4A", timerColor:"#52D68A", label:null, labelColor:"#52D68A",
-    bgLight:"#ECFDF5", textLight:"#065F46", timerColorLight:"#059669", labelColorLight:"#065F46",
+    bgLight:"#BBF7D0", textLight:"#065F46", timerColorLight:"#059669", labelColorLight:"#065F46",
   },
   preparando: {
     bg:"#1C3A2A", border:"#2D6A4A", timerColor:"#52D68A", label:"🥖 PREPARANDO", labelColor:"#A6F0C8",
-    bgLight:"#ECFDF5", textLight:"#065F46", timerColorLight:"#059669", labelColorLight:"#065F46",
+    bgLight:"#BBF7D0", textLight:"#065F46", timerColorLight:"#059669", labelColorLight:"#065F46",
   },
   al_horno: {
     bg:"#3D2800", border:"#8B5E00", timerColor:"#F5C842", label:"🔥 AL HORNO", labelColor:"#FFE080",
-    bgLight:"#FFF7E6", textLight:"#7C2D12", timerColorLight:"#D97706", labelColorLight:"#7C2D12",
+    bgLight:"#FED7AA", textLight:"#7C2D12", timerColorLight:"#D97706", labelColorLight:"#7C2D12",
   },
   lista: {
     bg:"#0E3050", border:"#1A6090", timerColor:"#5BB8F5", label:"🛎 LISTA", labelColor:"#90D0FF",
-    bgLight:"#EFF6FF", textLight:"#1E3A8A", timerColorLight:"#2563EB", labelColorLight:"#1E3A8A",
+    bgLight:"#BFDBFE", textLight:"#1E3A8A", timerColorLight:"#2563EB", labelColorLight:"#1E3A8A",
   },
   para_salir: {
     bg:"#0E3050", border:"#1A6090", timerColor:"#5BB8F5", label:"🛵 PARA SALIR", labelColor:"#90D0FF",
-    bgLight:"#EFF6FF", textLight:"#1E3A8A", timerColorLight:"#2563EB", labelColorLight:"#1E3A8A",
+    bgLight:"#BFDBFE", textLight:"#1E3A8A", timerColorLight:"#2563EB", labelColorLight:"#1E3A8A",
   },
   tarde: {
     bg:"#1A0000", border:"#880000", timerColor:"#FF2222", label:"⚠ TARDE", labelColor:"#FF8888",
-    bgLight:"#FEE2E2", textLight:"#7F1D1D", timerColorLight:"#DC2626", labelColorLight:"#7F1D1D",
+    bgLight:"#FECACA", textLight:"#7F1D1D", timerColorLight:"#DC2626", labelColorLight:"#7F1D1D",
   },
 };
 
