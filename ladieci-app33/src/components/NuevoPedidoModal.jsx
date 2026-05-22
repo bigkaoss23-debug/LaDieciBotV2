@@ -65,6 +65,18 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const zonaAssegnata = tipoConsegna !== "DOMICILIO" || (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
   const ok = items.length > 0 && nombre.trim().length > 0 && zonaAssegnata && (!yaPagedo || metodoPago !== "");
 
+  // ── Anti double-submit ───────────────────────────────────────────────────
+  // submittingRef: guardia immediata (sync) contro rapid click prima del
+  // re-render. Confronta meglio della sola useState che è async.
+  // submitting (state): trigger re-render del bottone (disabled + label).
+  // reqIdRef: client_req_id stabile per una singola apertura del modal —
+  // riusato a ogni click finché il modal non si chiude/riapre. Così rapid
+  // click producono lo stesso reqId e l'idempotency backend (creaOrdine)
+  // riconosce il duplicato anche se la guardia frontend dovesse fallire.
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  const reqIdRef = useRef(null);
+
   // ── Reset ────────────────────────────────────────────────────────────────
   const reset = () => {
     setItems([]); setTel(""); setNombre(""); setHora(""); setNota("");
@@ -77,11 +89,14 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setZonaInfo(null); setZonaLoading(false); setZonaManuale(false);
     horaCustom.current = false;
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
+    submittingRef.current = false;
+    setSubmitting(false);
+    reqIdRef.current = null;
   };
 
   // ── Confirm ──────────────────────────────────────────────────────────────
   const handleConfirm = async () => {
-    if (!ok) return;
+    if (submittingRef.current || !ok) return;
     // Freno a mano UX (Bug Z3, 17/05/2026): se hora è > 90 min nel futuro,
     // chiedi conferma esplicita. Cattura digitazioni accidentali (es. 23:43
     // invece di 21:30) o button click sbagliati prima che inquinino la coda.
@@ -105,6 +120,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         if (!ok2) return;
       }
     }
+    // Attiva il guard SOLO dopo l'eventuale confirm dialog: se l'operatore
+    // ha annullato la future-hora, NON bloccare il modal.
+    submittingRef.current = true;
+    setSubmitting(true);
     const telFinal = tel.trim() || (canal === "BANCO" ? "BARRA-" + Date.now().toString(36).toUpperCase().slice(-4) : "");
 
     // Se l'operatore ha attivato la stellina e non c'è già un clienteId,
@@ -140,13 +159,20 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     const tgFinale = isDomicilio
       ? risolviTempoAndata(zonaInfo.durataAndataMin, zonaInfo.lat, zonaInfo.lon, zonaInfo.zona)
       : null;
-    // client_req_id: idempotency key. Garantisce che se Railway riceve la POST
-    // due volte (retry frontend, ritrasmissione di rete, ecc.) non crea ordini duplicati.
-    const reqId = (typeof crypto !== "undefined" && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : ("req-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10));
+    // client_req_id: idempotency key. Stabile per la sessione modal corrente
+    // (generato all'apertura via useEffect su `visible`). Anche se la guardia
+    // frontend `submittingRef` dovesse fallire per qualche edge case React,
+    // rapid click producono lo stesso reqId → backend `creaOrdine` riconosce
+    // il duplicato (idempotent: true) invece di creare ordini multipli.
+    // Fallback difensivo: se per qualche motivo non è stato popolato, lo
+    // generiamo qui.
+    if (!reqIdRef.current) {
+      reqIdRef.current = (typeof crypto !== "undefined" && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : ("req-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10));
+    }
     onConfirm({
-      id: genId(), client_req_id: reqId, nombre: nombre.trim(), tel: telFinal,
+      id: genId(), client_req_id: reqIdRef.current, nombre: nombre.trim(), tel: telFinal,
       cliente_id: cidFinale || null,
       canal: canal === "WA" ? "WA" : canal === "BANCO" ? "BANCO" : "MANUAL",
       items: items.map(i => ({ ...i })),
@@ -515,6 +541,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     if (visible && !prefill?.hora) {
       const n = new Date();
       setHora(`${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}`);
+    }
+    if (visible && !reqIdRef.current) {
+      reqIdRef.current = (typeof crypto !== "undefined" && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : ("req-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10));
     }
     if (!visible) { reset(); setForzaHora(false); }
   }, [visible]); // eslint-disable-line
@@ -1222,15 +1253,15 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 </>)}
               </div>
             </div>
-            <button onClick={handleConfirm} disabled={!ok} style={{
-              background: ok ? C.rosso : C.fumo,
-              color: ok ? "#fff" : C.grigio,
+            <button onClick={handleConfirm} disabled={!ok || submitting} style={{
+              background: (!ok || submitting) ? C.fumo : C.rosso,
+              color: (!ok || submitting) ? C.grigio : "#fff",
               border: "none", borderRadius: 12,
               padding: "14px 24px", fontWeight: 800, fontSize: 15,
-              boxShadow: ok ? `0 4px 16px ${C.rosso}55` : "none",
-              cursor: ok ? "pointer" : "default"
+              boxShadow: (!ok || submitting) ? "none" : `0 4px 16px ${C.rosso}55`,
+              cursor: submitting ? "wait" : (ok ? "pointer" : "default")
             }}>
-              ✅ Confirmar pedido
+              {submitting ? "Confirmando…" : "✅ Confirmar pedido"}
             </button>
           </div>
         </div>
