@@ -1,9 +1,10 @@
 // Golden test per agentWhatsapp.interpreta() — corpus G01..G18 in
-// LaDieciBotV2_TEST_MATRIX.md. Coperti finora (14/18):
+// LaDieciBotV2_TEST_MATRIX.md. Coperti 18/18:
 //   - 5 anti-regressione (G01, G04, G12, G15, G16) → commit 364cefe
 //   - Batch 1 (G02, G03, G11, G17, G18) → commit 5257922
-//   - Batch 2 (G05, G06, G07, G10) → questo commit
-// Casi residui (P3): G08, G09, G13, G14 (info-domande + conversazionali).
+//   - Batch 2 (G05, G06, G07, G10) → commit ea18dc1
+//   - Batch 3 (G08, G09, G13, G14) → questo commit
+// Corpus completo.
 //
 // Pattern: mocka chiamaClaude pre-popolando require.cache PRIMA di richiedere
 // agentWhatsapp.js. Niente DB, niente rete, niente .env, nessuna chiave API.
@@ -158,6 +159,31 @@ function routeMock(userMessage) {
         tipo: "modifica_complessa", conf: 90, tipo_consegna: "RITIRO",
         direccion: "", nota: "", hora: "", items: [],
       });
+    case "¿Hasta qué hora abrís hoy?":
+      // G08 — domanda info orari. Niente order intent.
+      return JSON.stringify({
+        tipo: "domanda", conf: 0, tipo_consegna: "RITIRO", direccion: "",
+        nota: "", hora: "", items: [],
+      });
+    case "Cuánto cuesta la Zizou":
+      // G09 — domanda prezzo: cita una pizza ma non la ordina.
+      return JSON.stringify({
+        tipo: "domanda", conf: 0, tipo_consegna: "RITIRO", direccion: "",
+        nota: "", hora: "", items: [],
+      });
+    case "me ponéis algo rico":
+      // G13 — ambiguous: "algo" non specifica → mai ordine. Tipo misto/domanda
+      // con conf ≤ 40 per innescare review umana.
+      return JSON.stringify({
+        tipo: "misto", conf: 30, tipo_consegna: "RITIRO", direccion: "",
+        nota: "", hora: "", items: [],
+      });
+    case "Vale gracias, hasta luego":
+      // G14 — saluto puro. tipo=domanda, conf=0. Niente nuova azione.
+      return JSON.stringify({
+        tipo: "domanda", conf: 0, tipo_consegna: "RITIRO", direccion: "",
+        nota: "", hora: "", items: [],
+      });
     default:
       // Fallback canonico = domanda inerte (non deve mai essere triggerato).
       return JSON.stringify({
@@ -310,6 +336,39 @@ const CASES = [
     input: "En vez de Pulga ponme una Diavola",
     expect: (r) =>
       r.tipo === "modifica_complessa" &&
+      Array.isArray(r.items) && r.items.length === 0,
+    detail: (r) => `tipo=${r.tipo} conf=${r.conf} items=${r.items.length}`,
+  },
+  {
+    id: "G08",
+    input: "¿Hasta qué hora abrís hoy?",
+    expect: (r) =>
+      r.tipo === "domanda" && r.conf === 0 &&
+      Array.isArray(r.items) && r.items.length === 0,
+    detail: (r) => `tipo=${r.tipo} conf=${r.conf} items=${r.items.length}`,
+  },
+  {
+    id: "G09",
+    input: "Cuánto cuesta la Zizou",
+    expect: (r) =>
+      r.tipo === "domanda" && r.conf === 0 &&
+      Array.isArray(r.items) && r.items.length === 0,
+    detail: (r) => `tipo=${r.tipo} conf=${r.conf} items=${r.items.length}`,
+  },
+  {
+    id: "G13",
+    input: "me ponéis algo rico",
+    expect: (r) =>
+      (r.tipo === "misto" || r.tipo === "domanda") &&
+      r.conf < 85 &&
+      Array.isArray(r.items) && r.items.length === 0,
+    detail: (r) => `tipo=${r.tipo} conf=${r.conf} items=${r.items.length}`,
+  },
+  {
+    id: "G14",
+    input: "Vale gracias, hasta luego",
+    expect: (r) =>
+      r.tipo === "domanda" && r.conf === 0 &&
       Array.isArray(r.items) && r.items.length === 0,
     detail: (r) => `tipo=${r.tipo} conf=${r.conf} items=${r.items.length}`,
   },
