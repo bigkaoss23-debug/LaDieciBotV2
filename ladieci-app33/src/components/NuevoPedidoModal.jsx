@@ -156,8 +156,15 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     // durata_andata_min = quello che il sistema HA SCELTO (Google se disponibile).
     // durata_google_min / durata_haversine_min = entrambi i candidati per confronto.
     const isDomicilio = tipoConsegna === "DOMICILIO" && zonaInfo?.zona;
+    // Evita di salvare il fallback zona.tempoGiro come durata reale: se manca
+    // sia uno snapshot ETA reale sia coordinate fresche, scriviamo null in DB
+    // (così UI può mostrare warning e le medie non restano inquinate).
+    const hasEtaSnapshot = zonaInfo?.durataAndataMin != null;
+    const hasCoords = zonaInfo?.lat != null && zonaInfo?.lon != null;
     const tgFinale = isDomicilio
-      ? risolviTempoAndata(zonaInfo.durataAndataMin, zonaInfo.lat, zonaInfo.lon, zonaInfo.zona)
+      ? (hasEtaSnapshot || hasCoords
+          ? risolviTempoAndata(zonaInfo.durataAndataMin, zonaInfo.lat, zonaInfo.lon, zonaInfo.zona)
+          : null)
       : null;
     // client_req_id: idempotency key. Stabile per la sessione modal corrente
     // (generato all'apertura via useEffect su `visible`). Anche se la guardia
