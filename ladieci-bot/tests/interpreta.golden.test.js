@@ -1,8 +1,9 @@
 // Golden test per agentWhatsapp.interpreta() — corpus G01..G18 in
-// LaDieciBotV2_TEST_MATRIX.md. Coperti finora (10/18):
+// LaDieciBotV2_TEST_MATRIX.md. Coperti finora (14/18):
 //   - 5 anti-regressione (G01, G04, G12, G15, G16) → commit 364cefe
-//   - Batch 1 (G02, G03, G11, G17, G18) → questo commit
-// Casi residui (P2/P3): G05, G06, G07, G08, G09, G10, G13, G14.
+//   - Batch 1 (G02, G03, G11, G17, G18) → commit 5257922
+//   - Batch 2 (G05, G06, G07, G10) → questo commit
+// Casi residui (P3): G08, G09, G13, G14 (info-domande + conversazionali).
 //
 // Pattern: mocka chiamaClaude pre-popolando require.cache PRIMA di richiedere
 // agentWhatsapp.js. Niente DB, niente rete, niente .env, nessuna chiave API.
@@ -128,6 +129,35 @@ function routeMock(userMessage) {
         tipo: "solo_ora", conf: 90, tipo_consegna: "RITIRO", direccion: "",
         nota: "", hora: "22:50", items: [],
       });
+    case "A las 21:30 en Calle Mayor 10":
+      // G05 — delivery edge: indirizzo + ora, items vuoti → Flusso 1 attesa.
+      // Mock NON inventa pizze: items=[]. preDetectaDireccion forza DOMICILIO.
+      return JSON.stringify({
+        tipo: "ordine", conf: 90, tipo_consegna: "DOMICILIO",
+        direccion: "Calle Mayor 10", nota: "", hora: "21:30", items: [],
+      });
+    case "Dos Zizou para llevar a casa en Las Marinas":
+      // G06 — KEYWORDS_ZONA "las marinas" + "para llevar a casa" → DOMICILIO.
+      return JSON.stringify({
+        tipo: "ordine", conf: 90, tipo_consegna: "DOMICILIO",
+        direccion: "Las Marinas", nota: "", hora: "",
+        items: [{ n: "Zizou", q: 2, p: 10.5, e: "🍕", sub: "" }],
+      });
+    case "Quiero una Diavola a domicilio":
+      // G07 — domicilio senza indirizzo. preDetectaDireccion=false ma il
+      // prompt riconosce "a domicilio" → tipo_consegna=DOMICILIO, direccion="".
+      // Orchestrator manderà a Preguntas con motivo "sin_direccion".
+      return JSON.stringify({
+        tipo: "ordine", conf: 80, tipo_consegna: "DOMICILIO",
+        direccion: "", nota: "", hora: "",
+        items: [{ n: "Diavola", q: 1, p: 10.5, e: "🌶", sub: "" }],
+      });
+    case "En vez de Pulga ponme una Diavola":
+      // G10 — modifica_complessa: cambio item. items=[] per regola tipo.
+      return JSON.stringify({
+        tipo: "modifica_complessa", conf: 90, tipo_consegna: "RITIRO",
+        direccion: "", nota: "", hora: "", items: [],
+      });
     default:
       // Fallback canonico = domanda inerte (non deve mai essere triggerato).
       return JSON.stringify({
@@ -240,6 +270,48 @@ const CASES = [
       Array.isArray(r.items) && r.items.length === 0 &&
       String(r.hora || "").includes("22:50"),
     detail: (r) => `tipo=${r.tipo} conf=${r.conf} hora="${r.hora}" items=${r.items.length}`,
+  },
+  {
+    id: "G05",
+    input: "A las 21:30 en Calle Mayor 10",
+    expect: (r) =>
+      r.tipo_consegna === "DOMICILIO" &&
+      Array.isArray(r.items) && r.items.length === 0 &&
+      String(r.hora || "").includes("21:30") &&
+      (r.direccion || "").toLowerCase().includes("calle mayor 10"),
+    detail: (r) => `tipo=${r.tipo} tc=${r.tipo_consegna} conf=${r.conf} hora="${r.hora}" dir="${r.direccion}" items=${r.items.length}`,
+  },
+  {
+    id: "G06",
+    input: "Dos Zizou para llevar a casa en Las Marinas",
+    expect: (r) => {
+      if (r.tipo !== "ordine" || r.tipo_consegna !== "DOMICILIO" || r.conf < 85) return false;
+      const z = r.items.find(it => /^zizou$/i.test(it.n || ""));
+      return !!z && Number(z.q) === 2;
+    },
+    detail: (r) => {
+      const z = r.items.find(it => /^zizou$/i.test(it.n || "")) || {};
+      return `tipo=${r.tipo} tc=${r.tipo_consegna} conf=${r.conf} dir="${r.direccion}" pizza="${z.n} q=${z.q}"`;
+    },
+  },
+  {
+    id: "G07",
+    input: "Quiero una Diavola a domicilio",
+    expect: (r) => {
+      if (r.tipo !== "ordine" || r.tipo_consegna !== "DOMICILIO") return false;
+      if (String(r.direccion || "").trim() !== "") return false;
+      const d = r.items.find(it => /^diavola$/i.test(it.n || ""));
+      return !!d;
+    },
+    detail: (r) => `tipo=${r.tipo} tc=${r.tipo_consegna} conf=${r.conf} dir="${r.direccion}" items=${r.items.length}`,
+  },
+  {
+    id: "G10",
+    input: "En vez de Pulga ponme una Diavola",
+    expect: (r) =>
+      r.tipo === "modifica_complessa" &&
+      Array.isArray(r.items) && r.items.length === 0,
+    detail: (r) => `tipo=${r.tipo} conf=${r.conf} items=${r.items.length}`,
   },
 ];
 
