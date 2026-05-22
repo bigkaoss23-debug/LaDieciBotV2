@@ -71,15 +71,15 @@ const WaLista = ({msgs, msgsFiltrati, sel, setSel, isTablet, msgsPreguntas}) => 
           // Scala colori: verde(nuovo) → giallo(in trattamento) → arancio(cocina) → scuro(done)
           const cardBg     = isStallo  ? "rgba(255,255,255,0.025)"
                            : isDone    ? "rgba(255,255,255,0.03)"
-                           : isCocina  ? "linear-gradient(145deg,rgba(249,115,22,0.18) 0%,rgba(234,88,12,0.10) 60%,rgba(180,60,8,0.16) 100%)"
-                           : isTratt   ? "linear-gradient(145deg,rgba(250,204,21,0.14) 0%,rgba(245,158,11,0.08) 60%,rgba(180,120,8,0.12) 100%)"
-                           : isNuevo   ? "linear-gradient(145deg,rgba(34,197,94,0.20) 0%,rgba(22,163,74,0.10) 60%,rgba(15,107,50,0.18) 100%)"
+                           : isCocina  ? "linear-gradient(145deg,rgba(249,115,22,0.62) 0%,rgba(234,88,12,0.40) 60%,rgba(180,60,8,0.55) 100%)"
+                           : isTratt   ? "linear-gradient(145deg,rgba(250,204,21,0.55) 0%,rgba(245,158,11,0.32) 60%,rgba(180,120,8,0.48) 100%)"
+                           : isNuevo   ? "linear-gradient(145deg,rgba(34,197,94,0.62) 0%,rgba(22,163,74,0.40) 60%,rgba(15,107,50,0.55) 100%)"
                            : "rgba(255,255,255,0.055)";
           const cardBorder = isStallo  ? "rgba(255,255,255,0.06)"
                            : isDone    ? "rgba(255,255,255,0.07)"
-                           : isCocina  ? "rgba(249,115,22,0.45)"
-                           : isTratt   ? "rgba(250,204,21,0.38)"
-                           : isNuevo   ? "rgba(34,197,94,0.45)"
+                           : isCocina  ? "rgba(249,115,22,0.78)"
+                           : isTratt   ? "rgba(250,204,21,0.72)"
+                           : isNuevo   ? "rgba(34,197,94,0.78)"
                            : "rgba(255,255,255,0.10)";
           const sideGlow   = isDone    ? "transparent"
                            : isCocina  ? "rgba(249,115,22,0.12)"
