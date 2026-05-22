@@ -208,13 +208,25 @@ const ZonaBlock = ({ zona, ordini, giroHora, onSendRepartidor, loadingId, driver
         }}>
           {ordini.length}/{zona.maxOrdiniPerGiro}
         </span>
-        {/* Tempo giro — snapshot durata_andata reale (Google), worst-case del giro */}
+        {/* Tempo giro — snapshot durata_andata reale (Google), worst-case del giro.
+            Se almeno un ordine non ha né durata_andata_min né zona_lat/lon, il valore
+            cade sul fallback zona.tempoGiro (worst-case zona): marca con * + giallo +
+            tooltip per evitare che l'operatore lo legga come ETA reale. */}
         {(() => {
           const tg = Math.max(...ordini.map(o => tempoAndata(o, zona)));
+          const isFallback = ordini.some(o =>
+            (o.durata_andata_min == null) &&
+            (o.zona_lat == null || o.zona_lon == null)
+          );
           return (
-            <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}
-              title="Tempo andata one-way (peggior caso del giro)">
-              ~{tg}min
+            <span style={{
+                color: isFallback ? "#fbbf24" : "rgba(255,255,255,0.45)",
+                fontSize: 11, fontFamily: "'DM Mono',monospace", fontWeight: 600
+              }}
+              title={isFallback
+                ? "Estimación de zona (sin GPS del cliente) — verificar en Maps"
+                : "Tempo andata one-way (peggior caso del giro)"}>
+              ~{tg}min{isFallback ? "*" : ""}
             </span>
           );
         })()}
