@@ -396,7 +396,12 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       await optimisticOrden(ordenRef, { estado: ORDER_STATES.EN_COCINA, hora: oraFinale }, async () => {
         try {
           if (nuovaHora) {
-            await api.post({action:"updateOrden", id:ordenRef, hora:nuovaHora});
+            const resOrden = await api.post({action:"updateOrden", id:ordenRef, hora:nuovaHora});
+            const parsed = parseEstadoTerminalError(resOrden);
+            if (parsed.blocked) {
+              notify("❌ " + parsed.message, C.rosso);
+              return;
+            }
           }
           await api.updateEstado(ordenRef, ORDER_STATES.EN_COCINA);
           await api.post({action:"updateWaStato", id:msgCorrente.id, stato:"COCINA", ordine_ref:ordenRef});
@@ -817,14 +822,21 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         // Blocca polling SUBITO — prima degli await, evita race condition WebSocket
         blockedTels.current[telNorm] = Date.now() + 60000;
         Suoni.conferma();
-        notify("✅ Respuesta enviada — confirma desde Pedidos para enviar a cocina");
         try {
+          let blockedTerminal = null;
           if (nuoviItems && nuoviItems.length > 0) {
-            await api.post({action:"updateOrden", id:ordenId, items:itemsFinali, hora:ordine.hora});
+            const resOrden = await api.post({action:"updateOrden", id:ordenId, items:itemsFinali, hora:ordine.hora});
+            const parsed = parseEstadoTerminalError(resOrden);
+            if (parsed.blocked) blockedTerminal = parsed;
           }
-          if (msgId) {
-            api.post({action:"updateWaStato", id:msgId, stato:"NUEVO"})
-              .catch(e => console.warn("[onConfirmaDaConfermare] updateWaStato NUEVO fallito:", e?.message || e));
+          if (blockedTerminal) {
+            notify("❌ " + blockedTerminal.message, C.rosso);
+          } else {
+            notify("✅ Respuesta enviada — confirma desde Pedidos para enviar a cocina");
+            if (msgId) {
+              api.post({action:"updateWaStato", id:msgId, stato:"NUEVO"})
+                .catch(e => console.warn("[onConfirmaDaConfermare] updateWaStato NUEVO fallito:", e?.message || e));
+            }
           }
         } catch(err) { console.error("confirmaDaConfermare error:", err); }
         setGoToPedidosSignal(s => s+1);
