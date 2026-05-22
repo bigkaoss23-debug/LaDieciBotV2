@@ -10,7 +10,7 @@ const sortOrdenes = (list) => list.sort((a,b) => {
   return Number(b.ts||0) - Number(a.ts||0);
 });
 
-const TabManual = ({ordenes, onModifica, onElimina, onConfirm, onForzarEntrega, vipIds}) => {
+const TabManual = ({ordenes, onModifica, onElimina, onConfirm, onForzarEntrega, vipIds, loadingIds = new Set()}) => {
   const [showDone, setShowDone] = useState(false);
 
   const all     = ordenes.filter(o=>o.canal==="MANUAL" || o.canal==="TEL" || !o.canal);
@@ -19,7 +19,7 @@ const TabManual = ({ordenes, onModifica, onElimina, onConfirm, onForzarEntrega, 
 
   const cardProps = (o) => ({
     o, onModifica, accentColor:C.blu,
-    onElimina, onConfirm, onForzarEntrega, vipIds
+    onElimina, onConfirm, onForzarEntrega, vipIds, loadingIds
   });
 
   if (all.length === 0) return (

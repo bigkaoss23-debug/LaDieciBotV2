@@ -4,7 +4,8 @@ import Chip from '../ui/Chip';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
 
-const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, vipIds}) => {
+const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, vipIds, loadingIds = new Set()}) => {
+  const busy = loadingIds.has(o.id);
   const isVip = !!(o.cliente_id && vipIds && vipIds.has && vipIds.has(o.cliente_id));
   const [confirmDel, setConfirmDel] = useState(false);
   // Normalizza items — può arrivare come stringa JSON dal backend.
@@ -178,13 +179,19 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
     {/* ── Forzar entrega (DOMICILIO + LISTO, fallback operatore) ── */}
     {onForzarEntrega && o.tipo_consegna === "DOMICILIO" && estado === ORDER_STATES.LISTO && (
       <div style={{marginTop:8,display:"flex",justifyContent:"flex-end"}} onClick={e=>e.stopPropagation()}>
-        <button onClick={()=>onForzarEntrega(o.id)} style={{
-          background:"rgba(249,115,22,0.10)",
-          color:"rgba(249,115,22,0.75)", border:"1px solid rgba(249,115,22,0.30)",
-          borderRadius:9, padding:"5px 14px",
-          fontWeight:700, fontSize:12, cursor:"pointer",
-          display:"flex", alignItems:"center", gap:5
-        }}>🛵 Forzar entrega</button>
+        <button
+          onClick={()=>{ if (!busy) onForzarEntrega(o.id); }}
+          disabled={busy}
+          style={{
+            background:"rgba(249,115,22,0.10)",
+            color: busy ? "rgba(249,115,22,0.35)" : "rgba(249,115,22,0.75)",
+            border: `1px solid rgba(249,115,22,${busy ? 0.15 : 0.30})`,
+            borderRadius:9, padding:"5px 14px",
+            fontWeight:700, fontSize:12,
+            cursor: busy ? "wait" : "pointer",
+            opacity: busy ? 0.7 : 1,
+            display:"flex", alignItems:"center", gap:5
+        }}>{busy ? "Forzando…" : "🛵 Forzar entrega"}</button>
       </div>
     )}
     {/* ── Conferma → Cucina (solo POR_CONFIRMAR; disabilitato finché _temp:
@@ -194,22 +201,22 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
     {onConfirm && estado === ORDER_STATES.POR_CONFIRMAR && (
       <div style={{marginTop:8,display:"flex",justifyContent:"flex-end"}} onClick={e=>e.stopPropagation()}>
         <button
-          onClick={()=>{ if (!o._temp) onConfirm(o.id); }}
-          disabled={!!o._temp}
-          title={o._temp ? "Guardando pedido…" : "Mandar a cocina"}
+          onClick={()=>{ if (!o._temp && !busy) onConfirm(o.id); }}
+          disabled={!!o._temp || busy}
+          title={o._temp ? "Guardando pedido…" : (busy ? "Confirmando…" : "Mandar a cocina")}
           style={{
-            background: o._temp
+            background: (o._temp || busy)
               ? "rgba(255,255,255,0.05)"
               : "linear-gradient(135deg,rgba(6,182,212,0.35),rgba(14,165,233,0.25))",
-            color: o._temp ? "rgba(255,255,255,0.35)" : "#FDB975",
-            border: o._temp ? "1.5px solid rgba(255,255,255,0.12)" : "1.5px solid rgba(251,146,60,0.65)",
+            color: (o._temp || busy) ? "rgba(255,255,255,0.35)" : "#FDB975",
+            border: (o._temp || busy) ? "1.5px solid rgba(255,255,255,0.12)" : "1.5px solid rgba(251,146,60,0.65)",
             borderRadius:10, padding:"8px 20px",
             fontWeight:800, fontSize:13, letterSpacing:.3,
-            boxShadow: o._temp ? "none" : "0 2px 10px rgba(251,146,60,0.25)",
-            cursor: o._temp ? "wait" : "pointer",
-            opacity: o._temp ? 0.6 : 1,
+            boxShadow: (o._temp || busy) ? "none" : "0 2px 10px rgba(251,146,60,0.25)",
+            cursor: (o._temp || busy) ? "wait" : "pointer",
+            opacity: (o._temp || busy) ? 0.6 : 1,
             display:"flex", alignItems:"center", gap:6
-          }}>{o._temp ? "⏳ Guardando…" : "🚀 A Cocina"}</button>
+          }}>{o._temp ? "⏳ Guardando…" : (busy ? "Confirmando…" : "🚀 A Cocina")}</button>
       </div>
     )}
     {/* ── Cestino elimina ── */}

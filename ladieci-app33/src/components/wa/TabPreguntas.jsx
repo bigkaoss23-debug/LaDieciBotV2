@@ -27,6 +27,10 @@ const TabPreguntas = ({msgs, allMsgs, ordenes, onCreaOrdine, onElimina, onRispon
   const autoLoadedRef = useRef({}); // track which tels already auto-loaded
   const risposteCacheRef = useRef({});
   const [waitingTels, setWaitingTels] = useState(new Set());
+  // P1 anti double-click: feedback visivo per il bottone "Enviar al cliente · Confirmar pedido".
+  // Il side-effect è già protetto handler-side da `confermaInflightRef` in ServicioPage —
+  // questo set serve solo a `disabled` + label "Enviando…" durante l'attesa.
+  const [confirmingTels, setConfirmingTels] = useState(new Set());
   const waitingSentAtRef = useRef({}); // tel → timestamp dell'invio risposta // ref sempre aggiornato per accesso in callback con deps []
   const threadScrollRef = useRef(null);
   const w = useWidth();
@@ -868,9 +872,13 @@ const TabPreguntas = ({msgs, allMsgs, ordenes, onCreaOrdine, onElimina, onRispon
                           )}
                         </div>
                       )}
+                      {(() => { const cBusy = confirmingTels.has(tel); const cEnabled = canConfirm && !cBusy; return (
                       <button
                         onClick={async ()=>{
                           if(!canConfirm) return;
+                          if (confirmingTels.has(tel)) return;
+                          setConfirmingTels(prev => { const n = new Set(prev); n.add(tel); return n; });
+                          try {
                           const testoInvio = testo || "";
                           if(testoInvio) onRispondi(tel, testoInvio);
                           setConvThreads(prev=>{
@@ -898,21 +906,27 @@ const TabPreguntas = ({msgs, allMsgs, ordenes, onCreaOrdine, onElimina, onRispon
                             setSel(null);
                           }
                           setRisposteCache(prev=>({...prev,[tel]:{testo:"",generando:false}}));
+                          } finally {
+                            setConfirmingTels(prev => { const n = new Set(prev); n.delete(tel); return n; });
+                          }
                         }}
-                        disabled={!canConfirm}
+                        disabled={!cEnabled}
                         style={{
-                          background: canConfirm ? `linear-gradient(135deg,${C.wa},#1aab52)` : "rgba(255,255,255,0.05)",
-                          border:`2px solid ${canConfirm ? C.wa : "rgba(255,255,255,0.1)"}`,
-                          color: canConfirm?"#fff":"#444",
+                          background: cEnabled ? `linear-gradient(135deg,${C.wa},#1aab52)` : "rgba(255,255,255,0.05)",
+                          border:`2px solid ${cEnabled ? C.wa : "rgba(255,255,255,0.1)"}`,
+                          color: cEnabled?"#fff":"#444",
                           borderRadius:14,padding:"16px 0",fontWeight:900,fontSize:15,width:"100%",
-                          boxShadow: canConfirm?`0 6px 24px ${C.wa}55`:"none",
+                          boxShadow: cEnabled?`0 6px 24px ${C.wa}55`:"none",
                           display:"flex",alignItems:"center",justifyContent:"center",gap:10,
-                          cursor: canConfirm?"pointer":"not-allowed",transition:"all .2s",
-                          animation: canConfirm?"livePulse 2.5s infinite":"none"
+                          cursor: cBusy ? "wait" : (cEnabled?"pointer":"not-allowed"),
+                          opacity: cBusy ? 0.7 : 1,
+                          transition:"all .2s",
+                          animation: cEnabled?"livePulse 2.5s infinite":"none"
                         }}>
-                        <span style={{fontSize:18}}>📤</span>
-                        <span>{ordenDaConfermare && hasItems ? `Añadir al pedido · Avisar cliente` : hasItems ? `Enviar al cliente · Confirmar pedido` : "Enviar al cliente"}</span>
+                        <span style={{fontSize:18}}>{cBusy ? "⏳" : "📤"}</span>
+                        <span>{cBusy ? "Enviando…" : (ordenDaConfermare && hasItems ? `Añadir al pedido · Avisar cliente` : hasItems ? `Enviar al cliente · Confirmar pedido` : "Enviar al cliente")}</span>
                       </button>
+                      ); })()}
                       {/* Bottone secondario: solo per risposta senza ordine → apre in Pedidos per creare manualmente */}
                       {!hasItems && !ordenDaConfermare && (
                         <button

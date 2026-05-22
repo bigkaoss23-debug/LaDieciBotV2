@@ -72,6 +72,8 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   // smarcato con `endAction(id)` in un `finally`.
   const inFlightRef = useRef(new Set());
   const waAddicionInflightRef = useRef(new Set()); // chiave: msgId — keyspace separato
+  const waConfirmInflightRef = useRef(new Set()); // chiave: msgId
+  const confermaInflightRef = useRef(new Set()); // chiave: msgId per onConfirmaDaConfermare
   const beginAction = (id) => {
     if (!id || inFlightRef.current.has(id)) return false;
     inFlightRef.current.add(id);
@@ -308,20 +310,24 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   const handleTabChange = useCallback((t) => setTab(t), []);
 
   const confirmaOrdine = async (id) => {
-    notify("✅ " + id + " → Cocina");
-    const orden = ordenes.find(o => o.id === id);
-    const intent = buildEnCocinaTransition(orden, {
-      component: "ServicioPage",
-      action: "confirmaOrdine",
-    });
-    logTransition(intent);
-    await optimisticOrden(id, { estado: ORDER_STATES.EN_COCINA }, async () => {
-      try { await api.updateEstado(id, ORDER_STATES.EN_COCINA); }
-      catch(err) { console.error("confirmaOrdine error:", err); }
-    });
+    if (!beginAction(id)) return;
+    try {
+      notify("✅ " + id + " → Cocina");
+      const orden = ordenes.find(o => o.id === id);
+      const intent = buildEnCocinaTransition(orden, {
+        component: "ServicioPage",
+        action: "confirmaOrdine",
+      });
+      logTransition(intent);
+      await optimisticOrden(id, { estado: ORDER_STATES.EN_COCINA }, async () => {
+        try { await api.updateEstado(id, ORDER_STATES.EN_COCINA); }
+        catch(err) { console.error("confirmaOrdine error:", err); }
+      });
+    } finally { endAction(id); }
   };
 
   const forzaEntrega = async (id) => {
+    if (!beginAction(id)) return;
     notify("🛵 " + id + " → Forzado a repartidor");
     let failed = false;
     const orden = ordenes.find(o => o.id === id);
@@ -358,6 +364,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       setOrdenes(p=>p.map(o=>o.id===id?{...o,estado:ORDER_STATES.LISTO}:o));
       notify("❌ Error al forzar entrega", "#E8341C");
     }
+    endAction(id);
   };
 
   const addOrden  = async (o) => {
@@ -389,6 +396,9 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     }
   };
   const waConfirm = useCallback(async (id,items,hora,nombre,tel,nuovaHora) => {
+    if (!id || waConfirmInflightRef.current.has(id)) return;
+    waConfirmInflightRef.current.add(id);
+    try {
     const msgCorrente = waMsgs.find(m => m.id === id);
     const ordenRef = msgCorrente?.ordine_ref || "";
     // Previene doppio invio: blocca solo se già COCINA e non c'è un ordine POR_CONFIRMAR da mandare
@@ -472,6 +482,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         notify("❌ Error al mandar a cocina — vuelve a confirmar", "#E8341C");
       }
     }
+    } finally { waConfirmInflightRef.current.delete(id); }
   }, [waMsgs, ordenes]);
   const waManual = useCallback(id => { setWaMsgs(p=>p.map(m=>m.id===id?{...m,leido:true}:m)); notify("✋ Manual",C.giallo); }, []);
 
@@ -647,6 +658,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     }
   };
   const volverACocina = async (id, metadata = {}) => {
+    if (!beginAction(id)) return;
     const orden = ordenes.find(o => o.id === id);
     const previousEstado = orden?.estado || ORDER_STATES.LISTO;
     const intent = buildVolverACocinaTransition(orden, {
@@ -681,10 +693,12 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       });
       setOrdenes(prev => prev.map(o => o.id === id ? { ...o, estado: previousEstado } : o));
       notify("❌ Error al volver a cocina", C.rosso);
+      endAction(id);
       return;
     }
 
     notify("↩ Pedido devuelto a cocina", C.orange);
+    endAction(id);
   };
   const modificaOrden = async (o) => {
     setOrdenModifica(null);
@@ -827,6 +841,12 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       onConfirmaDaConfermare={async (nombre, tel, ordine, nuoviItems, msgId) => {
         // L'Agente aveva pre-creato POR_CONFIRMAR — operatore ha risposto da Preguntas
         // L'ordine resta in POR_CONFIRMAR: solo il click esplicito "A Cocina" lo manda in cucina
+        // Guard sync anti double-click su msgId (handler-side: previene 2x updateOrden
+        // + 2x updateWaStato + 2x notify se l'operatore clicca rapidamente).
+        const inFlightKey = msgId || (ordine && ordine.id) || tel;
+        if (inFlightKey && confermaInflightRef.current.has(inFlightKey)) return;
+        if (inFlightKey) confermaInflightRef.current.add(inFlightKey);
+        try {
         const telNorm = String(tel||"").replace("+","");
         // Se ordine è null (es. risposta a domanda senza ordine), segna solo COMPLETATO e basta
         if (!ordine) {
@@ -871,6 +891,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
           }
         } catch(err) { console.error("confirmaDaConfermare error:", err); }
         setGoToPedidosSignal(s => s+1);
+        } finally { if (inFlightKey) confermaInflightRef.current.delete(inFlightKey); }
       }}
       onCreaOrdenFromChat={async (nombre,tel,items,hora,direccion,tipoConsegna,zona_manuale)=>{
         if(items && items.length > 0) {
@@ -963,8 +984,8 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         setGoToPreguntasSignal(s => s+1);
       }}
     />;
-    if(tab==="manual") return <TabManual ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds}/>;
-    if(tab==="banco")  return <TabBanco  ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds}/>;
+    if(tab==="manual") return <TabManual ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
+    if(tab==="banco")  return <TabBanco  ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
     if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} loadingIds={loadingIds}
       vipIds={vipIds}
       waMsgs={waMsgs}

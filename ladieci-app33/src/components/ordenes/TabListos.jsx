@@ -220,33 +220,39 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                     }}>
                       Gestión en página driver
                     </div>
-                    {o.estado === ORDER_STATES.LISTO && onVolverACocina && (
+                    {o.estado === ORDER_STATES.LISTO && onVolverACocina && (() => { const vBusy = loadingIds.has(o.id); return (
                       <button
-                        onClick={e=>{e.stopPropagation();handleVolverACocina(o);}}
+                        onClick={e=>{ e.stopPropagation(); if (vBusy) return; handleVolverACocina(o); }}
+                        disabled={vBusy}
                         style={{
-                          background:"rgba(255,255,255,0.10)", color:"#fff",
-                          border:"1.5px solid rgba(255,255,255,0.22)",
+                          background: vBusy ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.10)", color:"#fff",
+                          border: `1.5px solid rgba(255,255,255,${vBusy ? 0.10 : 0.22})`,
                           borderRadius:10, padding:"8px 12px",
-                          fontWeight:800, fontSize:12, cursor:"pointer",
+                          fontWeight:800, fontSize:12,
+                          cursor: vBusy ? "wait" : "pointer",
+                          opacity: vBusy ? 0.7 : 1,
                         }}>
-                        ↩ Volver a cocina
+                        {vBusy ? "Volviendo…" : "↩ Volver a cocina"}
                       </button>
-                    )}
+                    ); })()}
                   </div>
                 ) : o.ya_pagado ? (
                   <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,alignItems:"stretch"}}>
-                    {o.estado === ORDER_STATES.LISTO && onVolverACocina && (
+                    {o.estado === ORDER_STATES.LISTO && onVolverACocina && (() => { const vBusy = loadingIds.has(o.id); return (
                       <button
-                        onClick={e=>{e.stopPropagation();handleVolverACocina(o);}}
+                        onClick={e=>{ e.stopPropagation(); if (vBusy) return; handleVolverACocina(o); }}
+                        disabled={vBusy}
                         style={{
-                          background:"rgba(255,255,255,0.10)", color:"#fff",
-                          border:"1.5px solid rgba(255,255,255,0.22)",
+                          background: vBusy ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.10)", color:"#fff",
+                          border: `1.5px solid rgba(255,255,255,${vBusy ? 0.10 : 0.22})`,
                           borderRadius:10, padding:"8px 12px",
-                          fontWeight:800, fontSize:12, cursor:"pointer",
+                          fontWeight:800, fontSize:12,
+                          cursor: vBusy ? "wait" : "pointer",
+                          opacity: vBusy ? 0.7 : 1,
                         }}>
-                        ↩ Volver a cocina
+                        {vBusy ? "Volviendo…" : "↩ Volver a cocina"}
                       </button>
-                    )}
+                    ); })()}
                     {(() => { const busy = loadingIds.has(o.id); return (
                     <button
                       onClick={e=>{ e.stopPropagation(); if (busy) return; handleRetirado(o, o.metodo_pago); }}
@@ -323,18 +329,21 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                   })()
                 ) : (
                   <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,alignItems:"stretch"}}>
-                    {o.estado === ORDER_STATES.LISTO && onVolverACocina && (
+                    {o.estado === ORDER_STATES.LISTO && onVolverACocina && (() => { const vBusy = loadingIds.has(o.id); return (
                       <button
-                        onClick={e=>{e.stopPropagation();handleVolverACocina(o);}}
+                        onClick={e=>{ e.stopPropagation(); if (vBusy) return; handleVolverACocina(o); }}
+                        disabled={vBusy}
                         style={{
-                          background:"rgba(255,255,255,0.10)", color:"#fff",
-                          border:"1.5px solid rgba(255,255,255,0.22)",
+                          background: vBusy ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.10)", color:"#fff",
+                          border: `1.5px solid rgba(255,255,255,${vBusy ? 0.10 : 0.22})`,
                           borderRadius:10, padding:"8px 12px",
-                          fontWeight:800, fontSize:12, cursor:"pointer",
+                          fontWeight:800, fontSize:12,
+                          cursor: vBusy ? "wait" : "pointer",
+                          opacity: vBusy ? 0.7 : 1,
                         }}>
-                        ↩ Volver a cocina
+                        {vBusy ? "Volviendo…" : "↩ Volver a cocina"}
                       </button>
-                    )}
+                    ); })()}
                     <button
                       onClick={e=>{e.stopPropagation();setPendingPago(o.id);}}
                       style={{
