@@ -248,16 +248,17 @@ Commit chain:
 - **`129ad21 fix show terminal state error on order edit`** — wiring nel path modal `modificaOrden` di [ServicioPage.jsx:653-700](ladieci-app33/src/components/ServicioPage.jsx:653). Rimosso notify ottimistico precoce `"✏️ Ordine aggiornato"` (italiano residuo); ora il notify avviene DOPO il risultato server. Se `blocked` → notify rosso con `parsed.message`; altrimenti → notify success `"✏️ Pedido actualizado"` (spagnolo).
 - **`3abd493 fix show terminal error on whatsapp addition`** — wiring nel path `waAddicion` (Preguntas, replace items / merge) di [ServicioPage.jsx:584-587](ladieci-app33/src/components/ServicioPage.jsx:584). Espanso il ramo `else` esistente per usare `parseEstadoTerminalError(res)`: notify rosso specifico se terminale, generico `"Error al actualizar pedido"` altrimenti. Branch success invariato.
 
-### Stato attuale UI handling
+### Stato attuale UI handling — RR2 MOD-4 chiuso
 
-- ✅ `modificaOrden` (modal edit) — coperto.
-- ✅ `waAddicion` (Preguntas) — coperto.
-- ⏳ **P3 aperti** (intent del path = ordini pre-cucina, blast radius basso, edge case race-condition):
-  - `waConfirm` cambio hora rapido ([ServicioPage.jsx:398-407](ladieci-app33/src/components/ServicioPage.jsx:398)) — risultato `api.post updateOrden` ignorato.
-  - `onConfirmaDaConfermare` ([ServicioPage.jsx:818-826](ladieci-app33/src/components/ServicioPage.jsx:818)) — risultato `api.post updateOrden` ignorato.
+Quarto commit `13afb55 fix show terminal error on remaining order updates` (2026-05-22) chiude i due P3 rimasti. Tutti i path UI principali ora gestiscono `estado_terminal`:
 
-### Rischi residui (NON coperti)
+- ✅ `modificaOrden` (modal edit) — `129ad21`.
+- ✅ `waAddicion` (Preguntas, replace/merge items) — `3abd493`.
+- ✅ `waConfirm` (cambio hora rapido) — `13afb55`. Se backend rifiuta su `updateOrden`, notify rosso + early return dal callback `optimisticOrden` → niente `api.updateEstado` né `updateWaStato`.
+- ✅ `onConfirmaDaConfermare` (POR_CONFIRMAR → NUEVO con items finali) — `13afb55`. Notify ottimistico verde rimosso dalla pre-await; ora emesso solo se non blocked. `updateWaStato → NUEVO` non parte se blocked (il messaggio WA resta in trattamento).
 
-- I 2 path P3 sopra restano silent su `estado_terminal` (race condition). Sintomo: notify ottimistico verde mostrato, UI riallineata al polling successivo. Patch micro stessa forma dei due fix sopra.
-- Frontend `OrdenCard.jsx:104` non blocca il click di modify su stati terminali (`isTerminalState(estado)`): il modal può ancora aprirsi → operatore lavora sul modal, salva, vede ora correttamente l'errore rosso. UX prevention rinviata.
-- `modificaOrden` non rollba il patch ottimistico locale su blocked: aspetta polling/WS reconcile. Comportamento accettato (notify rosso informa l'operatore).
+### Rischi residui (NON coperti, opzionali)
+
+- **Prevenzione click su OrdenCard**: [OrdenCard.jsx:104](ladieci-app33/src/components/ordenes/OrdenCard.jsx:104) non blocca il modal su stati terminali (`isTerminalState(estado)`). Operatore può ancora aprire il modal e salvare, ma il backend rifiuta e l'UI mostra il notify rosso. UX prevention preferibile a posteriori, non necessaria.
+- **Patch ottimistico locale non rollbackato** su blocked nei path `modificaOrden`/`waConfirm`/`onConfirmaDaConfermare`. Polling/WS riallinea entro il prossimo tick. Accettato perché il notify rosso informa l'operatore.
+- **MOD-2/MOD-3 badge `MODIFICADO`** resta pending: migration `2026-05-21_add_mod_audit_fields.sql` NON applicata, wiring backend `cambiaStato`/`modificaOrdine` non scritto, render UI in TabCocina/PanelCocina non implementato. Utility pura `isModifiedAfterCocina` testata 20/20 in `e0e7689` e pronta al consumo.
