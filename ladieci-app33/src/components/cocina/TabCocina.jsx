@@ -476,15 +476,20 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                   </div>
                 )}
                 <div style={{padding:"11px 16px 14px",borderTop:`1px solid ${fc.border}44`,background:"#f5f5f5"}}>
+                  {(() => { const busy = loadingIds.has(o.id); return (
                   <button
-                    onClick={()=>{ Suoni.campanellaDieci(); handleListo(o); }}
+                    onClick={()=>{ if (busy) return; Suoni.campanellaDieci(); handleListo(o); }}
+                    disabled={busy}
                     style={{width:"100%",
-                      background:"linear-gradient(145deg,#27AE60,#1A7A44)",
+                      background: busy ? "rgba(39,174,96,0.35)" : "linear-gradient(145deg,#27AE60,#1A7A44)",
                       border:"none",color:"#fff",borderRadius:12,padding:"14px 0",
                       fontWeight:900,fontSize:16,letterSpacing:.5,
-                      boxShadow:"0 4px 14px rgba(39,174,96,.35)",cursor:"pointer"}}>
-                    ✅ LISTO
+                      boxShadow: busy ? "none" : "0 4px 14px rgba(39,174,96,.35)",
+                      cursor: busy ? "wait" : "pointer",
+                      opacity: busy ? 0.7 : 1}}>
+                    {busy ? "Confirmando…" : "✅ LISTO"}
                   </button>
+                  ); })()}
                 </div>
               </div>
             );

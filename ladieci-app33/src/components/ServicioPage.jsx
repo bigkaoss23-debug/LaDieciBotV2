@@ -64,6 +64,25 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   };
   const [tab,setTab] = useState("wa");
   const [loadingIds, setLoadingIds] = useState(new Set());
+  // Anti double-click guard per le mutazioni di stato ordine
+  // (setListo, setRetirado, ecc.). `inFlightRef` è la guardia SYNC che blocca
+  // i click ripetuti prima del re-render React; `loadingIds` (state) triggera
+  // il re-render dei bottoni per mostrare `disabled` + cursor wait.
+  // Va sempre marcato con `beginAction(id)` PRIMA della chiamata async e
+  // smarcato con `endAction(id)` in un `finally`.
+  const inFlightRef = useRef(new Set());
+  const waAddicionInflightRef = useRef(new Set()); // chiave: msgId — keyspace separato
+  const beginAction = (id) => {
+    if (!id || inFlightRef.current.has(id)) return false;
+    inFlightRef.current.add(id);
+    setLoadingIds(prev => { const next = new Set(prev); next.add(id); return next; });
+    return true;
+  };
+  const endAction = (id) => {
+    if (!id) return;
+    inFlightRef.current.delete(id);
+    setLoadingIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+  };
   const [showNuevo,setShowNuevo] = useState(false);
   const [showCocina,setShowCocina] = useState(false);
   const [chatStoricoSel, setChatStoricoSel] = useState(null);
@@ -538,6 +557,11 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   };
 
   const waAddicion = async (msgId, ordenRef, itemsNuevos, ordenEstado, replace = false) => {
+    // Guard SYNC anti double-click: chiave msgId (univoca per pregunta).
+    // Senza guard, 2 click rapidi farebbero 2x items merge sullo stesso
+    // ordenAttuale.items e potrebbero duplicare gli items in DB (R9 pre-mortem).
+    if (!msgId || waAddicionInflightRef.current.has(msgId)) return;
+    waAddicionInflightRef.current.add(msgId);
     notify(replace ? "🔄 Actualizando pedido..." : "➕ Añadiendo al pedido...", C.orange);
     try {
       const ordenAttuale = ordenes.find(o => o.id === ordenRef);
@@ -591,9 +615,11 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         notify("❌ " + (parsed.blocked ? parsed.message : "Error al actualizar pedido"), C.rosso);
       }
     } catch(err) { console.error("waAddicion:", err); notify("❌ Error al añadir", C.rosso); }
+    finally { waAddicionInflightRef.current.delete(msgId); }
   };
 
   const setListo = async (id, metadata = {}) => {
+    if (!beginAction(id)) return;
     Suoni.conferma();
     const orden = ordenes.find(o => o.id === id);
     const intent = buildListoTransition(orden, {
@@ -616,6 +642,8 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     } catch(err) {
       console.error("setListo:", err);
       notify("❌ Errore di rete — riprova", C.rosso);
+    } finally {
+      endAction(id);
     }
   };
   const volverACocina = async (id, metadata = {}) => {
@@ -708,6 +736,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   };
 
   const setRetirado = async (id, metodo_pago = "", descuento = null) => {
+    if (!beginAction(id)) return;
     const orden = ordenes.find(o => o.id === id);
     const telNorm = orden ? String(orden.tel||"").replace("+","") : "";
     const intent = buildRetiradoTransition(orden, {
@@ -738,6 +767,8 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     } catch(err) {
       console.error("setRetirado:", err);
       notify("❌ Errore di rete — riprova", C.rosso);
+    } finally {
+      endAction(id);
     }
   };
 

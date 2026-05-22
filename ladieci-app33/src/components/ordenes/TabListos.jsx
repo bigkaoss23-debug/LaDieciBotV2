@@ -247,15 +247,20 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                         ↩ Volver a cocina
                       </button>
                     )}
+                    {(() => { const busy = loadingIds.has(o.id); return (
                     <button
-                      onClick={e=>{e.stopPropagation();handleRetirado(o, o.metodo_pago);}}
+                      onClick={e=>{ e.stopPropagation(); if (busy) return; handleRetirado(o, o.metodo_pago); }}
+                      disabled={busy}
                       style={{
-                        background:C.verde,color:"#fff",border:"none",
+                        background: busy ? `${C.verde}55` : C.verde, color:"#fff", border:"none",
                         borderRadius:11,padding:"13px 20px",fontWeight:800,fontSize:14,
-                        boxShadow:`0 4px 14px ${C.verde}44`,cursor:"pointer",
+                        boxShadow: busy ? "none" : `0 4px 14px ${C.verde}44`,
+                        cursor: busy ? "wait" : "pointer",
+                        opacity: busy ? 0.7 : 1,
                       }}>
-                      🛍 Retirado
+                      {busy ? "Confirmando…" : "🛍 Retirado"}
                     </button>
+                    ); })()}
                   </div>
                 ) : pendingPago === o.id ? (
                   (() => {
@@ -279,26 +284,34 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                       />
                     </div>
                     <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textAlign:"center"}}>¿Cómo paga?</div>
+                    {(() => { const pagoBusy = loadingIds.has(o.id); return (
                     <div style={{display:"flex",gap:6,justifyContent:"center"}}>
                       <button
-                        onClick={e=>{e.stopPropagation();finalizar("efectivo");}}
-                        style={{background:"#16A34A",color:"#fff",border:"none",
-                          borderRadius:10,padding:"10px 12px",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+                        onClick={e=>{ e.stopPropagation(); if (pagoBusy) return; finalizar("efectivo"); }}
+                        disabled={pagoBusy}
+                        style={{background: pagoBusy ? "#16A34A55" : "#16A34A", color:"#fff", border:"none",
+                          borderRadius:10,padding:"10px 12px",fontWeight:800,fontSize:12,
+                          cursor: pagoBusy ? "wait" : "pointer", opacity: pagoBusy ? 0.7 : 1}}>
                         💵 Efectivo
                       </button>
                       <button
-                        onClick={e=>{e.stopPropagation();finalizar("tarjeta");}}
-                        style={{background:"#2563EB",color:"#fff",border:"none",
-                          borderRadius:10,padding:"10px 12px",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+                        onClick={e=>{ e.stopPropagation(); if (pagoBusy) return; finalizar("tarjeta"); }}
+                        disabled={pagoBusy}
+                        style={{background: pagoBusy ? "#2563EB55" : "#2563EB", color:"#fff", border:"none",
+                          borderRadius:10,padding:"10px 12px",fontWeight:800,fontSize:12,
+                          cursor: pagoBusy ? "wait" : "pointer", opacity: pagoBusy ? 0.7 : 1}}>
                         💳 Tarjeta
                       </button>
                       <button
-                        onClick={e=>{e.stopPropagation();finalizar("bizum");}}
-                        style={{background:"#0EA5E9",color:"#fff",border:"none",
-                          borderRadius:10,padding:"10px 12px",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+                        onClick={e=>{ e.stopPropagation(); if (pagoBusy) return; finalizar("bizum"); }}
+                        disabled={pagoBusy}
+                        style={{background: pagoBusy ? "#0EA5E955" : "#0EA5E9", color:"#fff", border:"none",
+                          borderRadius:10,padding:"10px 12px",fontWeight:800,fontSize:12,
+                          cursor: pagoBusy ? "wait" : "pointer", opacity: pagoBusy ? 0.7 : 1}}>
                         📱 Bizum
                       </button>
                     </div>
+                    ); })()}
                     <button
                       onClick={e=>{e.stopPropagation();setPendingPago(null);setDescuentoPago(prev => { const p = {...prev}; delete p[o.id]; return p; });}}
                       style={{background:"transparent",color:"rgba(255,255,255,0.4)",border:"none",
