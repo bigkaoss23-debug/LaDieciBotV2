@@ -7,6 +7,9 @@ dist/
 .cache/
 .netlify/
 
+# Build-time generated version metadata (regenerato a ogni `npm run build`)
+ladieci-app33/public/version.json
+
 # Environment and secrets
 .env
 .env.*
