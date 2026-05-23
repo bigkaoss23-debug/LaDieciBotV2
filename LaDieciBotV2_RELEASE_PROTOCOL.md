@@ -134,20 +134,56 @@ Entrambi seguono lo stesso protocollo backup.
 
 ### 6.1 Frontend Netlify
 
-- **Comando autorizzato** (vedi `CLAUDE.md`):
+- **Comando autorizzato standard (MCP)** (vedi `CLAUDE.md`):
   ```
   npx -y @netlify/mcp@latest --site-id 02bd4c7a-a50b-4964-90da-8c1af1122932
   ```
+  MCP fa build server-side leggendo `netlify.toml` → include automaticamente
+  `publish = "build"` **e** `functions = "netlify/functions"`. È il path
+  preferito quando funziona.
+
+- **Comando autorizzato CLI (fallback)** — usabile SOLO con autorizzazione
+  esplicita dell'utente quando MCP fallisce (vedi incidente
+  `LaDieciBotV2_NETLIFY_FUNCTIONS_DEPLOY_FIX_2026-05-23.md`):
+  ```
+  npx -y netlify-cli@latest deploy --prod \
+    --dir=ladieci-app33/build \
+    --functions=ladieci-app33/netlify/functions \
+    --site=02bd4c7a-a50b-4964-90da-8c1af1122932
+  ```
+  **Il flag `--functions` è obbligatorio.**
+
+- **Comando VIETATO** (rompe Netlify Functions in produzione):
+  ```
+  # NON USARE — manca --functions, pubblica solo lo static build
+  npx -y netlify-cli@latest deploy --prod \
+    --dir=ladieci-app33/build \
+    --site=02bd4c7a-a50b-4964-90da-8c1af1122932
+  ```
+  Senza `--functions`, il deploy pubblica solo `build/` e le Netlify
+  Functions (`/api/auth`, `/api/proxy`) **non sono più servite** → login
+  PIN operatore rotto, chiamate dashboard rotte. Già successo 23/05.
+
 - **Pre-deploy obbligatorio:**
   - Working tree pulito.
   - Build OK (`BROWSERSLIST_IGNORE_OLD_DATA=true CI=true npm --prefix ladieci-app33 run build`).
   - Unit test rilevanti verdi.
-  - Conferma utente esplicita ("VAI DEPLOY").
-- **Post-deploy:**
-  - Aprire `https://magnificent-lollipop-6dff70.netlify.app`.
+  - Conferma utente esplicita ("VAI DEPLOY" per MCP, "VAI DEPLOY CLI" per CLI).
+
+- **Post-deploy — smoke obbligatorio (un deploy NON è valido finché tutti questi passano):**
+  - Aprire `https://magnificent-lollipop-6dff70.netlify.app` → HTTP 200.
+  - `curl /version.json` → HTTP 200, commit atteso.
   - Verificare nuovo bundle (hash file `main.<sha>.js`) caricato.
-  - Smoke test minimo: aprire ServicioPage, TabWA, TabCocina, TabEntregas, Pedidos.
+  - **Functions smoke (obbligatorio):**
+    - `POST /api/auth` con PIN operatore reale (gestito fuori documento, mai trascritto) → risposta JSON `{token, role, expiresIn}`.
+    - `POST /api/auth` con PIN palesemente errato (es. 6 cifre random) → risposta JSON `{error:"PIN incorrecto", intentosRestantes:N}`.
+    - Se una delle due ritorna HTML "Page not found" o 404 → **Functions mancanti, rollback immediato**.
+  - Verificare nei log Netlify dashboard che `functions = 2` sia stato caricato (auth.js + api.js).
+  - Smoke UI: aprire ServicioPage, TabWA, TabCocina, TabEntregas, Pedidos.
   - Watchdog Railway: 🟢.
+
+- **Rollback rapido se smoke fallisce:**
+  Netlify dashboard → Deploys → ultimo deploy noto buono (es. quello pre-incidente con Functions) → "Publish deploy". Tempo target < 2 min.
 
 ### 6.2 Backend Railway
 
