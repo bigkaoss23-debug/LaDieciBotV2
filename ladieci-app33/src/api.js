@@ -589,6 +589,25 @@ const api = {
       ticketMedio: fonteOrdini.length > 0 ? Math.round((incasso / fonteOrdini.length) * 100) / 100 : 0,
       prodotti, canali, consegne, pizzeTot, bevandeTot, pagamenti, fonte
     };
+  },
+
+  // ── Ops health (OPS-HEALTH-01-FE-BADGE) ───────────────────────
+  // Lettura diretta di Railway /status, endpoint pubblico (no X-Api-Key).
+  // Timeout client 4s. Bypass del proxy Netlify: /status non è autenticato
+  // e non passa da /api proxy. Niente segreti, niente payload utenti.
+  getStatus: async function() {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 4000);
+    try {
+      const res = await fetch(
+        "https://ladiecibot-production.up.railway.app/status",
+        { cache: "no-store", signal: ctrl.signal }
+      );
+      if (!res.ok) throw new Error(`http_${res.status}`);
+      return await res.json();
+    } finally {
+      clearTimeout(tid);
+    }
   }
 };
 

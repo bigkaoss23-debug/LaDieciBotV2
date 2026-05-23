@@ -12,6 +12,7 @@ import ServicioPage from './components/ServicioPage';
 import EconomiaPage from './components/EconomiaPage';
 import RepartidorPage from './components/repartidor/RepartidorPage';
 import { DevHeartbeatSender } from './components/DevPresence';
+import OpsHealthBadge from './components/OpsHealthBadge';
 
 export default function App() {
   // ─── Deep link via URL path (affidabile su tutti i device/iOS/Safari) ──────
@@ -320,6 +321,7 @@ export default function App() {
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:C.nero}}>
       <style>{G}</style>
       <DevHeartbeatSender/>
+      {screen !== "splash" && <OpsHealthBadge/>}
       {screen==="splash"   && <Splash onDone={()=>{ postSplashAction.current(); }}/>}
       {screen==="home"     && <Home
           onServizio={()=>withPin(()=>setScreen("servicio"))}
