@@ -108,6 +108,25 @@ const ZonaOrderRow = ({ o, zona, onSendRepartidor, loadingId, driverStato, onFor
         </a>
       )}
 
+      {/* EN_COCINA: nessuna azione driver disponibile, pill informativo per l'operatore.
+          Le azioni (manda repartidor / registrar salida / entregado) renderizzano solo
+          quando estado === LISTO o EN_ENTREGA — vedi sotto. Qui mostriamo perché. */}
+      {isCocina && (
+        <span style={{
+          padding: "5px 10px",
+          background: "rgba(59,130,246,0.10)",
+          border: "1px solid rgba(59,130,246,0.35)",
+          borderRadius: 8,
+          color: "#60A5FA",
+          fontWeight: 700,
+          fontSize: 11,
+          flexShrink: 0,
+          whiteSpace: "nowrap"
+        }} title="Acciones de repartidor disponibles cuando pase a LISTO">
+          🔥 En cocina
+        </span>
+      )}
+
       {/* Bottone manda repartidor */}
       {isListo && (
         <button disabled={isLoading} onClick={() => onSendRepartidor(o.id)}
