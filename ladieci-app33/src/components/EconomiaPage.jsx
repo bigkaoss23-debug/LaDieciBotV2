@@ -258,7 +258,7 @@ const aggrega = (righe) => {
 };
 
 const PERIODI = [
-  {id:"serata", label:"🔴 Hoy"},
+  {id:"serata", label:"💰 Caja"},
   {id:"sett",   label:"Semana"},
   {id:"mese",   label:"Mes"},
   {id:"tutto",  label:"Todo"},
@@ -289,6 +289,85 @@ const fmtGiorno = (iso) => {
   if(dt.getTime()===ieri.getTime())  return "Ayer";
   const GIORNI = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
   return GIORNI[dt.getDay()]+" "+dt.getDate();
+};
+
+const isoLocal = (dt = new Date()) =>
+  `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+
+const fmtFechaLarga = (iso) => {
+  const dt = parseDataKey(iso);
+  if(!dt) return iso || "";
+  const DIAS = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+  return `${DIAS[dt.getDay()]} ${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${dt.getFullYear()}`;
+};
+
+const fechaKeyOf = (r) => {
+  const raw = String(r?.fecha || "");
+  if(raw.match(/^\d{4}-\d{2}-\d{2}/)) return raw.slice(0,10);
+  if(raw.includes("T")) {
+    try { return isoLocal(new Date(raw)); } catch(e) { return ""; }
+  }
+  if(raw.includes("/")) {
+    const [dd,mm,yy] = raw.split("/").map(Number);
+    if(!isNaN(dd) && !isNaN(mm) && !isNaN(yy)) return isoLocal(new Date(yy, mm-1, dd));
+  }
+  const ts = Number(r?.ts || 0);
+  if(ts > 0) {
+    const ms = ts < 1e12 ? ts * 1000 : ts;
+    try { return isoLocal(new Date(ms)); } catch(e) { return ""; }
+  }
+  return "";
+};
+
+const buildCajaStats = (rows) => {
+  const lista = Array.isArray(rows) ? rows : [];
+  let incasso = 0;
+  let pizzeTot = 0;
+  let bevandeTot = 0;
+  const prodMap = {};
+  const canali = {};
+  const consegne = {DOMICILIO:0, RITIRO:0};
+  const pagamenti = {
+    efectivo:        {incasso:0, count:0},
+    tarjeta:         {incasso:0, count:0},
+    bizum:           {incasso:0, count:0},
+    no_especificado: {incasso:0, count:0},
+  };
+
+  lista.forEach(r => {
+    let items = r.items;
+    if(typeof items === "string") { try { items = JSON.parse(items); } catch(e) { items = []; } }
+    let totale = Number(r.totale) || 0;
+    if(totale <= 0 || totale > 9999) {
+      const clean = (Array.isArray(items) ? items : []).filter(i => i.n !== "Entrega a domicilio");
+      totale = calcTotaleHelper(clean, r.tipo_consegna || "RITIRO");
+    }
+    incasso += totale;
+    const canal = r.canal==="WA"?"WA":r.canal==="BANCO"?"BANCO":r.canal==="TEL"?"TEL":"MANUAL";
+    canali[canal]=(canali[canal]||0)+1;
+    const tc = r.tipo_consegna==="DOMICILIO"?"DOMICILIO":"RITIRO";
+    consegne[tc]=(consegne[tc]||0)+1;
+    const mp = String(r.metodo_pago||"").toLowerCase();
+    const pk = mp==="efectivo"?"efectivo":mp==="tarjeta"?"tarjeta":mp==="bizum"?"bizum":"no_especificado";
+    pagamenti[pk].incasso += totale;
+    pagamenti[pk].count   += 1;
+    (Array.isArray(items)?items:[]).forEach(it=>{
+      if(!it||!it.n||it.n==="Entrega a domicilio") return;
+      const q=parseInt(it.q)||1, p=parseFloat(it.p)||0;
+      if(!prodMap[it.n]) prodMap[it.n]={n:it.n,e:it.e||"🍕",q:0,incasso:0,cat:it.cat||"Pizzas"};
+      prodMap[it.n].q+=q;
+      prodMap[it.n].incasso+=p*q;
+      if(it.cat==="Bebidas") bevandeTot+=q; else pizzeTot+=q;
+    });
+  });
+  Object.keys(pagamenti).forEach(k => { pagamenti[k].incasso = Math.round(pagamenti[k].incasso*100)/100; });
+  const prodotti=Object.values(prodMap).sort((a,b)=>b.q-a.q);
+  return {
+    incasso: Math.round(incasso*100)/100,
+    countOrdini: lista.length,
+    ticketMedio: lista.length>0?Math.round((incasso/lista.length)*100)/100:0,
+    prodotti, canali, consegne, pizzeTot, bevandeTot, pagamenti
+  };
 };
 
 // Genera confronto 15 giorni: ogni giorno vs stesso giorno -7gg
@@ -328,6 +407,7 @@ const EconomiaPage = ({onBack}) => {
   const [serataData,   setSerataData]   = useState(null);
   const [serataLoad,   setSerataLoad]   = useState(true);
   const [serataError,  setSerataError]  = useState(null);
+  const [diaCajaSeleccionado, setDiaCajaSeleccionado] = useState(null);
   const [prodTab,      setProdTab]      = useState("pizze"); // "pizze" | "bevande"
   const [giornoFiltro, setGiornoFiltro] = useState(null);   // YYYY-MM-DD o null
   const [subTab,       setSubTab]       = useState("dinero"); // legacy, non più usato
@@ -355,7 +435,6 @@ const EconomiaPage = ({onBack}) => {
   }, [periodo, refresh]);
 
   useEffect(()=>{
-    if (periodo === "serata") return;
     setLoading(true);
     setError(null);
     api.getStorico()
@@ -412,6 +491,53 @@ const EconomiaPage = ({onBack}) => {
     if(rawData._preAggregated) return rawData._preAggregated;
     return aggrega(rawData);
   }, [rawData]);
+
+  const oggiIso = isoLocal();
+
+  const diasCaja = useMemo(() => {
+    const byData = {};
+    (a?.giorniDettaglio || []).forEach(d => {
+      if(d?.data) byData[d.data] = {...d};
+    });
+    if(serataData && serataData.countOrdini > 0) {
+      const prev = byData[oggiIso] || {data: oggiIso, incasso: 0, ordini: 0, pizze: 0, bevande: 0, consegne: 0};
+      byData[oggiIso] = {
+        ...prev,
+        data: oggiIso,
+        incasso: Math.max(prev.incasso || 0, serataData.incasso || 0),
+        ordini: Math.max(prev.ordini || 0, serataData.countOrdini || 0),
+        pizze: Math.max(prev.pizze || 0, serataData.pizzeTot || 0),
+        bevande: Math.max(prev.bevande || 0, serataData.bevandeTot || 0),
+        consegne: Math.max(prev.consegne || 0, serataData.consegne?.DOMICILIO || 0),
+      };
+    }
+    return Object.values(byData)
+      .filter(d => d?.data)
+      .sort((x,y)=>String(y.data).localeCompare(String(x.data)))
+      .slice(0,7);
+  }, [a, serataData, oggiIso]);
+
+  useEffect(() => {
+    if(periodo !== "serata") return;
+    if(diasCaja.length === 0) {
+      if(!diaCajaSeleccionado) setDiaCajaSeleccionado(oggiIso);
+      return;
+    }
+    const exists = diasCaja.some(d => d.data === diaCajaSeleccionado);
+    if(!exists) setDiaCajaSeleccionado(diasCaja[0].data);
+  }, [periodo, diasCaja, diaCajaSeleccionado, oggiIso]);
+
+  const ordenesCajaDia = useMemo(() => {
+    const dia = diaCajaSeleccionado || diasCaja[0]?.data || oggiIso;
+    const righe = Array.isArray(rawData) ? rawData : [];
+    const storiche = righe.filter(r => fechaKeyOf(r) === dia);
+    if(storiche.length > 0) return storiche;
+    if(dia === oggiIso && serataData?.ordini) return serataData.ordini;
+    return [];
+  }, [diaCajaSeleccionado, diasCaja, rawData, serataData, oggiIso]);
+
+  const cajaDiaData = useMemo(() => buildCajaStats(ordenesCajaDia), [ordenesCajaDia]);
+  const cajaFechaLabel = fmtFechaLarga(diaCajaSeleccionado || diasCaja[0]?.data || oggiIso);
 
   // Stats per singolo giorno selezionato — filtra rawData per fecha
   const aGiorno = useMemo(() => {
@@ -506,25 +632,25 @@ const EconomiaPage = ({onBack}) => {
   const periodoLabel = periodo==="sett"?"esta semana":periodo==="mese"?"este mes":null;
 
   // ── VISTA: sorgente dati unificata per le 6 KPI cards ────────────────
-  // Risolve da serataData / aGiorno / a in base a periodo+giornoFiltro.
+  // Caja usa sempre il giorno selezionato; Semana/Mes/Todo restano aggregati.
   const vista = useMemo(() => {
-    // 1) Hoy (live)
-    if (periodo === "serata" && serataData && serataData.countOrdini > 0) {
-      const prodotti = serataData.prodotti || [];
+    // 1) Caja del día
+    if (periodo === "serata") {
+      const prodotti = cajaDiaData.prodotti || [];
       return {
-        contesto: "hoy",
-        etichetta: "de hoy",
-        ventas:    serataData.incasso || 0,
-        ticket:    serataData.ticketMedio || 0,
-        pedidos:   serataData.countOrdini || 0,
-        pizzas:    serataData.pizzeTot || 0,
-        bebidas:   serataData.bevandeTot || 0,
-        delivery:  serataData.consegne?.DOMICILIO || 0,
-        local:     serataData.consegne?.RITIRO    || 0,
-        pagamenti: serataData.pagamenti,
+        contesto: "caja",
+        etichetta: cajaFechaLabel,
+        ventas:    cajaDiaData.incasso || 0,
+        ticket:    cajaDiaData.ticketMedio || 0,
+        pedidos:   cajaDiaData.countOrdini || 0,
+        pizzas:    cajaDiaData.pizzeTot || 0,
+        bebidas:   cajaDiaData.bevandeTot || 0,
+        delivery:  cajaDiaData.consegne?.DOMICILIO || 0,
+        local:     cajaDiaData.consegne?.RITIRO    || 0,
+        pagamenti: cajaDiaData.pagamenti,
         prodottiPizzas:  prodotti.filter(p => p.cat !== "Bebidas"),
         prodottiBebidas: prodotti.filter(p => p.cat === "Bebidas"),
-        canali:    serataData.canali || {},
+        canali:    cajaDiaData.canali || {},
       };
     }
     // 2) Singolo giorno selezionato
@@ -572,7 +698,7 @@ const EconomiaPage = ({onBack}) => {
       };
     }
     return null;
-  }, [periodo, serataData, giornoFiltro, aGiorno, a, incasso]);
+  }, [periodo, cajaDiaData, cajaFechaLabel, giornoFiltro, aGiorno, a, incasso]);
 
   const CANAL_COLOR = {WA:C.wa, TEL:C.blu, BANCO:C.rosso, MANUAL:"#F97316"};
   const CANAL_LABEL = {WA:"💬 WhatsApp", TEL:"📞 Teléfono", BANCO:"🏪 Barra", MANUAL:"✍️ Manual"};
@@ -732,7 +858,7 @@ const EconomiaPage = ({onBack}) => {
     );
   };
 
-  const TicketList = ({ordini}) => {
+  const TicketList = ({ordini, fechaLabel}) => {
     const lista = (Array.isArray(ordini) ? ordini : [])
       .slice()
       .sort((a, b) => orderNumberValue(a.id || a.orden_id) - orderNumberValue(b.id || b.orden_id));
@@ -743,7 +869,7 @@ const EconomiaPage = ({onBack}) => {
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
           <span style={{fontSize:18}}>🧾</span>
           <div style={{color:"rgba(255,255,255,0.86)",fontWeight:900,fontSize:16}}>
-            Tiquets de la noche
+            Tiquets del día
           </div>
           <span style={{marginLeft:"auto",color:"rgba(255,255,255,0.35)",
             fontSize:12,fontFamily:"'DM Mono',monospace"}}>
@@ -751,7 +877,7 @@ const EconomiaPage = ({onBack}) => {
           </span>
         </div>
         <div style={{color:"rgba(255,255,255,0.34)",fontSize:12,marginBottom:14}}>
-          Pedidos cerrados listos para revisar en caja
+          {fechaLabel ? `${fechaLabel} · ` : ""}Pedidos cerrados listos para revisar en caja
         </div>
 
         {lista.length === 0 ? (
@@ -975,7 +1101,7 @@ const EconomiaPage = ({onBack}) => {
         {/* Filtro periodo — pill principali */}
         <div style={{display:"flex",gap:8,marginBottom:8,overflowX:"auto"}}>
           {PERIODI.map(p=>{
-            const attivo = periodo===p.id && !giornoFiltro;
+            const attivo = periodo===p.id;
             return (
               <button key={p.id} onClick={()=>{ setPeriodo(p.id); setGiornoFiltro(null); }} style={{
                 background: attivo
@@ -992,22 +1118,27 @@ const EconomiaPage = ({onBack}) => {
           })}
         </div>
 
-        {/* Selettore giorni — visibile SOLO quando periodo === "sett" */}
-        {periodo === "sett" && a && a.giorniDettaglio && a.giorniDettaglio.length > 0 && (
+        {/* Selettore giorni — Caja del día */}
+        {periodo === "serata" && (
           <div style={{
             background:"rgba(255,255,255,0.03)",
             border:"1px solid rgba(255,255,255,0.08)",
             borderRadius:14, padding:"10px 12px", marginBottom:14
           }}>
-            <div style={{color:"rgba(255,255,255,0.25)",fontSize:10,fontWeight:700,
-              letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>
-              Selecciona una noche
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <div style={{color:"#fff",fontSize:14,fontWeight:900,flex:1}}>
+                Caja del día — {cajaFechaLabel}
+              </div>
+              <div style={{color:"rgba(255,255,255,0.35)",fontSize:11,
+                fontFamily:"'DM Mono',monospace"}}>
+                {cajaDiaData.countOrdini || 0} ped.
+              </div>
             </div>
             <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
-              {a.giorniDettaglio.slice(0,7).map(d=>{
-                const attivo = giornoFiltro === d.data;
+              {(diasCaja.length > 0 ? diasCaja : [{data: oggiIso, incasso: serataData?.incasso || 0, ordini: serataData?.countOrdini || 0}]).map(d=>{
+                const attivo = (diaCajaSeleccionado || diasCaja[0]?.data || oggiIso) === d.data;
                 return (
-                  <button key={d.data} onClick={()=>setGiornoFiltro(attivo ? null : d.data)} style={{
+                  <button key={d.data} onClick={()=>setDiaCajaSeleccionado(d.data)} style={{
                     background: attivo
                       ? "linear-gradient(145deg,rgba(249,115,22,0.85),rgba(200,60,0,0.9))"
                       : "rgba(255,255,255,0.07)",
@@ -1019,11 +1150,9 @@ const EconomiaPage = ({onBack}) => {
                     display:"flex", flexDirection:"column", alignItems:"center", gap:2
                   }}>
                     <span>{fmtGiorno(d.data)}</span>
-                    {d.pizze > 0 && (
-                      <span style={{opacity:.7,fontSize:10,fontWeight:600}}>
-                        {d.pizze}🍕 · {d.incasso.toFixed(0)}€
-                      </span>
-                    )}
+                    <span style={{opacity:.7,fontSize:10,fontWeight:600}}>
+                      {d.ordini || 0} ped · {Number(d.incasso || 0).toFixed(0)}€
+                    </span>
                   </button>
                 );
               })}
@@ -1036,7 +1165,7 @@ const EconomiaPage = ({onBack}) => {
           serataLoad ? (
             <div style={{textAlign:"center",padding:"60px 0",color:"rgba(255,255,255,0.3)"}}>
               <div style={{fontSize:36,marginBottom:12,animation:"pulse 1.5s infinite"}}>🔴</div>
-              <div style={{fontSize:14}}>Cargando datos de hoy...</div>
+              <div style={{fontSize:14}}>Cargando caja del día...</div>
             </div>
           ) : serataError ? (
             <div style={{...glassCard,borderColor:"rgba(232,52,28,0.3)"}}>
@@ -1048,7 +1177,7 @@ const EconomiaPage = ({onBack}) => {
               {shimmerLine}
               <div style={{color:"rgba(255,255,255,0.4)",fontSize:14,textAlign:"center",padding:"30px 0"}}>
                 <div style={{fontSize:40,marginBottom:12}}>🍕</div>
-                Ningún pedido entregado hoy (desde las 19:00)<br/>
+                Ningún pedido entregado para este día<br/>
                 <span style={{fontSize:12,opacity:.6}}>Los pedidos aparecen aquí cuando se marcan como Retirado</span>
               </div>
             </div>
@@ -1078,7 +1207,7 @@ const EconomiaPage = ({onBack}) => {
               </div>
 
               {/* Caja serata (efectivo/tarjeta/bizum) */}
-              <BloccoCaja pagamenti={serataData.pagamenti} titolo="Caja de hoy"/>
+              <BloccoCaja pagamenti={serataData.pagamenti} titolo="Caja del día"/>
 
               {/* Canali serata */}
               {serataData.canali && Object.keys(serataData.canali).length > 0 && (
@@ -1201,7 +1330,7 @@ const EconomiaPage = ({onBack}) => {
                   </div>
                   <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
                     <StatCard label="Pizzas" v={aGiorno.pizzeTot||0} sub="piezas" color={C.rosso} icon="🍕"/>
-                    <StatCard label="Bebidas" v={aGiorno.bevandeTot||0} sub="piezas" color="#9B59B6" icon="🥤"/>
+                    <StatCard label="Bebidas" v={aGiorno.bevandeTot||0} sub="uds." color="#9B59B6" icon="🥤"/>
                     {((aGiorno.consegne?.DOMICILIO||0)+(aGiorno.consegne?.RITIRO||0)) > 0 && (
                       <StatCard label="Delivery" v={aGiorno.consegne.DOMICILIO||0}
                         sub={`${aGiorno.consegne.RITIRO||0} en local`} color="#F97316" icon="🛵"/>
@@ -1726,7 +1855,7 @@ const EconomiaPage = ({onBack}) => {
 
         {/* ═══ NUOVA VISTA — griglia 6 KPI cards cliccabili ═══ */}
         {(() => {
-          const isLoad = periodo==="serata" ? serataLoad : loading;
+          const isLoad = periodo==="serata" ? (serataLoad || loading) : loading;
           const errMsg = periodo==="serata" ? serataError : error;
           if (isLoad) {
             return (
@@ -1754,11 +1883,11 @@ const EconomiaPage = ({onBack}) => {
                   <div style={{color:"rgba(255,255,255,0.4)",fontSize:14,textAlign:"center",padding:"30px 0"}}>
                     <div style={{fontSize:40,marginBottom:12}}>🍕</div>
                     {periodo==="serata"
-                      ? <>Ningún pedido entregado hoy<br/><span style={{fontSize:12,opacity:.6}}>Aparecen aquí cuando se marcan como Retirado</span></>
+                      ? <>Sin pedidos para este día<br/><span style={{fontSize:12,opacity:.6}}>Selecciona otro día de caja si lo necesitas</span></>
                       : "Sin datos para este período"}
                   </div>
                 </div>
-                {periodo === "serata" && <TicketList ordini={serataData?.ordini || []}/>}
+                {periodo === "serata" && <TicketList ordini={ordenesCajaDia} fechaLabel={cajaFechaLabel}/>}
               </>
             );
           }
@@ -1769,7 +1898,7 @@ const EconomiaPage = ({onBack}) => {
               <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:14}}>
                 <KpiCard label="Ventas" icon="💶" color={C.verde}
                   value={fmtEur(vista.ventas)}
-                  sub={periodo==="serata"?"de hoy":vista.etichetta}
+                  sub={periodo==="serata"?"del día":vista.etichetta}
                   delta={vista.contesto==="aggregata" ? delta?.ventas : null}
                   onClick={()=>setModalAperto("ventas")}/>
                 <KpiCard label="Ticket medio" icon="🎯" color={C.blu}
@@ -1786,7 +1915,7 @@ const EconomiaPage = ({onBack}) => {
                   value={vista.pizzas} sub="piezas"
                   onClick={()=>setModalAperto("pizzas")}/>
                 <KpiCard label="Bebidas" icon="🥤" color="#9B59B6"
-                  value={vista.bebidas} sub="piezas"
+                  value={vista.bebidas} sub="uds."
                   onClick={()=>setModalAperto("bebidas")}/>
                 <KpiCard label="Delivery" icon="🛵" color="#F97316"
                   value={vista.delivery} sub={`${vista.local} en local`}
@@ -1795,8 +1924,8 @@ const EconomiaPage = ({onBack}) => {
 
               {periodo === "serata" && (
                 <>
-                  <BloccoCaja pagamenti={vista.pagamenti} titolo="Caja de hoy"/>
-                  <TicketList ordini={serataData?.ordini || []}/>
+                  <BloccoCaja pagamenti={vista.pagamenti} titolo="Caja del día"/>
+                  <TicketList ordini={ordenesCajaDia} fechaLabel={cajaFechaLabel}/>
                 </>
               )}
 
@@ -1877,7 +2006,7 @@ const EconomiaPage = ({onBack}) => {
         if (modalAperto === "ticket") {
           // Calcola distribuzione da rawData filtrato per contesto
           const allOrds = (() => {
-            if (vista.contesto === "hoy" && serataData?.ordini) return serataData.ordini;
+            if (vista.contesto === "caja") return ordenesCajaDia;
             if (vista.contesto === "giorno" && rawData) {
               return (Array.isArray(rawData)?rawData:[]).filter(r => String(r.fecha||"").slice(0,10) === giornoFiltro);
             }
@@ -1983,9 +2112,12 @@ const EconomiaPage = ({onBack}) => {
             const ts = l.partito_alle ? new Date(l.partito_alle).getTime() : 0;
             if (!ts) return false;
             const now = Date.now();
-            if (vista.contesto === "hoy") {
-              const today = new Date(); today.setHours(0,0,0,0);
-              return ts >= today.getTime();
+            if (vista.contesto === "caja") {
+              const dia = diaCajaSeleccionado || diasCaja[0]?.data || oggiIso;
+              const [yy,mm,dd] = dia.split("-").map(Number);
+              const g0 = new Date(yy,mm-1,dd).getTime();
+              const g1 = g0 + 24*3600*1000;
+              return ts >= g0 && ts < g1;
             }
             if (vista.contesto === "giorno") {
               const [yy,mm,dd] = giornoFiltro.split("-").map(Number);
