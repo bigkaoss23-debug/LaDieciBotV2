@@ -11,6 +11,27 @@ const getField = (obj, ...keys) => {
   return undefined;
 };
 
+const parseTicketItems = (raw) => {
+  let items = raw;
+  if (typeof items === "string") {
+    try { items = JSON.parse(items); } catch(e) { items = []; }
+  }
+  if (!Array.isArray(items)) return [];
+  return items.map(it => {
+    const item = it && typeof it === "object" ? it : {};
+    const qRaw = item.q ?? item.qty ?? item.cantidad ?? item.quantita ?? 1;
+    const qty = Number.parseInt(qRaw, 10) || 1;
+    const nome = String(item.n || item.nombre || item.name || item.prodotto || item.label || "Producto").trim() || "Producto";
+    const variante = String(item.sub || item.variante || item.extra || item.note || item.notas || "").trim();
+    return { qty, nome, variante };
+  }).filter(Boolean);
+};
+
+const orderNumberValue = (id) => {
+  const n = Number.parseInt(String(id || "").replace(/\D/g, ""), 10);
+  return Number.isFinite(n) ? n : 999999;
+};
+
 const aggrega = (righe) => {
   if(!righe || righe.length === 0) return null;
 
@@ -704,6 +725,108 @@ const EconomiaPage = ({onBack}) => {
                   {p.count} ped · {Math.round(pct)}%
                 </span>
               </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const TicketList = ({ordini}) => {
+    const lista = (Array.isArray(ordini) ? ordini : [])
+      .slice()
+      .sort((a, b) => orderNumberValue(a.id || a.orden_id) - orderNumberValue(b.id || b.orden_id));
+
+    return (
+      <div style={glassCard}>
+        {shimmerLine}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
+          <span style={{fontSize:18}}>🧾</span>
+          <div style={{color:"rgba(255,255,255,0.86)",fontWeight:900,fontSize:16}}>
+            Tiquets de la noche
+          </div>
+          <span style={{marginLeft:"auto",color:"rgba(255,255,255,0.35)",
+            fontSize:12,fontFamily:"'DM Mono',monospace"}}>
+            {lista.length} ped.
+          </span>
+        </div>
+        <div style={{color:"rgba(255,255,255,0.34)",fontSize:12,marginBottom:14}}>
+          Pedidos cerrados listos para revisar en caja
+        </div>
+
+        {lista.length === 0 ? (
+          <div style={{color:"rgba(255,255,255,0.42)",fontSize:14,
+            textAlign:"center",padding:"20px 8px"}}>
+            No hay tiquets cerrados para esta fecha.
+          </div>
+        ) : lista.map(o => {
+          const id = o.id || o.orden_id || "#---";
+          const nombre = String(o.nombre || "Cliente").trim() || "Cliente";
+          const tipoBase = o.tipo_consegna === "DOMICILIO" ? "DOMICILIO" : "RITIRO";
+          const tipoLabel = tipoBase === "DOMICILIO" && o.zona ? `DOMICILIO ${o.zona}` : tipoBase;
+          const pago = String(o.metodo_pago || "").trim() || "sin pago";
+          const total = Number(o.totale) || 0;
+          const items = parseTicketItems(o.items);
+          const nota = String(o.nota || "").trim();
+          const notaCucina = String(o.nota_cucina || "").trim();
+
+          return (
+            <div key={`${id}-${o.ts || o.hora || ""}`} style={{
+              border:"1px solid rgba(255,255,255,0.09)",
+              background:"rgba(0,0,0,0.18)",
+              borderRadius:14,
+              padding:"13px 14px",
+              marginTop:10,
+              overflow:"hidden"
+            }}>
+              <div style={{display:"flex",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                <div style={{flex:"1 1 230px",minWidth:0}}>
+                  <div style={{color:"#fff",fontWeight:900,fontSize:14,lineHeight:1.35,
+                    wordBreak:"break-word"}}>
+                    {id} · {nombre} · {o.hora || "--:--"} · {tipoLabel}
+                  </div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:7}}>
+                    <span style={{background:"rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.68)",
+                      border:"1px solid rgba(255,255,255,0.08)",borderRadius:999,
+                      padding:"3px 9px",fontSize:11,fontWeight:800,textTransform:"uppercase"}}>
+                      {pago}
+                    </span>
+                    <span style={{background:"rgba(34,197,94,0.12)",color:C.verde,
+                      border:"1px solid rgba(34,197,94,0.28)",borderRadius:999,
+                      padding:"3px 9px",fontSize:11,fontWeight:900,fontFamily:"'DM Mono',monospace"}}>
+                      {total.toFixed(2)}€
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{marginTop:11,display:"flex",flexDirection:"column",gap:6}}>
+                {items.length === 0 ? (
+                  <div style={{color:"rgba(255,255,255,0.38)",fontSize:13}}>
+                    Sin productos guardados.
+                  </div>
+                ) : items.map((it, idx) => (
+                  <div key={`${it.nome}-${idx}`} style={{display:"flex",gap:8,
+                    color:"rgba(255,255,255,0.76)",fontSize:13,lineHeight:1.4}}>
+                    <span style={{color:C.giallo,fontWeight:900,minWidth:22,
+                      fontFamily:"'DM Mono',monospace"}}>{it.qty}×</span>
+                    <span style={{wordBreak:"break-word"}}>
+                      {it.nome}
+                      {it.variante && (
+                        <span style={{color:"rgba(255,255,255,0.45)"}}> — {it.variante}</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {(nota || notaCucina) && (
+                <div style={{marginTop:11,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",
+                  color:"rgba(255,255,255,0.55)",fontSize:12,lineHeight:1.45}}>
+                  {nota && <div><strong style={{color:"rgba(255,255,255,0.72)"}}>Nota:</strong> {nota}</div>}
+                  {notaCucina && <div><strong style={{color:"rgba(255,255,255,0.72)"}}>Cocina:</strong> {notaCucina}</div>}
+                </div>
+              )}
             </div>
           );
         })}
@@ -1625,15 +1748,18 @@ const EconomiaPage = ({onBack}) => {
           }
           if (!vista || vista.pedidos === 0) {
             return (
-              <div style={glassCard}>
-                {shimmerLine}
-                <div style={{color:"rgba(255,255,255,0.4)",fontSize:14,textAlign:"center",padding:"30px 0"}}>
-                  <div style={{fontSize:40,marginBottom:12}}>🍕</div>
-                  {periodo==="serata"
-                    ? <>Ningún pedido entregado hoy<br/><span style={{fontSize:12,opacity:.6}}>Aparecen aquí cuando se marcan como Retirado</span></>
-                    : "Sin datos para este período"}
+              <>
+                <div style={glassCard}>
+                  {shimmerLine}
+                  <div style={{color:"rgba(255,255,255,0.4)",fontSize:14,textAlign:"center",padding:"30px 0"}}>
+                    <div style={{fontSize:40,marginBottom:12}}>🍕</div>
+                    {periodo==="serata"
+                      ? <>Ningún pedido entregado hoy<br/><span style={{fontSize:12,opacity:.6}}>Aparecen aquí cuando se marcan como Retirado</span></>
+                      : "Sin datos para este período"}
+                  </div>
                 </div>
-              </div>
+                {periodo === "serata" && <TicketList ordini={serataData?.ordini || []}/>}
+              </>
             );
           }
           // ── Griglia KPI ──
@@ -1666,6 +1792,13 @@ const EconomiaPage = ({onBack}) => {
                   value={vista.delivery} sub={`${vista.local} en local`}
                   onClick={()=>setModalAperto("delivery")}/>
               </div>
+
+              {periodo === "serata" && (
+                <>
+                  <BloccoCaja pagamenti={vista.pagamenti} titolo="Caja de hoy"/>
+                  <TicketList ordini={serataData?.ordini || []}/>
+                </>
+              )}
 
               {/* Bottoni in fondo — sezioni secondarie */}
               <div style={{display:"flex",gap:10,marginTop:6}}>

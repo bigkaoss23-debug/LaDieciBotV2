@@ -533,8 +533,11 @@ const api = {
     const rowsStorico = await sb.select("storico", `fecha=eq.${oggiIso}&order=ts.desc&limit=200`);
     const ordiniStorico = (Array.isArray(rowsStorico) ? rowsStorico : []).map(r => ({
       id: r.orden_id, nombre: r.nombre, tel: r.tel, canal: r.canal,
-      items: r.items, nota: r.nota, hora: r.hora, estado: r.estado,
+      items: r.items, nota: r.nota, nota_cucina: r.nota_cucina, hora: r.hora, estado: r.estado,
       totale: r.totale, tipo_consegna: r.tipo_consegna || "RITIRO",
+      delivery_fee: Number(r.delivery_fee) || 0,
+      zona: r.zona || null,
+      fecha: r.fecha || oggiIso,
       ts: r.ts, metodo_pago: r.metodo_pago || "", _src: "storico"
     }));
     const fonteOrdini = ordineLive.length > 0 ? ordineLive : ordiniStorico;
