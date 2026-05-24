@@ -1923,10 +1923,7 @@ const EconomiaPage = ({onBack}) => {
               </div>
 
               {periodo === "serata" && (
-                <>
-                  <BloccoCaja pagamenti={vista.pagamenti} titolo="Caja del día"/>
-                  <TicketList ordini={ordenesCajaDia} fechaLabel={cajaFechaLabel}/>
-                </>
+                <TicketList ordini={ordenesCajaDia} fechaLabel={cajaFechaLabel}/>
               )}
 
               {/* Bottoni in fondo — sezioni secondarie */}
@@ -1969,8 +1966,6 @@ const EconomiaPage = ({onBack}) => {
 
         // ── VENTAS ──
         if (modalAperto === "ventas") {
-          const totPizzas  = (vista.prodottiPizzas ||[]).reduce((s,p)=>s+(p.incasso||0),0);
-          const totBebidas = (vista.prodottiBebidas||[]).reduce((s,p)=>s+(p.incasso||0),0);
           const pag = vista.pagamenti || {};
           const totalPag = Object.values(pag).reduce((s,p)=>s+(p.incasso||0),0);
           const PAG_ROWS = [
@@ -1980,12 +1975,8 @@ const EconomiaPage = ({onBack}) => {
             {k:"no_especificado", label:"❓ No especificado", col:"rgba(255,255,255,0.5)"},
           ];
           return (
-            <Modal titolo="Ventas" sub={titoloCtx} icona="💶" color={C.verde} onClose={closeM}>
+            <Modal titolo={vista.contesto === "caja" ? "Caja del día" : "Ventas"} sub={titoloCtx} icona="💶" color={C.verde} onClose={closeM}>
               <RigaDato label="Total ventas" value={fmtEur(vista.ventas)} color={C.verde} big/>
-              <ModalSection titolo="Ingresos por categoría">
-                <RigaDato label="🍕 Pizzas"  value={fmtEur(totPizzas)}/>
-                <RigaDato label="🥤 Bebidas" value={fmtEur(totBebidas)}/>
-              </ModalSection>
               <ModalSection titolo="Cobros por método de pago">
                 {PAG_ROWS.map(({k,label,col}) => {
                   const p = pag[k] || {incasso:0,count:0};
