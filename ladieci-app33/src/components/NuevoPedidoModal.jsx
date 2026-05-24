@@ -7,6 +7,26 @@ import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
 import { getKitchenCapacityStatus } from '../core/kitchen/capacity';
 
+const CLOSING_TIME_MIN = 23 * 60;
+const CLOSING_TIME_ERROR = "Hora inválida.";
+const CLOSING_TIME_OVERRIDE_MARKER = "FUERA_HORARIO_FORZADO";
+
+function horaToMinStrict(hora) {
+  const m = String(hora || "").trim().match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isInteger(h) || h < 0 || h > 23) return null;
+  return h * 60 + min;
+}
+
+function buildClosingOverrideNota(nota, hora) {
+  const base = String(nota || "").trim();
+  if (base.includes(CLOSING_TIME_OVERRIDE_MARKER)) return base;
+  const marker = `[${CLOSING_TIME_OVERRIDE_MARKER} ${hora}]`;
+  return base ? `${base}\n${marker}` : marker;
+}
+
 const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }) => {
   const [items,           setItems]           = useState([]);
   const [tel,             setTel]             = useState("");
@@ -97,15 +117,28 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // ── Confirm ──────────────────────────────────────────────────────────────
   const handleConfirm = async () => {
     if (submittingRef.current || !ok) return;
+    const horaMin = horaToMinStrict(hora);
+    if (horaMin == null) {
+      window.alert(CLOSING_TIME_ERROR);
+      return;
+    }
+    const cierreOverride = horaMin > CLOSING_TIME_MIN;
+    if (cierreOverride) {
+      const okFueraHorario = window.confirm(
+        `Pedido fuera de horario (${hora}). ¿Forzar igualmente?\n\n` +
+        `Se guardará marcado como ${CLOSING_TIME_OVERRIDE_MARKER}.`
+      );
+      if (!okFueraHorario) return;
+    }
     // Freno a mano UX (Bug Z3, 17/05/2026): se hora è > 90 min nel futuro,
     // chiedi conferma esplicita. Cattura digitazioni accidentali (es. 23:43
     // invece di 21:30) o button click sbagliati prima che inquinino la coda.
     if (hora && /^\d{1,2}:\d{2}$/.test(hora)) {
       const [hh, mm] = hora.split(":").map(Number);
-      const horaMin = hh * 60 + mm;
+      const horaMinFuture = hh * 60 + mm;
       const now = new Date();
       const nowMin = now.getHours() * 60 + now.getMinutes();
-      const deltaMin = horaMin - nowMin;
+      const deltaMin = horaMinFuture - nowMin;
       // Solo se nel futuro lontano nello stesso "giorno logico" (non gestiamo
       // wrap a giorno dopo — orari tipo 24:02 hanno deltaMin negativo o assurdo
       // e cadono fuori da questo controllo che è OK: sono casi rari da non bloccare qui).
@@ -166,6 +199,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           ? risolviTempoAndata(zonaInfo.durataAndataMin, zonaInfo.lat, zonaInfo.lon, zonaInfo.zona)
           : null)
       : null;
+    const notaFinale = cierreOverride ? buildClosingOverrideNota(nota, hora) : nota;
     // client_req_id: idempotency key. Stabile per la sessione modal corrente
     // (generato all'apertura via useEffect su `visible`). Anche se la guardia
     // frontend `submittingRef` dovesse fallire per qualche edge case React,
@@ -183,7 +217,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       cliente_id: cidFinale || null,
       canal: canal === "WA" ? "WA" : canal === "BANCO" ? "BANCO" : "MANUAL",
       items: items.map(i => ({ ...i })),
-      nota, hora, ts: Date.now(), estado: "POR_CONFIRMAR",
+      nota: notaFinale, hora, ts: Date.now(), estado: "POR_CONFIRMAR",
       tipo_consegna: tipoConsegna,
       direccion: tipoConsegna === "DOMICILIO" ? direccion.trim() : null,
       direccion_note: tipoConsegna === "DOMICILIO" ? (direccionNote.trim() || null) : null,
@@ -197,7 +231,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       geo_source:           isDomicilio ? (zonaInfo.source || null) : null,
       // Flag operatore: ha forzato un'hora che il sistema considerava in conflitto
       // (driver impegnato o slot pieno). Tracciato per analytics + audit qualità.
-      forzado: tipoConsegna === "DOMICILIO" ? forzaHora : false,
+      forzado: cierreOverride || (tipoConsegna === "DOMICILIO" ? forzaHora : false),
       ya_pagado: yaPagedo,
       metodo_pago: yaPagedo ? metodoPago : "",
       descuento_tipo:  descuentoImporte > 0 ? descuentoTipo  : null,
