@@ -370,6 +370,47 @@ const buildCajaStats = (rows) => {
   };
 };
 
+const normalizzaClienteKey = (nombre) => String(nombre || "")
+  .trim()
+  .toUpperCase()
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .replace(/\s+/g, " ");
+
+const buildTopClientes = (rows) => {
+  const lista = Array.isArray(rows) ? rows : [];
+  const map = {};
+  lista.forEach(r => {
+    const key = normalizzaClienteKey(r.nombre);
+    if(!key) return;
+    const nombre = String(r.nombre || "Cliente").trim() || "Cliente";
+    const fecha = fechaKeyOf(r);
+    const tipo = r.tipo_consegna === "DOMICILIO" ? "DOMICILIO" : "RITIRO";
+    let total = Number(r.totale) || 0;
+    if(total <= 0 || total > 9999) {
+      let items = r.items;
+      if(typeof items === "string") { try { items = JSON.parse(items); } catch(e) { items = []; } }
+      total = calcTotaleHelper((Array.isArray(items) ? items : []).filter(i => i.n !== "Entrega a domicilio"), r.tipo_consegna || "RITIRO");
+    }
+    if(!map[key]) {
+      map[key] = {nombre, pedidos:0, total:0, ultimo:"", ritiro:0, domicilio:0};
+    }
+    map[key].pedidos += 1;
+    map[key].total += total;
+    if(fecha && fecha > map[key].ultimo) map[key].ultimo = fecha;
+    if(tipo === "DOMICILIO") map[key].domicilio += 1;
+    else map[key].ritiro += 1;
+  });
+  return Object.values(map)
+    .map(c => ({
+      ...c,
+      total: Math.round(c.total * 100) / 100,
+      prevalente: c.domicilio > c.ritiro ? "DOMICILIO" : "RITIRO"
+    }))
+    .sort((a,b) => (b.total - a.total) || (b.pedidos - a.pedidos))
+    .slice(0, 12);
+};
+
 // Genera confronto 15 giorni: ogni giorno vs stesso giorno -7gg
 const buildConfronto = (giorniDettaglio) => {
   if(!giorniDettaglio || giorniDettaglio.length === 0) return [];
@@ -538,6 +579,7 @@ const EconomiaPage = ({onBack}) => {
 
   const cajaDiaData = useMemo(() => buildCajaStats(ordenesCajaDia), [ordenesCajaDia]);
   const cajaFechaLabel = fmtFechaLarga(diaCajaSeleccionado || diasCaja[0]?.data || oggiIso);
+  const topClientes = useMemo(() => buildTopClientes(Array.isArray(rawData) ? rawData : []), [rawData]);
 
   // Stats per singolo giorno selezionato — filtra rawData per fecha
   const aGiorno = useMemo(() => {
@@ -2185,18 +2227,50 @@ const EconomiaPage = ({onBack}) => {
           );
         }
 
-        // ── CLIENTES (placeholder) ──
+        // ── CLIENTES ──
         if (modalAperto === "clientes") {
           return (
-            <Modal titolo="Clientes" sub="Próximamente" icona="👥" color="#9B59B6" onClose={closeM}>
-              <div style={{textAlign:"center",padding:"30px 10px",color:"rgba(255,255,255,0.55)"}}>
-                <div style={{fontSize:42,marginBottom:14}}>👥</div>
-                <div style={{fontSize:14,lineHeight:1.7}}>
-                  Próximamente:<br/>
-                  Top 10 clientes por gasto · Nuevos vs recurrentes ·<br/>
-                  Frecuencia y ticket medio · Clientes dormidos.
+            <Modal titolo="Clientes" sub="Top clientes por gasto" icona="👥" color="#9B59B6" onClose={closeM}>
+              {topClientes.length === 0 ? (
+                <div style={{textAlign:"center",padding:"30px 10px",color:"rgba(255,255,255,0.55)"}}>
+                  <div style={{fontSize:42,marginBottom:14}}>👥</div>
+                  <div style={{fontSize:14,lineHeight:1.7}}>
+                    Sin datos de clientes en el histórico.
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <ModalSection titolo="Cliente · Pedidos · Total gastado">
+                  {topClientes.map((c, idx) => (
+                    <div key={`${c.nombre}-${idx}`} style={{
+                      display:"flex",alignItems:"center",gap:12,
+                      padding:"11px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"
+                    }}>
+                      <span style={{color:"rgba(255,255,255,0.25)",fontSize:11,fontWeight:800,
+                        minWidth:24,textAlign:"right",fontFamily:"'DM Mono',monospace"}}>
+                        #{idx+1}
+                      </span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{color:"rgba(255,255,255,0.9)",fontSize:14,fontWeight:800,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {c.nombre}
+                        </div>
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4,
+                          color:"rgba(255,255,255,0.38)",fontSize:11}}>
+                          <span>{c.pedidos} pedidos</span>
+                          <span>Último {c.ultimo ? c.ultimo.split("-").reverse().join("/") : "—"}</span>
+                          <span>{c.prevalente}</span>
+                        </div>
+                      </div>
+                      <div style={{textAlign:"right",minWidth:78}}>
+                        <div style={{color:"#9B59B6",fontWeight:900,fontSize:14,
+                          fontFamily:"'DM Mono',monospace"}}>
+                          {fmtEur(c.total)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </ModalSection>
+              )}
             </Modal>
           );
         }
