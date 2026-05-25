@@ -62,9 +62,9 @@ Motivation:
 - Untrusted policy easy: any training/aggregate query adds `WHERE manual_giro_id IS NULL` or excludes via the `manual_giros` table presence.
 - Rollback safe: column is nullable, old frontend continues to ignore it.
 
-### Decision Gate before P1C migration
+### Decision Gate — APPROVED 2026-05-25
 
-**No schema change, no migration, no backend endpoint, no frontend wiring happens until the operator explicitly approves the data model.** This spec is the discussion artifact; approval is a separate authorization step. If the operator chooses Option A or B instead, §7–§13 below need adjustment before P1C starts.
+Operator approved Option C as the persistence model. P1C.1 is unblocked for persistence + endpoints + frontend wiring base only. P1C.2 (forno_out aggregation, §13) remains blocked behind a feature flag with default OFF and requires pizzaiolo validation in real service before any activation. Cocina UI changes stay out of scope until P1D. See §20 for per-question answers (Q1, Q2, Q3, Q5, Q6, Q7, Q8 decided; Q4 still blocked).
 
 ## 7. UI impact in Entregas
 
@@ -134,6 +134,8 @@ Until validated:
 - P1C implementation parks this decision behind a feature flag or a separate step (call it P1C.2 if needed).
 - TabCocina shows the per-order `forno_out` exactly as today; the `manual G<n>` marker is the only signal of grouping.
 
+Decided 2026-05-25: parking confirmed. P1C.1 must NOT change `forno_out` based on giro membership under any circumstance. P1C.2, if ever implemented, MUST ship behind a feature flag with default OFF and stay OFF until the pizzaiolo validates the aggregation rule during a real service.
+
 ## 14. What must NOT feed ETA/training yet
 
 Any future ETA model, route optimization, or driver scoring query MUST exclude rows where `manual_giro_id IS NOT NULL` (or the equivalent presence-check). Reason: manual giros are operator overrides; treating them as ground truth biases the model.
@@ -172,11 +174,11 @@ Operator verdict template same as P1A matrix.
 
 ## 18. Implementation phases
 
-- P1B — this spec, decision gate per §6, open questions answered. **No code.**
-- P1C.1 — migration + minimal backend endpoints (`createManualGiro`, `addOrderToManualGiro`, `removeOrderFromManualGiro`, `dissolveManualGiro`) + frontend wiring of P1A UI to backend.
-- P1C.2 — separate step: `forno_out` aggregation rule from §13 implemented behind feature flag, only after operator validation.
-- P1D — Cocina mini-marker `manual G<n>` (single visual change, separate commit).
-- P1E — human stress test in real service using §17 matrix. Verdict gate before any deploy.
+- P1B — this spec + decision gate per §6 + open questions answered per §20. **Status: DONE 2026-05-25.** No code shipped in this phase.
+- P1C.1 — migration + minimal backend endpoints (`createManualGiro`, `addOrderToManualGiro`, `removeOrderFromManualGiro`, `dissolveManualGiro`) + frontend wiring of P1A UI to backend. **Status: UNBLOCKED 2026-05-25, awaiting explicit start authorization in a separate session.** Out of scope: `forno_out` aggregation, Cocina UI changes.
+- P1C.2 — separate step: `forno_out` aggregation rule from §13 implemented behind a feature flag with default OFF. **Status: BLOCKED.** Gated by Q4 (pizzaiolo validation in real service).
+- P1D — Cocina mini-marker `manual G<n>` (single visual change, separate commit). **Status: not started, separate session, no dependency on P1C.2.**
+- P1E — human stress test in real service using §17 matrix. **Status: not started.** Verdict gate before any deploy.
 
 Each phase has its own backup branch and its own commit. No phase is implemented in the same session as the previous one without explicit operator authorization.
 
@@ -190,15 +192,30 @@ Each phase has its own backup branch and its own commit. No phase is implemented
 
 ## 20. Open questions
 
-Must be answered before P1C.1 starts:
+Answers recorded 2026-05-25 (operator decision). P1C.1 unblocked. Q4 still blocks P1C.2 only.
 
 1. `manual_giros.id` format: short code `mg_<seq>_<yymmdd>`, UUID, or simple bigserial? Affects display vs uniqueness vs guessability.
-2. `seq` reset: per-day reset at service close, or monotonic forever? Per-day is friendlier for operators ("G3 today" vs "G412").
-3. `created_by`: do we have a reliable operator identifier today? If not, accept `created_by IS NULL` for P1C.1 and revisit when operator login lands.
-4. `forno_out` aggregation rule (§13): validate with pizzaiolo during a real service before P1C.2.
-5. Move-between-giros confirmation: silent (as P1A) or require operator confirm dialog?
-6. Auto-dissolve trigger: backend on every detach call, or scheduled job? Per-call is simpler and good enough at La Dieci scale.
-7. WebSocket vs poll: existing pattern enough, or new channel for giro events?
-8. `chiudiServizio` handling: soft-dissolve all giros, or hard-archive into `storico_manual_giros`?
+   **Decided 2026-05-25**: short code `mg_<yymmdd>_<seq>` (e.g. `mg_260525_3`). Readable in logs, naturally scoped by day.
 
-Answers go inline here when decided, with date and operator name. Until then, P1C.1 stays blocked.
+2. `seq` reset: per-day reset at service close, or monotonic forever? Per-day is friendlier for operators ("G3 today" vs "G412").
+   **Decided 2026-05-25**: per-day reset aligned to Madrid TZ and `chiudiServizio`. Compute as `COALESCE(MAX(seq),0)+1` on rows with same Madrid date. Add UNIQUE constraint on `(day, seq)` to guard race.
+
+3. `created_by`: do we have a reliable operator identifier today? If not, accept `created_by IS NULL` for P1C.1 and revisit when operator login lands.
+   **Decided 2026-05-25**: no per-operator login today. Accept `created_by = 'pin_dashboard'` placeholder (or NULL). Revisit when per-operator login ships.
+
+4. `forno_out` aggregation rule (§13): validate with pizzaiolo during a real service before P1C.2.
+   **BLOCKED 2026-05-25**: requires pizzaiolo validation during a real service. P1C.2 only, behind feature flag, default OFF. No automatic `forno_out` change may ship in P1C.1.
+
+5. Move-between-giros confirmation: silent (as P1A) or require operator confirm dialog?
+   **Decided 2026-05-25**: silent as in P1A. Revisit in P1E only if operator confusion is observed in real service.
+
+6. Auto-dissolve trigger: backend on every detach call, or scheduled job? Per-call is simpler and good enough at La Dieci scale.
+   **Decided 2026-05-25**: per-call backend, inside the detach transaction. No scheduled job.
+
+7. WebSocket vs poll: existing pattern enough, or new channel for giro events?
+   **Decided 2026-05-25**: existing WS+polling pattern (see `App.jsx`) is sufficient. No new realtime channel. Include `manual_giro_id` in the `ordenes` payload.
+
+8. `chiudiServizio` handling: soft-dissolve all giros, or hard-archive into `storico_manual_giros`?
+   **Decided 2026-05-25**: soft-dissolve in place (`dissolved_at = chiusura time`). No `storico_manual_giros` table. Re-evaluate only if `manual_giros` grows beyond practical query size.
+
+P1C.1 may begin in a separate session with explicit operator authorization. Q4 remains the sole open gate for P1C.2.
