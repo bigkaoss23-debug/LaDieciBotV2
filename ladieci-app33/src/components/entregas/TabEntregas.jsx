@@ -593,7 +593,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       to: ordine?.estado,
       metadata: { reason: "registra uscita driver senza cambio stato ordine" },
     });
-    setDriverLoading(true);
+    setLoadingId(ordine?.id || null);
     const enEntrega = entregas.filter(o => o.estado === ORDER_STATES.EN_ENTREGA);
     const nOrdini = enEntrega.length || 1;
     try {
@@ -602,7 +602,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       setDriverStato(nuovoStato);
       if (notify) notify("⚠️ Salida registrada manualmente", "#fbbf24");
     } catch(e) { if (notify) notify("❌ Error al registrar salida", "#E8341C"); }
-    setDriverLoading(false);
+    setLoadingId(null);
   };
 
   // Override operatore: marca entregado manualmente (driver dimenticò Entregado)
