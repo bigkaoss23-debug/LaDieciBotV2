@@ -129,17 +129,17 @@ const ZonaOrderRow = ({
           type="button"
           onClick={(e) => { e.stopPropagation(); onToggleManualGiro && onToggleManualGiro(o.id); }}
           aria-pressed={isManualGiroSelected}
-          title={isManualGiroSelected ? "Quitar de seleccion manual" : "Seleccionar para giro manual"}
+          title={isManualGiroSelected ? "Quitar de seleccion manual" : "Añadir a giro manual"}
           style={{
-            width: 22, height: 22, borderRadius: 7,
-            border: `1.5px solid ${isManualGiroSelected ? "#fbbf24" : "rgba(255,255,255,0.22)"}`,
-            background: isManualGiroSelected ? "rgba(251,191,36,0.22)" : "rgba(255,255,255,0.04)",
-            color: isManualGiroSelected ? "#fbbf24" : "rgba(255,255,255,0.42)",
+            width: 24, height: 24, borderRadius: 7,
+            border: `1.5px solid ${isManualGiroSelected ? "#fbbf24" : "rgba(251,191,36,0.55)"}`,
+            background: isManualGiroSelected ? "rgba(251,191,36,0.22)" : "rgba(251,191,36,0.08)",
+            color: isManualGiroSelected ? "#fbbf24" : "#fde68a",
             display: "inline-flex", alignItems: "center", justifyContent: "center",
-            fontSize: 13, fontWeight: 900, cursor: "pointer", flexShrink: 0
+            fontSize: 14, fontWeight: 900, lineHeight: 1, cursor: "pointer", flexShrink: 0
           }}
         >
-          {isManualGiroSelected ? "✓" : ""}
+          {isManualGiroSelected ? "✓" : "+"}
         </button>
       )}
 
@@ -757,6 +757,33 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
           >
             Cancelar selección
           </button>
+        </div>
+      )}
+
+      {/* Hint scopribilità giro manuale: visibile solo quando esistono ordini selezionabili
+          e nessuna selezione è ancora attiva. Quando l'operatore inizia a selezionare,
+          la action bar in alto sostituisce questo hint. */}
+      {selectedManualGiroOrderIds.length === 0 && entregas.some(isManualGiroSelectableOrder) && (
+        <div style={{
+          marginBottom: 12,
+          padding: "8px 12px",
+          background: "rgba(251,191,36,0.05)",
+          border: "1px dashed rgba(251,191,36,0.28)",
+          borderRadius: 10,
+          fontSize: 11.5,
+          color: "rgba(253,230,138,0.78)",
+          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"
+        }}>
+          <span style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 18, height: 18, borderRadius: 6,
+            border: "1.5px solid rgba(251,191,36,0.55)",
+            background: "rgba(251,191,36,0.08)",
+            color: "#fde68a", fontSize: 11, fontWeight: 900, lineHeight: 1, flexShrink: 0
+          }}>+</span>
+          <span>
+            Giro manual: pulsa el <strong style={{ color: "#fde68a" }}>+</strong> en 2+ pedidos para agruparlos
+          </span>
         </div>
       )}
 
