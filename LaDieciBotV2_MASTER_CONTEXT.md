@@ -37,9 +37,9 @@ Verified from documentation and local git history only. Not verified by touching
 Current local audit state:
 
 - Local branch: `main`
-- Local HEAD at audit time: `50c3667 feat show top clientes in economia`
+- Local HEAD at audit time: `a8f97da fix make manual giro selection discoverable`
 - `origin/main` at audit time: `d70df9c add order telemetry summary and fix lockfile`
-- Local `main` was ahead of `origin/main` by 136 commits.
+- Local `main` was ahead of `origin/main` by 137 commits.
 
 Important rule: `origin/main` is historical and not reliable as current live state. Do not reconstruct project truth from `origin/main` alone.
 
@@ -52,6 +52,11 @@ Important backup branches include:
 - `origin/backup/v2-service-postmortem-2026-05-22`
 - `origin/backup/v2-release-protocol-2026-05-22`
 - `origin/backup/v2-economia-clientes-01-minimal-2026-05-23`
+- `origin/backup/v2-docs-canonical-context-roadmap-2026-05-25`
+- `origin/backup/v2-delivery-manual-giro-01a-2026-05-25`
+- `origin/backup/v2-fix-driver-loading-salida-2026-05-25`
+- `origin/backup/v2-manual-giro-operator-stress-test-2026-05-25`
+- `origin/backup/v2-manual-giro-ux-discoverability-2026-05-25`
 
 Backup branches may contain newer work than `origin/main`; they are references, not automatic proof of production.
 
@@ -103,6 +108,7 @@ Main operational modules:
 Active P1:
 
 - `DELIVERY-MANUAL-GIRO-01`
+- 01A (volatile UI prototype) closed as APPROVE AS UI PROTOTYPE on 2026-05-25 (commit `a8f97da` UX discoverability fix). 01B/01C/01D not started.
 
 Suspended:
 

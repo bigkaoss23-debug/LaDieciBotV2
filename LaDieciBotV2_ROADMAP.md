@@ -63,6 +63,8 @@ Answer these before implementation:
 
 ### DELIVERY-MANUAL-GIRO-01A — Product Shape
 
+Status: DONE 2026-05-25. Volatile UI prototype shipped (commit `8b3ce19`), driver loading fix (`60f983d`), operator stress test matrix (`d40c203`), UX discoverability fix (`a8f97da`). Operator verdict: APPROVE AS UI PROTOTYPE. Not deployed.
+
 Define the exact operator action:
 
 - where the grouping starts;
@@ -179,6 +181,8 @@ Done means:
 - Ungrouped delivery flow is unchanged.
 - Minimum tests above pass.
 - Documentation is updated in this roadmap and master context if behavior changes.
+
+Note 2026-05-25: 01A volatile prototype criteria met for UI-only scope. Full P1 done requires 01B/01C/01D + service validation 01E. Not started.
 
 ## 11. Rules For Future Codex Sessions
 

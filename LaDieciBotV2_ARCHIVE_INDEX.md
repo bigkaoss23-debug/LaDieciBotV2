@@ -26,6 +26,7 @@ This index classifies documentation so future sessions know what to read, what t
 | `LaDieciBotV2_TEST_MATRIX.md` | CURRENT PARTIAL / TEST DOC | Useful consolidated tests, very large. | Selecting regression tests. | As narrative/product truth. |
 | `LaDieciBotV2_DELIVERY_ETA_STRESS_MATRIX.md` | CURRENT PARTIAL | Best source for ETA/geocoding principles and known fixes. | Delivery ETA/geocoding work. | For route optimization. |
 | `LaDieciBotV2_DELIVERY_VIS_STRESS_MATRIX.md` | CURRENT PARTIAL | Best source for Entregas visibility and grouped-delivery hints. | `DELIVERY-MANUAL-GIRO-01`. | As proof all visibility behavior is live. |
+| `LaDieciBotV2_DELIVERY_MANUAL_GIRO_OPERATOR_STRESS_TEST.md` | AUTHORITATIVE / TEST DOC | Operator validation matrix for `DELIVERY-MANUAL-GIRO-01A` UI prototype. Verdict recorded: APPROVE AS UI PROTOTYPE (2026-05-25). | Validating any future change to manual giro UI; planning P1B/P1C. | As proof of persistence/data contract — 01A is UI-only. |
 | `LaDieciBotV2_ORDER_MODIFICATION_NOTES.md` | CURRENT PARTIAL | Good source for modification guards and pending badge work. | Order modification work. | As delivery roadmap. |
 | `LaDieciBotV2_OPS_HEALTH_STRESS_MATRIX.md` | CURRENT PARTIAL / PLANNED | Useful design for health/status, not all live. | Planning ops health. | As proof `/status` is complete live. |
 | `LaDieciBotV2_BOT_DELIVERY_STRATEGY.md` | CURRENT PARTIAL / PLANNED | Conservative bot delivery strategy. | WhatsApp delivery planning. | As active P1. |

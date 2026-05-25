@@ -161,15 +161,15 @@ Choose exactly one after the test:
 Operator notes:
 
 ```text
-Verdict:
-Tester:
-Date:
-Environment:
-Main reason:
+Verdict: APPROVE AS UI PROTOTYPE
+Tester: Codex autonomous run + human operator confirmation
+Date: 2026-05-25
+Environment: localhost:8888 via `DEV_AUTH_BYPASS=true netlify dev` (no deploy)
+Main reason: All blocking matrix cases pass (B04, G01-G05, no duplications, refresh leaves no chip, manual driver salida loading fix verified). UX discoverability fixed in commit a8f97da (visible "+" toggle + dashed helper text).
 Top 3 fixes before next step:
-1.
-2.
-3.
+1. Persistence/data-contract (P1C) before any further user-facing change.
+2. Decide if `manualGiroSeq` should reset after total dissolve.
+3. Add a clearer volatility hint before the first giro is created (current hint only inside chip tooltip).
 ```
 
 ## 7. Post-Test Review Checklist
