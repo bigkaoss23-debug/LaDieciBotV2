@@ -29,12 +29,74 @@ const mapsAddr = (dir) => (dir || "").split(",")[0].trim();
 const mapsUrl  = (dir) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsAddr(dir) + " Roquetas de Mar")}`;
 
+const MANUAL_GIRO_STATES = new Set([
+  ORDER_STATES.EN_COCINA,
+  ORDER_STATES.LISTO,
+  ORDER_STATES.EN_ENTREGA,
+]);
+
+const isManualGiroSelectableOrder = (o) =>
+  o?.tipo_consegna === "DOMICILIO" && MANUAL_GIRO_STATES.has(o?.estado);
+
+const warningStyle = (level = "soft") => ({
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  background: level === "strong" ? "rgba(239,68,68,0.14)" : "rgba(251,191,36,0.11)",
+  border: `1px solid ${level === "strong" ? "rgba(239,68,68,0.42)" : "rgba(251,191,36,0.36)"}`,
+  borderRadius: 999,
+  color: level === "strong" ? "#fca5a5" : "#fbbf24",
+  fontSize: 10,
+  fontWeight: 800,
+  padding: "2px 7px",
+  whiteSpace: "nowrap",
+});
+
+const buildManualGiroWarnings = (orders, manualGiroByOrderId = {}) => {
+  const warnings = [];
+  const add = (key, label, level = "soft") => {
+    if (!warnings.some(w => w.key === key)) warnings.push({ key, label, level });
+  };
+  const list = (orders || []).filter(Boolean);
+  if (list.length < 2) {
+    if (list.some(o => manualGiroByOrderId[o.id])) add("already", "Ya en giro");
+    if (list.some(o => !o.zona)) add("no-zona", "Sin zona");
+    if (list.some(o => !o.direccion)) add("no-dir", "Sin direccion");
+    return warnings;
+  }
+
+  const zones = new Set(list.map(o => o.zona).filter(Boolean));
+  if (zones.size > 1) add("zones", "Zonas diferentes");
+  if (list.some(o => !o.zona)) add("no-zona", "Sin zona");
+  if (list.some(o => !o.direccion)) add("no-dir", "Sin direccion");
+  if (list.some(o => manualGiroByOrderId[o.id])) add("already", "Ya en giro");
+
+  const mins = list.map(o => _tm(o.hora)).filter(m => m != null);
+  if (mins.length >= 2) {
+    const diff = Math.max(...mins) - Math.min(...mins);
+    if (diff > 25) add("hora-strong", "Horarios >25 min", "strong");
+    else if (diff > 15) add("hora", "Horarios >15 min");
+  }
+
+  const states = new Set(list.map(o => o.estado));
+  if (states.has(ORDER_STATES.EN_COCINA) && states.has(ORDER_STATES.EN_ENTREGA)) {
+    add("state-gap", "Cocina + en camino", "strong");
+  }
+
+  return warnings;
+};
+
 // ─── Card ordine dentro un blocco zona ────────────────────────────────────
-const ZonaOrderRow = ({ o, zona, onSendRepartidor, loadingId, driverStato, onForzaSalida, onForzaEntregado }) => {
+const ZonaOrderRow = ({
+  o, zona, onSendRepartidor, loadingId, driverStato, onForzaSalida, onForzaEntregado,
+  manualGiro, manualGiroWarnings = [], isManualGiroSelected = false,
+  onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro
+}) => {
   const isLoading   = loadingId === o.id;
   const isListo     = o.estado === ORDER_STATES.LISTO;
   const isEnEntrega = o.estado === ORDER_STATES.EN_ENTREGA;
   const isCocina    = o.estado === ORDER_STATES.EN_COCINA;
+  const selectableForManualGiro = isManualGiroSelectableOrder(o);
 
   // Override: salida no registrada (ordine EN_ENTREGA ma partito_alle nullo)
   const salidaMancante = isEnEntrega && !driverStato?.partito_alle;
@@ -54,11 +116,33 @@ const ZonaOrderRow = ({ o, zona, onSendRepartidor, loadingId, driverStato, onFor
 
   return (
     <div style={{
-      background: "rgba(255,255,255,0.03)",
-      border: `1px solid ${isEnEntrega ? "rgba(249,115,22,0.3)" : "rgba(255,255,255,0.07)"}`,
+      background: manualGiro ? "rgba(251,191,36,0.055)" : "rgba(255,255,255,0.03)",
+      border: manualGiro
+        ? "1px solid rgba(251,191,36,0.42)"
+        : `1px solid ${isEnEntrega ? "rgba(249,115,22,0.3)" : "rgba(255,255,255,0.07)"}`,
       borderRadius: 10, padding: "10px 12px",
-      display: "flex", alignItems: "center", gap: 10
+      display: "flex", alignItems: "center", gap: 10,
+      boxShadow: manualGiro ? "inset 3px 0 0 rgba(251,191,36,0.70)" : "none"
     }}>
+      {selectableForManualGiro && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggleManualGiro && onToggleManualGiro(o.id); }}
+          aria-pressed={isManualGiroSelected}
+          title={isManualGiroSelected ? "Quitar de seleccion manual" : "Seleccionar para giro manual"}
+          style={{
+            width: 22, height: 22, borderRadius: 7,
+            border: `1.5px solid ${isManualGiroSelected ? "#fbbf24" : "rgba(255,255,255,0.22)"}`,
+            background: isManualGiroSelected ? "rgba(251,191,36,0.22)" : "rgba(255,255,255,0.04)",
+            color: isManualGiroSelected ? "#fbbf24" : "rgba(255,255,255,0.42)",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            fontSize: 13, fontWeight: 900, cursor: "pointer", flexShrink: 0
+          }}
+        >
+          {isManualGiroSelected ? "✓" : ""}
+        </button>
+      )}
+
       {/* Stato */}
       <span style={{ fontSize: 14, flexShrink: 0 }}>{estadoLabel}</span>
 
@@ -67,6 +151,42 @@ const ZonaOrderRow = ({ o, zona, onSendRepartidor, loadingId, driverStato, onFor
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{o.nombre}</span>
           <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>{o.id}</span>
+          {manualGiro && (
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              background: "rgba(251,191,36,0.14)",
+              border: "1px solid rgba(251,191,36,0.42)",
+              color: "#fbbf24", borderRadius: 999,
+              padding: "2px 7px", fontSize: 10, fontWeight: 900,
+              textTransform: "lowercase", whiteSpace: "nowrap"
+            }} title="Grupo local, no guardado">
+              giro manual · {manualGiro.id}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onRemoveFromManualGiro && onRemoveFromManualGiro(manualGiro.id, o.id); }}
+                title="Quitar este pedido del giro"
+                style={{
+                  background: "transparent", border: "none", color: "#fde68a",
+                  fontSize: 12, fontWeight: 900, padding: 0, cursor: "pointer", lineHeight: 1
+                }}
+              >×</button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onDissolveManualGiro && onDissolveManualGiro(manualGiro.id); }}
+                title="Disolver giro manual"
+                style={{
+                  background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.28)",
+                  color: "#fde68a", borderRadius: 999, fontSize: 9, fontWeight: 900,
+                  padding: "1px 5px", cursor: "pointer", lineHeight: 1.2
+                }}
+              >disolver</button>
+            </span>
+          )}
+          {manualGiroWarnings.map(w => (
+            <span key={`${manualGiro?.id || o.id}-${w.key}`} style={warningStyle(w.level)}>
+              {w.label}
+            </span>
+          ))}
           {o.hora && zona && (() => {
             const hF = calcHoraForno(o, zona);
             return (
@@ -175,7 +295,11 @@ const ZonaOrderRow = ({ o, zona, onSendRepartidor, loadingId, driverStato, onFor
 };
 
 // ─── Blocco giro (zona + ora consegna) ───────────────────────────────────
-const ZonaBlock = ({ zona, ordini, giroHora, onSendRepartidor, loadingId, driverStato, onForzaSalida, onForzaEntregado }) => {
+const ZonaBlock = ({
+  zona, ordini, giroHora, onSendRepartidor, loadingId, driverStato, onForzaSalida, onForzaEntregado,
+  manualGiroByOrderId, manualGiroWarningsById, selectedManualGiroOrderIds,
+  onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro
+}) => {
   const isFull  = ordini.length >= zona.maxOrdiniPerGiro;
   const isOver  = ordini.length > zona.maxOrdiniPerGiro;
 
@@ -268,7 +392,13 @@ const ZonaBlock = ({ zona, ordini, giroHora, onSendRepartidor, loadingId, driver
         {ordini.map(o => (
           <ZonaOrderRow key={o.id} o={o} zona={zona}
             onSendRepartidor={onSendRepartidor} loadingId={loadingId}
-            driverStato={driverStato} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado} />
+            driverStato={driverStato} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado}
+            manualGiro={manualGiroByOrderId[o.id] || null}
+            manualGiroWarnings={manualGiroWarningsById[o.id] || []}
+            isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
+            onToggleManualGiro={onToggleManualGiro}
+            onRemoveFromManualGiro={onRemoveFromManualGiro}
+            onDissolveManualGiro={onDissolveManualGiro} />
         ))}
       </div>
     </div>
@@ -280,6 +410,9 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const [loadingId,    setLoadingId]    = useState(null);
   const [driverStato,  setDriverStato]  = useState(null);
   const [apertoConsegnati, setApertoConsegnati] = useState(false);
+  const [manualGiros, setManualGiros] = useState([]);
+  const [selectedManualGiroOrderIds, setSelectedManualGiroOrderIds] = useState([]);
+  const [manualGiroSeq, setManualGiroSeq] = useState(1);
 
   // Legge DRIVER_STATO da Supabase ogni 15s
   useEffect(() => {
@@ -316,6 +449,73 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
 
   const toMin = (t) => { if (!t) return 9999; const [h,m] = t.split(":").map(Number); return h*60+m; };
   const toHora = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+  const activeManualGiroIds = new Set(entregas.filter(isManualGiroSelectableOrder).map(o => o.id));
+
+  useEffect(() => {
+    const activeIds = new Set(
+      ordenes.filter(isManualGiroSelectableOrder).map(o => o.id)
+    );
+    setManualGiros(prev => prev
+      .map(g => ({ ...g, orderIds: g.orderIds.filter(id => activeIds.has(id)) }))
+      .filter(g => g.orderIds.length >= 2)
+    );
+    setSelectedManualGiroOrderIds(prev => prev.filter(id => activeIds.has(id)));
+  }, [ordenes]);
+
+  const ordersById = {};
+  for (const o of entregas) ordersById[o.id] = o;
+
+  const manualGiroByOrderId = {};
+  for (const giro of manualGiros) {
+    for (const id of giro.orderIds) {
+      if (activeManualGiroIds.has(id)) manualGiroByOrderId[id] = giro;
+    }
+  }
+
+  const manualGiroWarningsById = {};
+  for (const giro of manualGiros) {
+    const giroOrders = giro.orderIds.map(id => ordersById[id]).filter(Boolean);
+    const warnings = buildManualGiroWarnings(giroOrders);
+    for (const id of giro.orderIds) manualGiroWarningsById[id] = warnings;
+  }
+
+  const selectedManualGiroOrders = selectedManualGiroOrderIds
+    .map(id => ordersById[id])
+    .filter(Boolean);
+  const selectedManualGiroWarnings = buildManualGiroWarnings(selectedManualGiroOrders, manualGiroByOrderId);
+
+  const toggleManualGiroSelection = (id) => {
+    if (!activeManualGiroIds.has(id)) return;
+    setSelectedManualGiroOrderIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const createManualGiro = () => {
+    const orderIds = selectedManualGiroOrderIds.filter(id => activeManualGiroIds.has(id));
+    if (orderIds.length < 2) return;
+    const giroId = `G${manualGiroSeq}`;
+    const selectedSet = new Set(orderIds);
+    setManualGiroSeq(n => n + 1);
+    setManualGiros(prev => [
+      ...prev
+        .map(g => ({ ...g, orderIds: g.orderIds.filter(id => !selectedSet.has(id)) }))
+        .filter(g => g.orderIds.length >= 2),
+      { id: giroId, orderIds, createdAt: Date.now(), volatile: true }
+    ]);
+    setSelectedManualGiroOrderIds([]);
+  };
+
+  const removeFromManualGiro = (giroId, orderId) => {
+    setManualGiros(prev => prev
+      .map(g => g.id === giroId ? { ...g, orderIds: g.orderIds.filter(id => id !== orderId) } : g)
+      .filter(g => g.orderIds.length >= 2)
+    );
+  };
+
+  const dissolveManualGiro = (giroId) => {
+    setManualGiros(prev => prev.filter(g => g.id !== giroId));
+  };
 
   // Raggruppamento cluster-based per giro: stessa zona + delta ≤ GIRO_WINDOW_MIN dal primo dell'ordine.
   // Esempio: Q1 17:10 + Q1 17:15 → stesso giro (delta 5). Q1 17:10 + Q1 17:22 → due giri (delta 12).
@@ -509,6 +709,57 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     <div>
       <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}`}</style>
 
+      {/* Giro manual UI-only: stato locale volatile, nessuna API e nessuna persistenza. */}
+      {selectedManualGiroOrderIds.length > 0 && (
+        <div style={{
+          marginBottom: 12,
+          background: "rgba(251,191,36,0.08)",
+          border: "1.5px solid rgba(251,191,36,0.34)",
+          borderRadius: 12,
+          padding: "10px 12px",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap"
+        }}>
+          <span style={{ color: "#fbbf24", fontWeight: 900, fontSize: 13 }}>
+            Giro manual · {selectedManualGiroOrderIds.length} seleccionados
+          </span>
+          {selectedManualGiroWarnings.map(w => (
+            <span key={w.key} style={warningStyle(w.level)}>{w.label}</span>
+          ))}
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            disabled={selectedManualGiroOrderIds.length < 2}
+            onClick={createManualGiro}
+            style={{
+              background: selectedManualGiroOrderIds.length >= 2 ? "rgba(251,191,36,0.22)" : "rgba(255,255,255,0.05)",
+              border: `1px solid ${selectedManualGiroOrderIds.length >= 2 ? "rgba(251,191,36,0.60)" : "rgba(255,255,255,0.10)"}`,
+              color: selectedManualGiroOrderIds.length >= 2 ? "#fde68a" : "rgba(255,255,255,0.30)",
+              borderRadius: 9, padding: "7px 12px",
+              fontSize: 12, fontWeight: 900,
+              cursor: selectedManualGiroOrderIds.length >= 2 ? "pointer" : "not-allowed"
+            }}
+          >
+            Crear giro manual
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedManualGiroOrderIds([])}
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              color: "rgba(255,255,255,0.55)",
+              borderRadius: 9, padding: "7px 10px",
+              fontSize: 12, fontWeight: 800, cursor: "pointer"
+            }}
+          >
+            Cancelar selección
+          </button>
+        </div>
+      )}
+
       {/* Riepilogo rapido */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {[
@@ -544,6 +795,12 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
             driverStato={driverStato}
             onForzaSalida={handleForzaSalida}
             onForzaEntregado={handleForzaEntregado}
+            manualGiroByOrderId={manualGiroByOrderId}
+            manualGiroWarningsById={manualGiroWarningsById}
+            selectedManualGiroOrderIds={selectedManualGiroOrderIds}
+            onToggleManualGiro={toggleManualGiroSelection}
+            onRemoveFromManualGiro={removeFromManualGiro}
+            onDissolveManualGiro={dissolveManualGiro}
           />
         );
       })}
@@ -571,7 +828,13 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
             {senzaZona.map(o => (
               <ZonaOrderRow key={o.id} o={o}
                 onSendRepartidor={handleSendRepartidor} loadingId={loadingId}
-                driverStato={driverStato} onForzaSalida={handleForzaSalida} onForzaEntregado={handleForzaEntregado} />
+                driverStato={driverStato} onForzaSalida={handleForzaSalida} onForzaEntregado={handleForzaEntregado}
+                manualGiro={manualGiroByOrderId[o.id] || null}
+                manualGiroWarnings={manualGiroWarningsById[o.id] || []}
+                isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
+                onToggleManualGiro={toggleManualGiroSelection}
+                onRemoveFromManualGiro={removeFromManualGiro}
+                onDissolveManualGiro={dissolveManualGiro} />
             ))}
           </div>
         </div>
