@@ -1,0 +1,204 @@
+# La Dieci Bot V2 — DELIVERY-MANUAL-GIRO-01B/01C Spec
+
+Last drafted: 2026-05-25.
+
+Scope: spec markdown only for the future persistent version of `DELIVERY-MANUAL-GIRO-01`. Successor of P1A (volatile UI prototype, commit `a8f97da`, verdict APPROVE AS UI PROTOTYPE). No code, no migration, no deploy decisions inside this file — those happen after the explicit Decision Gate in §6.
+
+## 1. Goal / Non-goal
+
+Goal: when the operator knows two delivery orders from different automatic zones are physically close, allow grouping them in a single manual giro that **synchronizes production and delivery timing** across operators and survives page refresh.
+
+Non-goal: route optimization, ETA training, driver performance scoring, automatic giro suggestions, multi-tenant, mobile-specific UI.
+
+## 2. Current P1A behavior
+
+`ladieci-app33/src/components/entregas/TabEntregas.jsx` keeps three React `useState`: `manualGiros`, `selectedManualGiroOrderIds`, `manualGiroSeq`. Selection uses the `+` button (24×24, yellow soft), creation needs ≥2 orders, chip `giro manual · G<n>` appears on each card, dissolve and per-order remove are local, auto-dissolve when active orders < 2. No API call, no DB write, no Cocina change, no impact on `forno_out` or `salida`. Refresh wipes everything.
+
+## 3. Product rules (carry over to P1B/P1C)
+
+- Operator-gated: nothing happens without the operator selecting.
+- Manual/untrusted data: `Salgo`/`Llegado`/`Entregado` timestamps on grouped orders remain untrusted exactly as today.
+- Cocina stays minimal: at most a small textual marker, no glow, no border, no dominant color.
+- Driver actions remain bound to order `estado`; being in a giro never unlocks an invalid action.
+- Operator can always override: warnings are soft, never hard blocks.
+
+## 4. Data contract proposal
+
+Minimal entities required.
+
+`manual_giros`
+- `id` text PK (short code, e.g. `mg_<seq>_<yymmdd>` or UUID — see Open Questions).
+- `seq` int (per-day or global counter for display label `G<seq>`).
+- `created_at` timestamptz.
+- `created_by` text (operator identifier if available — see Open Questions).
+- `dissolved_at` timestamptz NULL (soft-delete marker).
+
+`ordenes` (extension)
+- `manual_giro_id` text NULL — soft FK to `manual_giros.id`.
+- `manual_giro_added_at` timestamptz NULL (per-order audit).
+
+No other table touched. `delivery_logs`, `storico`, `clientes`, `config` unchanged.
+
+Display label `G<n>` derives from `manual_giros.seq`, not from frontend state.
+
+## 5. Persistence model options
+
+A — Dedicated table `manual_giros` + join table `manual_giro_orders` (pure normalized). Pro: full add/remove history per order. Con: JOIN everywhere in Entregas render, more endpoints.
+
+B — Metadata columns on `ordenes` only (`manual_giro_id`, `manual_giro_seq`, `manual_giro_added_at`). Pro: simplest migration, no JOIN. Con: no giro-level audit (who created, who dissolved), no entity to reason about.
+
+C — Hybrid: `manual_giros` table + denormalized `manual_giro_id` on `ordenes`. Pro: giro-level audit preserved, render queries simple, auto-dissolve trivial. Con: per-order history of "was in giro X, moved to Y" is lost.
+
+D — Single jsonb blob in `public.config` polled by frontend. Pro: zero migration. Con: race conditions with concurrent operators, no audit, no SQL queries. **Rejected.**
+
+## 6. Recommended model
+
+Option C (Hybrid).
+
+Motivation:
+- Audit at giro level preserved (debug: "why was this giro created/dissolved?").
+- Entregas render: single SELECT on `ordenes` joined optionally with `manual_giros` only for header metadata.
+- Auto-dissolve: SELECT COUNT WHERE manual_giro_id = X → if < 2, UPDATE manual_giros SET dissolved_at = now() + UPDATE ordenes SET manual_giro_id = NULL.
+- Untrusted policy easy: any training/aggregate query adds `WHERE manual_giro_id IS NULL` or excludes via the `manual_giros` table presence.
+- Rollback safe: column is nullable, old frontend continues to ignore it.
+
+### Decision Gate before P1C migration
+
+**No schema change, no migration, no backend endpoint, no frontend wiring happens until the operator explicitly approves the data model.** This spec is the discussion artifact; approval is a separate authorization step. If the operator chooses Option A or B instead, §7–§13 below need adjustment before P1C starts.
+
+## 7. UI impact in Entregas
+
+P1A keeps working visually. Internal change:
+- `manualGiros` state derived from `ordenes` fetch (group by `manual_giro_id`), not from local `useState`.
+- `manualGiroSeq` removed; display label uses `manual_giros.seq` from backend.
+- Create/add/remove/dissolve trigger backend calls, with optimistic update + rollback on error.
+- WebSocket / poll already used elsewhere — same pattern, no new infra.
+
+Visual surface (chip, helper text, `+` button, action bar, warnings) unchanged from `a8f97da`.
+
+## 8. Minimal UI impact in Cocina
+
+Single addition: in TabCocina and PanelCocina order cards, a small `manual G<n>` text appended after the customer name in muted gray.
+- No border, no background, no glow, no icon.
+- Same font size as the order id grey text.
+- Hidden when `manual_giro_id IS NULL`.
+
+No new buttons, no new sections, no header changes in Cocina.
+
+## 9. State transitions
+
+Create: client sends `[orderId, orderId, ...]` (≥2). Backend transaction: INSERT manual_giros row → UPDATE ordenes SET manual_giro_id = new.id for all selected orders → return giro with seq. All-or-nothing.
+
+Add order: UPDATE ordenes SET manual_giro_id = X, manual_giro_added_at = now() WHERE id = orderId AND manual_giro_id IS NULL (or moves: WHERE id = orderId, overwriting any prior id; see §11).
+
+Remove order: UPDATE ordenes SET manual_giro_id = NULL WHERE id = orderId. Then auto-dissolve check.
+
+Dissolve (explicit): UPDATE manual_giros SET dissolved_at = now() WHERE id = X → UPDATE ordenes SET manual_giro_id = NULL WHERE manual_giro_id = X.
+
+Auto-dissolve: triggered after any remove or after any order status change that drops it from selectable set. If active orders count < 2 → same as explicit dissolve.
+
+## 10. Refresh/reload behavior
+
+Frontend reconstructs `manualGiros` from `ordenes` rows: group by `manual_giro_id NOT NULL`. Counter `G<n>` shown is the `seq` from backend, no local generation. Refresh/close/reopen tab/new operator → identical view (modulo polling delay). Multi-operator safe by construction.
+
+## 11. Dissolve/remove behavior
+
+- Operator clicks ×on a chip: remove that single order from giro. Auto-dissolve check runs.
+- Operator clicks "disolver": explicit dissolve. All orders detached, giro soft-deleted.
+- Order moves to a terminal state (RETIRADO, COMPLETADO): automatic remove from giro + auto-dissolve check.
+- Order moves back from EN_ENTREGA to LISTO via operator override: stays in giro (no automatic re-add to a dissolved one).
+- Moving an order from G1 to G2: single UPDATE overwriting `manual_giro_id`. G1 auto-dissolve check runs.
+- Soft-delete via `dissolved_at` keeps the row in `manual_giros` for audit, but hides it from active queries (`WHERE dissolved_at IS NULL`).
+
+## 12. Interaction with order statuses
+
+Selectability rule from P1A unchanged: `tipo_consegna = 'DOMICILIO' AND estado IN ('EN_COCINA','LISTO','EN_ENTREGA')`.
+
+Status change rules:
+- EN_COCINA → LISTO: stays in giro.
+- LISTO → EN_ENTREGA: stays in giro. Driver actions still bound to per-order state.
+- EN_ENTREGA → RETIRADO: leaves giro automatically.
+- LISTO → EN_COCINA (operator override): stays in giro.
+- POR_CONFIRMAR / NUEVO: never in giro (not selectable).
+
+A giro containing a mix of EN_COCINA and EN_ENTREGA is allowed (with warning, as in P1A) but the production sync recommendation in §13 must still apply.
+
+## 13. Interaction with salida / forno_out
+
+Recommended default to validate: align active orders in the manual giro to the latest effective `forno_out`/salida target, with operator/product validation required before implementation.
+
+Rationale: orders with different `hora` values would otherwise sit on the kitchen counter cooling. Aligning to the latest forno_out trades earlier orders being slightly later (still hot) against avoiding cold pizzas. But aligning to the earliest would force the kitchen to push later orders unnaturally early. **Neither extreme is obviously right** — needs validation with a real pizzaiolo/operator during a service before implementation.
+
+Until validated:
+- Backend MUST NOT silently rewrite `forno_out` based on giro membership.
+- P1C implementation parks this decision behind a feature flag or a separate step (call it P1C.2 if needed).
+- TabCocina shows the per-order `forno_out` exactly as today; the `manual G<n>` marker is the only signal of grouping.
+
+## 14. What must NOT feed ETA/training yet
+
+Any future ETA model, route optimization, or driver scoring query MUST exclude rows where `manual_giro_id IS NOT NULL` (or the equivalent presence-check). Reason: manual giros are operator overrides; treating them as ground truth biases the model.
+
+Add an explicit comment in the data dictionary and in any aggregation query at write time. The training exclusion is a hard rule, not a heuristic.
+
+## 15. Manual/untrusted delivery tracking rule (extension)
+
+The existing rule that `Salgo`/`Llegado`/`Entregado` timestamps on delivery orders are manual/untrusted (see `LaDieciBotV2_MASTER_CONTEXT.md` §9) extends unchanged to grouped orders. Being in a giro does not make the timestamps trustworthy. `delivery_logs` rows generated by these clicks are still aggregated by zone and stay aggregated by zone, regardless of giro membership.
+
+## 16. Edge cases
+
+- Two operators dissolve the same giro simultaneously: second UPDATE is a no-op (`dissolved_at IS NULL` becomes `IS NOT NULL` after first). No error surfaced.
+- Operator A moves order X from G1 to G2 while operator B is removing X from G1: last-write-wins on `manual_giro_id`. Auto-dissolve check on G1 still runs from B's remove. Refresh resolves visual divergence.
+- Service close (`chiudiServizio`): policy is to soft-dissolve all active giros at close time and detach all orders. `manual_giros` rows remain for storico/audit.
+- Refresh mid-creation: optimistic chip disappears on the next fetch if the backend call failed. Show a brief "Error creando giro manual" toast.
+- Order deleted entirely (`eliminaOrdine`): cascade detaches from giro, auto-dissolve check runs.
+- 0 selectable orders left after status churn: existing giros auto-dissolve as their counts cross the threshold.
+
+## 17. Human/operator stress test matrix for P1B/P1C
+
+Reuse cases A01–H05 from `LaDieciBotV2_DELIVERY_MANUAL_GIRO_OPERATOR_STRESS_TEST.md`. Add these new cases:
+
+- P1-01 two-operator concurrent create same giro id: each must get a distinct seq.
+- P1-02 two-operator concurrent add order to different giros: order ends in one of the two, no duplication, the other operator sees the truth on next refresh.
+- P1-03 two-operator dissolve same giro simultaneously: both succeed, no error toast.
+- P1-04 refresh during create: chip appears on success, never as a ghost.
+- P1-05 service close with active giros: all dissolved cleanly, no orphan `manual_giro_id`.
+- P1-06 order moves to RETIRADO with 2-order giro: auto-dissolve triggers, no leftover chip.
+- P1-07 LISTO → EN_COCINA override on grouped order: stays in giro, no error.
+- P1-08 mixed-zone giro with hora delta > 25 min: warning visible, forno_out rule from §13 behaves as documented (read-only check until validated).
+- P1-09 Cocina marker readability: `manual G<n>` visible but not dominant on busy TabCocina screen.
+- P1-10 ETA/training query verification: aggregated tables exclude `manual_giro_id IS NOT NULL` rows.
+
+Operator verdict template same as P1A matrix.
+
+## 18. Implementation phases
+
+- P1B — this spec, decision gate per §6, open questions answered. **No code.**
+- P1C.1 — migration + minimal backend endpoints (`createManualGiro`, `addOrderToManualGiro`, `removeOrderFromManualGiro`, `dissolveManualGiro`) + frontend wiring of P1A UI to backend.
+- P1C.2 — separate step: `forno_out` aggregation rule from §13 implemented behind feature flag, only after operator validation.
+- P1D — Cocina mini-marker `manual G<n>` (single visual change, separate commit).
+- P1E — human stress test in real service using §17 matrix. Verdict gate before any deploy.
+
+Each phase has its own backup branch and its own commit. No phase is implemented in the same session as the previous one without explicit operator authorization.
+
+## 19. Explicit no-deploy policy
+
+- No deploy until P1E green and explicit operator authorization.
+- Migration is a separate, reviewed step; rollback plan is "drop column and table" (column is nullable, table is independent).
+- Backup branch `backup/v2-manual-giro-p1c-migration-<date>` mandatory before P1C.1.
+- Backup branch `backup/v2-manual-giro-p1d-cocina-<date>` mandatory before P1D.
+- `origin/main` stays untouched throughout. All work lands on backup branches first.
+
+## 20. Open questions
+
+Must be answered before P1C.1 starts:
+
+1. `manual_giros.id` format: short code `mg_<seq>_<yymmdd>`, UUID, or simple bigserial? Affects display vs uniqueness vs guessability.
+2. `seq` reset: per-day reset at service close, or monotonic forever? Per-day is friendlier for operators ("G3 today" vs "G412").
+3. `created_by`: do we have a reliable operator identifier today? If not, accept `created_by IS NULL` for P1C.1 and revisit when operator login lands.
+4. `forno_out` aggregation rule (§13): validate with pizzaiolo during a real service before P1C.2.
+5. Move-between-giros confirmation: silent (as P1A) or require operator confirm dialog?
+6. Auto-dissolve trigger: backend on every detach call, or scheduled job? Per-call is simpler and good enough at La Dieci scale.
+7. WebSocket vs poll: existing pattern enough, or new channel for giro events?
+8. `chiudiServizio` handling: soft-dissolve all giros, or hard-archive into `storico_manual_giros`?
+
+Answers go inline here when decided, with date and operator name. Until then, P1C.1 stays blocked.
