@@ -87,7 +87,7 @@ No ETA calculations.
 
 ### DELIVERY-MANUAL-GIRO-01C — Data Contract
 
-Status: DONE 2026-05-26 for P1C.1 persistence/wiring. Hybrid model approved and implemented across backend + frontend; frontend local commit `addc6a7` is backed up at `backup/v2-manual-giro-p1c1-frontend-2026-05-26`. No Netlify deploy yet; no push to main.
+Status: DONE and LIVE 2026-05-26 for P1C.1 persistence/wiring. Hybrid model approved and implemented across backend + frontend; frontend commit `addc6a7` is backed up at `backup/v2-manual-giro-p1c1-frontend-2026-05-26`; docs/deploy closure commit is `267c9d0`. Backend main/prod is aligned at `e14abd6`.
 
 Decide the smallest safe data shape:
 
@@ -101,7 +101,7 @@ No migration or database work until human approval.
 
 ### DELIVERY-MANUAL-GIRO-01D — Implementation
 
-Status: PARTIAL. P1C.1 implementation is locally complete and tested for Entregas persistence. Cocina marker remains intentionally not implemented; `forno_out` aggregation remains blocked.
+Status: PARTIAL. P1C.1 Entregas persistence is implemented, tested, and live on Netlify production. Cocina marker remains intentionally not implemented; `forno_out` aggregation remains blocked.
 
 Only after product and data contract are approved:
 
@@ -112,7 +112,7 @@ Only after product and data contract are approved:
 
 ### DELIVERY-MANUAL-GIRO-01E — Service Validation
 
-Status: P1C.1 local realistic smoke PASSED 2026-05-26; real-service validation still pending before deploy.
+Status: P1C.1 realistic smoke PASSED 2026-05-26 and production authenticated smoke PASSED after deploy. Broader real-service validation remains future work.
 
 Validate during or after a real service:
 
@@ -152,6 +152,10 @@ P1C.1 smoke closure 2026-05-26:
 - Recreate succeeded (`mg_260526_2`), explicit `disolver` cleared chips and returned `getManualGiros=[]`.
 - Cocina stayed read-only for the feature: no manual-giro marker, no UI change, `forno_out` unchanged (`21:05`, `21:38`).
 - Cleanup removed only test orders/clients `699000301/699000302`; `mg_260526_1` and `mg_260526_2` remain dissolved audit rows.
+- Backend main/prod alignment completed before frontend deploy: local HEAD, `origin/main`, and Railway production verified at `e14abd6e93be2bf85ca64ad2649ba8fd3b54ea34`; `/health` OK; `/status` OK with database green; `getManualGiros` returned `200 []`.
+- Production frontend deploy completed on correct Netlify site `magnificent-lollipop-6dff70` (site ID `02bd4c7a-a50b-4964-90da-8c1af1122932`), deploy ID `6a158473fb848b0f501bf5ec`, URL `https://magnificent-lollipop-6dff70.netlify.app`, `/version.json` commit `267c9d0`, functions `api` and `auth` loaded.
+- Authenticated production smoke passed: existing login/session OK without exposing PIN; `Servicio > Entregas` loaded; UI showed `Sin entregas a domicilio`; no visible crash; no phantom manual-giro chips; no data created or modified. `getManualGiros` authenticated was not directly tested with a real token in that smoke.
+- Accidental deploy to `soft-stroopwafel-e517fe` is not a valid production deploy. Future Netlify CLI deploys must include `--site 02bd4c7a-a50b-4964-90da-8c1af1122932`, `--dir=ladieci-app33/build`, and `--functions=ladieci-app33/netlify/functions`.
 
 ## 8. Workstreams Suspended
 
@@ -197,7 +201,7 @@ Done means:
 - Minimum tests above pass.
 - Documentation is updated in this roadmap and master context if behavior changes.
 
-Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract approved; P1C.1 frontend persistence wiring committed locally (`addc6a7`) and backup pushed. Full P1 still requires production deploy authorization, backend-main reconciliation to avoid Railway rollback, P1D Cocina marker decision/implementation if still desired, and real-service validation 01E.
+Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract approved; P1C.1 frontend persistence wiring committed (`addc6a7`), backup pushed, backend main/prod aligned at `e14abd6`, and Netlify production deployed at `267c9d0` on the correct site. Full P1 still requires P1D Cocina marker decision/implementation if still desired and broader real-service validation 01E.
 
 ## 11. Rules For Future Codex Sessions
 

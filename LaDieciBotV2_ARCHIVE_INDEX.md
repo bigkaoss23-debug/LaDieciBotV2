@@ -11,8 +11,9 @@ This index classifies documentation so future sessions know what to read, what t
 - Files marked `SENSITIVE` or `DO NOT USE AS LIVE` must not be pasted into new prompts.
 - `ORDINI_2026-05-23.md` is useful operational evidence but was untracked at audit time.
 - Duplicate project folders in `Downloads` are not canonical unless a human explicitly designates them.
-- P1C.1 frontend manual-giro persistence is locally closed at commit `addc6a7` and backed up on `backup/v2-manual-giro-p1c1-frontend-2026-05-26`; it has not been deployed to Netlify and has not been pushed to main.
-- Backend production manual-giro endpoints are live from Railway CLI deploy, but backend `origin/main` is behind; reconcile before any future GitHub-main-triggered Railway deploy.
+- P1C.1 frontend manual-giro persistence is live on Netlify production as of 2026-05-26. Frontend feature commit `addc6a7` and docs/deploy closure commit `267c9d0` are recorded; deploy ID `6a158473fb848b0f501bf5ec` on site `magnificent-lollipop-6dff70`.
+- Backend manual-giro endpoints are live and backend local HEAD/`origin/main`/Railway production were aligned to `e14abd6e93be2bf85ca64ad2649ba8fd3b54ea34` before the frontend deploy.
+- Future Netlify CLI deploys must use the correct site ID: `--site 02bd4c7a-a50b-4964-90da-8c1af1122932`. The accidental `soft-stroopwafel-e517fe` deploy is not production truth.
 
 ## 2. Documentation Classification
 
@@ -29,7 +30,7 @@ This index classifies documentation so future sessions know what to read, what t
 | `LaDieciBotV2_DELIVERY_ETA_STRESS_MATRIX.md` | CURRENT PARTIAL | Best source for ETA/geocoding principles and known fixes. | Delivery ETA/geocoding work. | For route optimization. |
 | `LaDieciBotV2_DELIVERY_VIS_STRESS_MATRIX.md` | CURRENT PARTIAL | Best source for Entregas visibility and grouped-delivery hints. | `DELIVERY-MANUAL-GIRO-01`. | As proof all visibility behavior is live. |
 | `LaDieciBotV2_DELIVERY_MANUAL_GIRO_OPERATOR_STRESS_TEST.md` | AUTHORITATIVE / TEST DOC | Operator validation matrix for `DELIVERY-MANUAL-GIRO-01A` UI prototype. Verdict recorded: APPROVE AS UI PROTOTYPE (2026-05-25). | Validating any future change to manual giro UI; planning P1B/P1C. | As proof of persistence/data contract — 01A is UI-only. |
-| `LaDieciBotV2_DELIVERY_MANUAL_GIRO_01BC_SPEC.md` | AUTHORITATIVE / SPEC | Records approved hybrid persistence model and P1C.1 closure status. P1C.1 frontend commit `addc6a7` passed realistic Entregas+Cocina smoke on 2026-05-26; P1C.2 `forno_out` aggregation remains blocked. | Any manual giro persistence, endpoint, deploy, rollback, or follow-up work. | As authorization to deploy or to change Cocina/forno_out. |
+| `LaDieciBotV2_DELIVERY_MANUAL_GIRO_01BC_SPEC.md` | AUTHORITATIVE / SPEC | Records approved hybrid persistence model and P1C.1 closure status. P1C.1 frontend commit `addc6a7` passed realistic Entregas+Cocina smoke on 2026-05-26 and is live via Netlify deploy `6a158473fb848b0f501bf5ec`; P1C.2 `forno_out` aggregation remains blocked. | Any manual giro persistence, endpoint, deploy, rollback, or follow-up work. | As authorization to change Cocina/forno_out. |
 | `LaDieciBotV2_ORDER_MODIFICATION_NOTES.md` | CURRENT PARTIAL | Good source for modification guards and pending badge work. | Order modification work. | As delivery roadmap. |
 | `LaDieciBotV2_OPS_HEALTH_STRESS_MATRIX.md` | CURRENT PARTIAL / PLANNED | Useful design for health/status, not all live. | Planning ops health. | As proof `/status` is complete live. |
 | `LaDieciBotV2_BOT_DELIVERY_STRATEGY.md` | CURRENT PARTIAL / PLANNED | Conservative bot delivery strategy. | WhatsApp delivery planning. | As active P1. |

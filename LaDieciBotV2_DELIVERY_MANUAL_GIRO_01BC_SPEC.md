@@ -4,7 +4,7 @@ Last updated: 2026-05-26.
 
 Scope: spec markdown only for the future persistent version of `DELIVERY-MANUAL-GIRO-01`. Successor of P1A (volatile UI prototype, commit `a8f97da`, verdict APPROVE AS UI PROTOTYPE). No deploy decisions inside this file — those happen after explicit operator authorization.
 
-Current closure note 2026-05-26: P1C.1 backend endpoints and frontend Entregas wiring are implemented and locally validated. Frontend commit `addc6a736d8d87758a7c7eb78b0439903ea005b7` (`addc6a7 feat persist manual delivery giros in entregas`) is backed up at `backup/v2-manual-giro-p1c1-frontend-2026-05-26`. No Netlify deploy and no push to main yet. Backend production endpoints are live from Railway CLI deploy, but backend `origin/main` is behind and must be reconciled before any GitHub-main-triggered Railway deploy.
+Current closure note 2026-05-26: P1C.1 backend endpoints and frontend Entregas wiring are implemented, validated, and live. Backend local HEAD/`origin/main`/Railway production are aligned at `e14abd6e93be2bf85ca64ad2649ba8fd3b54ea34`. Frontend feature commit `addc6a736d8d87758a7c7eb78b0439903ea005b7` (`addc6a7 feat persist manual delivery giros in entregas`) is backed up at `backup/v2-manual-giro-p1c1-frontend-2026-05-26`; docs/deploy closure commit is `267c9d0edeb55a5e06a734025057cacf1679d35e`. Production Netlify deploy `6a158473fb848b0f501bf5ec` is live on site `magnificent-lollipop-6dff70` (`02bd4c7a-a50b-4964-90da-8c1af1122932`).
 
 ## 1. Goal / Non-goal
 
@@ -189,20 +189,30 @@ Validated:
 - Cocina remained read-only for P1C.1: no manual marker, no UI change, no `forno_out` change.
 - Cleanup removed only test orders and clients `699000301/699000302`; no `storico` rows existed. `mg_260526_1` and `mg_260526_2` remain as dissolved audit rows.
 
+### P1C.1 production deploy result — LIVE 2026-05-26
+
+- Backend verified before frontend deploy: local HEAD, `origin/main`, and Railway production aligned to `e14abd6e93be2bf85ca64ad2649ba8fd3b54ea34`; `/version` commit `e14abd6` branch `main`; `/health` OK; `/status` OK with database green; `getManualGiros` returned `200 []`.
+- Frontend deployed to correct Netlify site `magnificent-lollipop-6dff70`, site ID `02bd4c7a-a50b-4964-90da-8c1af1122932`, deploy ID `6a158473fb848b0f501bf5ec`, production URL `https://magnificent-lollipop-6dff70.netlify.app`.
+- `/version.json` showed commit `267c9d0`, commitFull `267c9d0edeb55a5e06a734025057cacf1679d35e`; Netlify functions `api` and `auth` were loaded.
+- Authenticated production smoke passed without exposing PIN: `Servicio > Entregas` loaded, showed `Sin entregas a domicilio`, no visible UI crash, no phantom manual-giro chips, and no data created or modified.
+- `getManualGiros` was not directly tested with a real auth token during the final human smoke, but the authenticated Entregas path loaded correctly.
+- Accidental Netlify deploy to `soft-stroopwafel-e517fe` is not production truth. Future deploys must include `--site 02bd4c7a-a50b-4964-90da-8c1af1122932`, `--dir=ladieci-app33/build`, and `--functions=ladieci-app33/netlify/functions`.
+
 ## 18. Implementation phases
 
 - P1B — this spec + decision gate per §6 + open questions answered per §20. **Status: DONE 2026-05-25.** No code shipped in this phase.
-- P1C.1 — migration + minimal backend endpoints (`createManualGiro`, `addOrderToManualGiro`, `removeOrderFromManualGiro`, `dissolveManualGiro`) + frontend wiring of P1A UI to backend. **Status: DONE LOCALLY 2026-05-26.** Frontend commit `addc6a7`; backup branch `backup/v2-manual-giro-p1c1-frontend-2026-05-26`. Build and realistic Entregas+Cocina smoke passed. Not deployed to Netlify; not pushed to main. Out of scope: `forno_out` aggregation, Cocina UI changes.
+- P1C.1 — migration + minimal backend endpoints (`createManualGiro`, `addOrderToManualGiro`, `removeOrderFromManualGiro`, `dissolveManualGiro`) + frontend wiring of P1A UI to backend. **Status: DONE AND LIVE 2026-05-26.** Frontend commit `addc6a7`; docs/deploy closure commit `267c9d0`; backup branch `backup/v2-manual-giro-p1c1-frontend-2026-05-26`; production Netlify deploy `6a158473fb848b0f501bf5ec`. Build, realistic Entregas+Cocina smoke, and authenticated production smoke passed. Out of scope: `forno_out` aggregation, Cocina UI changes.
 - P1C.2 — separate step: `forno_out` aggregation rule from §13 implemented behind a feature flag with default OFF. **Status: BLOCKED.** Gated by Q4 (pizzaiolo validation in real service).
 - P1D — Cocina mini-marker `manual G<n>` (single visual change, separate commit). **Status: not started, separate session, no dependency on P1C.2.**
 - P1E — human stress test in real service using §17 matrix. **Status: not started.** Verdict gate before any deploy.
 
 Each phase has its own backup branch and its own commit. No phase is implemented in the same session as the previous one without explicit operator authorization.
 
-## 19. Explicit no-deploy policy
+## 19. Explicit deploy policy
 
-- No deploy until P1E green and explicit operator authorization.
-- P1C.1 has no Netlify deploy yet. Before any Railway deploy from GitHub/main, reconcile backend main because production endpoints are live from Railway CLI while backend `origin/main` is behind.
+- No deploy without explicit operator authorization.
+- P1C.1 is already deployed to production. Future Netlify CLI deploys must target the correct site explicitly:
+  `netlify deploy --prod --site 02bd4c7a-a50b-4964-90da-8c1af1122932 --dir=ladieci-app33/build --functions=ladieci-app33/netlify/functions`.
 - Migration is a separate, reviewed step; rollback plan is "drop column and table" (column is nullable, table is independent).
 - Backup branch `backup/v2-manual-giro-p1c-migration-<date>` mandatory before P1C.1.
 - Backup branch `backup/v2-manual-giro-p1d-cocina-<date>` mandatory before P1D.
