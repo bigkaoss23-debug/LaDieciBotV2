@@ -38,6 +38,16 @@ const MANUAL_GIRO_STATES = new Set([
 const isManualGiroSelectableOrder = (o) =>
   o?.tipo_consegna === "DOMICILIO" && MANUAL_GIRO_STATES.has(o?.estado);
 
+// Label visivo "G<seq>" coerente con P1A. seq arriva dal backend (per-day, reset
+// giornaliero Madrid). Fallback parse dell'id `mg_<yymmdd>_<seq>` se metadata
+// non ancora caricata (race fetch).
+const formatGiroLabel = (giro) => {
+  if (!giro) return "G?";
+  if (typeof giro.seq === "number" && Number.isFinite(giro.seq)) return "G" + giro.seq;
+  const m = String(giro.id || "").match(/_(\d+)$/);
+  return m ? "G" + m[1] : "G?";
+};
+
 const warningStyle = (level = "soft") => ({
   display: "inline-flex",
   alignItems: "center",
@@ -159,8 +169,8 @@ const ZonaOrderRow = ({
               color: "#fbbf24", borderRadius: 999,
               padding: "2px 7px", fontSize: 10, fontWeight: 900,
               textTransform: "lowercase", whiteSpace: "nowrap"
-            }} title="Grupo local, no guardado">
-              giro manual · {manualGiro.id}
+            }} title="Giro manual persistente (backend)">
+              giro manual · {formatGiroLabel(manualGiro)}
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onRemoveFromManualGiro && onRemoveFromManualGiro(manualGiro.id, o.id); }}
@@ -410,9 +420,12 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const [loadingId,    setLoadingId]    = useState(null);
   const [driverStato,  setDriverStato]  = useState(null);
   const [apertoConsegnati, setApertoConsegnati] = useState(false);
+  // DELIVERY-MANUAL-GIRO-01 P1C.1: manualGiros è backend-derived (api.getManualGiros).
+  // selectedManualGiroOrderIds resta locale (selezione UI, mai persistita).
+  // pendingManualGiroAction disabilita i bottoni durante una mutation in volo.
   const [manualGiros, setManualGiros] = useState([]);
   const [selectedManualGiroOrderIds, setSelectedManualGiroOrderIds] = useState([]);
-  const [manualGiroSeq, setManualGiroSeq] = useState(1);
+  const [pendingManualGiroAction, setPendingManualGiroAction] = useState(false);
 
   // Legge DRIVER_STATO da Supabase ogni 15s
   useEffect(() => {
@@ -451,32 +464,65 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const toHora = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
   const activeManualGiroIds = new Set(entregas.filter(isManualGiroSelectableOrder).map(o => o.id));
 
+  // DELIVERY-MANUAL-GIRO-01 P1C.1: prune solo della selezione locale quando un
+  // ordine esce dagli stati selezionabili. I manual_giros restano backend-driven:
+  // l'hook cambiaStato lato Railway stacca + auto-dissolve, e il polling 10s
+  // sotto riallinea la metadata.
   useEffect(() => {
     const activeIds = new Set(
       ordenes.filter(isManualGiroSelectableOrder).map(o => o.id)
     );
-    setManualGiros(prev => prev
-      .map(g => ({ ...g, orderIds: g.orderIds.filter(id => activeIds.has(id)) }))
-      .filter(g => g.orderIds.length >= 2)
-    );
     setSelectedManualGiroOrderIds(prev => prev.filter(id => activeIds.has(id)));
   }, [ordenes]);
+
+  // Fetch manual giros metadata da backend + poll 10s.
+  // L'appartenenza orderId → giroId arriva da ordenes.manual_giro_id (popolato
+  // da api.getOrdenes/Realtime in App.jsx). Questo fetch serve per `seq`
+  // (label "G<n>") e per filtrare i dissolti durante una finestra di race.
+  useEffect(() => {
+    let mounted = true;
+    const safeLoad = async () => {
+      try {
+        const res = await api.getManualGiros();
+        if (!mounted) return;
+        if (Array.isArray(res)) setManualGiros(res);
+        else if (res && res.error) console.warn("[manualGiros] fetch error:", res.error);
+      } catch (e) {
+        console.warn("[manualGiros] fetch threw:", (e && e.message) || e);
+      }
+    };
+    safeLoad();
+    const poll = setInterval(safeLoad, 10000);
+    return () => { mounted = false; clearInterval(poll); };
+  }, []);
 
   const ordersById = {};
   for (const o of entregas) ordersById[o.id] = o;
 
-  const manualGiroByOrderId = {};
+  // Mappa orderId → giro metadata.
+  // Sorgente primaria: ordenes.manual_giro_id (membership autoritativa).
+  // Sorgente secondaria: manualGiros (metadata: seq, ecc.). Se la metadata non
+  // è ancora arrivata, fallback minimo {id, seq:null} per non perdere il chip.
+  // Filtra giri dissolved per evitare di mostrare chip su ordini il cui FK
+  // non è ancora stato pulito da un tick di realtime.
+  const giroMetaById = {};
   for (const giro of manualGiros) {
-    for (const id of giro.orderIds) {
-      if (activeManualGiroIds.has(id)) manualGiroByOrderId[id] = giro;
-    }
+    if (!giro.dissolved_at) giroMetaById[giro.id] = giro;
+  }
+  const manualGiroByOrderId = {};
+  for (const o of entregas) {
+    const gid = o.manual_giro_id;
+    if (!gid) continue;
+    manualGiroByOrderId[o.id] = giroMetaById[gid] || { id: gid, seq: null, order_ids: [] };
   }
 
   const manualGiroWarningsById = {};
   for (const giro of manualGiros) {
-    const giroOrders = giro.orderIds.map(id => ordersById[id]).filter(Boolean);
+    if (giro.dissolved_at) continue;
+    const ids = Array.isArray(giro.order_ids) ? giro.order_ids : [];
+    const giroOrders = ids.map(id => ordersById[id]).filter(Boolean);
     const warnings = buildManualGiroWarnings(giroOrders);
-    for (const id of giro.orderIds) manualGiroWarningsById[id] = warnings;
+    for (const id of ids) manualGiroWarningsById[id] = warnings;
   }
 
   const selectedManualGiroOrders = selectedManualGiroOrderIds
@@ -491,30 +537,85 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     );
   };
 
-  const createManualGiro = () => {
+  // DELIVERY-MANUAL-GIRO-01 P1C.1: refetch helper riusato dopo ogni mutation
+  // per riallineare metadata. Senza optimistic, ci affidiamo al backend + a
+  // questo refetch + a Supabase Realtime per ordenes.manual_giro_id.
+  const refetchManualGiros = async () => {
+    try {
+      const res = await api.getManualGiros();
+      if (Array.isArray(res)) setManualGiros(res);
+      else if (res && res.error) console.warn("[manualGiros] refetch error:", res.error);
+    } catch (e) {
+      console.warn("[manualGiros] refetch threw:", (e && e.message) || e);
+    }
+  };
+
+  const createManualGiro = async () => {
+    if (pendingManualGiroAction) return;
     const orderIds = selectedManualGiroOrderIds.filter(id => activeManualGiroIds.has(id));
     if (orderIds.length < 2) return;
-    const giroId = `G${manualGiroSeq}`;
-    const selectedSet = new Set(orderIds);
-    setManualGiroSeq(n => n + 1);
-    setManualGiros(prev => [
-      ...prev
-        .map(g => ({ ...g, orderIds: g.orderIds.filter(id => !selectedSet.has(id)) }))
-        .filter(g => g.orderIds.length >= 2),
-      { id: giroId, orderIds, createdAt: Date.now(), volatile: true }
-    ]);
-    setSelectedManualGiroOrderIds([]);
+    setPendingManualGiroAction(true);
+    try {
+      const res = await api.createManualGiro(orderIds);
+      if (res && res.ok) {
+        if (notify) notify(`✓ Giro manual creado · ${formatGiroLabel(res.giro)}`, "#22C55E");
+        setSelectedManualGiroOrderIds([]);
+      } else {
+        const code = res && res.error;
+        const msg = code === "invalid_orders" ? "Pedidos no elegibles"
+          : code === "some_orders_not_found" ? "Pedidos no encontrados"
+          : (code === "need_at_least_2_orders" || code === "need_at_least_2_distinct_orders") ? "Selecciona 2 pedidos"
+          : "Error al crear giro";
+        if (notify) notify("❌ " + msg, "#E8341C");
+        console.warn("[manualGiros] createManualGiro failed:", res);
+      }
+    } catch (e) {
+      console.warn("[manualGiros] createManualGiro threw:", e);
+      if (notify) notify("❌ Error de red", "#E8341C");
+    }
+    await refetchManualGiros();
+    setPendingManualGiroAction(false);
   };
 
-  const removeFromManualGiro = (giroId, orderId) => {
-    setManualGiros(prev => prev
-      .map(g => g.id === giroId ? { ...g, orderIds: g.orderIds.filter(id => id !== orderId) } : g)
-      .filter(g => g.orderIds.length >= 2)
-    );
+  // giroId ricevuto per compatibilità chiamante; backend usa solo orderId.
+  const removeFromManualGiro = async (_giroId, orderId) => {
+    if (pendingManualGiroAction) return;
+    setPendingManualGiroAction(true);
+    try {
+      const res = await api.removeOrderFromManualGiro(orderId);
+      if (res && res.ok) {
+        if (res.auto_dissolved && notify) {
+          notify("⚠️ Giro disuelto: quedan menos de 2 pedidos", "#fbbf24");
+        }
+      } else {
+        if (notify) notify("❌ Error al quitar pedido", "#E8341C");
+        console.warn("[manualGiros] removeOrderFromManualGiro failed:", res);
+      }
+    } catch (e) {
+      console.warn("[manualGiros] removeOrderFromManualGiro threw:", e);
+      if (notify) notify("❌ Error de red", "#E8341C");
+    }
+    await refetchManualGiros();
+    setPendingManualGiroAction(false);
   };
 
-  const dissolveManualGiro = (giroId) => {
-    setManualGiros(prev => prev.filter(g => g.id !== giroId));
+  const dissolveManualGiro = async (giroId) => {
+    if (pendingManualGiroAction) return;
+    setPendingManualGiroAction(true);
+    try {
+      const res = await api.dissolveManualGiro(giroId);
+      if (res && res.ok) {
+        if (notify) notify("✓ Giro disuelto", "#22C55E");
+      } else {
+        if (notify) notify("❌ Error al disolver", "#E8341C");
+        console.warn("[manualGiros] dissolveManualGiro failed:", res);
+      }
+    } catch (e) {
+      console.warn("[manualGiros] dissolveManualGiro threw:", e);
+      if (notify) notify("❌ Error de red", "#E8341C");
+    }
+    await refetchManualGiros();
+    setPendingManualGiroAction(false);
   };
 
   // Raggruppamento cluster-based per giro: stessa zona + delta ≤ GIRO_WINDOW_MIN dal primo dell'ordine.
@@ -709,7 +810,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     <div>
       <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}`}</style>
 
-      {/* Giro manual UI-only: stato locale volatile, nessuna API e nessuna persistenza. */}
+      {/* Giro manual persistente (P1C.1): selezione locale, mutazioni via api.createManualGiro. */}
       {selectedManualGiroOrderIds.length > 0 && (
         <div style={{
           marginBottom: 12,
@@ -729,21 +830,26 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
             <span key={w.key} style={warningStyle(w.level)}>{w.label}</span>
           ))}
           <span style={{ flex: 1 }} />
-          <button
-            type="button"
-            disabled={selectedManualGiroOrderIds.length < 2}
-            onClick={createManualGiro}
-            style={{
-              background: selectedManualGiroOrderIds.length >= 2 ? "rgba(251,191,36,0.22)" : "rgba(255,255,255,0.05)",
-              border: `1px solid ${selectedManualGiroOrderIds.length >= 2 ? "rgba(251,191,36,0.60)" : "rgba(255,255,255,0.10)"}`,
-              color: selectedManualGiroOrderIds.length >= 2 ? "#fde68a" : "rgba(255,255,255,0.30)",
-              borderRadius: 9, padding: "7px 12px",
-              fontSize: 12, fontWeight: 900,
-              cursor: selectedManualGiroOrderIds.length >= 2 ? "pointer" : "not-allowed"
-            }}
-          >
-            Crear giro manual
-          </button>
+          {(() => {
+            const enabled = selectedManualGiroOrderIds.length >= 2 && !pendingManualGiroAction;
+            return (
+              <button
+                type="button"
+                disabled={!enabled}
+                onClick={createManualGiro}
+                style={{
+                  background: enabled ? "rgba(251,191,36,0.22)" : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${enabled ? "rgba(251,191,36,0.60)" : "rgba(255,255,255,0.10)"}`,
+                  color: enabled ? "#fde68a" : "rgba(255,255,255,0.30)",
+                  borderRadius: 9, padding: "7px 12px",
+                  fontSize: 12, fontWeight: 900,
+                  cursor: enabled ? "pointer" : "not-allowed"
+                }}
+              >
+                {pendingManualGiroAction ? "..." : "Crear giro manual"}
+              </button>
+            );
+          })()}
           <button
             type="button"
             onClick={() => setSelectedManualGiroOrderIds([])}

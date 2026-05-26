@@ -376,6 +376,26 @@ const api = {
     return proxyPost({ action:'chiudiGiro' });
   },
 
+  // ── Manual giros (DELIVERY-MANUAL-GIRO-01 P1C.1) ──────────────
+  // Backend è la fonte di verità: ordenes.manual_giro_id + tabella
+  // manual_giros con seq per service day. Vedi LaDieciBotV2_DELIVERY_MANUAL_GIRO_01BC_SPEC.md.
+  // addOrderToManualGiro esiste lato backend ma è fuori scope S3 (no workflow UI).
+  getManualGiros: function(opts = {}) {
+    const params = {};
+    if (opts.day) params.day = opts.day;
+    if (opts.onlyActive === false) params.onlyActive = "false";
+    return proxyGet("getManualGiros", params);
+  },
+  createManualGiro: function(order_ids) {
+    return proxyPost({ action: "createManualGiro", order_ids });
+  },
+  removeOrderFromManualGiro: function(order_id) {
+    return proxyPost({ action: "removeOrderFromManualGiro", order_id });
+  },
+  dissolveManualGiro: function(giro_id) {
+    return proxyPost({ action: "dissolveManualGiro", giro_id });
+  },
+
   // ── Geo cache (non critico per chiusura) ───────────────────────
   // ⚠️ Chiamare SOLO dopo che l'operatore ha confermato l'ordine — non durante il typing.
   // Rifiuta lat/lon nulli: senza coordinate non serve cachare (non possiamo calcolare nulla).
