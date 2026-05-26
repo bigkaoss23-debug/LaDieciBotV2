@@ -112,7 +112,7 @@ Only after product and data contract are approved:
 
 ### DELIVERY-MANUAL-GIRO-01E — Service Validation
 
-Status: P1C.1 realistic smoke PASSED 2026-05-26 and production authenticated smoke PASSED after deploy. Broader real-service validation remains future work.
+Status: P1C.1 realistic smoke PASSED 2026-05-26 and production authenticated smoke PASSED after deploy. Light P1E stress on production PASSED 2026-05-26 (see P1E section below). Broader real-service validation during a full live service remains future work.
 
 Validate during or after a real service:
 
@@ -166,6 +166,30 @@ P1D-MIN production closure 2026-05-26:
 - Production smoke passed: app loaded; existing session/login available without exposing PIN; `Servicio > Entregas` loaded with `Sin entregas a domicilio`; `Servicio > Cocina` loaded with `Cocina al día — sin pedidos`; no visible crash; no test orders created; no real data touched.
 - Scope remained frontend only: no backend, no DB schema, no Repartidor/Economia, no `forno_out` write.
 
+P1E light stress on production 2026-05-26 (service readiness):
+- Target: live frontend `eaf9e1a` on Netlify site `magnificent-lollipop-6dff70` against backend `e14abd6` on Railway.
+- Manual giro exercised on Entregas and Cocina with real-shape delivery test orders.
+- 2-order giro OK.
+- 3-order giro OK.
+- Remove from 3-order giro OK.
+- Remove from 2-order giro auto-dissolved the giro OK.
+- State transition while in giro OK.
+- Multi-tab / refresh persistence OK.
+- No blocking bug observed.
+- Chiusura servizio with active giro was NOT exercised in production because it is invasive; deferred to future controlled validation.
+- Non-blocking warning: `Problema servicio` appeared once and self-normalized; backend `/health` and `/status` stayed green, database green.
+- Non-blocking observation: B/C slot times slid due to real driver/cascade logic, not a manual-giro bug.
+- Cleanup completed:
+  - test orders/clients `699000501`, `699000502`, `699000503` removed;
+  - storico 0;
+  - `manual_giros` activos `[]`;
+  - audit rows `mg_260526_4`, `mg_260526_5`, `mg_260526_6`, `mg_260526_7` left as dissolved.
+- Cleanup notes:
+  - Supabase anon delete was blocked by RLS and not used.
+  - Orders deletion used the backend `eliminaOrdine` endpoint.
+  - Client deletion used the Railway server-side key only in memory, with no secret printed or persisted.
+- Scope remained frontend-runtime only: no code change, no deploy, no DB schema change, no backend code change, no `forno_out` write, no Repartidor/Economia work.
+
 ## 8. Workstreams Suspended
 
 Economia/caja:
@@ -210,7 +234,7 @@ Done means:
 - Minimum tests above pass.
 - Documentation is updated in this roadmap and master context if behavior changes.
 
-Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract approved; P1C.1 frontend persistence wiring committed (`addc6a7`), backend main/prod aligned at `e14abd6`, and Netlify production deployed. P1D-MIN Cocina visibility is also live at `eaf9e1a`, with production deploy `6a159b40ef9b5b0b4e8ec515`. Full P1 still requires broader real-service validation 01E; P1C.2 `forno_out` aggregation remains blocked.
+Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract approved; P1C.1 frontend persistence wiring committed (`addc6a7`), backend main/prod aligned at `e14abd6`, and Netlify production deployed. P1D-MIN Cocina visibility is also live at `eaf9e1a`, with production deploy `6a159b40ef9b5b0b4e8ec515`. P1E light stress on production passed against `eaf9e1a` / `e14abd6` with cleanup completed and no blocking bug; chiusura servizio with active giro was deliberately not exercised in production. Full P1 still requires broader real-service validation during a live service; P1C.2 `forno_out` aggregation remains blocked.
 
 ## 11. Rules For Future Codex Sessions
 

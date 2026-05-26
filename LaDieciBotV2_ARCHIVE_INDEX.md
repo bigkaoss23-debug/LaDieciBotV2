@@ -13,6 +13,7 @@ This index classifies documentation so future sessions know what to read, what t
 - Duplicate project folders in `Downloads` are not canonical unless a human explicitly designates them.
 - P1C.1 frontend manual-giro persistence is live on Netlify production as of 2026-05-26. Frontend feature commit `addc6a7` and docs/deploy closure commit `267c9d0` are recorded; deploy ID `6a158473fb848b0f501bf5ec` on site `magnificent-lollipop-6dff70`.
 - P1D-MIN Cocina manual-giro visibility is live on Netlify production as of 2026-05-26. Frontend commit `eaf9e1a` is backed up on `backup/v2-manual-giro-p1d-min-cocina-2026-05-26`; deploy ID `6a159b40ef9b5b0b4e8ec515` on site `magnificent-lollipop-6dff70`.
+- P1E light stress on production passed 2026-05-26 against live frontend `eaf9e1a` and backend `e14abd6`: 2-order, 3-order, remove, auto-dissolve, state transition, multi-tab/refresh all OK; chiusura servizio with active giro was deliberately not exercised in production; cleanup completed (`manual_giros` activos `[]`, audit `mg_260526_4/5/6/7` left dissolved). No code, no deploy, no DB schema, no backend code change.
 - Backend manual-giro endpoints are live and backend local HEAD/`origin/main`/Railway production were aligned to `e14abd6e93be2bf85ca64ad2649ba8fd3b54ea34` before the frontend deploy.
 - Future Netlify CLI deploys must use the correct site ID: `--site 02bd4c7a-a50b-4964-90da-8c1af1122932`. The accidental `soft-stroopwafel-e517fe` deploy is not production truth.
 
