@@ -112,7 +112,7 @@ Only after product and data contract are approved:
 
 ### DELIVERY-MANUAL-GIRO-01E — Service Validation
 
-Status: P1C.1 realistic smoke PASSED 2026-05-26 and production authenticated smoke PASSED after deploy. Light P1E stress on production PASSED 2026-05-26 (see P1E section below). Broader real-service validation during a full live service remains future work.
+Status: P1C.1 realistic smoke PASSED 2026-05-26 and production authenticated smoke PASSED after deploy. Light P1E stress on production PASSED 2026-05-26 (see P1E section below). P1F zone-stress on production PASSED 2026-05-26 (see P1F section below). Broader real-service validation during a full live service remains future work.
 
 Validate during or after a real service:
 
@@ -190,6 +190,41 @@ P1E light stress on production 2026-05-26 (service readiness):
   - Client deletion used the Railway server-side key only in memory, with no secret printed or persisted.
 - Scope remained frontend-runtime only: no code change, no deploy, no DB schema change, no backend code change, no `forno_out` write, no Repartidor/Economia work.
 
+P1F zone-stress on production 2026-05-26 (cascade and multi-zone manual giro):
+- Target: live frontend `eaf9e1a` reached via localhost `netlify dev` :8888 (authenticated UI, JWT operator session), backend `e14abd6` on Railway production.
+- 8 real-shape DOMICILIO orders created via UI, all EN_COCINA, item `1x El Pelusa`, marker `TEST_ZONE_STRESS_2026-05-26_DELETE_OK`:
+  - A `#001` tel `699000601` Q1 ANTONIO MACHADO, 69 — req 21:00 → final 21:00 (slip 0), forno_out 20:52.
+  - B `#002` tel `699000602` Q1 JUAN CARLOS I, 55 — req 21:05 → final 21:15 (slip +10), forno_out 21:11.
+  - C `#003` tel `699000603` Q2 Avenida del Sabinar 180 — req 21:10 → final 21:33 (slip +23), forno_out 21:22.
+  - D `#004` tel `699000604` Q2 SAN JOSE OBRERO, 120 — req 21:15 → final 21:55 (slip +40), forno_out 21:47.
+  - E `#005` tel `699000605` Q3 Avenida Al Andalus 85 — req 21:20 → final 22:14 (slip +54), forno_out 22:06.
+  - F `#006` tel `699000606` Q3 PATERNA DEL RIO, 3 — req 21:25 → final 22:33 (slip +68), forno_out 22:25.
+  - G `#007` tel `699000607` Q1 Calle Real 10 — req 21:30 → final 22:47 (slip +77), forno_out 22:44.
+  - H `#008` tel `699000608` Q2 Calle Cuba 1 — req 21:35 → final 22:59 (slip +84), forno_out 22:53.
+- Real Roquetas addresses were sourced from the existing `clientes` table to ensure proper zone detection (zone polygon definitions live in `ladieci-app33/src/core/delivery/zonesData.js`).
+- Cascade behavior is consistent with each zone's `tempoGiro` and `maxOrdiniPerGiro`. Slip grows monotonically as horno saturates.
+- Entregas: all 8 visible, grouped by zone (3 Q1 / 3 Q2 / 2 Q3) with zone headers and ETA. Cocina: all 8 visible with item.
+- 3 manual giros tested:
+  - Giro 1: Q1+Q1 (`#001`+`#002`) → `mg_260526_9`. Chip Entregas + badge Cocina `GIRO MANUAL · G9` + refresh persistence + disolver OK.
+  - Giro 2: Q2+Q3 (`#003`+`#005`) → `mg_260526_11`. Chip + badge `G11` + refresh + disolver OK.
+  - Giro 3: Q1+Q2+Q3 (`#006`+`#007`+`#008`) → `mg_260526_12`. Chip + badge `G12` on 3 cards + refresh + disolver OK.
+- Final `manual_giros` activos `[]`. No giro left active.
+- `Problema servicio`: not observed during test.
+- UI stability: no slowdown on order creation, manual giro creation, refresh.
+- Bug bloccanti: 0.
+- Warning non bloccanti:
+  1. Slip > 30 min vs requested customer time does not surface a strong UI warning. Operator-facing alert would help.
+  2. Modal Nuevo pedido leaves a residual side-panel "Entrega a domicilio" until ✕ is clicked (cosmetic).
+  3. Order-selection `+` buttons in Entregas reshuffle indices after each click — only an issue for automation scripts; a human operator clicks the visible card.
+  4. Backend `eliminaOrdine` returns `success:true` even for non-matching id (e.g. `1` vs `#001`) — caller must pass id in `#NNN` form.
+- Cleanup completed:
+  - 8 ordenes (`#001`–`#008`) removed via backend `eliminaOrdine` endpoint (id passed as `#NNN`).
+  - 8 clientes (`id` 196–203, tel 699000601–699000608, nombre matching `TEST_%_ZS`) removed via SQL.
+  - storico 0 for the test telephone range.
+  - manual_giros activos `[]`; audit rows `mg_260526_8/9/10/11/12` left as dissolved (mg_8 was a transient mis-grouping I dissolved and recreated as mg_9; mg_10 was a retry that I also dissolved before mg_11/12).
+- Scope: no code change, no deploy, no backend code change, no DB schema change, no `forno_out` write, no Repartidor/Economia, no main push.
+- Dev server `netlify dev` :8888 stopped after cleanup; port released.
+
 ## 8. Workstreams Suspended
 
 Economia/caja:
@@ -234,7 +269,7 @@ Done means:
 - Minimum tests above pass.
 - Documentation is updated in this roadmap and master context if behavior changes.
 
-Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract approved; P1C.1 frontend persistence wiring committed (`addc6a7`), backend main/prod aligned at `e14abd6`, and Netlify production deployed. P1D-MIN Cocina visibility is also live at `eaf9e1a`, with production deploy `6a159b40ef9b5b0b4e8ec515`. P1E light stress on production passed against `eaf9e1a` / `e14abd6` with cleanup completed and no blocking bug; chiusura servizio with active giro was deliberately not exercised in production. Full P1 still requires broader real-service validation during a live service; P1C.2 `forno_out` aggregation remains blocked.
+Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract approved; P1C.1 frontend persistence wiring committed (`addc6a7`), backend main/prod aligned at `e14abd6`, and Netlify production deployed. P1D-MIN Cocina visibility is also live at `eaf9e1a`, with production deploy `6a159b40ef9b5b0b4e8ec515`. P1E light stress on production passed against `eaf9e1a` / `e14abd6` with cleanup completed and no blocking bug; chiusura servizio with active giro was deliberately not exercised in production. P1F zone-stress on production passed against the same live targets, with 8 multi-zone orders, cascade slip 0–+84 min, 3 manual giros (Q1+Q1, Q2+Q3, Q1+Q2+Q3) all green, cleanup completed; no blocking bug. Full P1 still requires broader real-service validation during a live service; P1C.2 `forno_out` aggregation remains blocked.
 
 ## 11. Rules For Future Codex Sessions
 
