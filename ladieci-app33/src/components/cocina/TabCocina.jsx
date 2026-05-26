@@ -7,6 +7,13 @@ import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import SnoozeButton from '../ui/SnoozeButton';
 import { ORDER_STATES } from '../../core/orders';
+import {
+  buildManualGiroMetaById,
+  formatManualGiroLabel,
+  getManualGiroForOrder,
+  manualGiroBadgeStyle,
+  manualGiroSortAnchorMs
+} from './manualGiroCocina';
 
 // hora = orario consegna cliente → horaForno = hora − tempoAndata(ordine)
 // = orario in cui la pizza esce dal forno = momento partenza driver.
@@ -30,6 +37,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
   const [anyadirCat, setAnyadirCat]       = useState("Pizzas");
   const [anyadirItems, setAnyadirItems]   = useState([]);
   const [anyadirSaving, setAnyadirSaving] = useState(false);
+  const [manualGiros, setManualGiros] = useState([]);
   // Override locale ottimistico per ui_offset_min — il polling/WS poi sincronizza
   const [localOffsets, setLocalOffsets] = useState({});
   const handleOffsetChange = (id, val) => {
@@ -46,6 +54,23 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
     const i = setInterval(()=>setNow(Date.now()),1000);
     return()=>clearInterval(i);
   },[]);
+
+  useEffect(() => {
+    let mounted = true;
+    const safeLoad = async () => {
+      try {
+        const res = await api.getManualGiros();
+        if (!mounted) return;
+        if (Array.isArray(res)) setManualGiros(res);
+        else if (res && res.error) console.warn("[cocina manualGiros] fetch error:", res.error);
+      } catch (e) {
+        console.warn("[cocina manualGiros] fetch threw:", (e && e.message) || e);
+      }
+    };
+    safeLoad();
+    const poll = setInterval(safeLoad, 10000);
+    return () => { mounted = false; clearInterval(poll); };
+  }, []);
 
   // La campanella suona solo quando il pizzaiolo schiaccia LISTO — sotto, sul click del bottone.
   // Nessun trigger automatico sui cambi di fase (toglie rumore e lascia il controllo al pizzaiolo).
@@ -120,7 +145,9 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
     return false;
   };
 
-  const activos = ordenes
+  const manualGiroMetaById = buildManualGiroMetaById(manualGiros);
+
+  const activosBase = ordenes
     .filter(o=>o.estado===ORDER_STATES.EN_COCINA)
     .map(o=>{
       // Applica override ottimistico ui_offset_min (se presente, sovrascrive il valore polled)
@@ -141,16 +168,21 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
       const nPizze = items.reduce((s,it) => s + (parseInt(it.q)||1), 0);
       // Il timer usa horaForno come deadline (non hora)
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;
-      return {...o, items, extras, horaForno, nPizze, isDelivery, zonaObj, _timer: calcTimer(oPerTimer, now)};
+      const manualGiro = getManualGiroForOrder(o, manualGiroMetaById);
+      return {...o, items, extras, horaForno, nPizze, isDelivery, zonaObj, manualGiro, _timer: calcTimer(oPerTimer, now)};
     })
-    .filter(o=>o.items.length>0 || o.extras.length>0)
-    .sort((a,b)=>{
+    .filter(o=>o.items.length>0 || o.extras.length>0);
+
+  const activos = [...activosBase].sort((a,b)=>{
       const aH = a.horaForno || a.hora, bH = b.horaForno || b.hora;
       if(aH&&bH){
-        const aMs=orarioToMs(aH)||0,bMs=orarioToMs(bH)||0;
+        const aMs=manualGiroSortAnchorMs(a, activosBase)||0,bMs=manualGiroSortAnchorMs(b, activosBase)||0;
         // A parità di slot 10min → RITIRO viene PRIMA (max 5min ritardo accettabile per delivery)
         const aSlot10 = Math.floor(aMs/(10*60*1000));
         const bSlot10 = Math.floor(bMs/(10*60*1000));
+        if (a.manual_giro_id && a.manual_giro_id === b.manual_giro_id) {
+          return (orarioToMs(aH)||0) - (orarioToMs(bH)||0);
+        }
         if (aSlot10 === bSlot10 && a.isDelivery !== b.isDelivery) return a.isDelivery ? 1 : -1;
         return aMs-bMs;
       }
@@ -199,6 +231,13 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                   <div>
                     <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:"#fff",fontSize:20,lineHeight:1}}>{o.id}</div>
                     <div style={{color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:14,marginTop:3}}>👤 {o.nombre}</div>
+                    {o.manualGiro && (
+                      <div style={{marginTop:6}}>
+                        <span style={manualGiroBadgeStyle(false)}>
+                          giro manual · {formatManualGiroLabel(o.manualGiro)}
+                        </span>
+                      </div>
+                    )}
                     {/* Orario forno (sopra) + consegna (sotto) — 2 bottoni distinti */}
                     {(o.horaForno || o.hora) && (
                       <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:5,marginTop:5}}>

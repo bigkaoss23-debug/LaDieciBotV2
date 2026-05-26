@@ -5,6 +5,14 @@ import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import Suoni from '../../sounds';
 import SnoozeButton from '../ui/SnoozeButton';
+import { api } from '../../api';
+import {
+  buildManualGiroMetaById,
+  formatManualGiroLabel,
+  getManualGiroForOrder,
+  manualGiroBadgeStyle,
+  manualGiroSortAnchorMs
+} from './manualGiroCocina';
 
 const subtractMinutes = (hora, min) => {
   if (!hora || !min) return null;
@@ -16,6 +24,7 @@ const subtractMinutes = (hora, min) => {
 
 const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=new Set(), pizzeFatte=0}) => {
   const [now, setNow] = useState(Date.now());
+  const [manualGiros, setManualGiros] = useState([]);
   // Override locale ottimistico per ui_offset_min — il polling/WS poi sincronizza
   const [localOffsets, setLocalOffsets] = useState({});
   const handleOffsetChange = (id, val) => {
@@ -25,6 +34,22 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
     const i = setInterval(()=>setNow(Date.now()),1000);
     return()=>clearInterval(i);
   },[]);
+  useEffect(() => {
+    let mounted = true;
+    const safeLoad = async () => {
+      try {
+        const res = await api.getManualGiros();
+        if (!mounted) return;
+        if (Array.isArray(res)) setManualGiros(res);
+        else if (res && res.error) console.warn("[panel cocina manualGiros] fetch error:", res.error);
+      } catch (e) {
+        console.warn("[panel cocina manualGiros] fetch threw:", (e && e.message) || e);
+      }
+    };
+    safeLoad();
+    const poll = setInterval(safeLoad, 10000);
+    return () => { mounted = false; clearInterval(poll); };
+  }, []);
   const w = useWidth();
   const cols = w >= 680 ? 3 : w >= 420 ? 2 : 1;
 
@@ -40,7 +65,9 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
     if (cat === "Postres" && it.n !== "Pizza Nutella") return true;
     return false;
   };
-  const activos = ordenes
+  const manualGiroMetaById = buildManualGiroMetaById(manualGiros);
+
+  const activosBase = ordenes
     .filter(o => o.estado==="EN_COCINA")
     .map(o => {
       // Applica override ottimistico ui_offset_min (se presente, sovrascrive il valore polled)
@@ -57,22 +84,27 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       // Snooze visivo per-card: solo DOMICILIO usa l'offset
       const horaForno = isDelivery ? applyUiOffset(horaFornoBase, o.ui_offset_min) : horaFornoBase;
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;
+      const manualGiro = getManualGiroForOrder(o, manualGiroMetaById);
       return {
         ...o,
         items,
         extras: all.filter(it => isExtra(it)),
-        isDelivery, horaForno,
+        isDelivery, horaForno, manualGiro,
         _timer: calcTimer(oPerTimer, now)
       };
     })
-    .filter(o => o.items.length > 0 || o.extras.length > 0)
-    .sort((a,b) => {
+    .filter(o => o.items.length > 0 || o.extras.length > 0);
+
+  const activos = [...activosBase].sort((a,b) => {
       const aH = a.horaForno || a.hora, bH = b.horaForno || b.hora;
       if(aH && bH) {
-        const aMs = orarioToMs(aH)||0, bMs = orarioToMs(bH)||0;
+        const aMs = manualGiroSortAnchorMs(a, activosBase)||0, bMs = manualGiroSortAnchorMs(b, activosBase)||0;
         // A parità di slot 10min → RITIRO viene PRIMA (max 5min ritardo accettabile per delivery)
         const aSlot10 = Math.floor(aMs/(10*60*1000));
         const bSlot10 = Math.floor(bMs/(10*60*1000));
+        if (a.manual_giro_id && a.manual_giro_id === b.manual_giro_id) {
+          return (orarioToMs(aH)||0) - (orarioToMs(bH)||0);
+        }
         if (aSlot10 === bSlot10 && a.isDelivery !== b.isDelivery) return a.isDelivery ? 1 : -1;
         return aMs - bMs;
       }
@@ -221,6 +253,13 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                       <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:20,lineHeight:1}}>{o.id}</div>
                       <div style={{color:fc.textLight,opacity:0.85,fontWeight:700,fontSize:14,marginTop:3,
                         whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {o.nombre}</div>
+                      {o.manualGiro && (
+                        <div style={{marginTop:6}}>
+                          <span style={manualGiroBadgeStyle(true)}>
+                            giro manual · {formatManualGiroLabel(o.manualGiro)}
+                          </span>
+                        </div>
+                      )}
                       {(o.horaForno || o.hora) && (
                         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:5,marginTop:5}}>
                           <div style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
