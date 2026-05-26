@@ -1,6 +1,6 @@
 # La Dieci Bot V2 — Master Context
 
-Last consolidated: 2026-05-25.
+Last consolidated: 2026-05-26.
 
 This is the canonical starting context for future Codex/ChatGPT sessions on La Dieci Bot V2. Prefer this file over older prompts, recaps, post-mortems, and micro-step notes.
 
@@ -29,6 +29,7 @@ Verified from documentation and local git history only. Not verified by touching
 - Netlify site ID documented: `02bd4c7a-a50b-4964-90da-8c1af1122932`
 - Netlify deploy ID after functions fix documented: `6a11e94208f97065b195843b`
 - Backend live commit documented after 2026-05-22 service fix: `f60e1bb`
+- Backend production manual-giro endpoints were deployed via Railway CLI during P1C.1 work, but backend `origin/main` is still behind that live state. Risk: any future auto-deploy from GitHub `main` can roll back the manual-giro backend unless backend main is reconciled first.
 - Backend `/health` documented as live.
 - Backend `/version` was documented as missing/future in the 2026-05-22 post-mortem and must not be assumed live without verification.
 
@@ -37,7 +38,7 @@ Verified from documentation and local git history only. Not verified by touching
 Current local audit state:
 
 - Local branch: `main`
-- Local HEAD at audit time: `a8f97da fix make manual giro selection discoverable`
+- Local HEAD after P1C.1 frontend closure: `addc6a7 feat persist manual delivery giros in entregas`
 - `origin/main` at audit time: `d70df9c add order telemetry summary and fix lockfile`
 - Local `main` was ahead of `origin/main` by 137 commits.
 
@@ -57,6 +58,7 @@ Important backup branches include:
 - `origin/backup/v2-fix-driver-loading-salida-2026-05-25`
 - `origin/backup/v2-manual-giro-operator-stress-test-2026-05-25`
 - `origin/backup/v2-manual-giro-ux-discoverability-2026-05-25`
+- `origin/backup/v2-manual-giro-p1c1-frontend-2026-05-26` → `addc6a736d8d87758a7c7eb78b0439903ea005b7`
 
 Backup branches may contain newer work than `origin/main`; they are references, not automatic proof of production.
 
@@ -108,7 +110,11 @@ Main operational modules:
 Active P1:
 
 - `DELIVERY-MANUAL-GIRO-01`
-- 01A (volatile UI prototype) closed as APPROVE AS UI PROTOTYPE on 2026-05-25 (commit `a8f97da` UX discoverability fix). 01B/01C/01D not started.
+- 01A (volatile UI prototype) closed as APPROVE AS UI PROTOTYPE on 2026-05-25 (commit `a8f97da` UX discoverability fix).
+- 01B/P1C data contract approved with hybrid model (`manual_giros` + `ordenes.manual_giro_id`).
+- P1C.1 frontend persistence wiring closed locally on 2026-05-26: commit `addc6a736d8d87758a7c7eb78b0439903ea005b7` (`addc6a7 feat persist manual delivery giros in entregas`), backup branch `backup/v2-manual-giro-p1c1-frontend-2026-05-26`. No Netlify deploy and no push to main yet.
+- P1C.1 realistic smoke passed with two real delivery orders visible in Entregas and Cocina (Q1/Q2, 21:20/21:40, `1x El Pelusa`): create giro, refresh persistence, remove auto-dissolve, explicit dissolve, final `getManualGiros=[]`, no Cocina marker, `forno_out` unchanged. Test DB cleanup completed for orders/clients `699000301/699000302`; `mg_260526_1` and `mg_260526_2` left as dissolved audit rows.
+- P1C.2 (`forno_out` aggregation) remains blocked; P1D Cocina marker not started.
 
 Suspended:
 

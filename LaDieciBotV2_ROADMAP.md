@@ -1,6 +1,6 @@
 # La Dieci Bot V2 — Roadmap
 
-Last consolidated: 2026-05-25.
+Last consolidated: 2026-05-26.
 
 This is the canonical roadmap for future sessions. It separates active work from suspended, planned, and historical work. Do not treat older planning files as current unless this roadmap points to them.
 
@@ -87,6 +87,8 @@ No ETA calculations.
 
 ### DELIVERY-MANUAL-GIRO-01C — Data Contract
 
+Status: DONE 2026-05-26 for P1C.1 persistence/wiring. Hybrid model approved and implemented across backend + frontend; frontend local commit `addc6a7` is backed up at `backup/v2-manual-giro-p1c1-frontend-2026-05-26`. No Netlify deploy yet; no push to main.
+
 Decide the smallest safe data shape:
 
 - group identifier or order-level marker;
@@ -99,6 +101,8 @@ No migration or database work until human approval.
 
 ### DELIVERY-MANUAL-GIRO-01D — Implementation
 
+Status: PARTIAL. P1C.1 implementation is locally complete and tested for Entregas persistence. Cocina marker remains intentionally not implemented; `forno_out` aggregation remains blocked.
+
 Only after product and data contract are approved:
 
 - implement minimal frontend behavior;
@@ -107,6 +111,8 @@ Only after product and data contract are approved:
 - do not deploy without explicit request.
 
 ### DELIVERY-MANUAL-GIRO-01E — Service Validation
+
+Status: P1C.1 local realistic smoke PASSED 2026-05-26; real-service validation still pending before deploy.
 
 Validate during or after a real service:
 
@@ -137,6 +143,15 @@ Reference test sources:
 - `LaDieciBotV2_DELIVERY_ETA_STRESS_MATRIX.md`
 - `LaDieciBotV2_TEST_MATRIX.md`
 - `ORDINI_2026-05-23.md` for manual/untrusted evidence
+
+P1C.1 smoke closure 2026-05-26:
+- Two real delivery orders with real items were created via normal order flow: Q1/Q2, `hora` 21:20/21:40, each `1x El Pelusa`.
+- Orders were visible in Entregas and Cocina.
+- Create manual giro succeeded (`mg_260526_1`), chip `giro manual · G1` persisted after refresh.
+- Removing one order auto-dissolved the giro and returned `getManualGiros=[]`.
+- Recreate succeeded (`mg_260526_2`), explicit `disolver` cleared chips and returned `getManualGiros=[]`.
+- Cocina stayed read-only for the feature: no manual-giro marker, no UI change, `forno_out` unchanged (`21:05`, `21:38`).
+- Cleanup removed only test orders/clients `699000301/699000302`; `mg_260526_1` and `mg_260526_2` remain dissolved audit rows.
 
 ## 8. Workstreams Suspended
 
@@ -182,7 +197,7 @@ Done means:
 - Minimum tests above pass.
 - Documentation is updated in this roadmap and master context if behavior changes.
 
-Note 2026-05-25: 01A volatile prototype criteria met for UI-only scope. Full P1 done requires 01B/01C/01D + service validation 01E. Not started.
+Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract approved; P1C.1 frontend persistence wiring committed locally (`addc6a7`) and backup pushed. Full P1 still requires production deploy authorization, backend-main reconciliation to avoid Railway rollback, P1D Cocina marker decision/implementation if still desired, and real-service validation 01E.
 
 ## 11. Rules For Future Codex Sessions
 

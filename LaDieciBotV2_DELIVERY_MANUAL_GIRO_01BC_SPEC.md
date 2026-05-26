@@ -1,8 +1,10 @@
 # La Dieci Bot V2 — DELIVERY-MANUAL-GIRO-01B/01C Spec
 
-Last drafted: 2026-05-25.
+Last updated: 2026-05-26.
 
-Scope: spec markdown only for the future persistent version of `DELIVERY-MANUAL-GIRO-01`. Successor of P1A (volatile UI prototype, commit `a8f97da`, verdict APPROVE AS UI PROTOTYPE). No code, no migration, no deploy decisions inside this file — those happen after the explicit Decision Gate in §6.
+Scope: spec markdown only for the future persistent version of `DELIVERY-MANUAL-GIRO-01`. Successor of P1A (volatile UI prototype, commit `a8f97da`, verdict APPROVE AS UI PROTOTYPE). No deploy decisions inside this file — those happen after explicit operator authorization.
+
+Current closure note 2026-05-26: P1C.1 backend endpoints and frontend Entregas wiring are implemented and locally validated. Frontend commit `addc6a736d8d87758a7c7eb78b0439903ea005b7` (`addc6a7 feat persist manual delivery giros in entregas`) is backed up at `backup/v2-manual-giro-p1c1-frontend-2026-05-26`. No Netlify deploy and no push to main yet. Backend production endpoints are live from Railway CLI deploy, but backend `origin/main` is behind and must be reconciled before any GitHub-main-triggered Railway deploy.
 
 ## 1. Goal / Non-goal
 
@@ -64,15 +66,15 @@ Motivation:
 
 ### Decision Gate — APPROVED 2026-05-25
 
-Operator approved Option C as the persistence model. P1C.1 is unblocked for persistence + endpoints + frontend wiring base only. P1C.2 (forno_out aggregation, §13) remains blocked behind a feature flag with default OFF and requires pizzaiolo validation in real service before any activation. Cocina UI changes stay out of scope until P1D. See §20 for per-question answers (Q1, Q2, Q3, Q5, Q6, Q7, Q8 decided; Q4 still blocked).
+Operator approved Option C as the persistence model. P1C.1 persistence + endpoints + frontend wiring base completed locally by 2026-05-26. P1C.2 (forno_out aggregation, §13) remains blocked behind a feature flag with default OFF and requires pizzaiolo validation in real service before any activation. Cocina UI changes stay out of scope until P1D. See §20 for per-question answers (Q1, Q2, Q3, Q5, Q6, Q7, Q8 decided; Q4 still blocked).
 
 ## 7. UI impact in Entregas
 
 P1A keeps working visually. Internal change:
 - `manualGiros` state derived from `ordenes` fetch (group by `manual_giro_id`), not from local `useState`.
 - `manualGiroSeq` removed; display label uses `manual_giros.seq` from backend.
-- Create/add/remove/dissolve trigger backend calls, with optimistic update + rollback on error.
-- WebSocket / poll already used elsewhere — same pattern, no new infra.
+- Create/remove/dissolve trigger backend calls, with refetch after mutations and no optimistic giro membership update.
+- Existing `ordenes` fetch/realtime provides `manual_giro_id`; frontend polls `getManualGiros` for metadata (`seq`, active/dissolved state). No new realtime channel.
 
 Visual surface (chip, helper text, `+` button, action bar, warnings) unchanged from `a8f97da`.
 
@@ -172,10 +174,25 @@ Reuse cases A01–H05 from `LaDieciBotV2_DELIVERY_MANUAL_GIRO_OPERATOR_STRESS_TE
 
 Operator verdict template same as P1A matrix.
 
+### P1C.1 realistic smoke result — PASSED 2026-05-26
+
+Local frontend + Railway backend smoke used two normal delivery orders with real kitchen items:
+- `TEST_GIRO_COCINA_2026-05-26_DELETE_OK_A`, tel `699000301`, Q1, `hora` 21:20, `1x El Pelusa`, `forno_out` 21:05.
+- `TEST_GIRO_COCINA_2026-05-26_DELETE_OK_B`, tel `699000302`, Q2, `hora` 21:40, `1x El Pelusa`, `forno_out` 21:38.
+
+Validated:
+- Both orders visible in Entregas and Cocina before grouping.
+- `createManualGiro` from UI created `mg_260526_1` and chip `giro manual · G1`.
+- Page refresh preserved the chip.
+- Removing one order auto-dissolved the giro with toast `Giro disuelto: quedan menos de 2 pedidos`; `getManualGiros` returned `[]`.
+- Recreate created `mg_260526_2`; explicit `disolver` cleared chips; final `getManualGiros` returned `[]`.
+- Cocina remained read-only for P1C.1: no manual marker, no UI change, no `forno_out` change.
+- Cleanup removed only test orders and clients `699000301/699000302`; no `storico` rows existed. `mg_260526_1` and `mg_260526_2` remain as dissolved audit rows.
+
 ## 18. Implementation phases
 
 - P1B — this spec + decision gate per §6 + open questions answered per §20. **Status: DONE 2026-05-25.** No code shipped in this phase.
-- P1C.1 — migration + minimal backend endpoints (`createManualGiro`, `addOrderToManualGiro`, `removeOrderFromManualGiro`, `dissolveManualGiro`) + frontend wiring of P1A UI to backend. **Status: UNBLOCKED 2026-05-25, awaiting explicit start authorization in a separate session.** Out of scope: `forno_out` aggregation, Cocina UI changes.
+- P1C.1 — migration + minimal backend endpoints (`createManualGiro`, `addOrderToManualGiro`, `removeOrderFromManualGiro`, `dissolveManualGiro`) + frontend wiring of P1A UI to backend. **Status: DONE LOCALLY 2026-05-26.** Frontend commit `addc6a7`; backup branch `backup/v2-manual-giro-p1c1-frontend-2026-05-26`. Build and realistic Entregas+Cocina smoke passed. Not deployed to Netlify; not pushed to main. Out of scope: `forno_out` aggregation, Cocina UI changes.
 - P1C.2 — separate step: `forno_out` aggregation rule from §13 implemented behind a feature flag with default OFF. **Status: BLOCKED.** Gated by Q4 (pizzaiolo validation in real service).
 - P1D — Cocina mini-marker `manual G<n>` (single visual change, separate commit). **Status: not started, separate session, no dependency on P1C.2.**
 - P1E — human stress test in real service using §17 matrix. **Status: not started.** Verdict gate before any deploy.
@@ -185,6 +202,7 @@ Each phase has its own backup branch and its own commit. No phase is implemented
 ## 19. Explicit no-deploy policy
 
 - No deploy until P1E green and explicit operator authorization.
+- P1C.1 has no Netlify deploy yet. Before any Railway deploy from GitHub/main, reconcile backend main because production endpoints are live from Railway CLI while backend `origin/main` is behind.
 - Migration is a separate, reviewed step; rollback plan is "drop column and table" (column is nullable, table is independent).
 - Backup branch `backup/v2-manual-giro-p1c-migration-<date>` mandatory before P1C.1.
 - Backup branch `backup/v2-manual-giro-p1d-cocina-<date>` mandatory before P1D.
