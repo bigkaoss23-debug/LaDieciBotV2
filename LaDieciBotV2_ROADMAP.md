@@ -101,7 +101,7 @@ No migration or database work until human approval.
 
 ### DELIVERY-MANUAL-GIRO-01D — Implementation
 
-Status: PARTIAL. P1C.1 Entregas persistence is implemented, tested, and live on Netlify production. Cocina marker remains intentionally not implemented; `forno_out` aggregation remains blocked.
+Status: PARTIAL. P1C.1 Entregas persistence is implemented, tested, and live on Netlify production. P1D-MIN Cocina visibility is also live: normal Cocina and full-screen PanelCocina show a small manual-giro badge/grouping for orders in a manual delivery giro. `forno_out` aggregation remains blocked.
 
 Only after product and data contract are approved:
 
@@ -157,6 +157,15 @@ P1C.1 smoke closure 2026-05-26:
 - Authenticated production smoke passed: existing login/session OK without exposing PIN; `Servicio > Entregas` loaded; UI showed `Sin entregas a domicilio`; no visible crash; no phantom manual-giro chips; no data created or modified. `getManualGiros` authenticated was not directly tested with a real token in that smoke.
 - Accidental deploy to `soft-stroopwafel-e517fe` is not a valid production deploy. Future Netlify CLI deploys must include `--site 02bd4c7a-a50b-4964-90da-8c1af1122932`, `--dir=ladieci-app33/build`, and `--functions=ladieci-app33/netlify/functions`.
 
+P1D-MIN production closure 2026-05-26:
+- Frontend commit `eaf9e1a7ba608377ea778f464317708c1d8c554e` (`eaf9e1a feat show manual delivery giro in cocina`) backed up at `backup/v2-manual-giro-p1d-min-cocina-2026-05-26`.
+- Local realistic smoke used two real delivery test orders with items; Cocina normal and PanelCocina full-screen both showed `GIRO MANUAL · G3` on grouped orders, refresh preserved the badge, `disolver` removed it, and final `getManualGiros=[]`.
+- Test cleanup removed only the marker orders/clients `699000401/699000402`; `mg_260526_3` remains as a dissolved audit row.
+- Production deploy completed on correct Netlify site `magnificent-lollipop-6dff70` (site ID `02bd4c7a-a50b-4964-90da-8c1af1122932`), deploy ID `6a159b40ef9b5b0b4e8ec515`, URL `https://magnificent-lollipop-6dff70.netlify.app`, unique URL `https://6a159b40ef9b5b0b4e8ec515--magnificent-lollipop-6dff70.netlify.app`.
+- `/version.json` showed commit `eaf9e1a`, commitFull `eaf9e1a7ba608377ea778f464317708c1d8c554e`; Netlify functions `api` and `auth` were loaded and JSON error paths were OK.
+- Production smoke passed: app loaded; existing session/login available without exposing PIN; `Servicio > Entregas` loaded with `Sin entregas a domicilio`; `Servicio > Cocina` loaded with `Cocina al día — sin pedidos`; no visible crash; no test orders created; no real data touched.
+- Scope remained frontend only: no backend, no DB schema, no Repartidor/Economia, no `forno_out` write.
+
 ## 8. Workstreams Suspended
 
 Economia/caja:
@@ -201,7 +210,7 @@ Done means:
 - Minimum tests above pass.
 - Documentation is updated in this roadmap and master context if behavior changes.
 
-Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract approved; P1C.1 frontend persistence wiring committed (`addc6a7`), backup pushed, backend main/prod aligned at `e14abd6`, and Netlify production deployed at `267c9d0` on the correct site. Full P1 still requires P1D Cocina marker decision/implementation if still desired and broader real-service validation 01E.
+Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract approved; P1C.1 frontend persistence wiring committed (`addc6a7`), backend main/prod aligned at `e14abd6`, and Netlify production deployed. P1D-MIN Cocina visibility is also live at `eaf9e1a`, with production deploy `6a159b40ef9b5b0b4e8ec515`. Full P1 still requires broader real-service validation 01E; P1C.2 `forno_out` aggregation remains blocked.
 
 ## 11. Rules For Future Codex Sessions
 

@@ -4,7 +4,7 @@ Last updated: 2026-05-26.
 
 Scope: spec markdown only for the future persistent version of `DELIVERY-MANUAL-GIRO-01`. Successor of P1A (volatile UI prototype, commit `a8f97da`, verdict APPROVE AS UI PROTOTYPE). No deploy decisions inside this file — those happen after explicit operator authorization.
 
-Current closure note 2026-05-26: P1C.1 backend endpoints and frontend Entregas wiring are implemented, validated, and live. Backend local HEAD/`origin/main`/Railway production are aligned at `e14abd6e93be2bf85ca64ad2649ba8fd3b54ea34`. Frontend feature commit `addc6a736d8d87758a7c7eb78b0439903ea005b7` (`addc6a7 feat persist manual delivery giros in entregas`) is backed up at `backup/v2-manual-giro-p1c1-frontend-2026-05-26`; docs/deploy closure commit is `267c9d0edeb55a5e06a734025057cacf1679d35e`. Production Netlify deploy `6a158473fb848b0f501bf5ec` is live on site `magnificent-lollipop-6dff70` (`02bd4c7a-a50b-4964-90da-8c1af1122932`).
+Current closure note 2026-05-26: P1C.1 backend endpoints and frontend Entregas wiring are implemented, validated, and live. P1D-MIN Cocina visibility is also live. Backend local HEAD/`origin/main`/Railway production are aligned at `e14abd6e93be2bf85ca64ad2649ba8fd3b54ea34`. Frontend P1C.1 commit `addc6a736d8d87758a7c7eb78b0439903ea005b7` (`addc6a7 feat persist manual delivery giros in entregas`) is backed up at `backup/v2-manual-giro-p1c1-frontend-2026-05-26`; P1D-MIN commit `eaf9e1a7ba608377ea778f464317708c1d8c554e` (`eaf9e1a feat show manual delivery giro in cocina`) is backed up at `backup/v2-manual-giro-p1d-min-cocina-2026-05-26`. Production Netlify deploy `6a159b40ef9b5b0b4e8ec515` is live on site `magnificent-lollipop-6dff70` (`02bd4c7a-a50b-4964-90da-8c1af1122932`).
 
 ## 1. Goal / Non-goal
 
@@ -198,12 +198,23 @@ Validated:
 - `getManualGiros` was not directly tested with a real auth token during the final human smoke, but the authenticated Entregas path loaded correctly.
 - Accidental Netlify deploy to `soft-stroopwafel-e517fe` is not production truth. Future deploys must include `--site 02bd4c7a-a50b-4964-90da-8c1af1122932`, `--dir=ladieci-app33/build`, and `--functions=ladieci-app33/netlify/functions`.
 
+### P1D-MIN Cocina visibility result — LIVE 2026-05-26
+
+- Frontend commit `eaf9e1a7ba608377ea778f464317708c1d8c554e` (`eaf9e1a feat show manual delivery giro in cocina`) added only Cocina-side visibility: a small manual-giro badge/grouping in normal Cocina and full-screen PanelCocina.
+- Scope remained frontend-only: no backend, no DB schema, no Repartidor/Economia, no route optimization, no `forno_out` write.
+- Backup branch: `backup/v2-manual-giro-p1d-min-cocina-2026-05-26`.
+- Local realistic smoke used two real delivery test orders with items; Cocina normal and PanelCocina full-screen both showed `GIRO MANUAL · G3` on grouped orders, refresh preserved it, `disolver` removed it, final `getManualGiros=[]`, and `forno_out` stayed unchanged.
+- Cleanup removed only test orders/clients `699000401/699000402`; `mg_260526_3` remains as a dissolved audit row.
+- Production deploy completed on Netlify site `magnificent-lollipop-6dff70`, site ID `02bd4c7a-a50b-4964-90da-8c1af1122932`, deploy ID `6a159b40ef9b5b0b4e8ec515`, production URL `https://magnificent-lollipop-6dff70.netlify.app`, unique URL `https://6a159b40ef9b5b0b4e8ec515--magnificent-lollipop-6dff70.netlify.app`.
+- `/version.json` showed commit `eaf9e1a`, commitFull `eaf9e1a7ba608377ea778f464317708c1d8c554e`; Netlify functions `api` and `auth` were loaded and JSON error paths were OK.
+- Production smoke passed: app loaded; existing session/login available without exposing PIN; `Servicio > Entregas` loaded with `Sin entregas a domicilio`; `Servicio > Cocina` loaded with `Cocina al día — sin pedidos`; no visible crash; no test orders created; no real data touched.
+
 ## 18. Implementation phases
 
 - P1B — this spec + decision gate per §6 + open questions answered per §20. **Status: DONE 2026-05-25.** No code shipped in this phase.
 - P1C.1 — migration + minimal backend endpoints (`createManualGiro`, `addOrderToManualGiro`, `removeOrderFromManualGiro`, `dissolveManualGiro`) + frontend wiring of P1A UI to backend. **Status: DONE AND LIVE 2026-05-26.** Frontend commit `addc6a7`; docs/deploy closure commit `267c9d0`; backup branch `backup/v2-manual-giro-p1c1-frontend-2026-05-26`; production Netlify deploy `6a158473fb848b0f501bf5ec`. Build, realistic Entregas+Cocina smoke, and authenticated production smoke passed. Out of scope: `forno_out` aggregation, Cocina UI changes.
 - P1C.2 — separate step: `forno_out` aggregation rule from §13 implemented behind a feature flag with default OFF. **Status: BLOCKED.** Gated by Q4 (pizzaiolo validation in real service).
-- P1D — Cocina mini-marker `manual G<n>` (single visual change, separate commit). **Status: not started, separate session, no dependency on P1C.2.**
+- P1D-MIN — Cocina mini-marker `giro manual · G<n>` in normal Cocina and full-screen PanelCocina. **Status: DONE AND LIVE 2026-05-26.** Frontend commit `eaf9e1a`; backup branch `backup/v2-manual-giro-p1d-min-cocina-2026-05-26`; production Netlify deploy `6a159b40ef9b5b0b4e8ec515`. No backend, no DB schema, no `forno_out` write.
 - P1E — human stress test in real service using §17 matrix. **Status: not started.** Verdict gate before any deploy.
 
 Each phase has its own backup branch and its own commit. No phase is implemented in the same session as the previous one without explicit operator authorization.
