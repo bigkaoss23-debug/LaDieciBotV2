@@ -271,6 +271,28 @@ Done means:
 
 Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract approved; P1C.1 frontend persistence wiring committed (`addc6a7`), backend main/prod aligned at `e14abd6`, and Netlify production deployed. P1D-MIN Cocina visibility is also live at `eaf9e1a`, with production deploy `6a159b40ef9b5b0b4e8ec515`. P1E light stress on production passed against `eaf9e1a` / `e14abd6` with cleanup completed and no blocking bug; chiusura servizio with active giro was deliberately not exercised in production. P1F zone-stress on production passed against the same live targets, with 8 multi-zone orders, cascade slip 0–+84 min, 3 manual giros (Q1+Q1, Q2+Q3, Q1+Q2+Q3) all green, cleanup completed; no blocking bug. Full P1 still requires broader real-service validation during a live service; P1C.2 `forno_out` aggregation remains blocked.
 
+## 10b. Closed Out-Of-Scope Safety Fixes
+
+`WA-ALLERGY-SAFETY-01` — closed and live 2026-05-27.
+
+Context: bot WhatsApp test discovered a food-safety bug. Customer message `"Una Margarita para recoger a las 21:30, soy alérgico a los frutos secos."` was correctly interpreted by IA (`ia.nota = "Alérgico a frutos secos"`), but the old Flusso 1 created order `POR_CONFIRMAR` without propagating the note: `ordenes.nota`, `ordenes.nota_cucina`, and `clientes.nota_fissa` stayed empty, and the bot upsell proposed Tiramisù/Tartufo (potential allergen). Verdict: critical FAIL.
+
+Fix: restrictive guard added in `src/agents/orchestrator.js` of repo `ladieci_bot` (commit `f8fe69f20ec22ee4d5297e7808d1b7fdd8a855a5`, message `fix guard whatsapp allergy orders`, +31 lines, single file). Backup branch `backup/wa-allergy-safety-01-2026-05-27`. Railway deployment `1f6b0125-6382-4926-9780-0195c3cab116`. No frontend, no DB/schema/migration, no env/config touched.
+
+Behavior:
+
+- When the inbound message contains an allergy/intolerance keyword (alérgico/alérgica, alergia, intolerante/intolerancia, celíaco/celíaca, sin gluten, frutos secos, nueces, cacahuete, maní, lactosa, huevo, mariscos, crustáceos) AND either declarative context (`soy`/`tengo`/`sufro`/`padezco`/`mi hijo es`/...) or order intent (`hasItems` or `tipo=ordine`), the guard fires BEFORE Flusso 1.
+- Effect: no order is created, no client is upserted, `conv` is set to `in_attesa` with items/hora preserved, `wa_msgs` is `IN_TRATTAMENTO`, the bot sends a safe acknowledgement, no upsell. Returns `flusso: "allergy_safe", motivo: "allergia_dichiarata"`.
+- Whitelist (`isWhitelist`) bypasses the guard so operator/owner inserts are not blocked.
+
+Production validation 2026-05-27 (live commit `f8fe69f`):
+
+- T1 — WA-18 repeat (`34699000919`, `TEST_BOT_WA18_FIX`, message contains `alérgico a los frutos secos`): PASS. ordenes=0, clientes=0, conv `in_attesa`, items `[El Pelusa]`, hora `21:30`, wa_msgs `IN_TRATTAMENTO`, ack safe, no upsell.
+- T2 — allergy + delivery celíaco (`34699000920`, `TEST_BOT_WA19_ALLERGY_DELIVERY`, message contains `Soy celíaco` plus Calle Cuba 1 in zona valid Q2): PASS. Guard fires before geocoding. ordenes=0, clientes=0, conv `in_attesa`, ack safe.
+- T3 — regression normal order (`34699000921`, `TEST_BOT_WA20_REGRESSION_NORMAL`, message `Una El Pelusa para recoger a las 21:30.`): PASS. Order `#001 POR_CONFIRMAR` created, RITIRO, totale €12, cliente id 212 persisted, upsell present. No false positive on the guard.
+
+DB cleanup completed post-test for the three test `wa_id` (`919/920/921`) and the test `nombre` markers. `manual_giros` and `geo_cache` not touched.
+
 ## 11. Rules For Future Codex Sessions
 
 - Start from `LaDieciBotV2_MASTER_CONTEXT.md`, this roadmap, and `LaDieciBotV2_ARCHIVE_INDEX.md`.

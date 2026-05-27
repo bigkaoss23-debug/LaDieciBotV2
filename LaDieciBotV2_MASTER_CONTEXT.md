@@ -14,9 +14,10 @@ Core principle: the system is operator-gated. The bot can help prepare or clarif
 
 - Canonical frontend repository/worktree: `/Users/bigart/Downloads/LaDieciBotV2-github`
 - Frontend app directory: `ladieci-app33`
-- Backend code present in this repo: `ladieci-bot`
-- Backend production repository is separate and has been documented as `bigkaoss23-debug/ladieci_bot`
+- Backend code present in this repo: `ladieci-bot` — NOT the live backend; treat as docs/reference only.
+- Backend production repository (live on Railway): `/Users/bigart/Downloads/ladieci-bot`, remote `https://github.com/bigkaoss23-debug/ladieci_bot.git`.
 - Git remote for this repo: `https://github.com/bigkaoss23-debug/LaDieciBotV2.git`
+- Important: do NOT push code from `LaDieciBotV2-github/ladieci-bot` expecting Railway to pick it up. Railway deploys only from the `ladieci_bot` repo at `/Users/bigart/Downloads/ladieci-bot`.
 
 Do not use duplicate project folders in `Downloads` as source of truth unless a human explicitly says so.
 
@@ -29,8 +30,9 @@ Verified from documentation and local git history only. Not verified by touching
 - Netlify site ID documented: `02bd4c7a-a50b-4964-90da-8c1af1122932`
 - Netlify deploy ID after P1D-MIN production deploy: `6a159b40ef9b5b0b4e8ec515`
 - Frontend production version after P1D-MIN deploy: `eaf9e1a7ba608377ea778f464317708c1d8c554e`
-- Backend live/manual-giro commit after main reconciliation: `e14abd6e93be2bf85ca64ad2649ba8fd3b54ea34`
-- Backend local HEAD, `origin/main`, and Railway production were verified aligned to `e14abd6` on 2026-05-26. `/version` reported commit `e14abd6`, branch `main`; `/health` was OK; `/status` was OK with database green; `getManualGiros` returned `200 []`.
+- Backend live/manual-giro commit after main reconciliation: `e14abd6e93be2bf85ca64ad2649ba8fd3b54ea34` (2026-05-26).
+- Backend live after WA-ALLERGY-SAFETY-01 deploy on 2026-05-27: `f8fe69f20ec22ee4d5297e7808d1b7fdd8a855a5` (`f8fe69f fix guard whatsapp allergy orders`). Railway deployment ID `1f6b0125-6382-4926-9780-0195c3cab116`. `/version` reported commit `f8fe69f`, branch `main`; `/health` OK; `/status` database green.
+- Backend local HEAD, `origin/main`, and Railway production were verified aligned to `e14abd6` on 2026-05-26, and to `f8fe69f` on 2026-05-27.
 - P1D-MIN is live on the correct Netlify site. The accidental deploy to `soft-stroopwafel-e517fe` is not production truth.
 
 ## 4. Branch And Commit Truth
@@ -60,6 +62,10 @@ Important backup branches include:
 - `origin/backup/v2-manual-giro-ux-discoverability-2026-05-25`
 - `origin/backup/v2-manual-giro-p1c1-frontend-2026-05-26` → `addc6a736d8d87758a7c7eb78b0439903ea005b7`
 - `origin/backup/v2-manual-giro-p1d-min-cocina-2026-05-26` → `eaf9e1a7ba608377ea778f464317708c1d8c554e`
+
+Backend repo (`ladieci_bot`) backup branches:
+
+- `origin/backup/wa-allergy-safety-01-2026-05-27` → `f8fe69f20ec22ee4d5297e7808d1b7fdd8a855a5` (in repo `ladieci_bot`, not `LaDieciBotV2`).
 
 Backup branches may contain newer work than `origin/main`; they are references, not automatic proof of production.
 
@@ -123,6 +129,10 @@ Active P1:
 - P1E light stress on production passed on 2026-05-26 against the live frontend (`eaf9e1a`) and backend (`e14abd6`): manual giro exercised end-to-end on Entregas and Cocina with real-shape test orders; 2-order giro OK; 3-order giro OK; remove from 3-order giro OK; remove from 2-order giro auto-dissolved OK; state transition while in giro OK; multi-tab/refresh persistence OK; no blocking bug. Service-closure-with-active-giro path was NOT exercised in production because it is invasive. A non-blocking `Problema servicio` warning appeared once and self-normalized; backend/DB stayed healthy. Non-blocking observation: B/C slot times slid due to real driver/cascade logic, not a feature bug. P1E cleanup completed: test orders/clients `699000501/502/503` removed via backend `eliminaOrdine` endpoint and Railway server-side key (used only in memory, no secrets printed); Supabase anon delete was blocked by RLS and not used; `manual_giros` activos `[]`, storico 0; audit rows `mg_260526_4/5/6/7` left as dissolved.
 - P1F zone-stress passed on 2026-05-26 against live frontend `eaf9e1a` and backend `e14abd6` via localhost authenticated UI (Netlify dev :8888 proxying to Railway production). 8 real-shape DOMICILIO orders (`#001`–`#008`, tel `699000601`–`699000608`, marker `TEST_ZONE_STRESS_2026-05-26_DELETE_OK`) covering 3 Q1 / 3 Q2 / 2 Q3 with real Roquetas addresses sourced from `clientes` table. Cascade scheduling observed (slip 0 → +84 min from A to H, consistent with zone `tempoGiro` and `maxOrdiniPerGiro`). Entregas grouped all 8 by zone; Cocina showed all 8 with item; no `Problema servicio` warning. 3 manual giros exercised — Q1+Q1 (`mg_260526_9`), Q2+Q3 (`mg_260526_11`), Q1+Q2+Q3 (`mg_260526_12`) — all with chip Entregas, badge Cocina `GIRO MANUAL · GN`, refresh persistence OK, explicit `disolver` OK. Final `manual_giros` activos `[]`. P1F cleanup completed: 8 ordenes removed via backend `eliminaOrdine` (id formato `#001`…`#008`), 8 clientes (`id` 196–203) removed via SQL on `clientes` rows whose `nombre` matched `TEST_%_ZS` and `tel` in the test range; audit rows `mg_260526_8/9/10/11/12` left as dissolved (mg_8 was a transient mis-grouping I dissolved and recreated as mg_9; mg_10 was a duplicate retry that I dissolved as well). Bug bloccanti: 0. Warning non bloccanti: (1) slip > 30 min vs richiesta cliente non emerge come avviso forte in UI; (2) modal Nuevo pedido lascia un side-panel residuo "Entrega a domicilio" finché non si clicca ✕; (3) "+" buttons in Entregas si rimescolano dopo ogni click — solo automation script, l'operatore umano clicca la card che vede; (4) backend `eliminaOrdine` risponde `success:true` anche con id non-matching (es. `1` invece di `1`/`#001`), va passato `#NNN`.
 - P1C.2 (`forno_out` aggregation) remains blocked.
+
+Closed safety fix (out of P1 scope):
+
+- `WA-ALLERGY-SAFETY-01` closed and live on 2026-05-27. Backend repo `ladieci_bot`, commit `f8fe69f20ec22ee4d5297e7808d1b7fdd8a855a5` (`f8fe69f fix guard whatsapp allergy orders`), backup branch `backup/wa-allergy-safety-01-2026-05-27`, Railway deployment ID `1f6b0125-6382-4926-9780-0195c3cab116`. Scope: `src/agents/orchestrator.js` only (+31 lines). No frontend, no DB/schema/migration, no env/config. Adds a restrictive guard BEFORE Flusso 1: when the customer message contains an allergy/intolerance keyword (alérgico, celíaco, intolerante, frutos secos, sin gluten, lactosa, huevo, mariscos, crustáceos, etc.) in declarative context (`soy`, `tengo`, `sufro`, `mi hijo es`, …) OR with order intent (`hasItems` or `tipo=ordine`), the bot does NOT create an order or a client, sets `conv` to `in_attesa` with items/hora preserved, marks `wa_msgs` as `IN_TRATTAMENTO`, sends a safe acknowledgement, and returns `flusso: "allergy_safe", motivo: "allergia_dichiarata"` for operator handoff. Whitelist (owner/operator) bypasses the guard. Production validation 2026-05-27: T1 WA-18 repeat (`34699000919`, alérgico a frutos secos) PASS, T2 allergia + delivery celíaco (`34699000920`, Calle Cuba 1 — guard fires before geocoding) PASS, T3 regressione ordine normale (`34699000921`) PASS, no false positives, no doppioni. DB cleaned post-test; manual_giros and geo_cache not touched.
 
 Suspended:
 
