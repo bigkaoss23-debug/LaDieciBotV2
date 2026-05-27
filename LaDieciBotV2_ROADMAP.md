@@ -273,6 +273,39 @@ Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract appr
 
 ## 10b. Closed Out-Of-Scope Safety Fixes
 
+`WA-UX-ACK-OPERATOR-GATED-01` — closed and live 2026-05-27.
+
+Context: the prior UXGATED batch on production confirmed that three operator-gated branches in the WhatsApp orchestrator were returning to the customer in complete silence: (T1) delivery requested without address, (T2) `fuera_de_zona` (e.g. Aguadulce), (T3b) `modifica_complessa` (cancellations and complex modifications after an existing order). The DB behaviour was already conservative and correct — no spurious orders, no spurious clients, no duplicates, `ordine_ref` preserved on cancellation — but the customer was left without any acknowledgement, which on WhatsApp reads as "the bot is broken". Additionally, the normal-order confirmation reply contained promissory phrasing ("el pizzaiolo ya tiene los ojos en tu pedido", "el horno ya está en marcha") that misrepresented the actual `POR_CONFIRMAR` state.
+
+Fix: minimal, surgical, no DB logic changes. Two files modified in repo `ladieci_bot` (commit `c38ca94441e02b58f9141ccf47c7b3e3ae119ba7`, message `fix ack whatsapp operator gated flows`):
+
+- `src/agents/orchestrator.js` (+20/-5): added short ack messages in five points — `modifica_complessa` branch, `sin_direccion` and `fuera_de_zona` branches in both Flusso 1 and the `solo_ora` Flusso 1 variant. Pattern is symmetric to the allergy safety guard: `appendChat(bot, msg)` + `upsertWaMsg(..., bot_risposta=msg, ...)` (instead of `null`) + `if (autoOn) await invia(...)`. State machine, `IN_TRATTAMENTO` status, and `ordine_ref` preservation all unchanged. No new orders or clients are created in branches that previously did not create them.
+- `src/utils/helpers.js` (+6/-6): rewrote the six variants of `introConferma()` to remove promissory wording and replace it with honest formulas ("Hemos recibido tu pedido…", "Lo pasamos al equipo para confirmarlo"). Variety preserved (still six randomised options).
+
+Acks:
+
+- delivery without address → "¿Adónde te lo llevamos? Pásanos la dirección completa (calle, número y piso si lo hay) y lo revisamos enseguida. 🍕"
+- `fuera_de_zona` → "Gracias. Vamos a comprobar la zona de entrega con el equipo y te respondemos enseguida. 🛵"
+- `modifica_complessa` (cancel/modify, generic to cover both) → "Recibido. Lo pasamos al equipo para revisarlo y te respondemos enseguida. 🙏"
+
+Backup branch `backup/wa-ux-ack-operator-gated-01-2026-05-27`. Railway deployment `d723619f-d42c-4386-b316-fdceca348628`, boot `2026-05-27T08:08:37.999Z`. `/version` reports commit `c38ca94`, `/health` 200 OK, `/status` backend/database/ordini green.
+
+Production validation 2026-05-27 (live commit `c38ca94`):
+
+- T1 — delivery without address (`34699001101`, `TEST_BOT_UXACK_01_NO_ADDRESS`, message "Una El Pelusa a domicilio para las 21:30."): PASS. ordenes=0, clientes=0, conv `aperta` with items/hora preserved, wa_msgs `IN_TRATTAMENTO`, ack present.
+- T2 — out of zone Aguadulce (`34699001102`, `TEST_BOT_UXACK_02_OUT_ZONE`, message "Una El Pelusa a domicilio, Aguadulce, para las 21:30."): PASS. ordenes=0, clientes=0, conv `in_attesa`, wa_msgs `IN_TRATTAMENTO`, ack present.
+- T3 — cancel after order (`34699001103`, `TEST_BOT_UXACK_03_COMPLEX_CANCEL`): PASS. T3a created `#001 POR_CONFIRMAR` with honest intro; T3b cancellation kept `#001` untouched and preserved `ordine_ref="#001"` in wa_msgs while writing the generic cancel/modify ack to `bot_risposta` and `conv.chat`. No duplicates.
+- T4 — normal-order intro sanity (`34699001104`, `TEST_BOT_UXACK_04_NORMAL_CONFIRM`): PASS. Order `#002 POR_CONFIRMAR` created with intro "Hemos recibido tu pedido, … Lo pasamos al equipo para confirmarlo. 🍕" — no promissory phrases. No false positive on the allergy guard.
+
+DB cleanup completed post-test for all four `wa_id` (`34699001101/02/03/04`) and four `nombre` markers. `storico`, `archivio_conv`, `manual_giros`, `geo_cache` not touched. No service closure migrated test rows during the run.
+
+Residual risks (not blocking for Wednesday):
+
+1. `profile.name` is still echoed verbatim in confirmation replies. A long or odd name will look awkward but is cosmetic; leave for post-Wednesday.
+2. Acks improve UX but the operator must still actually respond to handed-off cases (`in_attesa`); the bot's silence problem is solved, the operator's silence problem is not.
+3. The rare `fuera_de_zona` branch inside the `solo_ora` Flusso 1 variant still calls `creaOrdine({ estado: "POR_CONFIRMAR" })` with `zona=null`. This is preexisting behaviour and was deliberately not modified in this fix to avoid touching DB logic before Wednesday.
+4. Upsell of beer/dessert in normal-order replies is still present. Not blocking; can be tuned later if it creates noise on real customers.
+
 `WA-ALLERGY-SAFETY-01` — closed and live 2026-05-27.
 
 Context: bot WhatsApp test discovered a food-safety bug. Customer message `"Una Margarita para recoger a las 21:30, soy alérgico a los frutos secos."` was correctly interpreted by IA (`ia.nota = "Alérgico a frutos secos"`), but the old Flusso 1 created order `POR_CONFIRMAR` without propagating the note: `ordenes.nota`, `ordenes.nota_cucina`, and `clientes.nota_fissa` stayed empty, and the bot upsell proposed Tiramisù/Tartufo (potential allergen). Verdict: critical FAIL.
