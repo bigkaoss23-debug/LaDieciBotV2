@@ -273,6 +273,44 @@ Note 2026-05-26: 01A volatile prototype criteria met; 01B/P1C data contract appr
 
 ## 10b. Closed Out-Of-Scope Safety Fixes
 
+`WA-CANCEL-GUARD-01` — closed and live 2026-05-27.
+
+Context: the CONVQUAL stress batch on production (live commit `c38ca94`) found a BLOCKING bug in test T8. Customer message "Cancela el pedido por favor." was classified by the IA as `tipo="domanda"` (not `modifica_complessa`) and went into Flusso 3 (`generaRisposta` Claude libre). Claude hallucinated the response "Hemos cancelado tu pedido #006 sin problema" — but the order in `ordenes` stayed `POR_CONFIRMAR`. The bot was effectively lying to the customer about a cancellation that never happened. Worst possible failure mode for Wednesday service: customer believes order is cancelled, kitchen prepares it anyway.
+
+Fix: minimal, surgical, no DB logic changes. One file modified in repo `ladieci_bot` (commit `2a525af8f5edfa3955cfc99aecae79ec815fb07a`, message `fix guard whatsapp cancel intent`, `src/agents/orchestrator.js` only, +27 lines). Added a `cancel_guard` placed between the `modifica_complessa` branch and `FLUSSO 2B`, intercepting BEFORE any automatic flow (Flusso 2B/2C/1 and the Flusso 3 Claude-libre branch).
+
+Conditions for the guard to fire:
+
+- `!isWhitelist` (owner/operator bypass preserved);
+- `CANCEL_RE` regex matches `testo`: `cancela|cancelar|cancelaci[oó]n|cancelad[oa]|anula|anular|anulad[oa]|olv[ií]dalo|d[eé]jalo|dejalo` (case-insensitive, word boundary);
+- `quita/quitar` deliberately NOT included, to avoid hijacking legitimate Flusso 2B `correccion` like "quita la cerveza del pedido";
+- AND existing order context: `statoOrd.haOrdine` OR `conv.stato_ordine === "confermata"`.
+
+Effects when fired: no cancellation in DB (order in `ordenes` stays `POR_CONFIRMAR`), `ordine_ref` preserved in `wa_msgs` via in-place update (same `upsertWaMsg` pattern used by the allergy guard and the UX-ack fix), `wa_msgs.stato` set/kept to `IN_TRATTAMENTO`, `appendChat(bot, ack)` to `conv.chat`, `if (autoOn) invia(...)`, return `{ flusso: "cancel_guard", stato: "IN_TRATTAMENTO", motivo: "cancel_intent_operator_review" }`. Ack to the customer: "Recibido. Lo pasamos al equipo para revisarlo y te respondemos enseguida. 🙏".
+
+Backup branch `backup/wa-cancel-guard-01-2026-05-27`. Railway deployment `0881a161-a32b-4325-99d1-7cbc0f106746`, boot `2026-05-27T11:31:16.304Z`. `/version` reports commit `2a525af`, `/health` 200 OK, `/status` backend/database/ordini green.
+
+Production validation 2026-05-27 (live commit `2a525af`):
+
+- T1 — cancel natural (`34699001301`, `TEST_BOT_CANCELGUARD_01_REPEAT`, sequence "Una El Pelusa para recoger a las 21:30." + "Cancela el pedido por favor."): PASS. Order `#001 POR_CONFIRMAR` created at step 1; at step 2 the guard fires, order remains `POR_CONFIRMAR`, `ordine_ref="#001"` preserved in `wa_msgs`, reply ack present, NO "hemos cancelado" anywhere. T8 closed.
+- T2 — cancel variant `olvídalo` (`34699001302`, `TEST_BOT_CANCELGUARD_02_OLVIDALO`, "Olvídalo, ya no lo quiero."): PASS. Same behaviour: order `#002` untouched, `ordine_ref="#002"` preserved, ack present.
+- T3 — regression normal question (`34699001303`, `TEST_BOT_CANCELGUARD_03_NORMAL_QUESTION`, "Tenéis pizza carbonara?"): PASS. Guard correctly does not fire (no cancel intent), Flusso 3 answers honestly with the real menu item ("La Joya (Carbonara) 15€" — real product), no order created, no client persisted, no false `IN_TRATTAMENTO`.
+
+DB cleanup completed post-test for all three test `wa_id` and the three `nombre` markers. `storico`, `archivio_conv`, `manual_giros`, `geo_cache` not touched. No service closure migrated test rows during the run.
+
+Closed live-fix chain on Railway production for 2026-05-27 Wednesday service:
+
+- `f8fe69f` `WA-ALLERGY-SAFETY-01` — allergy handoff;
+- `c38ca94` `WA-UX-ACK-OPERATOR-GATED-01` — acks for no-address / out-zone / modifica_complessa + honest order-confirm intro;
+- `2a525af` `WA-CANCEL-GUARD-01` — explicit cancellation intent guard.
+
+Residual risks (NOT blocking for Wednesday):
+
+1. CONVQUAL T4 — mixed question+order ("Hola, tenéis cerveza sin alcohol? Y una El Pelusa para recoger a las 21:30."): IA classifies as `misto`, Flusso 3 lets Claude generate a free reply that says "Tu pedido está anotado" while `ordenes` is empty (items are only in `conv`). Operator sees no order in DB. Customer believes they ordered. Backlog post-Wednesday.
+2. CONVQUAL T6 — address follow-up ("Calle Antonio Machado 69." after a previous delivery message): the second message is classified `tipo=domanda` because it has no items/hora of its own; Flusso 3 Claude generates "Te llegará caliente desde el horno" without actually creating the order. Backlog post-Wednesday.
+3. CONVQUAL T7 — rare `fuera_de_zona` branch in Flusso 1 `solo_ora` (preexisting code path): creates `POR_CONFIRMAR` order with `zona=null` and applies `delivery_fee` €2.50. Ack is honest but DB is inconsistent with ack. Operator can handle manually. Backlog post-Wednesday.
+4. `profile.name` echoed verbatim in confirmation replies. Already partially mitigated by `nombre.split(" ")[0]` (only first token is used). Cosmetic. Backlog.
+
 `WA-UX-ACK-OPERATOR-GATED-01` — closed and live 2026-05-27.
 
 Context: the prior UXGATED batch on production confirmed that three operator-gated branches in the WhatsApp orchestrator were returning to the customer in complete silence: (T1) delivery requested without address, (T2) `fuera_de_zona` (e.g. Aguadulce), (T3b) `modifica_complessa` (cancellations and complex modifications after an existing order). The DB behaviour was already conservative and correct — no spurious orders, no spurious clients, no duplicates, `ordine_ref` preserved on cancellation — but the customer was left without any acknowledgement, which on WhatsApp reads as "the bot is broken". Additionally, the normal-order confirmation reply contained promissory phrasing ("el pizzaiolo ya tiene los ojos en tu pedido", "el horno ya está en marcha") that misrepresented the actual `POR_CONFIRMAR` state.
