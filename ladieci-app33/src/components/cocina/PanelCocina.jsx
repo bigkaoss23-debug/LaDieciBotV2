@@ -78,13 +78,16 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       const items = all.filter(it => !isExtra(it));
       const isDelivery = o.tipo_consegna === "DOMICILIO";
       const zonaObj = isDelivery ? ZONE_DELIVERY.find(z => z.id === o.zona) : null;
+      const manualGiro = getManualGiroForOrder(o, manualGiroMetaById);
       // Sorgente unica: o.forno_out (backend cascade-aware). Fallback legacy per ordini pre-migration.
       const horaFornoBase = o.forno_out
         || (isDelivery && zonaObj && o.hora ? subtractMinutes(o.hora, tempoAndata(o, zonaObj)) : (o.hora || null));
-      // Snooze visivo per-card: solo DOMICILIO usa l'offset
-      const horaForno = isDelivery ? applyUiOffset(horaFornoBase, o.ui_offset_min) : horaFornoBase;
+      // Giro manuale: hora_ref è l'orario operativo UNICO del giro → comanda su forno_out.
+      const horaForno = (manualGiro && manualGiro.hora_ref)
+        ? manualGiro.hora_ref
+        // Snooze visivo per-card: solo DOMICILIO usa l'offset
+        : (isDelivery ? applyUiOffset(horaFornoBase, o.ui_offset_min) : horaFornoBase);
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;
-      const manualGiro = getManualGiroForOrder(o, manualGiroMetaById);
       return {
         ...o,
         items,

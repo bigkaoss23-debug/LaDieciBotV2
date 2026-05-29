@@ -386,8 +386,10 @@ const api = {
     if (opts.onlyActive === false) params.onlyActive = "false";
     return proxyGet("getManualGiros", params);
   },
-  createManualGiro: function(order_ids) {
-    return proxyPost({ action: "createManualGiro", order_ids });
+  // hora_ref: "HH:MM" orario operativo del giro (guida cucina/driver).
+  // anchor_order_id: id ordine da cui proviene la scelta (audit/UX). Entrambi opzionali.
+  createManualGiro: function(order_ids, hora_ref = null, anchor_order_id = null) {
+    return proxyPost({ action: "createManualGiro", order_ids, hora_ref, anchor_order_id });
   },
   removeOrderFromManualGiro: function(order_id) {
     return proxyPost({ action: "removeOrderFromManualGiro", order_id });

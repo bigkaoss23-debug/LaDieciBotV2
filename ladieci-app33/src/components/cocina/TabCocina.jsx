@@ -159,16 +159,20 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
       const extras = all.filter(it => isExtra(it));
       const isDelivery = o.tipo_consegna === "DOMICILIO";
       const zonaObj = isDelivery ? ZONE_DELIVERY.find(z => z.id === o.zona) : null;
+      const manualGiro = getManualGiroForOrder(o, manualGiroMetaById);
       // Sorgente unica: o.forno_out (backend cascade-aware). Fallback legacy per ordini pre-migration.
       const horaFornoBase = o.forno_out
         || (isDelivery && zonaObj && o.hora ? subtractMinutes(o.hora, tempoAndata(o, zonaObj)) : (o.hora || null));
-      // Snooze visivo per-card: solo DOMICILIO usa l'offset (PICKUP è priorità reale)
-      const horaForno = isDelivery ? applyUiOffset(horaFornoBase, o.ui_offset_min) : horaFornoBase;
+      // Giro manuale: hora_ref è l'orario operativo UNICO del giro (scelto dall'operatore)
+      // → comanda su forno_out per allineare tutti i membri allo stesso timer.
+      const horaForno = (manualGiro && manualGiro.hora_ref)
+        ? manualGiro.hora_ref
+        // Snooze visivo per-card: solo DOMICILIO usa l'offset (PICKUP è priorità reale)
+        : (isDelivery ? applyUiOffset(horaFornoBase, o.ui_offset_min) : horaFornoBase);
       // nPizze = solo pizze (no bevande, no dolci)
       const nPizze = items.reduce((s,it) => s + (parseInt(it.q)||1), 0);
       // Il timer usa horaForno come deadline (non hora)
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;
-      const manualGiro = getManualGiroForOrder(o, manualGiroMetaById);
       return {...o, items, extras, horaForno, nPizze, isDelivery, zonaObj, manualGiro, _timer: calcTimer(oPerTimer, now)};
     })
     .filter(o=>o.items.length>0 || o.extras.length>0);
