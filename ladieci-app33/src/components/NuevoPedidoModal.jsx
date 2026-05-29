@@ -146,9 +146,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         const h = Math.floor(deltaMin / 60);
         const m = deltaMin % 60;
         const dStr = h > 0 ? `${h}h${String(m).padStart(2,"0")}` : `${m} min`;
+        const intensity = deltaMin > 120 ? "⚠️⚠️ HORA MUY LEJANA" : "⚠️ ATENCIÓN";
         const ok2 = window.confirm(
-          `Hora pedido: ${hora} — entre ${dStr} desde ahora.\n\n` +
-          `¿Estás seguro? Confirma SOLO si el cliente lo ha pedido para esa hora.`
+          `${intensity} — Hora pedido: ${hora}\n` +
+          `Está ${dStr} en el futuro.\n\n` +
+          `Confirma SOLO si el cliente la pidió EXPLÍCITAMENTE.\n` +
+          `En caso de duda → CANCELA y verifica con el cliente.`
         );
         if (!ok2) return;
       }
