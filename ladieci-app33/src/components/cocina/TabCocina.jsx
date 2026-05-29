@@ -173,7 +173,11 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
       const nPizze = items.reduce((s,it) => s + (parseInt(it.q)||1), 0);
       // Il timer usa horaForno come deadline (non hora)
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;
-      return {...o, items, extras, horaForno, nPizze, isDelivery, zonaObj, manualGiro, _timer: calcTimer(oPerTimer, now)};
+      // Warning non bloccante: la pizza esce dal forno DOPO l'ora cliente (solo delivery)
+      const fornoMs = orarioToMs(horaForno);
+      const horaMs = orarioToMs(o.hora);
+      const riesgoRetraso = isDelivery && fornoMs != null && horaMs != null && fornoMs > horaMs;
+      return {...o, items, extras, horaForno, nPizze, isDelivery, zonaObj, manualGiro, riesgoRetraso, _timer: calcTimer(oPerTimer, now)};
     })
     .filter(o=>o.items.length>0 || o.extras.length>0);
 
@@ -270,6 +274,15 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                               {o.hora}
                             </span>
                           </div>
+                        )}
+                        {o.riesgoRetraso && (
+                          <span title="La pizza sale del horno después de la hora del cliente"
+                            style={{display:"inline-flex",alignItems:"center",gap:4,
+                              background:"rgba(239,68,68,0.18)",border:"1.5px solid rgba(239,68,68,0.55)",
+                              borderRadius:999,padding:"3px 9px",color:"#fca5a5",fontSize:11,fontWeight:900,
+                              whiteSpace:"nowrap"}}>
+                            ⚠️ RIESGO RETRASO
+                          </span>
                         )}
                       </div>
                     )}
