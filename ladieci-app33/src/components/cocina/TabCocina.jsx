@@ -12,7 +12,8 @@ import {
   formatManualGiroLabel,
   getManualGiroForOrder,
   manualGiroBadgeStyle,
-  manualGiroSortAnchorMs
+  manualGiroSortAnchorMs,
+  resolveHoraEntregaGiro
 } from './manualGiroCocina';
 
 // hora = orario consegna cliente → horaForno = hora − tempoAndata(ordine)
@@ -173,11 +174,17 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
       const nPizze = items.reduce((s,it) => s + (parseInt(it.q)||1), 0);
       // Il timer usa horaForno come deadline (non hora)
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;
+      // Orario consegna (🛵): per un giro manuale è il target comune del giro
+      // (entrega_ref → anchor.hora → max ora membri → o.hora); altrimenti l'ora cliente.
+      // Usa la lista completa `ordenes` (non activosBase) per non sottostimare il max.
+      const isManualGiro = !!(manualGiro && manualGiro.id);
+      const horaEntregaGiro = isManualGiro ? resolveHoraEntregaGiro(o, manualGiro, ordenes) : null;
+      const horaEntrega = isManualGiro ? horaEntregaGiro : o.hora;
       // Warning non bloccante: la pizza esce dal forno DOPO l'ora cliente (solo delivery)
       const fornoMs = orarioToMs(horaForno);
       const horaMs = orarioToMs(o.hora);
       const riesgoRetraso = isDelivery && fornoMs != null && horaMs != null && fornoMs > horaMs;
-      return {...o, items, extras, horaForno, nPizze, isDelivery, zonaObj, manualGiro, riesgoRetraso, _timer: calcTimer(oPerTimer, now)};
+      return {...o, items, extras, horaForno, horaEntrega, isManualGiro, nPizze, isDelivery, zonaObj, manualGiro, riesgoRetraso, _timer: calcTimer(oPerTimer, now)};
     })
     .filter(o=>o.items.length>0 || o.extras.length>0);
 
@@ -264,15 +271,23 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                             <SnoozeButton orden={o} onUpdate={handleOffsetChange} />
                           )}
                         </div>
-                        {o.isDelivery && o.hora && (
-                          <div style={{display:"inline-flex",alignItems:"center",gap:6,
-                            background:"#C2410C",border:"1.5px solid rgba(194,65,12,0.85)",
-                            borderRadius:20,padding:"4px 10px",
-                            boxShadow:"0 2px 8px rgba(194,65,12,.4)"}}>
-                            <span style={{fontSize:14}}>🛵</span>
-                            <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
-                              {o.hora}
-                            </span>
+                        {o.isDelivery && o.horaEntrega && (
+                          <div style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                            <div style={{display:"inline-flex",alignItems:"center",gap:6,
+                              background:"#C2410C",border:"1.5px solid rgba(194,65,12,0.85)",
+                              borderRadius:20,padding:"4px 10px",
+                              boxShadow:"0 2px 8px rgba(194,65,12,.4)"}}>
+                              <span style={{fontSize:14}}>🛵</span>
+                              <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
+                                {o.isManualGiro ? `GIRO ${o.horaEntrega}` : o.horaEntrega}
+                              </span>
+                            </div>
+                            {/* Giro con orario consegna comune: mostra l'ora cliente come riferimento secondario */}
+                            {o.isManualGiro && o.hora && o.hora !== o.horaEntrega && (
+                              <span style={{color:"rgba(0,0,0,0.5)",fontSize:11,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>
+                                cliente {o.hora}
+                              </span>
+                            )}
                           </div>
                         )}
                         {o.riesgoRetraso && (

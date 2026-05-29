@@ -533,6 +533,19 @@ const GiroTimeModal = ({ orders, warnings = [], pending, onConfirm, onCancel }) 
     ? validSal.reduce((a, b) => (a.min <= b.min ? a : b))
     : null;
 
+  // entrega_ref = orario consegna/giro comune. Derivato per-modalità (vedi resolve()):
+  // non c'è ancora un input dedicato — l'UX definitiva potrà separare due input
+  // ("salida horno" operativo vs "entrega giro" consegna). Default sicuro: l'ora
+  // cliente più tarda tra i membri (tutti consegnati entro quel limite).
+  const maxMemberHora = () => {
+    const latest = orders
+      .map(o => o.hora).filter(Boolean)
+      .map(h => ({ h, min: _tm(h) }))
+      .filter(x => x.min != null)
+      .reduce((a, b) => (a == null || b.min > a.min ? b : a), null);
+    return latest ? latest.h : null;
+  };
+
   // Opzioni: "lo antes posible" (default) + una per ordine + personalizzato.
   const [mode, setMode] = useState("earliest"); // earliest | order | custom
   const [orderId, setOrderId] = useState(earliest ? earliest.o.id : (orders[0] && orders[0].id));
@@ -540,26 +553,36 @@ const GiroTimeModal = ({ orders, warnings = [], pending, onConfirm, onCancel }) 
   const [err, setErr] = useState("");
 
   const HHMM = /^(\d{1,2}):(\d{2})$/;
+  const parseHHMM = (s) => {
+    const m = String(s || "").trim().match(HHMM);
+    if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
+    return `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`;
+  };
+  // Ritorna { hora_ref, anchor_order_id, entrega_ref } o { error }.
   const resolve = () => {
     if (mode === "custom") {
-      const m = custom.trim().match(HHMM);
-      if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return { error: "Formato HH:MM no válido" };
-      return { hora_ref: `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`, anchor_order_id: null };
+      // Il custom oggi è SOLO l'orario operativo (uscita forno). entrega_ref
+      // cade sul default sicuro = max ora cliente dei membri. L'UX definitiva
+      // potrà aggiungere un secondo input per separare salida horno / entrega giro.
+      const v = parseHHMM(custom);
+      if (!v) return { error: "Formato HH:MM no válido" };
+      return { hora_ref: v, anchor_order_id: null, entrega_ref: maxMemberHora() };
     }
     if (mode === "order") {
+      // "Salida pedido X": operativo = salida di X, entrega = ora cliente di X.
       const sel = salidas.find(s => s.o.id === orderId);
       if (!sel || !sel.salida) return { error: "Pedido sin hora de salida" };
-      return { hora_ref: sel.salida, anchor_order_id: sel.o.id };
+      return { hora_ref: sel.salida, anchor_order_id: sel.o.id, entrega_ref: sel.o.hora || maxMemberHora() };
     }
-    // earliest
+    // earliest: operativo = prima salida; entrega = max ora cliente dei membri.
     if (!earliest) return { error: "Ningún pedido tiene hora de salida — usa personalizado" };
-    return { hora_ref: earliest.salida, anchor_order_id: earliest.o.id };
+    return { hora_ref: earliest.salida, anchor_order_id: earliest.o.id, entrega_ref: maxMemberHora() };
   };
 
   const confirm = () => {
     const r = resolve();
     if (r.error) { setErr(r.error); return; }
-    onConfirm(r.hora_ref, r.anchor_order_id);
+    onConfirm(r.hora_ref, r.anchor_order_id, r.entrega_ref ?? null);
   };
 
   const radio = (val, checked, label, hint) => (
@@ -802,13 +825,13 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   };
 
   // Conferma dal modal: crea il giro con l'orario operativo scelto.
-  const confirmManualGiro = async (horaRef, anchorOrderId) => {
+  const confirmManualGiro = async (horaRef, anchorOrderId, entregaRef) => {
     if (pendingManualGiroAction) return;
     const orderIds = selectedManualGiroOrderIds.filter(id => activeManualGiroIds.has(id));
     if (orderIds.length < 2) return;
     setPendingManualGiroAction(true);
     try {
-      const res = await api.createManualGiro(orderIds, horaRef, anchorOrderId);
+      const res = await api.createManualGiro(orderIds, horaRef, anchorOrderId, entregaRef ?? null);
       if (res && res.ok) {
         if (notify) notify(`✓ Giro manual creado · ${formatGiroLabel(res.giro)}`, "#22C55E");
         setSelectedManualGiroOrderIds([]);
@@ -818,6 +841,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
         const msg = code === "invalid_orders" ? "Pedidos no elegibles"
           : code === "some_orders_not_found" ? "Pedidos no encontrados"
           : code === "invalid_hora_ref" ? "Hora no válida"
+          : code === "invalid_entrega_ref" ? "Hora de entrega no válida"
           : (code === "need_at_least_2_orders" || code === "need_at_least_2_distinct_orders") ? "Selecciona 2 pedidos"
           : "Error al crear giro";
         if (notify) notify("❌ " + msg, "#E8341C");
