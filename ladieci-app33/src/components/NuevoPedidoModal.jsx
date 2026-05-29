@@ -597,6 +597,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // Reset forzaHora e horaCustom quando l'operatore apre il popup delivery o cambia l'indirizzo
   // (zona potrebbe cambiare → ricalcolo ora necessario anche se l'operatore aveva toccato il campo)
   useEffect(() => {
+    if (!showDeliveryPopup) return; // non resettare alla CHIUSURA: preserva forzaHora fino al submit
     setForzaHora(false);
     horaCustom.current = false;
   }, [showDeliveryPopup, direccion]);
