@@ -8,7 +8,7 @@ import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitin
 
 // Helpers tempi: hora consegna ↔ horaForno (= partenza driver = uscita pizza forno)
 const _tm = (t) => { if (!t) return null; const [h,m] = t.split(":").map(Number); return h*60+m; };
-const _th = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+const _th = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
 // Sorgente unica: o.forno_out (backend cascade-aware). Fallback legacy per ordini pre-migration.
 // Applica ui_offset_min (snooze visivo per-card DOMICILIO).
 const calcHoraForno = (o, zona) => {
@@ -759,7 +759,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   );
 
   const toMin = (t) => { if (!t) return 9999; const [h,m] = t.split(":").map(Number); return h*60+m; };
-  const toHora = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+  const toHora = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
   const activeManualGiroIds = new Set(entregas.filter(isManualGiroSelectableOrder).map(o => o.id));
 
   // DELIVERY-MANUAL-GIRO-01 P1C.1: prune solo della selezione locale quando un

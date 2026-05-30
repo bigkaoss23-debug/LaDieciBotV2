@@ -423,7 +423,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
   // ── Helper: converte "HH:MM" in minuti dall'inizio della giornata ────────
   const toMin = (t) => { if (!t) return null; const [h,m]=t.split(":").map(Number); return h*60+m; };
-  const toHora = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+  const toHora = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
 
   // ── Auto-imposta ora quando la zona viene rilevata ────────────────────────
   useEffect(() => {
@@ -621,7 +621,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       return { isBlocked: true, sugeridoH: null, outOfServiceWindow: true };
     }
     const toM = (t) => { if (!t) return null; const [h,m]=String(t).split(":").map(Number); return h*60+(m||0); };
-    const toH = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+    const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
     const horaMin = toM(hora);
     // Vincoli combinati: driver schedule (propose) + forno (consegnaSuggerita)
     const limits = [];
@@ -1473,7 +1473,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   const sugg = suggerisciOrario(zona.id, ordenes);
                   if (!sugg) return null;
                   const toM = (t) => { const [h,m]=t.split(":").map(Number); return h*60+m; };
-                  const toH = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+                  const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
                   const nowMin = new Date().getHours()*60 + new Date().getMinutes();
                   const tgReal = risolviTempoAndata(zonaInfo?.durataAndataMin, zonaInfo?.lat, zonaInfo?.lon, zona);
                   const horaFornoMin = toM(sugg.orario) - tgReal;
@@ -1522,7 +1522,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 {/* ── Status unificato: forno + driver (schedule-aware cascade) ── */}
                 {sf && hora && zona && (() => {
                   const toM = (t) => { if (!t) return null; const [h,m]=String(t).split(":").map(Number); return h*60+(m||0); };
-                  const toH = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+                  const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
                   const horaMin = toM(hora);
                   const isOutOfService = deliveryStatus.outOfServiceWindow || sf.propose?.outOfServiceWindow;
 

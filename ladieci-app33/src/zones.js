@@ -281,7 +281,7 @@ export function suggerisciOrario(zonaId, ordenes) {
   if (utilizzabili.length === 0) return null;
 
   const best = utilizzabili[0];
-  const orario = `${String(Math.floor(best.slotMin/60)).padStart(2,"0")}:${String(best.slotMin%60).padStart(2,"0")}`;
+  const orario = `${String(Math.floor(best.slotMin/60)%24).padStart(2,"0")}:${String(best.slotMin%60).padStart(2,"0")}`;
   return { orario, nOrdini: best.count };
 }
 

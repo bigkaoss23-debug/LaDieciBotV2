@@ -138,7 +138,7 @@ export function proposeForNewOrder(orders, newOrder, options = {}, deps = {}) {
     calcolaTempoGiroFn = calcolaTempoGiro,
   } = deps;
   const toMin = (t) => { if (!t) return null; const [h,m]=String(t).split(":").map(Number); return h*60+(m||0); };
-  const toH = (m) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+  const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
   const latestDeliveryMinute = Number.isFinite(Number(options.latestDeliveryMinute))
     ? Number(options.latestDeliveryMinute)
     : 23 * 60;
