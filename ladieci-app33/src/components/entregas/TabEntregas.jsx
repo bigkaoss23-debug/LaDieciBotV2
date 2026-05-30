@@ -212,18 +212,50 @@ const ZonaOrderRow = ({
               {w.label}
             </span>
           ))}
-          {o.hora && zona && (() => {
-            const hF = calcHoraForno(o, zona);
+          {(() => {
+            // Allineamento orari con Cocina.
+            // Membro di giro manuale: orario operativo unico = hora_ref (come header
+            // giro e Cocina), consegna comune = entrega_ref; l'ora cliente del singolo
+            // resta come riferimento secondario piccolo.
+            // Ordine singolo (no giro): comportamento invariato (forno_out + ora cliente).
+            const isGiro = !!(manualGiro && manualGiro.id);
+            if (!isGiro) {
+              if (!(o.hora && zona)) return null;
+              const hF = calcHoraForno(o, zona);
+              return (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
+                  {hF && (
+                    <span style={{ color: "#C2410C", fontWeight: 700 }} title="Pizza fuera del horno">
+                      ⏱ {hF}
+                    </span>
+                  )}
+                  <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 700 }} title="Entrega al cliente">
+                    🛵 {o.hora}
+                  </span>
+                </span>
+              );
+            }
+            const hF = manualGiro.hora_ref || (zona ? calcHoraForno(o, zona) : null);
+            const hEntrega = manualGiro.entrega_ref || o.hora;
+            const showClienteRef = o.hora && o.hora !== hEntrega;
+            if (!hF && !hEntrega) return null;
             return (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
                 {hF && (
-                  <span style={{ color: "#C2410C", fontWeight: 700 }} title="Pizza fuera del horno">
+                  <span style={{ color: "#C2410C", fontWeight: 700 }} title="Salida horno (giro)">
                     ⏱ {hF}
                   </span>
                 )}
-                <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 700 }} title="Entrega al cliente">
-                  🛵 {o.hora}
-                </span>
+                {hEntrega && (
+                  <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 700 }} title="Entrega del giro">
+                    🛵 {hEntrega}
+                  </span>
+                )}
+                {showClienteRef && (
+                  <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 600 }} title="Hora cliente (referencia)">
+                    cliente {o.hora}
+                  </span>
+                )}
               </span>
             );
           })()}
