@@ -282,22 +282,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                                 {o.isManualGiro ? `GIRO ${o.horaEntrega}` : o.horaEntrega}
                               </span>
                             </div>
-                            {/* Giro con orario consegna comune: mostra l'ora cliente come riferimento secondario */}
-                            {o.isManualGiro && o.hora && o.hora !== o.horaEntrega && (
-                              <span style={{color:"rgba(0,0,0,0.5)",fontSize:11,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>
-                                cliente {o.hora}
-                              </span>
-                            )}
                           </div>
-                        )}
-                        {o.riesgoRetraso && (
-                          <span title="La pizza sale del horno después de la hora del cliente"
-                            style={{display:"inline-flex",alignItems:"center",gap:4,
-                              background:"rgba(239,68,68,0.18)",border:"1.5px solid rgba(239,68,68,0.55)",
-                              borderRadius:999,padding:"3px 9px",color:"#fca5a5",fontSize:11,fontWeight:900,
-                              whiteSpace:"nowrap"}}>
-                            ⚠️ RIESGO RETRASO
-                          </span>
                         )}
                       </div>
                     )}
