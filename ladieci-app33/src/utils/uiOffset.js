@@ -16,7 +16,7 @@ export const applyUiOffset = (hhmm, offsetMin) => {
   let tot = h * 60 + m + off;
   if (tot < 0) tot = 0;
   if (tot >= 24 * 60) tot = 24 * 60 - 1;
-  return `${String(Math.floor(tot / 60)).padStart(2, "0")}:${String(tot % 60).padStart(2, "0")}`;
+  return `${String(Math.floor(tot/60)%24).padStart(2, "0")}:${String(tot % 60).padStart(2, "0")}`;
 };
 
 // Wrapper: applica l'offset al forno_out di un ordine.

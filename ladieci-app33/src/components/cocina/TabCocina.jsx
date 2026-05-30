@@ -24,7 +24,7 @@ const subtractMinutes = (hora, min) => {
   const [hh, mm] = hora.split(":").map(Number);
   const tot = hh * 60 + mm - min;
   if (tot < 0) return null;
-  return `${String(Math.floor(tot / 60)).padStart(2,"0")}:${String(tot % 60).padStart(2,"0")}`;
+  return `${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot % 60).padStart(2,"0")}`;
 };
 
 

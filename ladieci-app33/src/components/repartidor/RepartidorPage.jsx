@@ -19,7 +19,7 @@ const addMinutes = (hora, min) => {
   if (!hora || !min) return null;
   const [hh, mm] = hora.split(":").map(Number);
   const tot = hh * 60 + mm + min;
-  return `${String(Math.floor(tot / 60)).padStart(2,"0")}:${String(tot % 60).padStart(2,"0")}`;
+  return `${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot % 60).padStart(2,"0")}`;
 };
 
 // hora = orario consegna cliente → horaForno = hora − tempoGiro
@@ -28,7 +28,7 @@ const subtractMinutes = (hora, min) => {
   const [hh, mm] = hora.split(":").map(Number);
   const tot = hh * 60 + mm - min;
   if (tot < 0) return null;
-  return `${String(Math.floor(tot / 60)).padStart(2,"0")}:${String(tot % 60).padStart(2,"0")}`;
+  return `${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot % 60).padStart(2,"0")}`;
 };
 
 // ─── Card singola ─────────────────────────────────────────────────────────
