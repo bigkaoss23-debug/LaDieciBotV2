@@ -583,6 +583,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       return;
     }
     let cancelled = false;
+    setBackendTiming(null);
     setBackendTimingLoading(true);
     const t = setTimeout(async () => {
       try {
@@ -657,17 +658,20 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     // fallback hint quando il backend non ha ancora risposto.
     if (backendTiming && backendTiming.tipo_consegna === "DOMICILIO" && hora) {
       const after = (backendTiming.warnings || []).some(w => w.code === "after_hours");
+      const selectedH = backendTiming.hora_propuesta || hora;
+      const suggestedH = backendTiming.suggested_hora || null;
       return {
         isBlocked: !!backendTiming.driver?.has_conflict,
-        sugeridoH: backendTiming.suggested_hora || null,
+        selectedH,
+        sugeridoH: suggestedH,
         outOfServiceWindow: after,
         fromBackend: true,
       };
     }
     const sf = slotFeedback;
-    if (!sf || !hora) return { isBlocked: false, sugeridoH: null, outOfServiceWindow: false };
+    if (!sf || !hora) return { isBlocked: false, selectedH: hora || null, sugeridoH: null, outOfServiceWindow: false };
     if (sf.propose?.outOfServiceWindow) {
-      return { isBlocked: true, sugeridoH: null, outOfServiceWindow: true };
+      return { isBlocked: true, selectedH: hora, sugeridoH: null, outOfServiceWindow: true };
     }
     const toM = (t) => { if (!t) return null; const [h,m]=String(t).split(":").map(Number); return h*60+(m||0); };
     const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
@@ -676,9 +680,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     const limits = [];
     if (sf.propose && !sf.propose.ok && Number.isFinite(sf.propose.consegnaPropostaMin)) limits.push(sf.propose.consegnaPropostaMin);
     if (!sf.slotOk && sf.consegnaSuggerita) limits.push(toM(sf.consegnaSuggerita));
-    if (limits.length === 0) return { isBlocked: false, sugeridoH: null, outOfServiceWindow: false };
+    if (limits.length === 0) return { isBlocked: false, selectedH: hora, sugeridoH: null, outOfServiceWindow: false };
     const sugMin = Math.ceil(Math.max(...limits) / 5) * 5;
-    return { isBlocked: horaMin < sugMin, sugeridoH: toH(sugMin), outOfServiceWindow: false };
+    return { isBlocked: horaMin < sugMin, selectedH: hora, sugeridoH: toH(sugMin), outOfServiceWindow: false };
   }, [slotFeedback, hora, backendTiming]);
 
   const pickupKitchenStatus = useMemo(() => {
@@ -940,7 +944,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               {(() => {
                 const zona = zonaInfo?.zona;
                 const hasDir = direccion.trim().length > 0;
-                const hasConflict = slotFeedback?.propose && !slotFeedback.propose.ok;
+                const hasConflict = deliveryStatus.isBlocked;
                 return (
                   <button onClick={() => setShowDeliveryPopup(true)} style={{
                     display: "flex", alignItems: "center", gap: 10,
@@ -1640,7 +1644,89 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 })()}
 
                 {/* ── Status unificato: forno + driver (schedule-aware cascade) ── */}
-                {sf && hora && zona && (() => {
+                {(deliveryStatus.fromBackend || sf) && hora && zona && (() => {
+                  if (deliveryStatus.fromBackend && backendTiming) {
+                    const selectedH = deliveryStatus.selectedH || hora;
+                    const suggestedH = deliveryStatus.sugeridoH;
+                    const driverConflict = !!backendTiming.driver?.has_conflict;
+                    const hasAlternative = driverConflict && suggestedH && suggestedH !== selectedH;
+                    const fornoOut = backendTiming.forno_out || sf?.horaForno || "—";
+                    const load = sf?.load != null ? ` (${sf.load}/4)` : "";
+
+                    if (deliveryStatus.outOfServiceWindow) {
+                      return (
+                        <div style={{ borderRadius: 10, padding: "12px 14px",
+                          background: forzaHora ? "rgba(251,191,36,0.10)" : "rgba(239,68,68,0.12)",
+                          border: forzaHora ? "1.5px solid rgba(251,191,36,0.5)" : "2px solid rgba(239,68,68,0.6)",
+                          display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 18 }}>{forzaHora ? "⚠️" : "🚨"}</span>
+                            <span style={{ color: forzaHora ? "#fde68a" : "#fca5a5", fontWeight: 800, fontSize: 14 }}>
+                              Delivery no disponible después de las 23:00. Puedes forzarlo solo como excepción especial.
+                            </span>
+                          </div>
+                          <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, paddingLeft: 26, lineHeight: 1.45 }}>
+                            No se aplicará ninguna sugerencia automática fuera del horario normal.
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (driverConflict) {
+                      return (
+                        <div style={{ borderRadius: 10, padding: "12px 14px",
+                          background: forzaHora ? "rgba(251,191,36,0.10)" : "rgba(239,68,68,0.12)",
+                          border: forzaHora ? "1.5px solid rgba(251,191,36,0.5)" : "2px solid rgba(239,68,68,0.6)",
+                          display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 18 }}>{forzaHora ? "⚠️" : "🚨"}</span>
+                            <span style={{ color: forzaHora ? "#fde68a" : "#fca5a5", fontWeight: 800, fontSize: 14 }}>
+                              Hora pedida: {selectedH}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", paddingLeft: 26, lineHeight: 1.45 }}>
+                            {backendTiming.driver?.message || "Driver ocupado"}
+                          </div>
+                          {hasAlternative && (
+                            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", paddingLeft: 26 }}>
+                              Sugerencia alternativa: <strong style={{ color: "#86efac", fontWeight: 900, fontSize: 15 }}>{suggestedH}</strong>
+                            </div>
+                          )}
+                          {!forzaHora && (
+                            <div style={{ paddingLeft: 26 }}>
+                              <button onClick={() => setForzaHora(true)} style={{
+                                background: "rgba(251,191,36,0.12)", border: "1.5px solid rgba(251,191,36,0.6)",
+                                color: "#fde68a", borderRadius: 8, padding: "5px 12px",
+                                fontSize: 12, fontWeight: 800, cursor: "pointer"
+                              }}>
+                                ⚠️ Confirmar {selectedH} forzado
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div style={{ borderRadius: 10, padding: "12px 14px",
+                        background: "rgba(34,197,94,0.08)", border: "1.5px solid rgba(34,197,94,0.45)",
+                        display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 16 }}>✅</span>
+                          <span style={{ color: "#86efac", fontWeight: 800, fontSize: 14 }}>
+                            Propón al cliente: {selectedH}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
+                          Horno libre {fornoOut}{load}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#86efac", fontWeight: 600, paddingLeft: 24 }}>
+                          🛵 Driver disponible
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const toM = (t) => { if (!t) return null; const [h,m]=String(t).split(":").map(Number); return h*60+(m||0); };
                   const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
                   const horaMin = toM(hora);
@@ -1847,14 +1933,20 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     3. BLOCKED forzato    → arancione/giallo, conferma hora forzata
                 */}
                 {(() => {
-                  const { isBlocked, sugeridoH, outOfServiceWindow } = deliveryStatus;
+                  const { isBlocked, selectedH, sugeridoH, outOfServiceWindow } = deliveryStatus;
                   const zonaOk = zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
                   let bg, label, onClick;
                   if (isBlocked && forzaHora) {
                     // Caso forzato — visivamente arancione/giallo per segnalare scelta non standard
                     bg = "linear-gradient(135deg, #F59E0B, #D97706)";
-                    label = `⚠️ Confirmar ${hora} forzado`;
-                    onClick = () => setShowDeliveryPopup(false);
+                    label = `⚠️ Confirmar ${selectedH || hora} forzado`;
+                    onClick = () => {
+                      if (deliveryStatus.fromBackend && selectedH && selectedH !== hora) {
+                        horaCustom.current = true;
+                        setHora(selectedH);
+                      }
+                      setShowDeliveryPopup(false);
+                    };
                   } else if (isBlocked && outOfServiceWindow) {
                     // Fuori orario servizio: nessuna sugerencia da applicare, solo forzatura esplicita.
                     bg = "linear-gradient(135deg, #F59E0B, #D97706)";
@@ -1868,8 +1960,16 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   } else {
                     // Caso OK normale
                     bg = zonaOk ? zona.colore : "rgba(249,115,22,0.7)";
-                    label = zonaOk ? `✓ Entrega en ${zona.id} confirmada` : "✓ Confirmar dirección";
-                    onClick = () => setShowDeliveryPopup(false);
+                    label = deliveryStatus.fromBackend && selectedH
+                      ? `✓ Confirmar ${selectedH}`
+                      : zonaOk ? `✓ Entrega en ${zona.id} confirmada` : "✓ Confirmar dirección";
+                    onClick = () => {
+                      if (deliveryStatus.fromBackend && selectedH && selectedH !== hora) {
+                        horaCustom.current = true;
+                        setHora(selectedH);
+                      }
+                      setShowDeliveryPopup(false);
+                    };
                   }
                   return (
                     <button onClick={onClick} style={{
