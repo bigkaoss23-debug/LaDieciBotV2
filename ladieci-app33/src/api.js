@@ -297,6 +297,16 @@ const api = {
     });
   },
 
+  // Step 2 anti-cerotto: timing delivery AUTORITATIVO dal backend (fonte unica).
+  // Input grezzi operatore (direccion/tel/hora/items/tipo_consegna + override
+  // zona_manuale). Output deciso server-side: zona, durata_andata_min,
+  // durata_google/haversine_min, geo_source, forno_out, hora_proposta,
+  // suggested_hora, warnings[], driver{has_conflict,message}, giro{...}.
+  // Il frontend MOSTRA questi valori: non li ricalcola e non li sovrascrive.
+  previewOrderTiming: function(input = {}) {
+    return proxyPost({ action: 'previewOrderTiming', ...input });
+  },
+
   // Crea ordine. THROW se Railway non conferma la creazione con un id valido.
   // Il chiamante DEVE wrappare in try/catch e fare rollback dello state ottimistico.
   // `data.client_req_id` (UUID) abilita l'idempotency: retry sicuri senza duplicati.

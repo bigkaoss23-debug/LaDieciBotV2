@@ -335,15 +335,20 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
               <button onClick={()=>onSave({
                   ...orden, items, nota, hora,
                   ...(isDelivery ? {
+                    // Step 2 anti-cerotto: solo input operatore. Il backend
+                    // (modificaOrdine → resolveDeliveryFields) ri-risolve zona/
+                    // durata server-side se cambia indirizzo e IGNORA i campi
+                    // geo/durata del client. Inviamo `zona` solo come override
+                    // manuale esplicito; i derivati restano null.
                     direccion: direccion || null,
-                    zona: zonaInfo?.zona?.id || null,
-                    zona_lat: zonaInfo?.lat ?? null,
-                    zona_lon: zonaInfo?.lon ?? null,
+                    zona: zonaManuale ? (zonaInfo?.zona?.id || null) : null,
+                    zona_lat: null,
+                    zona_lon: null,
                     zona_manuale: zonaManuale,
-                    durata_andata_min:    zonaInfo?.durataAndataMin ?? null,
-                    durata_google_min:    zonaInfo?.googleMin ?? null,
-                    durata_haversine_min: zonaInfo?.haversineMin ?? null,
-                    geo_source:           zonaInfo?.source || null
+                    durata_andata_min:    null,
+                    durata_google_min:    null,
+                    durata_haversine_min: null,
+                    geo_source:           null
                   } : {})
                 })}
                 disabled={items.length===0}

@@ -61,6 +61,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
   // ── Feedback slot forno (solo delivery) ──────────────────────────────────
   const [slotFeedback,   setSlotFeedback]   = useState(null);
+  // Step 2 anti-cerotto: timing delivery AUTORITATIVO dal backend (fonte unica).
+  // Popolato da api.previewOrderTiming. Il frontend MOSTRA questi valori (zona,
+  // durata, source, forno_out, warnings, driver conflict, suggested_hora);
+  // slotFeedback/proposeForNewOrder locali restano solo come hint UI live mentre
+  // si digita, NON come decisione né come dato salvato.
+  const [backendTiming,    setBackendTiming]    = useState(null);
+  const [backendTimingLoading, setBackendTimingLoading] = useState(false);
   // { horaForno, slotOk, load, slotSuggerito, consegnaSuggerita,
   //   scenario: "A"|"B"|"C"|"D"|"E"|"F", driverRientro, stessaZona }
 
@@ -107,6 +114,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setClienteId(null); setPreferito(false); setShowSugerencias(false);
     setPickerVisible(false); setEditingItem(null);
     setZonaInfo(null); setZonaLoading(false); setZonaManuale(false);
+    setBackendTiming(null); setBackendTimingLoading(false);
     horaCustom.current = false;
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
     submittingRef.current = false;
@@ -185,22 +193,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         console.warn("[upsertCliente] failed, l'ordine procede senza cliente_id:", e?.message || e);
       }
     }
+    // Step 2 anti-cerotto: usato SOLO per l'override zona manuale (input operatore).
+    // Zona/durata definitive le decide il backend in createOrden (resolveDeliveryFields).
     const zonaFinaleId = tipoConsegna === "DOMICILIO"
       ? (zonaInfo?.zona?.id || assegnaZonaDaKeyword(direccion)?.id || null)
-      : null;
-    // Snapshot tempi al momento dell'ordine — usati da delivery_logs per A/B analysis.
-    // durata_andata_min = quello che il sistema HA SCELTO (Google se disponibile).
-    // durata_google_min / durata_haversine_min = entrambi i candidati per confronto.
-    const isDomicilio = tipoConsegna === "DOMICILIO" && zonaInfo?.zona;
-    // Evita di salvare il fallback zona.tempoGiro come durata reale: se manca
-    // sia uno snapshot ETA reale sia coordinate fresche, scriviamo null in DB
-    // (così UI può mostrare warning e le medie non restano inquinate).
-    const hasEtaSnapshot = zonaInfo?.durataAndataMin != null;
-    const hasCoords = zonaInfo?.lat != null && zonaInfo?.lon != null;
-    const tgFinale = isDomicilio
-      ? (hasEtaSnapshot || hasCoords
-          ? risolviTempoAndata(zonaInfo.durataAndataMin, zonaInfo.lat, zonaInfo.lon, zonaInfo.zona)
-          : null)
       : null;
     const notaFinale = cierreOverride ? buildClosingOverrideNota(nota, hora) : nota;
     // client_req_id: idempotency key. Stabile per la sessione modal corrente
@@ -224,14 +220,19 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       tipo_consegna: tipoConsegna,
       direccion: tipoConsegna === "DOMICILIO" ? direccion.trim() : null,
       direccion_note: tipoConsegna === "DOMICILIO" ? (direccionNote.trim() || null) : null,
-      zona: zonaFinaleId,
-      zona_lat: tipoConsegna === "DOMICILIO" ? (zonaInfo?.lat || null) : null,
-      zona_lon: tipoConsegna === "DOMICILIO" ? (zonaInfo?.lon || null) : null,
+      // ── Step 2 anti-cerotto: geo/durata NON sono più fonte di verità del
+      // frontend. Il backend (createOrden → resolveDeliveryFields) ri-risolve
+      // server-side e IGNORA questi campi. Inviamo solo gli input operatore:
+      // `direccion` + flag `zona_manuale` (+ `zona` solo se override esplicito).
+      // I campi derivati restano null: il backend li popola autoritativamente.
+      zona: (tipoConsegna === "DOMICILIO" && zonaManuale) ? zonaFinaleId : null,
+      zona_lat: null,
+      zona_lon: null,
       zona_manuale: tipoConsegna === "DOMICILIO" ? zonaManuale : false,
-      durata_andata_min:    tgFinale,
-      durata_google_min:    isDomicilio ? (zonaInfo.googleMin ?? null) : null,
-      durata_haversine_min: isDomicilio ? (zonaInfo.haversineMin ?? null) : null,
-      geo_source:           isDomicilio ? (zonaInfo.source || null) : null,
+      durata_andata_min:    null,
+      durata_google_min:    null,
+      durata_haversine_min: null,
+      geo_source:           null,
       // Flag operatore: ha forzato un'hora che il sistema considerava in conflitto
       // (driver impegnato o slot pieno). Tracciato per analytics + audit qualità.
       forzado: cierreOverride || (tipoConsegna === "DOMICILIO" ? forzaHora : false),
@@ -570,6 +571,42 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     });
   }, [hora, zonaInfo, tipoConsegna, ordenes, driverStato]); // eslint-disable-line
 
+  // ── Backend timing autoritativo (Step 2 anti-cerotto) ───────────────────
+  // Su cambio di indirizzo / tipo consegna / hora / zona manuale, chiediamo al
+  // backend la verità su zona/durata/source/forno_out/warnings/driver/giro.
+  // Debounce 450ms per non martellare l'endpoint mentre l'operatore digita.
+  // Input GREZZI: niente durata/zona/geo calcolati dal frontend.
+  useEffect(() => {
+    if (!visible) { setBackendTiming(null); return; }
+    if (tipoConsegna === "DOMICILIO" && direccion.trim().length < 5) {
+      setBackendTiming(null);
+      return;
+    }
+    let cancelled = false;
+    setBackendTimingLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.previewOrderTiming({
+          tipo_consegna: tipoConsegna,
+          direccion: tipoConsegna === "DOMICILIO" ? direccion.trim() : null,
+          tel: tel || null,
+          hora: hora || null,
+          zona_manuale: tipoConsegna === "DOMICILIO" ? zonaManuale : false,
+          zona: (tipoConsegna === "DOMICILIO" && zonaManuale) ? (zonaInfo?.zona?.id || null) : null,
+        });
+        if (!cancelled) setBackendTiming(res || null);
+      } catch (e) {
+        if (!cancelled) {
+          setBackendTiming(null);
+          console.warn("[previewOrderTiming] failed:", e?.message || e);
+        }
+      } finally {
+        if (!cancelled) setBackendTimingLoading(false);
+      }
+    }, 450);
+    return () => { cancelled = true; clearTimeout(t); setBackendTimingLoading(false); };
+  }, [visible, tipoConsegna, direccion, hora, zonaManuale]); // eslint-disable-line
+
   // Prefill quando il modal si apre
   useEffect(() => {
     if (visible && prefill) {
@@ -615,6 +652,18 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // Stato delivery unificato — combina la proposta schedule-aware del driver
   // con il vincolo forno. Il bottone "Aplicar sugerencia" usa questo.
   const deliveryStatus = useMemo(() => {
+    // Step 2 anti-cerotto: se il backend ha risposto, la DECISIONE conflitto/
+    // suggerimento viene da lì (fonte unica). slotFeedback locale resta solo
+    // fallback hint quando il backend non ha ancora risposto.
+    if (backendTiming && backendTiming.tipo_consegna === "DOMICILIO" && hora) {
+      const after = (backendTiming.warnings || []).some(w => w.code === "after_hours");
+      return {
+        isBlocked: !!backendTiming.driver?.has_conflict,
+        sugeridoH: backendTiming.suggested_hora || null,
+        outOfServiceWindow: after,
+        fromBackend: true,
+      };
+    }
     const sf = slotFeedback;
     if (!sf || !hora) return { isBlocked: false, sugeridoH: null, outOfServiceWindow: false };
     if (sf.propose?.outOfServiceWindow) {
@@ -630,7 +679,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     if (limits.length === 0) return { isBlocked: false, sugeridoH: null, outOfServiceWindow: false };
     const sugMin = Math.ceil(Math.max(...limits) / 5) * 5;
     return { isBlocked: horaMin < sugMin, sugeridoH: toH(sugMin), outOfServiceWindow: false };
-  }, [slotFeedback, hora]);
+  }, [slotFeedback, hora, backendTiming]);
 
   const pickupKitchenStatus = useMemo(() => {
     if (tipoConsegna === "DOMICILIO" || !hora) return null;
@@ -800,6 +849,77 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   )}
                 </div>
               </div>
+
+              {/* ── Step 2 anti-cerotto: timing AUTORITATIVO dal backend ──────── */}
+              {/* Fonte unica: zona/durata/source/forno_out/warnings/driver/giro
+                  arrivano dal backend (previewOrderTiming). Il frontend mostra,
+                  non ricalcola. */}
+              {tipoConsegna === "DOMICILIO" && (backendTiming || backendTimingLoading) && (
+                <div style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 9, padding: "8px 10px", fontSize: 11,
+                  display: "flex", flexDirection: "column", gap: 6
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 800, letterSpacing: .6, textTransform: "uppercase", fontSize: 9 }}>
+                      Backend
+                    </span>
+                    {backendTimingLoading && !backendTiming && (
+                      <span style={{ color: "rgba(255,255,255,0.5)" }}>Calculando…</span>
+                    )}
+                    {backendTiming?.zona && (
+                      <span style={{ color: "#fff", fontWeight: 700 }}>Zona {backendTiming.zona}</span>
+                    )}
+                    {backendTiming?.durata_andata_min != null && (
+                      <span title="Duración de ida (backend)" style={{
+                        color: "#fdba74", fontFamily: "'DM Mono',monospace", fontWeight: 700,
+                        background: "rgba(249,115,22,0.12)", border: "1px solid rgba(249,115,22,0.3)",
+                        borderRadius: 6, padding: "1px 6px"
+                      }}>🛵 {backendTiming.durata_andata_min}min</span>
+                    )}
+                    {backendTiming?.geo_source && (
+                      <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 10 }}>
+                        {backendTiming.geo_source}
+                      </span>
+                    )}
+                    {backendTiming?.forno_out && (
+                      <span title="Salida del horno (backend)" style={{
+                        color: "#86efac", fontFamily: "'DM Mono',monospace", fontWeight: 700,
+                        background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)",
+                        borderRadius: 6, padding: "1px 6px"
+                      }}>🔥 {backendTiming.forno_out}</span>
+                    )}
+                  </div>
+
+                  {/* Conflicto driver: advisory, NO cambia la hora automáticamente */}
+                  {backendTiming?.driver?.has_conflict && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#fca5a5" }}>
+                      <span>⚠️ {backendTiming.driver.message || "Driver ocupado"}</span>
+                      {backendTiming.suggested_hora && (
+                        <span style={{ color: "rgba(255,255,255,0.7)" }}>
+                          · sugerido {backendTiming.suggested_hora} (no se aplica solo)
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Giro compatible sugerido */}
+                  {backendTiming?.giro?.suggested && (
+                    <div style={{ color: "#93c5fd" }}>
+                      🔁 Compatible con giro {backendTiming.giro.manual_giro_id}
+                      {backendTiming.giro.orders?.length ? ` (${backendTiming.giro.orders.length} pedidos)` : ""}
+                    </div>
+                  )}
+
+                  {/* Warnings (duración estimada / sin verificar / zona) */}
+                  {(backendTiming?.warnings || [])
+                    .filter(w => w.code !== "driver_conflict")
+                    .map((w, i) => (
+                      <div key={i} style={{ color: "#fbbf24", fontSize: 10 }}>• {w.message}</div>
+                    ))}
+                </div>
+              )}
 
               {/* Badge cliente abituale */}
               {clienteAbitual && (
