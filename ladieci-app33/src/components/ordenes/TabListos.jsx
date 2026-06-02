@@ -5,6 +5,7 @@ import Badge from '../ui/Badge';
 import DescuentoInput from '../ui/DescuentoInput';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
+import { orarioToMs } from '../../utils/serviceClock';
 
 const isPizzaItem = (it) => {
   if (!it || !it.n) return false;
@@ -448,8 +449,8 @@ const playNotifica = () => {
 
 // ─── HELPERS TIMER CUCINA ────────────────────────────────────
 const PREP_MINUTI   = 20; // minuti per preparare un ordine
-const SERVICE_ROLLOVER_CUTOFF_MIN = 4 * 60;  // 00:00-03:59 appartiene al servizio serale
-const SERVICE_EVENING_START_MIN = 18 * 60;   // dalle 18:00 guardiamo al dopo mezzanotte
+// orarioToMs / parseHoraToMin / rollover service-day → src/utils/serviceClock.js
+// (estratti per testabilità + fix BUG-COCINA-COUNTDOWN-SERVICE-DAY-00XX-01).
 
 // Lookup robusto: match per id numerico/stringa, poi per nome esatto, poi per sub
 const _normName = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -472,37 +473,6 @@ const lookupMenu = (it) => {
   return m || null;
 };
 
-const toDateFromNowInput = (now) => {
-  if(now instanceof Date) return new Date(now.getTime());
-  if(typeof now === "number" && Number.isFinite(now)) return new Date(now);
-  return new Date();
-};
-
-const parseHoraToMin = (horaStr) => {
-  if(!horaStr || typeof horaStr !== "string") return null;
-  const m = horaStr.match(/^(\d{1,2}):(\d{2})$/);
-  if(!m) return null;
-  const hh = Number(m[1]);
-  const mm = Number(m[2]);
-  if(!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  return ((hh % 24) * 60) + mm;
-};
-
-const orarioToMs = (horaStr, now = Date.now()) => {
-  const targetMin = parseHoraToMin(horaStr);
-  if(targetMin == null) return null;
-
-  const base = toDateFromNowInput(now);
-  const nowMin = base.getHours() * 60 + base.getMinutes();
-  const d = new Date(base.getTime());
-  d.setHours(Math.floor(targetMin / 60), targetMin % 60, 0, 0);
-
-  if(targetMin < SERVICE_ROLLOVER_CUTOFF_MIN && nowMin >= SERVICE_EVENING_START_MIN) {
-    d.setDate(d.getDate() + 1);
-  }
-
-  return d.getTime();
-};
 
 const caricoTotale = (ordenes) => {
   const countItems = (items) => (items||[]).filter(it => {
