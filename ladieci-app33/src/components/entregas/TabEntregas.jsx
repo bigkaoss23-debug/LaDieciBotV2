@@ -263,6 +263,31 @@ const ZonaOrderRow = ({
         <div style={{ color: "rgba(253,186,116,0.8)", fontSize: 12, marginTop: 2, lineHeight: 1.4 }}>
           📍 {o.direccion || <span style={{ color: "rgba(255,100,50,0.5)" }}>Sin dirección</span>}
         </div>
+        {/* Riesgo repartidor (DELIVERY-DRIVER-SCHEDULE-SEPARATION-01).
+            Sorgente: campi driver backend separati da forno_out (cucina).
+            forno_out NON è la salida driver: qui mostriamo la partenza/consegna
+            stimata reale del rider e l'eventuale retraso. */}
+        {o.conflicto_driver && o.salida_driver_estimada && (
+          <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.45)",
+              color: "#fca5a5", borderRadius: 999, fontSize: 10, fontWeight: 800,
+              padding: "2px 8px", whiteSpace: "nowrap"
+            }} title="Schedule rider: salida estimada y retraso respecto a la hora cliente">
+              ⚠ Repartidor tarde · salida {o.salida_driver_estimada}
+              {Number(o.retraso_estimado_min) > 0 ? ` · +${o.retraso_estimado_min} min` : ""}
+            </span>
+            {o.entrega_estimada && (
+              <span style={{
+                color: "rgba(255,255,255,0.45)", fontSize: 10, fontWeight: 700,
+                fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap"
+              }} title="Entrega estimada al cliente (schedule rider)">
+                entrega est. {o.entrega_estimada}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Pizze + totale */}
