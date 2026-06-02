@@ -68,6 +68,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // si digita, NON come decisione né come dato salvato.
   const [backendTiming,    setBackendTiming]    = useState(null);
   const [backendTimingLoading, setBackendTimingLoading] = useState(false);
+  const [horaTouchedByOperator, setHoraTouchedByOperator] = useState(false);
   // { horaForno, slotOk, load, slotSuggerito, consegnaSuggerita,
   //   scenario: "A"|"B"|"C"|"D"|"E"|"F", driverRientro, stessaZona }
 
@@ -116,6 +117,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setZonaInfo(null); setZonaLoading(false); setZonaManuale(false);
     setBackendTiming(null); setBackendTimingLoading(false);
     horaCustom.current = false;
+    setHoraTouchedByOperator(false);
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
     submittingRef.current = false;
     setSubmitting(false);
@@ -365,6 +367,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
   // Traccia se l'operatore ha toccato manualmente l'orario
   const horaCustom = useRef(false);
+  const setHoraFromOperator = (nextHora) => {
+    horaCustom.current = true;
+    setHoraTouchedByOperator(true);
+    setHora(nextHora);
+  };
 
   // ── Geocoding zona — debounce 800ms sull'indirizzo ─────────────────────
   // ENGINE UNICO: chiama api.resolveAddress sul backend (stessa cascata del bot WhatsApp).
@@ -428,46 +435,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
   // ── Auto-imposta ora quando la zona viene rilevata ────────────────────────
   useEffect(() => {
-    if (horaCustom.current) return; // l'operatore ha già scelto un orario manuale
-    if (tipoConsegna !== "DOMICILIO" || !zonaInfo?.zona) return;
-    const zona = zonaInfo.zona;
-    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-
-    // 1. Suggerimento di aggregazione: NON auto-fill.
-    // Bug Z1 (17/05/2026): l'auto-fill da suggerisciOrario propagava un orario
-    // sbagliato su tutta la zona — bastava UN ordine con hora errata (es. MARTA
-    // Q1 23:43) per inquinare tutti i successivi Q1 della serata, che venivano
-    // auto-aggregati a 23:50 senza che l'operatore lo richiedesse.
-    // La pillola cliccabile (riga ~803) mostra comunque il suggerimento — se
-    // l'operatore VUOLE accodare deve cliccarla esplicitamente.
-    // Fallback normale (step 2) calcola un orario sano basato su NOW + driver.
-
-    // 2. Calcola prima consegna possibile in base allo stato del driver
-    let baseMin = nowMin;
-    if (driverStato?.stato === "IN_GIRO" && driverStato.partito_alle) {
-      const zonaDriverObj = ZONE_DELIVERY.find(z => z.id === driverStato.zona);
-      if (zonaDriverObj && driverStato.zona !== zona.id) {
-        const partMin = new Date(driverStato.partito_alle).getHours() * 60
-          + new Date(driverStato.partito_alle).getMinutes();
-        // zonaDriverObj.tempoGiro: giro IN CORSO del driver, non un indirizzo da risolvere
-        const rientroMin = partMin + zonaDriverObj.tempoGiro;
-        baseMin = Math.max(nowMin, rientroMin);
-      }
-    }
-
-    // baseMin + 5 min cottura + guida_pura + BUFFER_OPS al cliente, arrotondato a slot 10min.
-    // tgPerHora = guida pura (post refactor 14/05/2026): durata_andata_min ora è guida sola,
-    // senza il vecchio +5 baked-in. BUFFER_OPS_DRIVER_MIN aggiunge il cuscino per
-    // parcheggio/citofono/scale/handoff.
-    const tgPerHora = risolviTempoAndata(zonaInfo.durataAndataMin, zonaInfo.lat, zonaInfo.lon, zona);
-    const minConsegna = baseMin + 5 + tgPerHora + BUFFER_OPS_DRIVER_MIN;
-    // Arrotondamento: round al slot 10 più vicino (perde max 5 min invece di 9).
-    // Safeguard: se arrotondare in basso porta forno_out nel passato, fallback a ceil.
-    let arrotondato = Math.round(minConsegna / 10) * 10;
-    if (arrotondato - tgPerHora < baseMin) {
-      arrotondato = Math.ceil(minConsegna / 10) * 10;
-    }
-    setHora(toHora(arrotondato));
+    // La prima disponibilità ora arriva da previewOrderTiming. Questo vecchio
+    // calcolo locale resta spento: la zona serve solo a mostrare badge/hint.
   }, [zonaInfo]); // eslint-disable-line
 
   // ── Calcolo slot forno + proposta delivery (cascade-aware, schedule-based) ──
@@ -608,6 +577,16 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     return () => { cancelled = true; clearTimeout(t); setBackendTimingLoading(false); };
   }, [visible, tipoConsegna, direccion, hora, zonaManuale]); // eslint-disable-line
 
+  useEffect(() => {
+    if (!visible || tipoConsegna !== "DOMICILIO" || !backendTiming) return;
+    if (horaTouchedByOperator) return;
+    const firstAvailable = backendTiming.suggested_hora || backendTiming.hora_propuesta || null;
+    if (!firstAvailable || firstAvailable === hora) return;
+    horaCustom.current = false;
+    setForzaHora(false);
+    setHora(firstAvailable);
+  }, [visible, tipoConsegna, backendTiming, horaTouchedByOperator, hora]);
+
   // Prefill quando il modal si apre
   useEffect(() => {
     if (visible && prefill) {
@@ -619,6 +598,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       if (prefill.tipo_consegna === "DOMICILIO" && prefill.direccion) setDireccion(prefill.direccion);
       if (prefill.direccion)     setDireccion(prefill.direccion);
       if (prefill.direccion_note) setDireccionNote(prefill.direccion_note);
+    }
+    if (visible) {
+      horaCustom.current = false;
+      setHoraTouchedByOperator(false);
     }
     if (visible && !prefill?.hora) {
       const n = new Date();
@@ -637,7 +620,6 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   useEffect(() => {
     if (!showDeliveryPopup) return; // non resettare alla CHIUSURA: preserva forzaHora fino al submit
     setForzaHora(false);
-    horaCustom.current = false;
   }, [showDeliveryPopup, direccion]);
 
   // ── Render extras badge per un item ─────────────────────────────────────
@@ -653,19 +635,28 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // Stato delivery unificato — combina la proposta schedule-aware del driver
   // con il vincolo forno. Il bottone "Aplicar sugerencia" usa questo.
   const deliveryStatus = useMemo(() => {
+    if (backendTimingLoading && tipoConsegna === "DOMICILIO") {
+      return { isBlocked: false, selectedH: hora || null, firstAvailableH: null, sugeridoH: null, outOfServiceWindow: false };
+    }
     // Step 2 anti-cerotto: se il backend ha risposto, la DECISIONE conflitto/
     // suggerimento viene da lì (fonte unica). slotFeedback locale resta solo
     // fallback hint quando il backend non ha ancora risposto.
     if (backendTiming && backendTiming.tipo_consegna === "DOMICILIO" && hora) {
       const after = (backendTiming.warnings || []).some(w => w.code === "after_hours");
-      const selectedH = backendTiming.hora_propuesta || hora;
-      const suggestedH = backendTiming.suggested_hora || null;
+      const firstAvailableH = backendTiming.suggested_hora || backendTiming.hora_propuesta || null;
+      const selectedH = horaTouchedByOperator
+        ? (backendTiming.hora_propuesta || hora)
+        : (firstAvailableH || backendTiming.hora_propuesta || hora);
+      const suggestedH = firstAvailableH || null;
+      const blockedByBackend = !!backendTiming.driver?.has_conflict;
       return {
-        isBlocked: !!backendTiming.driver?.has_conflict,
+        isBlocked: horaTouchedByOperator && blockedByBackend,
         selectedH,
+        firstAvailableH,
         sugeridoH: suggestedH,
         outOfServiceWindow: after,
         fromBackend: true,
+        horaTouchedByOperator,
       };
     }
     const sf = slotFeedback;
@@ -683,7 +674,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     if (limits.length === 0) return { isBlocked: false, selectedH: hora, sugeridoH: null, outOfServiceWindow: false };
     const sugMin = Math.ceil(Math.max(...limits) / 5) * 5;
     return { isBlocked: horaMin < sugMin, selectedH: hora, sugeridoH: toH(sugMin), outOfServiceWindow: false };
-  }, [slotFeedback, hora, backendTiming]);
+  }, [slotFeedback, hora, backendTiming, backendTimingLoading, tipoConsegna, horaTouchedByOperator]);
 
   const pickupKitchenStatus = useMemo(() => {
     if (tipoConsegna === "DOMICILIO" || !hora) return null;
@@ -835,7 +826,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 9, fontWeight: 800, letterSpacing: .8, textTransform: "uppercase", lineHeight: 1 }}>
                       {tipoConsegna === "DOMICILIO" ? "Entrega a las" : "Retirar a las"}
                     </span>
-                    <input type="time" value={hora} onChange={e => { horaCustom.current = true; setHora(e.target.value); }}
+                    <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)}
                       style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: 14, fontWeight: 700, width: 80, outline: "none", lineHeight: 1 }} />
                   </div>
                   {tipoConsegna === "DOMICILIO" && zonaInfo?.durataAndataMin != null && (
@@ -897,7 +888,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   </div>
 
                   {/* Conflicto driver: advisory, NO cambia la hora automáticamente */}
-                  {backendTiming?.driver?.has_conflict && (
+                  {backendTiming?.driver?.has_conflict && horaTouchedByOperator && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#fca5a5" }}>
                       <span>⚠️ {backendTiming.driver.message || "Driver ocupado"}</span>
                       {backendTiming.suggested_hora && (
@@ -1120,7 +1111,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     ) : null)}
                     {/* Pill suggerimento orario — visibile sia auto che manuale */}
                     {sugg && (
-                      <button onClick={() => setHora(sugg.orario)} style={{
+                      <button onClick={() => setHoraFromOperator(sugg.orario)} style={{
                         background: "rgba(0,151,167,0.1)",
                         border: "1px solid rgba(0,151,167,0.4)",
                         borderRadius: 6, padding: "2px 10px",
@@ -1165,7 +1156,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     <span style={{ color: "rgba(255,255,255,0.65)", fontSize: 12 }}>
                       Primer slot libre: horno {sf.slotSuggerito}
                     </span>
-                    <button onClick={() => setHora(sf.consegnaSuggerita)} style={{
+                    <button onClick={() => setHoraFromOperator(sf.consegnaSuggerita)} style={{
                       background: "rgba(249,115,22,0.2)", border: "1px solid rgba(249,115,22,0.5)",
                       color: "#F97316", borderRadius: 6, padding: "2px 8px",
                       fontSize: 11, fontWeight: 700, cursor: "pointer"
@@ -1231,7 +1222,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                           <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
                             Próxima hora libre:
                           </span>
-                          <button onClick={() => setHora(sf.slotSenzaConflitto)} style={{
+                          <button onClick={() => setHoraFromOperator(sf.slotSenzaConflitto)} style={{
                             background: "rgba(34,197,94,0.2)",
                             border: "1px solid rgba(34,197,94,0.5)",
                             color: "#86efac", borderRadius: 6, padding: "3px 10px",
@@ -1508,7 +1499,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700,
                     letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Hora de entrega</div>
                   <input type="time" value={hora}
-                    onChange={e => { horaCustom.current = true; setForzaHora(false); setHora(e.target.value); }}
+                    onChange={e => { setForzaHora(false); setHoraFromOperator(e.target.value); }}
                     style={{
                       background: forzaHora ? "rgba(251,191,36,0.15)" : "rgba(255,255,255,0.07)",
                       border: forzaHora ? "2px solid rgba(251,191,36,0.7)" : "1.5px solid rgba(255,255,255,0.2)",
@@ -1612,7 +1603,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         <span style={{ color: "#67e8f9", fontWeight: 700, fontSize: 13, flex: 1 }}>
                           Ya hay {sugg.nOrdini} pedido{sugg.nOrdini !== 1 ? "s" : ""} en {zona.id} a las {sugg.orario}
                         </span>
-                        <button onClick={() => { horaCustom.current = true; setHora(sugg.orario); }} style={{
+                        <button onClick={() => setHoraFromOperator(sugg.orario)} style={{
                           background: "rgba(0,151,167,0.3)", border: "1px solid rgba(0,151,167,0.7)",
                           color: "#fff", borderRadius: 8, padding: "6px 14px",
                           fontSize: 13, fontWeight: 800, cursor: "pointer"
@@ -1633,7 +1624,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         <span style={{ color: "#fde68a", fontWeight: 700, fontSize: 13, flex: 1 }}>
                           Giro {zona.id} {sugg.orario} demasiado cerca — siguiente slot: {prossimoSlot}
                         </span>
-                        <button onClick={() => setHora(prossimoSlot)} style={{
+                        <button onClick={() => setHoraFromOperator(prossimoSlot)} style={{
                           background: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.6)",
                           color: "#fde68a", borderRadius: 8, padding: "6px 14px",
                           fontSize: 13, fontWeight: 800, cursor: "pointer"
@@ -1644,12 +1635,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 })()}
 
                 {/* ── Status unificato: forno + driver (schedule-aware cascade) ── */}
-                {(deliveryStatus.fromBackend || sf) && hora && zona && (() => {
+                {(deliveryStatus.fromBackend || (!backendTimingLoading && sf)) && hora && zona && (() => {
                   if (deliveryStatus.fromBackend && backendTiming) {
                     const selectedH = deliveryStatus.selectedH || hora;
-                    const suggestedH = deliveryStatus.sugeridoH;
-                    const driverConflict = !!backendTiming.driver?.has_conflict;
-                    const hasAlternative = driverConflict && suggestedH && suggestedH !== selectedH;
+                    const firstAvailableH = deliveryStatus.firstAvailableH || deliveryStatus.sugeridoH;
+                    const driverConflict = !!deliveryStatus.isBlocked;
+                    const hasAlternative = driverConflict && firstAvailableH && firstAvailableH !== selectedH;
                     const fornoOut = backendTiming.forno_out || sf?.horaForno || "—";
                     const load = sf?.load != null ? ` (${sf.load}/4)` : "";
 
@@ -1689,7 +1680,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                           </div>
                           {hasAlternative && (
                             <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", paddingLeft: 26 }}>
-                              Sugerencia alternativa: <strong style={{ color: "#86efac", fontWeight: 900, fontSize: 15 }}>{suggestedH}</strong>
+                              Primera hora disponible: <strong style={{ color: "#86efac", fontWeight: 900, fontSize: 15 }}>{firstAvailableH}</strong>
                             </div>
                           )}
                           {!forzaHora && (
@@ -1714,7 +1705,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ fontSize: 16 }}>✅</span>
                           <span style={{ color: "#86efac", fontWeight: 800, fontSize: 14 }}>
-                            Propón al cliente: {selectedH}
+                            {horaTouchedByOperator ? "Propón al cliente" : "Primera hora disponible"}: {selectedH}
                           </span>
                         </div>
                         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
@@ -1942,8 +1933,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     label = `⚠️ Confirmar ${selectedH || hora} forzado`;
                     onClick = () => {
                       if (deliveryStatus.fromBackend && selectedH && selectedH !== hora) {
-                        horaCustom.current = true;
-                        setHora(selectedH);
+                        setHoraFromOperator(selectedH);
                       }
                       setShowDeliveryPopup(false);
                     };
@@ -1953,19 +1943,18 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     label = "⚠️ Forzar como excepción";
                     onClick = () => setForzaHora(true);
                   } else if (isBlocked && sugeridoH) {
-                    // Caso BLOCKED non forzato — il click applica la sugerencia
+                    // Caso BLOCKED non forzato — il click applica la prima disponibilità backend
                     bg = "linear-gradient(135deg, #16A34A, #15803D)";
-                    label = `✅ Aplicar sugerencia ${sugeridoH} y confirmar`;
-                    onClick = () => { horaCustom.current = true; setHora(sugeridoH); setShowDeliveryPopup(false); };
+                    label = `✅ Aplicar primera disponible ${sugeridoH} y confirmar`;
+                    onClick = () => { setHoraFromOperator(sugeridoH); setShowDeliveryPopup(false); };
                   } else {
                     // Caso OK normale
                     bg = zonaOk ? zona.colore : "rgba(249,115,22,0.7)";
                     label = deliveryStatus.fromBackend && selectedH
-                      ? `✓ Confirmar ${selectedH}`
+                      ? `✓ Confirmar entrega ${selectedH}`
                       : zonaOk ? `✓ Entrega en ${zona.id} confirmada` : "✓ Confirmar dirección";
                     onClick = () => {
                       if (deliveryStatus.fromBackend && selectedH && selectedH !== hora) {
-                        horaCustom.current = true;
                         setHora(selectedH);
                       }
                       setShowDeliveryPopup(false);
