@@ -34,6 +34,10 @@ function buildClosingOverrideNota(nota, hora) {
 // legacy forno_out / hora. Nessun calcolo di scheduling: solo lettura.
 const DISPONIBILIDAD_STATES = ["EN_COCINA", "POR_CONFIRMAR", "LISTO", "EN_ENTREGA"];
 const GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN = 20;
+// Margine (min): la pizza nuova può uscire dal forno fino a N minuti DOPO la
+// partenza del giro esistente ed essere ancora agganciabile (il driver può
+// attendere un paio di minuti). Oltre questo, il giro NON è aggregabile.
+const GIRO_AGGREGATION_MARGIN_MIN = 2;
 
 function timeDiffMin(a, b) {
   const toM = (t) => {
@@ -51,8 +55,11 @@ function timeDiffMin(a, b) {
   return Math.abs(ma - mb);
 }
 
-function buildDisponibilidad(ordenes, currentZonaId) {
+function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, marginMin = GIRO_AGGREGATION_MARGIN_MIN) {
   const toM = (t) => { if (!t) return null; const [h, m] = String(t).split(":").map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
+  // forno_out del NUOVO ordine: minuto in cui la sua pizza esce dal forno.
+  // Serve a decidere se è ancora in tempo per agganciarsi a un giro esistente.
+  const newFornoMin = toM(newOrderFornoOut);
   const rows = [];
   const byKey = new Map();
   for (const o of (ordenes || [])) {
@@ -64,14 +71,22 @@ function buildDisponibilidad(ordenes, currentZonaId) {
     if (!start && !end) continue;
     const key = `${o.zona}|${start || end}`;
     if (byKey.has(key)) { byKey.get(key).count += 1; continue; }
-    const compatible = !!currentZonaId && o.zona === currentZonaId;
+    const startMin = toM(start) ?? toM(end);
+    const sameZone = !!currentZonaId && o.zona === currentZonaId;
+    // Agganciabile SOLO se la pizza nuova esce dal forno entro la partenza del
+    // giro (+margine): il driver parte a `startMin`, la pizza deve essere pronta.
+    // Se non conosciamo il forno_out nuovo restiamo ottimisti (compatibile) per
+    // non regredire rispetto al solo match di zona.
+    const aggregable = sameZone && (
+      newFornoMin == null || (startMin != null && newFornoMin <= startMin + marginMin)
+    );
     const row = {
       key,
       zona: o.zona,
-      startMin: toM(start) ?? toM(end),
+      startMin,
       range: (start && end && start !== end) ? `${start}–${end}` : (start || end),
       slotHora: end || start, // hora da applicare cliccando un giro compatibile
-      kind: compatible ? "compatible" : "ocupado",
+      kind: sameZone ? (aggregable ? "compatible" : "no_agregable") : "ocupado",
       conflicto: o.conflicto_driver === true,
       count: 1,
     };
@@ -1502,8 +1517,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         const bdCol  = isOk ? "rgba(34,197,94,0.35)" : isWarn ? "rgba(251,191,36,0.40)" : "rgba(249,115,22,0.45)";
         const txCol  = isOk ? "#86efac"              : isWarn ? "#fde68a"               : "#fed7aa";
         const zonaOkForDisponibilidad = !!zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
+        // forno_out del nuovo ordine (fonte più affidabile prima): backend → hint locale.
+        const newOrderFornoOut = backendTiming?.forno_out || slotFeedback?.horaForno || null;
         const deliveryDisponibilidad = (!zonaLoading && zonaOkForDisponibilidad)
-          ? buildDisponibilidad(ordenes, zona.id)
+          ? buildDisponibilidad(ordenes, zona.id, newOrderFornoOut)
           : [];
         const giroRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_propuesta || hora;
         const recommendedCompatibleGiro = !horaTouchedByOperator
@@ -1781,13 +1798,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                           <span style={{ fontSize: 16 }}>✅</span>
                           <span style={{ color: "#86efac", fontWeight: 800, fontSize: 14 }}>
                             {recommendedCompatibleGiro
-                              ? `Recomendado: agregar al giro ${recommendedCompatibleGiro.slotHora}`
+                              ? `Entrega separada seleccionada: ${selectedH}`
                               : `${horaTouchedByOperator ? "Propón al cliente" : "Primera hora disponible"}: ${selectedH}`}
                           </span>
                         </div>
                         {recommendedCompatibleGiro && (
-                          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.62)", paddingLeft: 24 }}>
-                            Entrega separada: {selectedH}
+                          <div style={{ fontSize: 12, color: "#67e8f9", fontWeight: 600, paddingLeft: 24, lineHeight: 1.4 }}>
+                            🛵 Giro recomendado: {recommendedCompatibleGiro.slotHora} · pulsa «Usar giro» para usarlo
                           </div>
                         )}
                         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
@@ -2078,16 +2095,32 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                               {disp.slice(0, 3).map(r => {
                                 const isCompat = r.kind === "compatible";
+                                const isNoAgg  = r.kind === "no_agregable";
+                                const statusLabel = isCompat
+                                  ? `Usar giro ${r.slotHora} →`
+                                  : isNoAgg
+                                  ? "No agregable"
+                                  : (r.conflicto ? "Ocupado ⚠" : "Ocupado");
+                                const statusColor = isCompat
+                                  ? "#67e8f9"
+                                  : isNoAgg
+                                  ? "rgba(255,255,255,0.45)"
+                                  : (r.conflicto ? "#fca5a5" : "rgba(255,255,255,0.5)");
                                 return (
                                   <div key={r.key}
                                     onClick={isCompat ? () => setHoraFromOperator(r.slotHora) : undefined}
-                                    title={isCompat ? `Agregar al giro ${r.zona} ${r.slotHora}` : undefined}
+                                    title={isCompat
+                                      ? `Agregar al giro ${r.zona} ${r.slotHora}`
+                                      : isNoAgg
+                                      ? `Giro ${r.zona} ${r.slotHora}: la pizza nueva saldría del horno demasiado tarde para este giro`
+                                      : undefined}
                                     style={{
                                       display: "flex", alignItems: "center", gap: 10, fontSize: 15,
                                       padding: "10px 12px", borderRadius: 10,
                                       cursor: isCompat ? "pointer" : "default",
                                       background: isCompat ? "rgba(0,151,167,0.20)" : "rgba(255,255,255,0.04)",
                                       border: isCompat ? "1.5px solid rgba(0,151,167,0.75)" : "1px solid rgba(255,255,255,0.10)",
+                                      opacity: isNoAgg ? 0.7 : 1,
                                     }}>
                                     <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 16, fontWeight: 700, color: "#fff", minWidth: 104 }}>{r.range}</span>
                                     <span style={{
@@ -2098,9 +2131,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                                     }}>[{r.zona}]</span>
                                     <span style={{
                                       marginLeft: "auto", fontWeight: 800, fontSize: 14,
-                                      color: isCompat ? "#67e8f9" : (r.conflicto ? "#fca5a5" : "rgba(255,255,255,0.5)")
+                                      color: isCompat ? "#0b1220" : statusColor,
+                                      background: isCompat ? "#67e8f9" : "transparent",
+                                      borderRadius: isCompat ? 8 : 0,
+                                      padding: isCompat ? "5px 12px" : 0,
                                     }}>
-                                      {isCompat ? "Giro compatible →" : (r.conflicto ? "Ocupado ⚠" : "Ocupado")}{r.count > 1 ? ` ·${r.count}` : ""}
+                                      {statusLabel}{r.count > 1 ? ` ·${r.count}` : ""}
                                     </span>
                                   </div>
                                 );
