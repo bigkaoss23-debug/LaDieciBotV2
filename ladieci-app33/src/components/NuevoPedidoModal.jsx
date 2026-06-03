@@ -27,6 +27,43 @@ function buildClosingOverrideNota(nota, hora) {
   return base ? `${base}\n${marker}` : marker;
 }
 
+// Helper di PURA PRESENTAZIONE per la mini-tabella "Disponibilidad" del modal
+// delivery. NESSUN dato sensibile (niente nombre / #id / ticket): solo finestra
+// oraria, zona e stato operativo. Sorgente: ordenes delivery attivi + campi
+// driver separati (salida_driver_estimada / entrega_estimada) con fallback
+// legacy forno_out / hora. Nessun calcolo di scheduling: solo lettura.
+const DISPONIBILIDAD_STATES = ["EN_COCINA", "POR_CONFIRMAR", "LISTO", "EN_ENTREGA"];
+function buildDisponibilidad(ordenes, currentZonaId) {
+  const toM = (t) => { if (!t) return null; const [h, m] = String(t).split(":").map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
+  const rows = [];
+  const byKey = new Map();
+  for (const o of (ordenes || [])) {
+    if (!o || o.tipo_consegna !== "DOMICILIO") continue;
+    if (!DISPONIBILIDAD_STATES.includes(o.estado)) continue;
+    if (!o.zona || !o.hora) continue;
+    const start = o.salida_driver_estimada || o.forno_out || null;
+    const end = o.entrega_estimada || o.hora || null;
+    if (!start && !end) continue;
+    const key = `${o.zona}|${start || end}`;
+    if (byKey.has(key)) { byKey.get(key).count += 1; continue; }
+    const compatible = !!currentZonaId && o.zona === currentZonaId;
+    const row = {
+      key,
+      zona: o.zona,
+      startMin: toM(start) ?? toM(end),
+      range: (start && end && start !== end) ? `${start}–${end}` : (start || end),
+      slotHora: end || start, // hora da applicare cliccando un giro compatibile
+      kind: compatible ? "compatible" : "ocupado",
+      conflicto: o.conflicto_driver === true,
+      count: 1,
+    };
+    byKey.set(key, row);
+    rows.push(row);
+  }
+  rows.sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0));
+  return rows;
+}
+
 const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }) => {
   const [items,           setItems]           = useState([]);
   const [tel,             setTel]             = useState("");
@@ -1448,7 +1485,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
             <div onClick={e => e.stopPropagation()} style={{
               background: "#1a1a2e",
               borderRadius: 20,
-              width: "100%", maxWidth: 520,
+              width: "100%", maxWidth: 880,
               padding: "0 0 24px",
               boxShadow: "0 8px 60px rgba(0,0,0,0.7)",
               maxHeight: "85vh", overflowY: "auto"
@@ -1469,7 +1506,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 }}>✕</button>
               </div>
 
-              <div style={{ padding: "20px 20px 0", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ padding: "20px 20px 0", display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
+
+                {/* ── Columna izquierda: dirección, hora, zona, status, confirmar ── */}
+                <div style={{ flex: "1 1 320px", minWidth: 280, display: "flex", flexDirection: "column", gap: 14 }}>
 
                 {/* Dirección */}
                 <div>
@@ -1976,6 +2016,58 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     </button>
                   );
                 })()}
+                </div>
+
+                {/* ── Columna derecha: card Disponibilidad (lateral en desktop/tablet,
+                    debajo en móvil via flex-wrap). Misma lógica de presentación. ── */}
+                {!zonaLoading && zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache") && (
+                  <div style={{ flex: "1 1 300px", minWidth: 260 }}>
+                    {(() => {
+                      const disp = buildDisponibilidad(ordenes, zona.id);
+                      return (
+                        <div>
+                          <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, fontWeight: 800,
+                            letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>Disponibilidad</div>
+                          {disp.length === 0 ? (
+                            <span style={{ fontSize: 14, color: "#86efac" }}>Sin giros activos · todo libre</span>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {disp.slice(0, 3).map(r => {
+                                const isCompat = r.kind === "compatible";
+                                return (
+                                  <div key={r.key}
+                                    onClick={isCompat ? () => setHoraFromOperator(r.slotHora) : undefined}
+                                    title={isCompat ? `Agregar al giro ${r.zona} ${r.slotHora}` : undefined}
+                                    style={{
+                                      display: "flex", alignItems: "center", gap: 10, fontSize: 15,
+                                      padding: "10px 12px", borderRadius: 10,
+                                      cursor: isCompat ? "pointer" : "default",
+                                      background: isCompat ? "rgba(0,151,167,0.20)" : "rgba(255,255,255,0.04)",
+                                      border: isCompat ? "1.5px solid rgba(0,151,167,0.75)" : "1px solid rgba(255,255,255,0.10)",
+                                    }}>
+                                    <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 16, fontWeight: 700, color: "#fff", minWidth: 104 }}>{r.range}</span>
+                                    <span style={{
+                                      fontSize: 14, fontWeight: 800, color: "#a5f3fc",
+                                      background: isCompat ? "rgba(0,151,167,0.30)" : "rgba(0,151,167,0.12)",
+                                      border: "1.5px solid rgba(0,151,167,0.85)", borderRadius: 7, padding: "2px 9px",
+                                      cursor: isCompat ? "pointer" : "default"
+                                    }}>[{r.zona}]</span>
+                                    <span style={{
+                                      marginLeft: "auto", fontWeight: 800, fontSize: 14,
+                                      color: isCompat ? "#67e8f9" : (r.conflicto ? "#fca5a5" : "rgba(255,255,255,0.5)")
+                                    }}>
+                                      {isCompat ? "Giro compatible →" : (r.conflicto ? "Ocupado ⚠" : "Ocupado")}{r.count > 1 ? ` ·${r.count}` : ""}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
           </div>
