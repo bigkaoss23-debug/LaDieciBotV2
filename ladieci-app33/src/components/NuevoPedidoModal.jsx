@@ -33,6 +33,24 @@ function buildClosingOverrideNota(nota, hora) {
 // driver separati (salida_driver_estimada / entrega_estimada) con fallback
 // legacy forno_out / hora. Nessun calcolo di scheduling: solo lettura.
 const DISPONIBILIDAD_STATES = ["EN_COCINA", "POR_CONFIRMAR", "LISTO", "EN_ENTREGA"];
+const GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN = 20;
+
+function timeDiffMin(a, b) {
+  const toM = (t) => {
+    if (!t) return null;
+    const m = String(t).trim().match(/^(\d{1,2}):([0-5]\d)$/);
+    if (!m) return null;
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (!Number.isFinite(h) || h < 0 || h > 23) return null;
+    return h * 60 + min;
+  };
+  const ma = toM(a);
+  const mb = toM(b);
+  if (ma == null || mb == null) return null;
+  return Math.abs(ma - mb);
+}
+
 function buildDisponibilidad(ordenes, currentZonaId) {
   const toM = (t) => { if (!t) return null; const [h, m] = String(t).split(":").map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
   const rows = [];
@@ -62,6 +80,15 @@ function buildDisponibilidad(ordenes, currentZonaId) {
   }
   rows.sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0));
   return rows;
+}
+
+function findRecommendedCompatibleGiro(disponibilidad, currentZonaId, referenceHora) {
+  if (!currentZonaId || !referenceHora) return null;
+  return (disponibilidad || [])
+    .filter(r => r.kind === "compatible" && r.zona === currentZonaId && r.slotHora)
+    .map(r => ({ ...r, diffMin: timeDiffMin(referenceHora, r.slotHora) }))
+    .filter(r => r.diffMin != null && r.diffMin <= GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN)
+    .sort((a, b) => (a.diffMin - b.diffMin) || ((a.startMin ?? 0) - (b.startMin ?? 0)))[0] || null;
 }
 
 const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }) => {
@@ -1474,6 +1501,14 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         const bgCol  = isOk ? "rgba(34,197,94,0.08)" : isWarn ? "rgba(251,191,36,0.08)" : "rgba(249,115,22,0.10)";
         const bdCol  = isOk ? "rgba(34,197,94,0.35)" : isWarn ? "rgba(251,191,36,0.40)" : "rgba(249,115,22,0.45)";
         const txCol  = isOk ? "#86efac"              : isWarn ? "#fde68a"               : "#fed7aa";
+        const zonaOkForDisponibilidad = !!zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
+        const deliveryDisponibilidad = (!zonaLoading && zonaOkForDisponibilidad)
+          ? buildDisponibilidad(ordenes, zona.id)
+          : [];
+        const giroRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_propuesta || hora;
+        const recommendedCompatibleGiro = !horaTouchedByOperator
+          ? findRecommendedCompatibleGiro(deliveryDisponibilidad, zona?.id, giroRecommendationRef)
+          : null;
 
         return (
           <div style={{
@@ -1745,9 +1780,16 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ fontSize: 16 }}>✅</span>
                           <span style={{ color: "#86efac", fontWeight: 800, fontSize: 14 }}>
-                            {horaTouchedByOperator ? "Propón al cliente" : "Primera hora disponible"}: {selectedH}
+                            {recommendedCompatibleGiro
+                              ? `Recomendado: agregar al giro ${recommendedCompatibleGiro.slotHora}`
+                              : `${horaTouchedByOperator ? "Propón al cliente" : "Primera hora disponible"}: ${selectedH}`}
                           </span>
                         </div>
+                        {recommendedCompatibleGiro && (
+                          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.62)", paddingLeft: 24 }}>
+                            Entrega separada: {selectedH}
+                          </div>
+                        )}
                         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
                           Salida horno {fornoOut}{load}
                         </div>
@@ -1990,7 +2032,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   } else {
                     // Caso OK normale
                     bg = zonaOk ? zona.colore : "rgba(249,115,22,0.7)";
-                    label = deliveryStatus.fromBackend && selectedH
+                    label = recommendedCompatibleGiro && selectedH
+                      ? `✓ Confirmar entrega separada ${selectedH}`
+                      : deliveryStatus.fromBackend && selectedH
                       ? `✓ Confirmar entrega ${selectedH}`
                       : zonaOk ? `✓ Entrega en ${zona.id} confirmada` : "✓ Confirmar dirección";
                     onClick = () => {
@@ -2020,10 +2064,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
                 {/* ── Columna derecha: card Disponibilidad (lateral en desktop/tablet,
                     debajo en móvil via flex-wrap). Misma lógica de presentación. ── */}
-                {!zonaLoading && zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache") && (
+                {!zonaLoading && zonaOkForDisponibilidad && (
                   <div style={{ flex: "1 1 300px", minWidth: 260 }}>
                     {(() => {
-                      const disp = buildDisponibilidad(ordenes, zona.id);
+                      const disp = deliveryDisponibilidad;
                       return (
                         <div>
                           <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, fontWeight: 800,
