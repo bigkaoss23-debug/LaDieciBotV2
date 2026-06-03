@@ -1142,7 +1142,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     <span style={{ fontSize: 13 }}>{isOk ? "✅" : "⚠️"}</span>
                     <span style={{ color: txCol, fontWeight: 700, fontSize: 12 }}>
                       {sf.slotOk
-                        ? <>Horno libre a las {sf.horaForno} <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>({sf.load}/4)</span></>
+                        ? <>Salida horno a las {sf.horaForno} <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>({sf.load}/4)</span></>
                         : <>Horno lleno a las {sf.horaForno} <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>({sf.load}/4)</span></>
                       }
                     </span>
@@ -1709,7 +1709,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                           </span>
                         </div>
                         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
-                          Horno libre {fornoOut}{load}
+                          Salida horno {fornoOut}{load}
                         </div>
                         <div style={{ fontSize: 12, color: "#86efac", fontWeight: 600, paddingLeft: 24 }}>
                           🛵 Driver disponible
@@ -1807,7 +1807,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                           </span>
                         </div>
                         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
-                          Horno libre {sf.horaForno} ({sf.load}/4)
+                          Salida horno {sf.horaForno} ({sf.load}/4)
                         </div>
                         <div style={{ fontSize: 12, color: "#86efac", fontWeight: 600, paddingLeft: 24 }}>
                           {driverLine}
