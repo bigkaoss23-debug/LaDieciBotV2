@@ -11,6 +11,7 @@ import EconBotPage from './components/EconBotPage';
 import ServicioPage from './components/ServicioPage';
 import EconomiaPage from './components/EconomiaPage';
 import RepartidorPage from './components/repartidor/RepartidorPage';
+import ShadowPreviewPanel from './components/ShadowPreviewPanel';
 import { DevHeartbeatSender } from './components/DevPresence';
 import OpsHealthBadge from './components/OpsHealthBadge';
 
@@ -45,7 +46,11 @@ export default function App() {
   useEffect(() => {
     const path = window.location.pathname.replace(/^\//, '').toLowerCase();
     if (!path || path === 'repartidor') return;
-    const dest  = path === 'servizio' ? 'servicio' : 'econbot';
+    // Deep-link interno/admin NASCOSTO: /shadow-preview → vista read-only del planner.
+    // Protetto dal PIN come /servizio, NON linkato da nessuna vista operatore.
+    const dest  = path === 'servizio'       ? 'servicio'
+                : path === 'shadow-preview' ? 'shadowpreview'
+                : 'econbot';
     const go    = () => setScreen(dest);
     if (auth.isAuthenticated()) {
       postSplashAction.current = go;
@@ -341,6 +346,9 @@ export default function App() {
           ordenes={ordenes}
           onBack={startedAtRepartidor.current ? null : ()=>setScreen("home")}
           notify={notify}/>}
+      {/* Vista interna/admin read-only del Delivery Planner. Accesso solo via
+          deep-link nascosto /shadow-preview (dietro PIN), nessun bottone operatore. */}
+      {screen==="shadowpreview" && <ShadowPreviewPanel onBack={()=>setScreen("home")}/>}
 
       {/* ─── Modal PIN — si apre quando si clicca Servicio/Economía/Bot ─── */}
       {showPin && (

@@ -6,6 +6,9 @@ const crypto = require('crypto');
 
 const RAILWAY_API_KEY = process.env.RAILWAY_API_KEY;
 const RAILWAY_URL = "https://ladiecibot-production.up.railway.app/api";
+// Base swithout the /api suffix — usato per le route REST esplicite del backend
+// (es. il Delivery Planner shadow preview, che vive fuori da /api?action=...).
+const RAILWAY_BASE = RAILWAY_URL.replace(/\/api$/, "");
 const JWT_SECRET = process.env.JWT_SECRET || "CHANGE_ME_IN_NETLIFY_ENV";
 
 // Actions allowed for repartidor role (read-only + mark delivered)
@@ -47,6 +50,22 @@ exports.handler = async (event) => {
       // Role check for repartidor
       if (role === "repartidor" && !REPARTIDOR_ALLOWED.includes(action)) {
         return respond(403, { error: "permesso negato per repartidor" });
+      }
+
+      // Delivery Planner — Shadow Preview (READ-ONLY, internal/admin).
+      // Vive su una route REST esplicita del backend (GET /api/delivery/shadow-preview),
+      // fuori dallo schema /api?action=... . Inoltra SOLO il parametro `date`, sempre
+      // GET, con la stessa X-Api-Key del proxy. Nessuna scrittura. Il check ruolo sopra
+      // blocca già `repartidor` (shadowPreview non è in REPARTIDOR_ALLOWED).
+      if (action === "shadowPreview") {
+        const date = params.date || "";
+        const url = RAILWAY_BASE + "/api/delivery/shadow-preview" +
+          (date ? "?date=" + encodeURIComponent(date) : "");
+        const res = await fetch(url, {
+          headers: { "X-Api-Key": RAILWAY_API_KEY }
+        });
+        const data = await res.json();
+        return respond(res.status, data);
       }
 
       const qs = Object.entries(params)
