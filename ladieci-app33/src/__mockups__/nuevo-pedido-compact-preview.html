@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup local - Nuevo Pedido Compacto</title>
+    <link rel="stylesheet" href="./NuevoPedidoModalCompactMockup.css" />
+  </head>
+  <body>
+    <main class="np-mockup-stage">
+      <div class="np-toolbar" aria-label="Controlli mockup locale">
+        <button type="button" id="toggleProducts">Ver estado vacio</button>
+      </div>
+
+      <section class="np-modal" role="dialog" aria-label="Nuevo pedido compacto">
+        <header class="np-header">
+          <div class="np-title-row">
+            <h1>Nuevo Pedido</h1>
+            <p class="np-kicker">☎ Origen: Telefono</p>
+          </div>
+          <button class="np-close" type="button" aria-label="Cerrar">×</button>
+        </header>
+
+        <div class="np-top">
+          <section class="np-panel np-customer-panel" aria-label="Cliente">
+            <h2>Cliente</h2>
+            <div class="np-customer-grid">
+              <button class="np-input-like np-name-field" type="button">
+                <strong>Big Art Video Agency</strong>
+                <span class="np-ok">✓</span>
+              </button>
+              <button class="np-icon-action" type="button" aria-label="Editar cliente">👤+</button>
+              <button class="np-input-like np-phone-field" type="button">
+                <span>☎</span>
+                <strong>41767011848</strong>
+              </button>
+              <button class="np-whatsapp" type="button" aria-label="WhatsApp">WhatsApp</button>
+            </div>
+            <div class="np-customer-flags">
+              <span>★ Cliente habitual</span>
+              <span>53 pedidos</span>
+              <span>Direccion guardada</span>
+            </div>
+          </section>
+
+          <section class="np-panel np-address-panel" aria-label="Direccion de entrega">
+            <h2>Direccion de entrega</h2>
+            <button class="np-input-like np-address-input" type="button">
+              <strong>C. Delfin, 45-47</strong>
+              <em>✎ Editar</em>
+            </button>
+
+            <div class="np-delivery-line">
+              <span>🗺 Q2 Buenavista</span>
+              <span>↻ 8 min</span>
+              <span>G Google</span>
+            </div>
+
+            <div class="np-delivery-cards">
+              <div>
+                <small>Entrega estimada</small>
+                <strong>16:55</strong>
+              </div>
+              <div>
+                <small>Salida horno</small>
+                <strong>16:47</strong>
+              </div>
+              <button type="button">⚙ Recalcular</button>
+            </div>
+          </section>
+        </div>
+
+        <div class="np-products-head">
+          <div>
+            <h2>Productos</h2>
+            <span id="headCount">10 items</span>
+          </div>
+          <button type="button">⊕ Anadir producto</button>
+        </div>
+
+        <div class="np-products" id="products"></div>
+
+        <footer class="np-footer">
+          <div class="np-summary">
+            <span id="itemCount">12 items</span>
+            <strong id="total">Total 83.80€</strong>
+            <small>Incl. 2.50€ entrega</small>
+          </div>
+          <button class="np-secondary" type="button">% Descuento</button>
+          <label class="np-paid">
+            <input type="checkbox" />
+            Pagado
+          </label>
+          <button class="np-confirm" type="button" id="confirmButton">Confirmar pedido</button>
+        </footer>
+      </section>
+    </main>
+
+    <script>
+      const mockProducts = [
+        ["Zizou", "+ jamon · + cebolla · cortar mitad", 1, "13.50€"],
+        ["Margherita", "+ aceitunas x2 · sin queso", 1, "9.50€"],
+        ["Diavola", "extra picante", 1, "13.00€"],
+        ["El Pelusa", "sin cebolla", 1, "12.00€"],
+        ["Napoli", "", 1, "11.50€"],
+        ["Prosciutto", "cortar en 8", 1, "12.00€"],
+        ["Coca-Cola", "", 2, "2.40€"],
+        ["Agua", "", 1, "1.60€"],
+        ["Tiramisu", "", 1, "5.50€"],
+        ["Cafe", "", 1, "1.80€"],
+      ];
+
+      const productsEl = document.getElementById("products");
+      const toggle = document.getElementById("toggleProducts");
+      const itemCount = document.getElementById("itemCount");
+      const headCount = document.getElementById("headCount");
+      const total = document.getElementById("total");
+      const confirmButton = document.getElementById("confirmButton");
+      let empty = false;
+
+      function renderProducts() {
+        if (empty) {
+          productsEl.innerHTML = `
+            <div class="np-empty">
+              <strong>Todavia no hay productos</strong>
+              <button type="button">+ Anadir pizza, bebida o postre</button>
+            </div>
+          `;
+          itemCount.textContent = "0 items";
+          headCount.textContent = "0 items";
+          total.textContent = "Total 4.50€";
+          confirmButton.disabled = true;
+          toggle.textContent = "Ver pedido cargado";
+          return;
+        }
+
+        productsEl.innerHTML = mockProducts
+          .map(([name, note, qty, price], index) => `
+            <article class="np-row">
+              <span class="np-index">${index + 1}</span>
+              <div class="np-product-name">
+                <strong>${name}</strong>
+              </div>
+              <p class="${note ? "np-note" : "np-note np-note-muted"}">${note || "-"}</p>
+              <strong class="np-price">${price}</strong>
+              <div class="np-actions" aria-label="Acciones ${name}">
+                <button type="button" title="Editar ingredientes">✎</button>
+                <button type="button" title="Quitar una unidad">−</button>
+                <strong>${qty}</strong>
+                <button type="button" title="Anadir una unidad">+</button>
+                <button class="np-danger" type="button" title="Eliminar">🗑</button>
+              </div>
+            </article>
+          `)
+          .join("");
+        itemCount.textContent = "12 items";
+        headCount.textContent = "10 items";
+        total.textContent = "Total 83.80€";
+        confirmButton.disabled = false;
+        toggle.textContent = "Ver estado vacio";
+      }
+
+      toggle.addEventListener("click", () => {
+        empty = !empty;
+        renderProducts();
+      });
+
+      renderProducts();
+    </script>
+  </body>
+</html>
