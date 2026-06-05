@@ -768,6 +768,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const showDeliveryOutOfServiceAlert = tipoConsegna === "DOMICILIO" && deliveryStatus.outOfServiceWindow;
   const showDeliveryAvailabilityLoading = tipoConsegna === "DOMICILIO" && !!direccion && zonaLoading === true;
   const hasOperationalInfo = pickupKitchenStatus || showDeliveryOutOfServiceAlert || showDeliveryAvailabilityLoading;
+  const itemQtyTotal = items.reduce((s, i) => s + i.q, 0);
+  const isCompact = items.length > 5;
+  const rowControlSize = isCompact ? 36 : 38;
 
   return (
     <>
@@ -786,36 +789,36 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         <div onClick={e => e.stopPropagation()} style={{
           position: "relative", background: C.carbone,
           borderRadius: "22px 22px 0 0",
-          height: "92vh", display: "flex", flexDirection: "column",
-          boxShadow: "0 -10px 40px rgba(0,0,0,.5)"
+          height: "92dvh", maxHeight: "92vh", display: "flex", flexDirection: "column",
+          boxShadow: "0 -10px 40px rgba(0,0,0,.5)", overflow: "hidden"
         }}>
 
           {/* Handle */}
-          <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px", flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "center", padding: isCompact ? "6px 0 2px" : "10px 0 4px", flexShrink: 0 }}>
             <div style={{ width: 36, height: 4, borderRadius: 2, background: C.fumo }} />
           </div>
 
           {/* ── Header: canal + tipo consegna ─────────────────────────── */}
           <div style={{
-            padding: "6px 18px 12px",
+            padding: isCompact ? "4px 16px 8px" : "6px 18px 12px",
             borderBottom: `1px solid ${C.fumo}`,
             display: "flex", alignItems: "center", justifyContent: "space-between",
             flexShrink: 0
           }}>
             <div>
               <div style={{ color: C.bianco, fontWeight: 800, fontSize: 18 }}>Nuevo pedido</div>
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <div style={{ display: "flex", gap: isCompact ? 6 : 8, marginTop: isCompact ? 6 : 8 }}>
                 {[{ id: "TEL", label: "📞 Teléfono" }, { id: "WA", label: "💬 WhatsApp" }, { id: "BANCO", label: "🏪 Barra" }].map(c => (
                   <button key={c.id} onClick={() => setCanal(c.id)} style={{
                     background: canal === c.id ? C.rosso : "transparent",
                     border: `1.5px solid ${canal === c.id ? C.rosso : C.fumo}`,
                     color: canal === c.id ? "#fff" : C.grigio,
-                    borderRadius: 20, padding: "5px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer"
+                    borderRadius: 20, padding: isCompact ? "4px 11px" : "5px 14px", fontSize: isCompact ? 12 : 13, fontWeight: 600, cursor: "pointer"
                   }}>{c.label}</button>
                 ))}
               </div>
               {/* Indicatore automatico ritiro/domicilio — solo informativo */}
-              <div style={{ marginTop: 6, fontSize: 12, color: tipoConsegna === "DOMICILIO" ? "#F97316" : C.grigio, fontWeight: 600 }}>
+              <div style={{ marginTop: isCompact ? 4 : 6, fontSize: 12, color: tipoConsegna === "DOMICILIO" ? "#F97316" : C.grigio, fontWeight: 600 }}>
                 {tipoConsegna === "DOMICILIO" ? "🛵 Entrega a domicilio" : "🏪 Retiro en local"}
               </div>
             </div>
@@ -826,23 +829,23 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
             }}>✕</button>
           </div>
 
-          {/* ── Corpo scrollabile ──────────────────────────────────────── */}
-          <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", display: "flex", flexDirection: "column" }}>
+          {/* ── Corpo: top fisso + lista prodotti con scroll dedicato ───── */}
+          <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
 
             {/* Form cliente */}
-            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.fumo}`, display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ padding: isCompact ? "8px 14px" : "12px 16px", borderBottom: `1px solid ${C.fumo}`, display: "flex", flexDirection: "column", gap: isCompact ? 6 : 8, flexShrink: 0 }}>
+              <div style={{ display: "flex", gap: isCompact ? 6 : 8 }}>
                 <div style={{ flex: 2, position: "relative" }}>
                   <input value={nombre}
                     onChange={e => { setNombre(e.target.value); setClienteId(null); setShowSugerencias(true); }}
                     onFocus={() => { setNombreFocus(true); setShowSugerencias(true); }}
                     onBlur={() => { setNombreFocus(false); setTimeout(() => setShowSugerencias(false), 200); }}
                     placeholder="👤 Nombre *"
-                    style={{
-                      width: "100%", background: C.carbone2, boxSizing: "border-box",
-                      border: `1.5px solid ${nombre.length > 0 ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.18)"}`,
-                      borderRadius: 9, color: "#fff", padding: "9px 36px 9px 12px", fontSize: 14, fontWeight: 500
-                    }} />
+	                    style={{
+	                      width: "100%", background: C.carbone2, boxSizing: "border-box",
+	                      border: `1.5px solid ${nombre.length > 0 ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.18)"}`,
+	                      borderRadius: 9, color: "#fff", padding: isCompact ? "7px 34px 7px 10px" : "9px 36px 9px 12px", fontSize: 14, fontWeight: 500
+	                    }} />
                   {/* Bottone Preferito: grigio off → giallo on */}
                   <button type="button"
                     onClick={() => setPreferito(p => !p)}
@@ -890,16 +893,16 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 </div>
                 <input value={tel} onChange={e => setTel(e.target.value)}
                   placeholder="📞 Tel (opcional)" type="tel"
-                  style={{
-                    flex: 1, background: C.carbone2,
-                    border: "1.5px solid rgba(255,255,255,0.18)",
-                    borderRadius: 9, color: "#fff", padding: "9px 12px", fontSize: 14
-                  }} />
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  background: C.carbone2, border: "1.5px solid rgba(255,255,255,0.22)",
-                  borderRadius: 9, padding: "7px 12px", minWidth: 130
-                }}>
+	                  style={{
+	                    flex: 1, background: C.carbone2,
+	                    border: "1.5px solid rgba(255,255,255,0.18)",
+	                    borderRadius: 9, color: "#fff", padding: isCompact ? "7px 10px" : "9px 12px", fontSize: 14
+	                  }} />
+	                <div style={{
+	                  display: "flex", alignItems: "center", gap: 6,
+	                  background: C.carbone2, border: "1.5px solid rgba(255,255,255,0.22)",
+	                  borderRadius: 9, padding: isCompact ? "5px 10px" : "7px 12px", minWidth: 130
+	                }}>
                   <span style={{ fontSize: 16 }}>🕐</span>
                   <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                     <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 9, fontWeight: 800, letterSpacing: .8, textTransform: "uppercase", lineHeight: 1 }}>
@@ -929,12 +932,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   arrivano dal backend (previewOrderTiming). Il frontend mostra,
                   non ricalcola. */}
               {tipoConsegna === "DOMICILIO" && (backendTiming || backendTimingLoading) && (
-                <div style={{
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 9, padding: "8px 10px", fontSize: 11,
-                  display: "flex", flexDirection: "column", gap: 6
-                }}>
+	                <div style={{
+	                  background: "rgba(255,255,255,0.04)",
+	                  border: "1px solid rgba(255,255,255,0.12)",
+	                  borderRadius: 9, padding: isCompact ? "6px 8px" : "8px 10px", fontSize: 11,
+	                  display: "flex", flexDirection: "column", gap: isCompact ? 4 : 6
+	                }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 800, letterSpacing: .6, textTransform: "uppercase", fontSize: 9 }}>
                       Backend
@@ -997,11 +1000,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
               {/* Badge cliente abituale */}
               {clienteAbitual && (
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.35)",
-                  borderRadius: 9, padding: "6px 10px", fontSize: 11
-                }}>
+	                <div style={{
+	                  display: "flex", alignItems: "center", gap: 8,
+	                  background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.35)",
+	                  borderRadius: 9, padding: isCompact ? "5px 8px" : "6px 10px", fontSize: 11
+	                }}>
                   <span style={{ fontSize: 14 }}>✨</span>
                   <span style={{ flex: 1, color: "#86efac", fontWeight: 600 }}>
                     Cliente habitual · {clienteAbitual.total_pedidos || 0} pedidos
@@ -1016,17 +1019,17 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 const hasDir = direccion.trim().length > 0;
                 const hasConflict = deliveryStatus.isBlocked;
                 return (
-                  <button onClick={() => setShowDeliveryPopup(true)} style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    background: hasDir ? "rgba(249,115,22,0.08)" : C.carbone2,
+	                  <button onClick={() => setShowDeliveryPopup(true)} style={{
+	                    display: "flex", alignItems: "center", gap: 10,
+	                    background: hasDir ? "rgba(249,115,22,0.08)" : C.carbone2,
                     border: hasConflict
                       ? "2px solid rgba(239,68,68,0.7)"
                       : hasDir
                       ? "1.5px solid rgba(249,115,22,0.5)"
                       : "1.5px solid rgba(255,255,255,0.15)",
-                    borderRadius: 10, padding: "10px 14px",
-                    cursor: "pointer", textAlign: "left", width: "100%",
-                    transition: "border-color 0.2s"
+	                    borderRadius: 10, padding: isCompact ? "8px 12px" : "10px 14px",
+	                    cursor: "pointer", textAlign: "left", width: "100%",
+	                    transition: "border-color 0.2s"
                   }}>
                     {hasDir ? (
                       <>
@@ -1064,9 +1067,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   display: "flex", flexDirection: "column", gap: 6,
                   background: (pickupKitchenStatus?.overloaded || showDeliveryOutOfServiceAlert) ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.03)",
                   border: (pickupKitchenStatus?.overloaded || showDeliveryOutOfServiceAlert) ? "1.5px solid rgba(239,68,68,0.40)" : "1px solid rgba(255,255,255,0.10)",
-                  borderRadius: 9,
-                  padding: "8px 10px",
-                }}>
+	                  borderRadius: 9,
+	                  padding: isCompact ? "6px 8px" : "8px 10px",
+	                }}>
                   <div style={{
                     color: "rgba(255,255,255,0.45)",
                     fontSize: 9,
@@ -1332,86 +1335,108 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               })()}
             </div>
 
-            {/* ── Lista items ─────────────────────────────────────────── */}
-            <div style={{ flex: 1, padding: "10px 16px" }}>
+            {/* ── Header prodotti: resta visibile sopra la lista scrollabile ─ */}
+            <div style={{
+              flexShrink: 0,
+              padding: isCompact ? "7px 14px" : "9px 16px",
+              borderBottom: `1px solid ${C.fumo}`,
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+              background: C.carbone
+            }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+                <span style={{ color: C.bianco, fontSize: isCompact ? 13 : 14, fontWeight: 900, textTransform: "uppercase", letterSpacing: .5 }}>
+                  Productos
+                </span>
+                <span style={{ color: C.grigio, fontSize: 12, fontWeight: 700 }}>
+                  {items.length} línea{items.length !== 1 ? "s" : ""} · {itemQtyTotal} item{itemQtyTotal !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <button
+                onClick={() => { setEditingItem(null); setPickerVisible(true); }}
+                style={{
+                  flexShrink: 0,
+                  minHeight: 38,
+                  background: "rgba(232,52,28,0.12)",
+                  border: `1.5px solid ${C.rosso}88`,
+                  borderRadius: 10,
+                  color: C.rosso,
+                  padding: isCompact ? "0 12px" : "0 14px",
+                  fontWeight: 900,
+                  fontSize: 13,
+                  cursor: "pointer"
+                }}>
+                + Añadir
+              </button>
+            </div>
+
+            {/* ── Lista items: unico scroll principale prodotti ─────────── */}
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: isCompact ? "8px 14px" : "10px 16px" }}>
 
               {items.length === 0 ? (
                 /* Stato vuoto */
                 <div style={{
                   display: "flex", flexDirection: "column", alignItems: "center",
-                  justifyContent: "center", padding: "32px 0", gap: 12, opacity: 0.5
+                  justifyContent: "center", minHeight: 180, padding: isCompact ? "20px 0" : "32px 0", gap: isCompact ? 8 : 12, opacity: 0.5
                 }}>
-                  <span style={{ fontSize: 40 }}>🍕</span>
+                  <span style={{ fontSize: isCompact ? 32 : 40 }}>🍕</span>
                   <div style={{ color: C.grigio, fontSize: 14, fontWeight: 600 }}>Todavía no hay nada</div>
                   <div style={{ color: C.grigio, fontSize: 12 }}>Pulsa «+» para añadir</div>
                 </div>
               ) : (
-                items.map(item => (
-                  <div key={item._uid} style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    padding: "9px 10px",
-                    marginBottom: 6,
-                    background: C.carbone2,
-                    borderRadius: 12,
-                    border: `1px solid ${C.fumo}`,
-                    cursor: "pointer"
+	                items.map(item => (
+	                  <div key={item._uid} style={{
+	                    display: "flex", alignItems: "center", gap: isCompact ? 8 : 10,
+	                    minHeight: isCompact ? 50 : 58,
+	                    padding: isCompact ? "6px 8px" : "9px 10px",
+	                    marginBottom: isCompact ? 5 : 6,
+	                    background: C.carbone2,
+	                    borderRadius: isCompact ? 10 : 12,
+	                    border: `1px solid ${C.fumo}`,
+	                    cursor: "pointer"
                   }}
                     onClick={() => handleEditItem(item)}
                   >
-                    <span style={{ fontSize: 22, flexShrink: 0 }}>{item.e}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ color: C.bianco, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+	                    <span style={{ fontSize: isCompact ? 18 : 22, flexShrink: 0 }}>{item.e}</span>
+	                    <div style={{ flex: 1, minWidth: 0 }}>
+	                      <div style={{ color: C.bianco, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {item.n}
                       </div>
-                      {item.sub && (
-                        <div style={{ color: "#a855f7", fontSize: 11, fontWeight: 500, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {extrasLabel(item)}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                      <button onClick={e => { e.stopPropagation(); adj(item._uid, -1); }} style={{
-                        background: C.fumo, color: C.bianco, border: "none",
-                        borderRadius: 6, width: 26, height: 26, fontSize: 15, fontWeight: 700,
-                        display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer"
-                      }}>−</button>
+	                      {item.sub && (
+	                        <div title={extrasLabel(item)} style={{ color: "#a855f7", fontSize: 11, fontWeight: 500, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+	                          {extrasLabel(item)}
+	                        </div>
+	                      )}
+	                    </div>
+	                    <div style={{ display: "flex", alignItems: "center", gap: isCompact ? 5 : 6, flexShrink: 0 }}>
+	                      <button onClick={e => { e.stopPropagation(); adj(item._uid, -1); }} style={{
+	                        background: C.fumo, color: C.bianco, border: "none",
+	                        borderRadius: 7, width: rowControlSize, height: rowControlSize, fontSize: 16, fontWeight: 800,
+	                        display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer"
+	                      }}>−</button>
                       <span style={{ color: C.bianco, fontWeight: 800, minWidth: 18, textAlign: "center", fontFamily: "'DM Mono',monospace" }}>
                         {item.q}
                       </span>
-                      <button onClick={e => { e.stopPropagation(); adj(item._uid, +1); }} style={{
-                        background: C.fumo, color: C.bianco, border: "none",
-                        borderRadius: 6, width: 26, height: 26, fontSize: 15, fontWeight: 700,
-                        display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer"
-                      }}>+</button>
+	                      <button onClick={e => { e.stopPropagation(); adj(item._uid, +1); }} style={{
+	                        background: C.fumo, color: C.bianco, border: "none",
+	                        borderRadius: 7, width: rowControlSize, height: rowControlSize, fontSize: 16, fontWeight: 800,
+	                        display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer"
+	                      }}>+</button>
                     </div>
                     <span style={{ color: C.grigio, fontSize: 12, fontWeight: 700, minWidth: 44, textAlign: "right", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
                       {(item.p * item.q).toFixed(2)}€
                     </span>
-                    <button onClick={e => { e.stopPropagation(); handleRemoveItem(item._uid); }} style={{
-                      background: "transparent", color: C.grigio, border: "none",
-                      fontSize: 14, cursor: "pointer", padding: "2px 4px", flexShrink: 0
-                    }}>🗑</button>
-                  </div>
-                ))
-              )}
+	                    <button onClick={e => { e.stopPropagation(); handleRemoveItem(item._uid); }} style={{
+	                      background: "transparent", color: C.grigio, border: `1px solid ${C.fumo}`,
+	                      borderRadius: 7, width: rowControlSize, height: rowControlSize,
+	                      fontSize: 14, cursor: "pointer", padding: 0, flexShrink: 0
+	                    }}>🗑</button>
+	                  </div>
+	                ))
+	              )}
+	            </div>
 
-              {/* Bottone + Añadir */}
-              <button
-                onClick={() => { setEditingItem(null); setPickerVisible(true); }}
-                style={{
-                  width: "100%", marginTop: items.length > 0 ? 8 : 0,
-                  background: "rgba(232,52,28,0.1)",
-                  border: `2px dashed ${C.rosso}88`,
-                  borderRadius: 12, color: C.rosso,
-                  padding: "12px 0", fontWeight: 800, fontSize: 15,
-                  cursor: "pointer", letterSpacing: 0.3
-                }}>
-                + Añadir pizza, bebida o postre
-              </button>
-            </div>
-
-            {/* Nota generale (opzionale, collassabile) */}
-            <div style={{ padding: "0 16px 4px" }}>
+	            {/* Nota generale (opzionale, collassabile) */}
+	            <div style={{ padding: isCompact ? "0 14px 3px" : "0 16px 4px", flexShrink: 0, borderTop: `1px solid ${C.fumo}` }}>
               <button
                 onClick={() => setShowNotaGen(v => !v)}
                 style={{
@@ -1435,16 +1460,16 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
             </div>
           </div>
 
-          {/* ── Footer: totale + conferma ──────────────────────────────── */}
-          <div style={{
-            padding: "12px 16px",
-            borderTop: `1px solid ${C.fumo}`,
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            flexShrink: 0, background: C.carbone2
-          }}>
-            <div>
-              <div style={{ color: C.grigio, fontSize: 11 }}>Total · {items.reduce((s, i) => s + i.q, 0)} item{items.reduce((s, i) => s + i.q, 0) !== 1 ? "s" : ""}</div>
-              <div style={{ color: C.verde, fontWeight: 800, fontSize: 22, fontFamily: "'DM Mono',monospace" }}>{total}€</div>
+	          {/* ── Footer: totale + conferma ──────────────────────────────── */}
+	          <div style={{
+	            padding: isCompact ? "9px 14px" : "12px 16px",
+	            borderTop: `1px solid ${C.fumo}`,
+	            display: "flex", justifyContent: "space-between", alignItems: "center",
+	            flexShrink: 0, background: C.carbone2
+	          }}>
+	            <div>
+	              <div style={{ color: C.grigio, fontSize: 11 }}>Total · {itemQtyTotal} item{itemQtyTotal !== 1 ? "s" : ""}</div>
+	              <div style={{ color: C.verde, fontWeight: 800, fontSize: isCompact ? 20 : 22, fontFamily: "'DM Mono',monospace" }}>{total}€</div>
               {tipoConsegna === "DOMICILIO" && (
                 <div style={{ color: "#fb923c", fontSize: 10, fontWeight: 600, marginTop: 1 }}>🛵 incl. {DELIVERY_FEE.toFixed(2).replace(".",",")}€ entrega</div>
               )}
@@ -1457,7 +1482,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 <div style={{ color: "#fbbf24", fontSize: 10, fontWeight: 700, marginTop: 2 }}>⚠️ Zona no detectada</div>
               )}
               {/* Descuento */}
-              <div style={{ marginTop: 8 }}>
+	              <div style={{ marginTop: isCompact ? 6 : 8 }}>
                 <DescuentoInput
                   tipo={descuentoTipo}
                   valor={descuentoValor}
@@ -1467,7 +1492,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 />
               </div>
               {/* Ya pagado toggle */}
-              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
+	              <div style={{ marginTop: isCompact ? 6 : 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 <button onClick={() => { setYaPagedo(v => !v); setMetodoPago(""); }} style={{
                   background: yaPagedo ? "rgba(34,197,94,0.15)" : "transparent",
                   border: `1.5px solid ${yaPagedo ? "rgba(34,197,94,0.5)" : "rgba(255,255,255,0.15)"}`,
@@ -1495,8 +1520,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
             <button onClick={handleConfirm} disabled={!ok || submitting} style={{
               background: (!ok || submitting) ? C.fumo : C.rosso,
               color: (!ok || submitting) ? C.grigio : "#fff",
-              border: "none", borderRadius: 12,
-              padding: "14px 24px", fontWeight: 800, fontSize: 15,
+	              border: "none", borderRadius: 12,
+	              minHeight: 44, padding: isCompact ? "11px 18px" : "14px 24px", fontWeight: 800, fontSize: 15,
               boxShadow: (!ok || submitting) ? "none" : `0 4px 16px ${C.rosso}55`,
               cursor: submitting ? "wait" : (ok ? "pointer" : "default")
             }}>
