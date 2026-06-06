@@ -1,0 +1,584 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.np-mockup-stage {
+  min-height: 100vh;
+  display: grid;
+  place-items: stretch;
+  padding: 18px 24px 0;
+  color: #f7f0df;
+  background:
+    radial-gradient(circle at 50% -18%, rgba(244, 185, 45, 0.08), transparent 36%),
+    linear-gradient(145deg, #090908 0%, #10100f 48%, #070707 100%);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.np-toolbar {
+  position: fixed;
+  top: 14px;
+  right: 92px;
+  z-index: 3;
+}
+
+.np-toolbar button,
+.np-products-head button,
+.np-secondary,
+.np-confirm,
+.np-empty button,
+.np-delivery-cards button,
+.np-address-input em {
+  min-height: 38px;
+  border: 1px solid rgba(246, 189, 59, 0.36);
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #111;
+  background: linear-gradient(180deg, #ffd866, #f4b82f);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.np-modal {
+  width: 100%;
+  max-height: 92vh;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(260px, 1fr) auto;
+  overflow: hidden;
+  background: transparent;
+}
+
+.np-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 0 14px;
+}
+
+.np-title-row {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+
+.np-header h1,
+.np-kicker,
+.np-panel h2,
+.np-products-head h2,
+.np-note {
+  margin: 0;
+}
+
+.np-header h1 {
+  color: #fbf6eb;
+  font-size: 32px;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.np-kicker {
+  color: #ffc93d;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.np-close {
+  width: 52px;
+  height: 52px;
+  border: 1px solid rgba(246, 230, 196, 0.18);
+  border-radius: 10px;
+  color: #fff8ed;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 36px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.np-top {
+  display: grid;
+  grid-template-columns: 0.95fr 1.05fr;
+  gap: 14px;
+  padding-bottom: 14px;
+}
+
+.np-panel {
+  min-width: 0;
+  border: 1px solid rgba(208, 184, 145, 0.22);
+  border-radius: 8px;
+  padding: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.01)),
+    #11100e;
+}
+
+.np-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  color: #bcae93;
+  font-size: 15px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.np-customer-panel h2::before {
+  content: "●";
+  color: #d7a84b;
+  font-size: 18px;
+}
+
+.np-address-panel h2::before {
+  content: "◆";
+  color: #d7a84b;
+  font-size: 16px;
+}
+
+.np-customer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 60px;
+  gap: 16px 14px;
+}
+
+.np-input-like,
+.np-icon-action,
+.np-whatsapp {
+  min-width: 0;
+  min-height: 64px;
+  border: 1px solid rgba(208, 184, 145, 0.22);
+  border-radius: 8px;
+  color: #fff7e8;
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+}
+
+.np-input-like {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 18px;
+  text-align: left;
+}
+
+.np-input-like strong {
+  overflow: hidden;
+  font-size: 26px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.np-phone-field {
+  justify-content: flex-start;
+  gap: 18px;
+}
+
+.np-phone-field span {
+  color: #d8cbb5;
+  font-size: 22px;
+}
+
+.np-icon-action,
+.np-whatsapp {
+  display: grid;
+  place-items: center;
+  color: #fff4dc;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.np-whatsapp {
+  border-color: rgba(74, 222, 128, 0.35);
+  color: #fff;
+  background: linear-gradient(180deg, #37b968, #159447);
+  font-size: 0;
+}
+
+.np-whatsapp::before {
+  content: "☎";
+  font-size: 25px;
+}
+
+.np-ok {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #062d16;
+  background: #58d27d;
+  font-size: 20px;
+  font-weight: 1000;
+}
+
+.np-customer-flags {
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-top: 20px;
+  border: 1px solid rgba(208, 184, 145, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+  color: #efe4cc;
+  background: rgba(255, 255, 255, 0.025);
+  font-weight: 900;
+}
+
+.np-customer-flags span {
+  padding: 12px 18px;
+  white-space: nowrap;
+}
+
+.np-customer-flags span + span {
+  border-left: 1px solid rgba(208, 184, 145, 0.28);
+}
+
+.np-customer-flags span:first-child {
+  color: #ffd13d;
+}
+
+.np-address-input {
+  width: 100%;
+}
+
+.np-address-input em {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  color: #fff4dc;
+  background: rgba(255, 255, 255, 0.04);
+  font-style: normal;
+}
+
+.np-delivery-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  color: #e8dfd0;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.np-delivery-line span {
+  border: 1px solid rgba(208, 184, 145, 0.18);
+  border-radius: 999px;
+  padding: 8px 13px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.np-delivery-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr minmax(150px, auto);
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.np-delivery-cards div,
+.np-delivery-cards button {
+  min-height: 70px;
+  border: 1px solid rgba(208, 184, 145, 0.18);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: #f8f0df;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.np-delivery-cards small {
+  display: block;
+  margin-bottom: 3px;
+  color: #c6b6a0;
+  font-size: 14px;
+}
+
+.np-delivery-cards strong {
+  color: #fff3dc;
+  font-size: 22px;
+}
+
+.np-delivery-cards button {
+  color: #fff8ee;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 16px;
+}
+
+.np-products-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px 12px;
+}
+
+.np-products-head > div {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.np-products-head h2 {
+  color: #fff7ed;
+  font-size: 23px;
+  text-transform: uppercase;
+}
+
+.np-products-head span {
+  border: 1px solid rgba(208, 184, 145, 0.16);
+  border-radius: 999px;
+  padding: 7px 12px;
+  color: #cfc3ae;
+  background: rgba(255, 255, 255, 0.025);
+  font-weight: 900;
+}
+
+.np-products-head button {
+  min-width: 220px;
+  min-height: 48px;
+  font-size: 18px;
+}
+
+.np-products {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 10px;
+  scrollbar-color: rgba(208, 184, 145, 0.45) transparent;
+}
+
+.np-row {
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: 48px minmax(120px, 0.7fr) minmax(240px, 1.6fr) 100px auto;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid rgba(208, 184, 145, 0.16);
+  border-radius: 7px;
+  margin-bottom: 3px;
+  padding: 10px 16px 10px 18px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    #15130f;
+}
+
+.np-index {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(208, 184, 145, 0.24);
+  border-radius: 7px;
+  color: #fff7e7;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.np-product-name {
+  min-width: 0;
+}
+
+.np-product-name strong {
+  display: block;
+  overflow: hidden;
+  color: #fff7ea;
+  font-size: 20px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.np-note {
+  overflow: hidden;
+  color: #ffd439;
+  font-size: 16px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.np-note-muted {
+  color: #8f887b;
+}
+
+.np-price {
+  color: #fff8ec;
+  font-size: 18px;
+  text-align: right;
+}
+
+.np-actions {
+  display: grid;
+  grid-template-columns: 48px 48px 56px 48px 48px;
+  align-items: center;
+  gap: 12px;
+}
+
+.np-actions button,
+.np-actions strong {
+  width: 48px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(208, 184, 145, 0.2);
+  border-radius: 7px;
+  color: #fff5e4;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.np-actions button {
+  cursor: pointer;
+}
+
+.np-actions strong {
+  width: 56px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.np-actions .np-danger {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fff;
+  background: rgba(127, 29, 29, 0.72);
+}
+
+.np-empty {
+  height: 100%;
+  min-height: 260px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: #d3c5ae;
+  text-align: center;
+}
+
+.np-footer {
+  min-height: 82px;
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) 190px 150px minmax(250px, auto);
+  align-items: center;
+  gap: 24px;
+  margin: 0 -24px;
+  padding: 14px 30px;
+  border-top: 1px solid rgba(208, 184, 145, 0.28);
+  background: rgba(12, 11, 9, 0.96);
+}
+
+.np-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 26px;
+}
+
+.np-summary span {
+  color: #efe4d0;
+  font-size: 25px;
+  font-weight: 900;
+}
+
+.np-summary strong {
+  color: #fff3df;
+  font-size: 30px;
+}
+
+.np-summary small {
+  color: #bcb09f;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.np-secondary {
+  color: #fff1d8;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 16px;
+}
+
+.np-paid {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #fff2df;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.np-paid input {
+  width: 26px;
+  height: 26px;
+  accent-color: #ffd13d;
+}
+
+.np-confirm {
+  min-height: 58px;
+  color: #effff3;
+  background: linear-gradient(180deg, #2eb45e, #218f4d);
+  border-color: rgba(74, 222, 128, 0.36);
+  font-size: 22px;
+}
+
+.np-confirm:disabled {
+  color: #8a8276;
+  background: #27231d;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .np-mockup-stage {
+    padding: 14px 12px 0;
+  }
+
+  .np-header h1 {
+    font-size: 26px;
+  }
+
+  .np-title-row,
+  .np-top,
+  .np-delivery-cards,
+  .np-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .np-title-row {
+    display: grid;
+    gap: 8px;
+  }
+
+  .np-customer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .np-customer-flags {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .np-row {
+    grid-template-columns: 38px minmax(90px, 0.9fr) minmax(100px, 1fr);
+  }
+
+  .np-price {
+    display: none;
+  }
+
+  .np-actions {
+    grid-column: 1 / -1;
+    justify-content: end;
+  }
+
+  .np-footer {
+    margin: 0 -12px;
+    gap: 12px;
+  }
+
+  .np-summary {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
