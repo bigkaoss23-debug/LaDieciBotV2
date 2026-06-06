@@ -114,6 +114,27 @@ const NPFS_CSS = `
   .npfs .np-price{ display:none; }
   .npfs .np-actions{ grid-column:1 / -1; justify-content:flex-end; }
   .npfs .np-footer{ grid-template-columns:1fr; gap:12px; padding:12px 14px; }
+
+  /* Mobile/tablet portrait: il blocco superiore (cliente+dirección) impilato
+     riempiva tutta la viewport e schiacciava la lista prodotti a ~10px. Qui
+     facciamo scorrere l'intero corpo (unico <div> figlio di .npfs) invece
+     della sola lista interna, così i prodotti mantengono altezza usabile. Il
+     footer è fratello del corpo → resta sempre visibile. */
+  .npfs > div{ overflow-y:auto !important; -webkit-overflow-scrolling:touch; }
+  .npfs .np-products{ flex:0 0 auto; min-height:240px; overflow:visible; }
+
+  /* Top cards più compatte: leggibili ma non dominanti */
+  .npfs .np-fixedtop{ gap:8px; }
+  .npfs .np-panel{ padding:12px; }
+  .npfs .np-panel h2{ margin:0 0 10px; font-size:13px; }
+  .npfs .np-input-like{ min-height:48px; }
+  .npfs .np-input-like input{ font-size:18px; }
+  .npfs .np-icon-action, .npfs .np-whatsapp{ min-height:48px; font-size:20px; }
+  .npfs .np-address-input strong{ font-size:18px; }
+  .npfs .np-dcard{ min-height:52px; }
+  .npfs .np-dcard strong, .npfs .np-dcard input[type=time]{ font-size:18px; }
+  .npfs .np-customer-flags{ margin-top:10px; }
+  .npfs .np-delivery-cards{ margin-top:12px; }
 }
 `;
 
