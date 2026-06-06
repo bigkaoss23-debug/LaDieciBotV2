@@ -11,6 +11,13 @@ export const ORDER_STATES = Object.freeze({
   CHIUSO_FORZATO: "CHIUSO_FORZATO",
 });
 
+// NB semantica DOMICILIO (confermata operativamente):
+//   EN_ENTREGA = il driver ESCE dalla pizzeria col giro (NON "consegnato").
+//   RETIRADO   = il driver RIENTRA in pizzeria (giro chiuso), NON consegna cliente.
+//   Consegna cliente = solo stimabile (en_entrega_at + durata_andata_min).
+// Queste label generiche restano valide per RITIRO (cliente ritira al banco).
+// Le viste operatore DOMICILIO mostrano label dedicate ("Driver fuera"/"Driver volvió")
+// inline nei componenti (TabListos, TabEntregas).
 export const ORDER_STATE_LABELS = Object.freeze({
   [ORDER_STATES.POR_CONFIRMAR]: "Por confirmar",
   [ORDER_STATES.EN_COCINA]: "En cocina",

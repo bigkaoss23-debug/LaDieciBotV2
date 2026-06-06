@@ -96,7 +96,10 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                   {isDone
                     ? <span style={{background:"rgba(255,255,255,0.20)",color:"#FFFFFF",
                         border:"1px solid rgba(255,255,255,0.35)",borderRadius:20,
-                        padding:"2px 9px",fontSize:11,fontWeight:700}}>✅ Entregado</span>
+                        padding:"2px 9px",fontSize:11,fontWeight:700}}>
+                        {/* DOMICILIO: RETIRADO = driver rientrato, NON consegnato al cliente. */}
+                        {o.tipo_consegna === "DOMICILIO" ? "🛵 Driver volvió" : "✅ Entregado"}
+                      </span>
                     : <span style={{background:"rgba(0,0,0,0.25)",color:"#FFFFFF",
                         border:"1px solid rgba(255,255,255,0.30)",borderRadius:20,
                         padding:"2px 9px",fontSize:11,fontWeight:700}}>
@@ -213,7 +216,8 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                       color:"#F97316", fontWeight:800, fontSize:13,
                       textAlign:"center", letterSpacing:.3
                     }}>
-                      {o.estado === ORDER_STATES.EN_ENTREGA ? "🛵 En camino" : "🛵 Esperando driver"}
+                      {/* DOMICILIO: EN_ENTREGA = driver uscito dalla pizzeria (non "consegnato"). */}
+                      {o.estado === ORDER_STATES.EN_ENTREGA ? "🛵 Driver fuera" : "🛵 Esperando driver"}
                     </div>
                     <div style={{
                       color:"rgba(255,255,255,0.25)", fontSize:10,
