@@ -692,7 +692,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   useEffect(() => {
     if (!visible || tipoConsegna !== "DOMICILIO" || !backendTiming) return;
     if (horaTouchedByOperator) return;
-    const firstAvailable = backendTiming.suggested_hora || backendTiming.hora_propuesta || null;
+    const firstAvailable = backendTiming.suggested_hora || backendTiming.hora_proposta || null;
     if (!firstAvailable || firstAvailable === hora) return;
     horaCustom.current = false;
     setForzaHora(false);
@@ -755,10 +755,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     // fallback hint quando il backend non ha ancora risposto.
     if (backendTiming && backendTiming.tipo_consegna === "DOMICILIO" && hora) {
       const after = (backendTiming.warnings || []).some(w => w.code === "after_hours");
-      const firstAvailableH = backendTiming.suggested_hora || backendTiming.hora_propuesta || null;
+      const firstAvailableH = backendTiming.suggested_hora || backendTiming.hora_proposta || null;
       const selectedH = horaTouchedByOperator
-        ? (backendTiming.hora_propuesta || hora)
-        : (firstAvailableH || backendTiming.hora_propuesta || hora);
+        ? (backendTiming.hora_proposta || hora)
+        : (firstAvailableH || backendTiming.hora_proposta || hora);
       const suggestedH = firstAvailableH || null;
       const blockedByBackend = !!backendTiming.driver?.has_conflict;
       return {
@@ -1555,7 +1555,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         const deliveryDisponibilidad = (!zonaLoading && zonaOkForDisponibilidad)
           ? buildDisponibilidad(ordenes, zona.id, newOrderFornoOut)
           : [];
-        const giroRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_propuesta || hora;
+        const giroRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_proposta || hora;
         const recommendedCompatibleGiro = !horaTouchedByOperator
           ? findRecommendedCompatibleGiro(deliveryDisponibilidad, zona?.id, giroRecommendationRef)
           : null;
