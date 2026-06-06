@@ -791,7 +791,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       <div onClick={handleClose} style={{
         position: "fixed", inset: 0, zIndex: 500,
         display: visible ? "flex" : "none",
-        flexDirection: "column", justifyContent: "flex-end",
+        flexDirection: "column", justifyContent: "center", alignItems: "center",
         pointerEvents: visible ? "auto" : "none"
       }}>
         <div style={{
@@ -801,38 +801,50 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
         <div onClick={e => e.stopPropagation()} style={{
           position: "relative", background: C.carbone,
-          borderRadius: "22px 22px 0 0",
-          height: "92dvh", maxHeight: "92vh", display: "flex", flexDirection: "column",
+          borderRadius: 18,
+          width: "min(1540px, calc(100vw - 24px))",
+          height: "94dvh", maxHeight: "94vh", display: "flex", flexDirection: "column",
           boxShadow: "0 -10px 40px rgba(0,0,0,.5)", overflow: "hidden"
         }}>
 
           {/* Handle */}
-          <div style={{ display: "flex", justifyContent: "center", padding: isCompact ? "6px 0 2px" : "10px 0 4px", flexShrink: 0 }}>
-            <div style={{ width: 36, height: 4, borderRadius: 2, background: C.fumo }} />
+          <div style={{ display: "flex", justifyContent: "center", padding: isCompact ? "5px 0 1px" : "7px 0 2px", flexShrink: 0 }}>
+            <div style={{ width: 34, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.16)" }} />
           </div>
 
-          {/* ── Header: canal + tipo consegna ─────────────────────────── */}
+          {/* ── Header: pedido manual ─────────────────────────────────── */}
           <div style={{
-            padding: isCompact ? "4px 16px 8px" : "6px 18px 12px",
+            padding: isCompact ? "5px 16px 9px" : "7px 20px 12px",
             borderBottom: `1px solid ${C.fumo}`,
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            flexShrink: 0
+            gap: 12, flexShrink: 0
           }}>
-            <div>
-              <div style={{ color: C.bianco, fontWeight: 800, fontSize: 18 }}>Nuevo pedido</div>
-              <div style={{ display: "flex", gap: isCompact ? 6 : 8, marginTop: isCompact ? 6 : 8 }}>
-                {[{ id: "TEL", label: "📞 Teléfono" }, { id: "WA", label: "💬 WhatsApp" }, { id: "BANCO", label: "🏪 Barra" }].map(c => (
-                  <button key={c.id} onClick={() => setCanal(c.id)} style={{
-                    background: canal === c.id ? C.rosso : "transparent",
-                    border: `1.5px solid ${canal === c.id ? C.rosso : C.fumo}`,
-                    color: canal === c.id ? "#fff" : C.grigio,
-                    borderRadius: 20, padding: isCompact ? "4px 11px" : "5px 14px", fontSize: isCompact ? 12 : 13, fontWeight: 600, cursor: "pointer"
-                  }}>{c.label}</button>
-                ))}
-              </div>
-              {/* Indicatore automatico ritiro/domicilio — solo informativo */}
-              <div style={{ marginTop: isCompact ? 4 : 6, fontSize: 12, color: tipoConsegna === "DOMICILIO" ? "#F97316" : C.grigio, fontWeight: 600 }}>
-                {tipoConsegna === "DOMICILIO" ? "🛵 Entrega a domicilio" : "🏪 Retiro en local"}
+            <div style={{ display: "flex", alignItems: "center", gap: isCompact ? 8 : 12, minWidth: 0, flexWrap: "wrap" }}>
+              <div style={{
+                width: isCompact ? 34 : 40,
+                height: isCompact ? 34 : 40,
+                borderRadius: 9,
+                border: "1px solid rgba(250,204,21,0.28)",
+                background: "rgba(250,204,21,0.10)",
+                color: "#fde68a",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: isCompact ? 17 : 20,
+                flexShrink: 0
+              }}>📋</div>
+              <div style={{ color: C.bianco, fontWeight: 900, fontSize: isCompact ? 21 : 28, letterSpacing: 0, lineHeight: 1 }}>Nuevo Pedido</div>
+              <div style={{
+                color: "#facc15",
+                background: "rgba(250,204,21,0.10)",
+                border: "1px solid rgba(250,204,21,0.28)",
+                borderRadius: 999,
+                padding: isCompact ? "3px 8px" : "4px 10px",
+                fontSize: 12,
+                fontWeight: 800,
+                whiteSpace: "nowrap"
+                }}>
+                ☎ Origen: Teléfono
               </div>
             </div>
             <button onClick={handleClose} style={{
@@ -847,17 +859,18 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
             {/* Form cliente + delivery cards */}
             <div style={{ padding: isCompact ? "6px 14px" : "8px 16px", borderBottom: `1px solid ${C.fumo}`, display: "flex", flexDirection: "column", gap: isCompact ? 6 : 8, flexShrink: 0 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: isCompact ? 8 : 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: isCompact ? 8 : 14 }}>
                 <div style={{
-                  background: "rgba(255,255,255,0.035)",
+                  background: "linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.030))",
                   border: `1px solid ${clienteOk ? "rgba(34,197,94,0.34)" : "rgba(255,255,255,0.12)"}`,
-                  borderRadius: 12,
-                  padding: isCompact ? "6px 8px" : "8px 10px",
-                  display: "flex", flexDirection: "column", gap: isCompact ? 5 : 6,
+                  borderRadius: 13,
+                  padding: isCompact ? "8px 10px" : "12px 14px",
+                  display: "flex", flexDirection: "column", gap: isCompact ? 7 : 10,
                   minWidth: 0
                 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                    <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 10, fontWeight: 900, letterSpacing: .8, textTransform: "uppercase" }}>
+                    <div style={{ color: "rgba(255,255,255,0.72)", fontSize: 12, fontWeight: 900, letterSpacing: .7, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 7 }}>
+                      <span style={{ color: "#facc15" }}>●</span>
                       Cliente
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -872,18 +885,18 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         onClick={e => e.preventDefault()}
                         title={contactAvailable ? "Contacto cliente (no envía nada automáticamente)" : "Añade un teléfono para contactar"}
                         style={{
-                          width: 30, height: 30, borderRadius: 8,
+                          width: isCompact ? 34 : 42, height: isCompact ? 34 : 42, borderRadius: 9,
                           border: `1.5px solid ${contactAvailable ? "rgba(34,197,94,0.55)" : "rgba(255,255,255,0.16)"}`,
                           background: contactAvailable ? "rgba(34,197,94,0.18)" : "rgba(255,255,255,0.04)",
                           color: contactAvailable ? "#86efac" : "rgba(255,255,255,0.35)",
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 16, cursor: "pointer", flexShrink: 0
+                          fontSize: isCompact ? 16 : 20, cursor: "pointer", flexShrink: 0
                         }}>
                         {canal === "WA" ? "💬" : "📞"}
                       </button>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: isCompact ? 6 : 8, alignItems: "stretch" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(150px, .9fr)", gap: isCompact ? 6 : 10, alignItems: "stretch", minWidth: 0 }}>
                     <div style={{ flex: 1.45, position: "relative", minWidth: 0 }}>
                       <input value={nombre}
                         onChange={e => { setNombre(e.target.value); setClienteId(null); setShowSugerencias(true); }}
@@ -893,7 +906,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         style={{
                           width: "100%", background: C.carbone2, boxSizing: "border-box",
                           border: `1.5px solid ${nombre.length > 0 ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.18)"}`,
-                          borderRadius: 9, color: "#fff", padding: isCompact ? "6px 34px 6px 10px" : "8px 36px 8px 12px", fontSize: 14, fontWeight: 700
+                          borderRadius: 10, color: "#fff", padding: isCompact ? "8px 34px 8px 10px" : "13px 38px 13px 14px", fontSize: isCompact ? 14 : 17, fontWeight: 800
                         }} />
                       <button type="button"
                         onClick={() => setPreferito(p => !p)}
@@ -943,7 +956,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       style={{
                         flex: 1, minWidth: 120, background: C.carbone2,
                         border: "1.5px solid rgba(255,255,255,0.18)",
-                        borderRadius: 9, color: "#fff", padding: isCompact ? "6px 10px" : "8px 12px", fontSize: 14
+                        borderRadius: 10, color: "#fff", padding: isCompact ? "8px 10px" : "13px 14px", fontSize: isCompact ? 14 : 17, fontWeight: 800
                       }} />
                   </div>
                   {clienteAbitual && (
@@ -962,23 +975,24 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 </div>
 
                 <div style={{
-                  background: tipoConsegna === "DOMICILIO" ? "rgba(168,85,247,0.07)" : "rgba(255,255,255,0.035)",
+                  background: tipoConsegna === "DOMICILIO" ? "linear-gradient(180deg, rgba(34,197,94,0.075), rgba(168,85,247,0.055))" : "linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.030))",
                   border: `1px solid ${tipoConsegna === "DOMICILIO" ? "rgba(168,85,247,0.30)" : "rgba(255,255,255,0.12)"}`,
-                  borderRadius: 12,
-                  padding: isCompact ? "6px 8px" : "8px 10px",
-                  display: "flex", flexDirection: "column", gap: isCompact ? 5 : 6,
+                  borderRadius: 13,
+                  padding: isCompact ? "8px 10px" : "12px 14px",
+                  display: "flex", flexDirection: "column", gap: isCompact ? 7 : 10,
                   minWidth: 0
                 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                    <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 10, fontWeight: 900, letterSpacing: .8, textTransform: "uppercase" }}>
+                    <div style={{ color: "rgba(255,255,255,0.72)", fontSize: 12, fontWeight: 900, letterSpacing: .7, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 7 }}>
+                      <span style={{ color: "#facc15" }}>●</span>
                       Dirección de entrega
                     </div>
                     <button type="button" onClick={() => setShowDeliveryPopup(true)} style={{
                       background: "rgba(250,204,21,0.15)",
                       border: "1.5px solid rgba(250,204,21,0.55)",
                       color: "#fde68a",
-                      borderRadius: 9,
-                      padding: isCompact ? "5px 8px" : "6px 10px",
+                      borderRadius: 10,
+                      padding: isCompact ? "6px 9px" : "8px 12px",
                       fontSize: 12,
                       fontWeight: 900,
                       cursor: "pointer",
@@ -987,7 +1001,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       {tipoConsegna === "DOMICILIO" ? "Ver opciones" : "Abrir planificador"}
                     </button>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(150px, 0.8fr)", gap: isCompact ? 6 : 8, alignItems: "stretch", minWidth: 0 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(160px, 0.7fr)", gap: isCompact ? 6 : 10, alignItems: "stretch", minWidth: 0 }}>
                     <button type="button" onClick={() => setShowDeliveryPopup(true)} style={{
                       display: "flex", alignItems: "center", gap: 9,
                       background: C.carbone2,
@@ -996,8 +1010,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         : tipoConsegna === "DOMICILIO"
                         ? "1.5px solid rgba(168,85,247,0.42)"
                         : "1.5px solid rgba(255,255,255,0.15)",
-                      borderRadius: 10,
-                      padding: isCompact ? "6px 9px" : "8px 10px",
+                      borderRadius: 11,
+                      padding: isCompact ? "8px 9px" : "12px 14px",
                       cursor: "pointer",
                       textAlign: "left",
                       width: "100%",
@@ -1009,7 +1023,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       </span>
                       <span style={{
                         color: tipoConsegna === "DOMICILIO" ? "#fff" : "rgba(255,255,255,0.48)",
-                        fontSize: 13,
+                        fontSize: isCompact ? 13 : 18,
                         fontWeight: tipoConsegna === "DOMICILIO" ? 800 : 600,
                         flex: 1,
                         minWidth: 0,
@@ -1025,8 +1039,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       flex: 1,
                       background: "rgba(255,255,255,0.045)",
                       border: "1px solid rgba(255,255,255,0.11)",
-                      borderRadius: 10,
-                      padding: isCompact ? "5px 8px" : "6px 9px",
+                      borderRadius: 11,
+                      padding: isCompact ? "7px 9px" : "10px 12px",
                       minWidth: 0
                     }}>
                       <div style={{ color: "rgba(255,255,255,0.44)", fontSize: 9, fontWeight: 900, letterSpacing: .7, textTransform: "uppercase" }}>
@@ -1034,7 +1048,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
                         <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)}
-                          style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: isCompact ? 16 : 18, fontWeight: 900, width: 88, outline: "none", lineHeight: 1 }} />
+                          style={{ background: "transparent", border: "none", color: tipoConsegna === "DOMICILIO" ? "#4ade80" : "#fff", padding: 0, fontSize: isCompact ? 18 : 24, fontWeight: 900, width: isCompact ? 94 : 118, outline: "none", lineHeight: 1, fontFamily: "'DM Mono',monospace" }} />
                         {tipoConsegna === "DOMICILIO" && (
                           <span style={{
                             color: deliveryStatus.isBlocked ? "#fca5a5" : "#86efac",
@@ -1119,11 +1133,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
               {hasOperationalInfo && (
                 <div style={{
-                  display: "flex", flexDirection: "column", gap: 6,
+                  display: "flex", flexDirection: "column", gap: 4,
                   background: (pickupKitchenStatus?.overloaded || showDeliveryOutOfServiceAlert) ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.03)",
                   border: (pickupKitchenStatus?.overloaded || showDeliveryOutOfServiceAlert) ? "1.5px solid rgba(239,68,68,0.40)" : "1px solid rgba(255,255,255,0.10)",
                   borderRadius: 9,
-                  padding: isCompact ? "6px 8px" : "8px 10px",
+                  padding: isCompact ? "5px 8px" : "6px 9px",
+                  width: "fit-content",
+                  maxWidth: "100%",
                 }}>
                   <div style={{
                     color: "rgba(255,255,255,0.45)",
