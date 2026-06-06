@@ -1519,10 +1519,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 	          <div style={{
 	            padding: isCompact ? "9px 14px" : "12px 16px",
 	            borderTop: `1px solid ${C.fumo}`,
-	            display: "flex", justifyContent: "space-between", alignItems: "center",
+	            display: "flex", justifyContent: "space-between", alignItems: "flex-end",
+	            gap: isCompact ? 10 : 14, flexWrap: "wrap",
 	            flexShrink: 0, background: C.carbone2
 	          }}>
-	            <div>
+	            <div style={{ flex: "1 1 280px", minWidth: 0, maxWidth: 520 }}>
 	              <div style={{ color: C.grigio, fontSize: 11 }}>Total · {itemQtyTotal} item{itemQtyTotal !== 1 ? "s" : ""}</div>
 	              <div style={{ color: C.verde, fontWeight: 800, fontSize: isCompact ? 20 : 22, fontFamily: "'DM Mono',monospace" }}>{total}€</div>
               {tipoConsegna === "DOMICILIO" && (
@@ -1577,6 +1578,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               color: (!ok || submitting) ? C.grigio : "#fff",
 	              border: "none", borderRadius: 12,
 	              minHeight: 44, padding: isCompact ? "11px 18px" : "14px 24px", fontWeight: 800, fontSize: 15,
+              flex: "0 1 240px", minWidth: 180, maxWidth: "100%", marginLeft: "auto", whiteSpace: "nowrap",
               boxShadow: (!ok || submitting) ? "none" : `0 4px 16px ${C.rosso}55`,
               cursor: submitting ? "wait" : (ok ? "pointer" : "default")
             }}>
