@@ -356,10 +356,11 @@ const ZonaOrderRow = ({
         </button>
       )}
 
-      {/* Override: marcar entregado manualmente */}
+      {/* Override: marcar driver de vuelta manualmente.
+          DOMICILIO: RETIRADO = driver rientrato in pizzeria (giro chiuso), NON consegna cliente. */}
       {isEnEntrega && (
         <button disabled={isLoading} onClick={() => {
-          if (!window.confirm("¿Confirmar entrega? Esta acción cerrará el pedido como entregado.")) return;
+          if (!window.confirm("¿Driver de vuelta? Esta acción cerrará el giro (RETIRADO).")) return;
           onForzaEntregado && onForzaEntregado(o);
         }}
           style={{
@@ -368,8 +369,8 @@ const ZonaOrderRow = ({
             borderRadius: 8, color: "#22C55E", fontWeight: 700, fontSize: 11,
             cursor: "pointer", flexShrink: 0
           }}
-          title="Marcar como entregado desde el panel del operador">
-          ✓ Entregado
+          title="Marcar driver de vuelta (RETIRADO) desde el panel del operador">
+          ✓ Driver volvió
         </button>
       )}
     </div>
@@ -1094,7 +1095,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       // Controlla se era l'ultimo
       const rimanenti = entregas.filter(o => [ORDER_STATES.LISTO, ORDER_STATES.EN_ENTREGA].includes(o.estado) && o.id !== ordine.id);
       if (rimanenti.length === 0) await api.chiudiGiro();
-      if (notify) notify("✓ Entregado (operador)", "#22C55E");
+      if (notify) notify("✓ Driver volvió (operador)", "#22C55E");
     } catch(e) {
       logRollback({
         component: "TabEntregas",
