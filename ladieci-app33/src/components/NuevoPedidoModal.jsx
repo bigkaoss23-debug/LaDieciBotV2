@@ -660,6 +660,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         const res = await api.previewOrderPlanner(input);
         if (cancelled) return;
         // Guard di validità contract: accetta solo planner read-only v1.
+        // ok:true e ok:false sono ENTRAMBI contract validi → li conserviamo e il
+        // rendering distingue (recommendation vs blocker). Solo contract/source
+        // mancanti = "Planner no disponible". NESSUN calcolo locale di fallback.
         if (res && res.contract === "nuevo-pedido-planner-preview-v1" && res.source === "planner") {
           setPlannerPreview(res);
           setPlannerPreviewError("");
@@ -844,6 +847,14 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const plannerGiro           = plannerPreview?.giro || null;
   const plannerWarnings       = plannerPreview?.warnings || [];
   const plannerBlockers       = plannerPreview?.blockers || [];
+  // ok:false è un contract VALIDO (errore deciso dal backend), non un guasto.
+  // null = nessun preview ancora; true/false = esito del planner.
+  const plannerOk             = plannerPreview ? plannerPreview.ok !== false : null;
+  // Il backend espone geo.source; normalizziamo anche un eventuale geo_source.
+  const plannerGeoSource      = plannerGeo?.source || plannerGeo?.geo_source || null;
+  // Superficie contract non ancora renderizzata: difesa contro null/array vuoti.
+  const plannerAlternatives   = plannerPreview?.alternatives || [];
+  const plannerAvailability   = plannerPreview?.availability_rows || [];
 
   return (
     <>
@@ -1572,7 +1583,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     );
                   }
                   if (plannerPreviewError || !plannerPreview) {
-                    // NESSUN calcolo locale: il planner è l'unica fonte. Se non c'è, lo diciamo.
+                    // Solo per contract/source mancante o failure reale: il planner
+                    // è l'unica fonte, NESSUN calcolo locale. Se non c'è, lo diciamo.
                     return (
                       <div style={{ borderRadius: 10, padding: "12px 14px",
                         background: "rgba(251,191,36,0.08)", border: "1.5px solid rgba(251,191,36,0.45)",
@@ -1581,6 +1593,35 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         <span style={{ color: "#fde68a", fontWeight: 700, fontSize: 13 }}>
                           {plannerPreviewError || "Planner no disponible"}
                         </span>
+                      </div>
+                    );
+                  }
+                  if (plannerOk === false) {
+                    // Contract VALIDO ma il planner ha deciso ok:false → mostriamo i
+                    // blocker/warning SPECIFICI del backend (es. "No se pudo resolver
+                    // la dirección"), non il generico "Planner no disponible".
+                    const errMsg = plannerPreview?.error?.message || null;
+                    const blk = plannerBlockers.length
+                      ? plannerBlockers
+                      : (errMsg ? [{ message: errMsg }] : [{ message: "Planner no disponible" }]);
+                    return (
+                      <div style={{ borderRadius: 10, padding: "12px 14px",
+                        background: "rgba(239,68,68,0.08)", border: "1.5px solid rgba(239,68,68,0.45)",
+                        display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 16 }}>🛰</span>
+                          <span style={{ color: "#fca5a5", fontWeight: 800, fontSize: 13 }}>
+                            Planner sin propuesta{plannerGeo?.zona ? ` · ${plannerGeo.zona}` : ""}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 12, paddingLeft: 24, display: "flex", flexDirection: "column", gap: 2 }}>
+                          {blk.map((b, i) => (
+                            <span key={`okfb${i}`} style={{ color: "#fca5a5", fontWeight: 700 }}>⛔ {b.message || b.code || "Bloqueo"}</span>
+                          ))}
+                          {plannerWarnings.map((w, i) => (
+                            <span key={`okfw${i}`} style={{ color: "#fde68a" }}>⚠️ {w.message || w.code || "Aviso"}</span>
+                          ))}
+                        </div>
                       </div>
                     );
                   }
@@ -1608,7 +1649,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         {rec.forno_out && <span>Salida horno {rec.forno_out}</span>}
                         {rec.salida_driver && <span>🛵 Salida {rec.salida_driver}</span>}
                         {rec.entrega_estimada && <span>📦 Entrega {rec.entrega_estimada}</span>}
-                        {plannerGeo?.zona && <span>🗺 {plannerGeo.zona}</span>}
+                        {plannerGeo?.zona && <span>🗺 {plannerGeo.zona}{plannerGeoSource ? ` · ${plannerGeoSource}` : ""}</span>}
+                        {(plannerAlternatives.length > 0 || plannerAvailability.length > 0) && (
+                          <span>↔ {plannerAlternatives.length} alt{plannerAvailability.length ? ` · ${plannerAvailability.length} slots` : ""}</span>
+                        )}
                       </div>
                       {hasWarn && (
                         <div style={{ fontSize: 12, paddingLeft: 24, display: "flex", flexDirection: "column", gap: 2 }}>
