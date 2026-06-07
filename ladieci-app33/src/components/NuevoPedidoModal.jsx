@@ -169,6 +169,22 @@ const GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN = 20;
 // partenza del giro esistente ed essere ancora agganciabile (il driver può
 // attendere un paio di minuti). Oltre questo, il giro NON è aggregabile.
 const GIRO_AGGREGATION_MARGIN_MIN = 2;
+// Lead minimo (min) tra ADESSO e la partenza di un giro perché sia ancora
+// proponibile. Sotto questa soglia il giro è già partito / in corso / troppo
+// vicino: non c'è tempo materiale per preparazione + forno + assegnazione del
+// rider, quindi non è un'opzione operativa reale. Coerente in spirito col gate
+// `now + 5` di suggerisciOrario (zones.js), ma qui un filo più conservativo (10)
+// perché `startMin` è la PARTENZA del driver, non la sola disponibilità forno.
+const MIN_DELIVERY_LEAD_MIN = 10;
+
+// Minuti dall'inizio del giorno per l'ora corrente. Stessa convenzione naive
+// (HH:MM locale) già usata altrove nel file e in suggerisciOrario; non gestisce
+// il wrap oltre mezzanotte, ma il delivery è chiuso a quell'ora quindi i giri
+// post-mezzanotte non sono uno scenario reale.
+function nowMinutes() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
 
 function timeDiffMin(a, b) {
   const toM = (t) => {
@@ -186,11 +202,14 @@ function timeDiffMin(a, b) {
   return Math.abs(ma - mb);
 }
 
-function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, marginMin = GIRO_AGGREGATION_MARGIN_MIN) {
+function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, marginMin = GIRO_AGGREGATION_MARGIN_MIN, nowMin = nowMinutes()) {
   const toM = (t) => { if (!t) return null; const [h, m] = String(t).split(":").map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
   // forno_out del NUOVO ordine: minuto in cui la sua pizza esce dal forno.
   // Serve a decidere se è ancora in tempo per agganciarsi a un giro esistente.
   const newFornoMin = toM(newOrderFornoOut);
+  // Soglia temporale: la partenza di un giro deve essere ancora abbastanza nel
+  // futuro per essere un'opzione reale.
+  const minStartMin = nowMin + MIN_DELIVERY_LEAD_MIN;
   const rows = [];
   const byKey = new Map();
   for (const o of (ordenes || [])) {
@@ -200,17 +219,25 @@ function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, ma
     const start = o.salida_driver_estimada || o.forno_out || null;
     const end = o.entrega_estimada || o.hora || null;
     if (!start && !end) continue;
+    const startMin = toM(start) ?? toM(end);
+    // Gate temporale: scarta i giri già partiti / in corso / troppo vicini alla
+    // partenza. Non sono opzioni operative reali e confondono l'operatore (es.
+    // mostrare 21:05–21:20 quando sono già le 21:17). Se non riusciamo a leggere
+    // l'orario di partenza, per prudenza non proponiamo la riga.
+    if (startMin == null || startMin < minStartMin) continue;
     const key = `${o.zona}|${start || end}`;
     if (byKey.has(key)) { byKey.get(key).count += 1; continue; }
-    const startMin = toM(start) ?? toM(end);
     const sameZone = !!currentZonaId && o.zona === currentZonaId;
     // Agganciabile SOLO se la pizza nuova esce dal forno entro la partenza del
     // giro (+margine): il driver parte a `startMin`, la pizza deve essere pronta.
-    // Se non conosciamo il forno_out nuovo restiamo ottimisti (compatibile) per
-    // non regredire rispetto al solo match di zona.
-    const aggregable = sameZone && (
-      newFornoMin == null || (startMin != null && newFornoMin <= startMin + marginMin)
-    );
+    // Niente più ramo ottimistico "forno_out nuovo sconosciuto => compatibile":
+    // senza forno_out non possiamo garantire che la pizza arrivi in tempo, quindi
+    // il giro resta NON agganciabile (no_agregable) finché non lo conosciamo.
+    const aggregable = sameZone
+      && startMin != null
+      && startMin >= minStartMin
+      && newFornoMin != null
+      && newFornoMin <= startMin + marginMin;
     const row = {
       key,
       zona: o.zona,
@@ -228,10 +255,16 @@ function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, ma
   return rows;
 }
 
-function findRecommendedCompatibleGiro(disponibilidad, currentZonaId, referenceHora) {
+function findRecommendedCompatibleGiro(disponibilidad, currentZonaId, referenceHora, nowMin = nowMinutes()) {
   if (!currentZonaId || !referenceHora) return null;
+  // Stesso gate di buildDisponibilidad: non raccomandare "Usar giro" per giri
+  // già partiti / in corso / troppo vicini alla partenza. Difesa ridondante (le
+  // righe arrivano già filtrate), ma esplicita per non regredire se la sorgente
+  // delle righe cambiasse.
+  const minStartMin = nowMin + MIN_DELIVERY_LEAD_MIN;
   return (disponibilidad || [])
     .filter(r => r.kind === "compatible" && r.zona === currentZonaId && r.slotHora)
+    .filter(r => r.startMin != null && r.startMin >= minStartMin)
     .map(r => ({ ...r, diffMin: timeDiffMin(referenceHora, r.slotHora) }))
     .filter(r => r.diffMin != null && r.diffMin <= GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN)
     .sort((a, b) => (a.diffMin - b.diffMin) || ((a.startMin ?? 0) - (b.startMin ?? 0)))[0] || null;
@@ -790,7 +823,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   useEffect(() => {
     if (!visible || tipoConsegna !== "DOMICILIO" || !backendTiming) return;
     if (horaTouchedByOperator) return;
-    const firstAvailable = backendTiming.suggested_hora || backendTiming.hora_propuesta || null;
+    const firstAvailable = backendTiming.suggested_hora || backendTiming.hora_proposta || null;
     if (!firstAvailable || firstAvailable === hora) return;
     horaCustom.current = false;
     setForzaHora(false);
@@ -853,10 +886,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     // fallback hint quando il backend non ha ancora risposto.
     if (backendTiming && backendTiming.tipo_consegna === "DOMICILIO" && hora) {
       const after = (backendTiming.warnings || []).some(w => w.code === "after_hours");
-      const firstAvailableH = backendTiming.suggested_hora || backendTiming.hora_propuesta || null;
+      const firstAvailableH = backendTiming.suggested_hora || backendTiming.hora_proposta || null;
       const selectedH = horaTouchedByOperator
-        ? (backendTiming.hora_propuesta || hora)
-        : (firstAvailableH || backendTiming.hora_propuesta || hora);
+        ? (backendTiming.hora_proposta || hora)
+        : (firstAvailableH || backendTiming.hora_proposta || hora);
       const suggestedH = firstAvailableH || null;
       const blockedByBackend = !!backendTiming.driver?.has_conflict;
       return {
@@ -910,7 +943,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     if (tipoConsegna !== "DOMICILIO" || !deliveryZonaOk) return [];
     return buildDisponibilidad(ordenes, deliveryZona.id, deliveryFornoOut);
   }, [tipoConsegna, deliveryZonaOk, deliveryZona?.id, deliveryFornoOut, ordenes]);
-  const deliveryRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_propuesta || hora;
+  const deliveryRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_proposta || hora;
   const topRecommendedCompatibleGiro = !horaTouchedByOperator
     ? findRecommendedCompatibleGiro(deliveryDisponibilidadTop, deliveryZona?.id, deliveryRecommendationRef)
     : null;
@@ -1483,7 +1516,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         const deliveryDisponibilidad = (!zonaLoading && zonaOkForDisponibilidad)
           ? buildDisponibilidad(ordenes, zona.id, newOrderFornoOut)
           : [];
-        const giroRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_propuesta || hora;
+        const giroRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_proposta || hora;
         const recommendedCompatibleGiro = !horaTouchedByOperator
           ? findRecommendedCompatibleGiro(deliveryDisponibilidad, zona?.id, giroRecommendationRef)
           : null;
