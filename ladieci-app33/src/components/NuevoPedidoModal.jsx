@@ -7,6 +7,7 @@ import { assegnaZonaDaKeyword, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, BUFFER_
 // frontend Premium NON calcola disponibilità/lead-time/giri: la verità arriva dal
 // backend (previewOrderTiming oggi, previewOrderPlanner appena deployato).
 import ItemPickerModal from './ItemPickerModal';
+import PremiumPlannerPopup from './PremiumPlannerPopup';
 import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
 import { getKitchenCapacityStatus } from '../core/kitchen/capacity';
@@ -211,6 +212,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [clienteAbitual,  setClienteAbitual]  = useState(null);
   const [showNotaGen,     setShowNotaGen]     = useState(false);
   const [showDeliveryPopup, setShowDeliveryPopup] = useState(false);
+  const [showPlannerLabPopup, setShowPlannerLabPopup] = useState(false);
   // Override esplicito: l'operatore ha cliccato "Forzar HORA" ignorando la proposta
   const [forzaHora, setForzaHora] = useState(false);
   const [yaPagedo,        setYaPagedo]        = useState(false);
@@ -1003,7 +1005,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       <small>Salida horno</small>
                       <strong>{tipoConsegna === "DOMICILIO" ? (deliveryFornoOut || "—") : (hora || "—")}</strong>
                     </div>
-                    <button type="button" className="np-recalc" onClick={() => setShowDeliveryPopup(true)}>◎ Recalcular</button>
+                    <button type="button" className="np-recalc" onClick={() => setShowPlannerLabPopup(true)}>◎ Ver propuestas LAB</button>
                   </div>
 
                   {/* Stato compatibilità delivery + giro alternativo */}
@@ -2073,6 +2075,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           </div>
         );
       })()}
+
+      {showPlannerLabPopup && (
+        <PremiumPlannerPopup onClose={() => setShowPlannerLabPopup(false)} />
+      )}
 
       {/* ── ItemPickerModal ────────────────────────────────────────────── */}
       <ItemPickerModal
