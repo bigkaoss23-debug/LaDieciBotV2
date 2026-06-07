@@ -1,34 +1,146 @@
 import { useState } from 'react';
 
-const zoneColors = {
-  Q1: '#0097A7',
-  Q2: '#CE93D8',
-  Q3: '#E65100',
-  Q4: '#C2185B',
-  Q5: '#7CB342',
+const PREMIUM_PLANNER_LAB_DATA = {
+  contract: 'premium-planner-popup-lab-v1',
+  mode: 'static_lab',
+  source: 'mock',
+  bestProposal: {
+    id: 'best-direct-q1-1555',
+    type: 'directa',
+    label: 'Mejor propuesta',
+    entrega: '15:55',
+    salidaHorno: '15:48',
+    driverStatus: 'Driver disponible',
+    routeLabel: 'Directa · recomendada',
+    severity: 'ok',
+    ctaLabel: 'Aplicar propuesta',
+  },
+  zoneMap: {
+    title: 'Esquema operativo por zonas',
+    caption: 'Ruta estimada:',
+    route: ['Pizzería', 'Q1', 'Q5'],
+    seaLabel: 'MAR MEDITERRÁNEO',
+    zones: [
+      { id: 'Q1', name: 'Centro', color: '#0097A7', hasPizzeria: true },
+      { id: 'Q2', name: 'Buenavista', color: '#CE93D8' },
+      { id: 'Q3', name: 'IES', color: '#E65100' },
+      { id: 'Q4', name: 'Cortijos', color: '#C2185B' },
+      { id: 'Q5', name: 'Las Marinas', color: '#7CB342' },
+    ],
+  },
+  quickOptions: [
+    {
+      id: 'quick-q1-1555',
+      time: '15:55',
+      title: 'Q1 compatible',
+      subtitle: 'Hueco disponible',
+      severity: 'ok',
+      zoneIds: ['Q1'],
+      sourceServiceLineId: 'line-q1-1555',
+      actionLabel: '✓',
+    },
+    {
+      id: 'quick-adjust-1600',
+      time: '16:00',
+      title: 'Ajuste +5 min',
+      subtitle: 'Ventana extendida',
+      severity: 'warning',
+      zoneIds: ['Q1'],
+      sourceServiceLineId: 'line-q1-1555',
+      actionLabel: '◷',
+    },
+    {
+      id: 'quick-manual-q1-q5-1610',
+      time: '16:10',
+      title: 'Q1+Q5 compatible',
+      subtitle: 'Forzado por operador',
+      severity: 'manual',
+      zoneIds: ['Q1', 'Q5'],
+      sourceServiceLineId: 'line-q1-q5-1610',
+      actionLabel: '↗',
+    },
+    {
+      id: 'quick-new-q5-1625',
+      time: '16:25',
+      title: 'Nuevo giro',
+      subtitle: 'Pedido asignado',
+      severity: 'new',
+      zoneIds: ['Q5'],
+      sourceServiceLineId: 'line-q5-1625',
+      actionLabel: '↻',
+    },
+  ],
+  serviceLine: [
+    {
+      id: 'line-q1-1545',
+      time: '15:45',
+      zoneLabel: 'Q1',
+      title: 'Q1 en curso',
+      subtitle: 'Ruta actual',
+      severity: 'info',
+      chip: 'en curso',
+      action: 'preview_only',
+    },
+    {
+      id: 'line-q1-1555',
+      time: '15:55',
+      zoneLabel: 'Q1',
+      title: 'Q1 compatible',
+      subtitle: 'Hueco disponible',
+      severity: 'ok',
+      chip: 'libre',
+      action: 'preview_only',
+    },
+    {
+      id: 'line-q1-q5-1610',
+      time: '16:10',
+      zoneLabel: 'Q1+Q5',
+      title: 'Q1+Q5 compatible',
+      subtitle: 'Forzado por operador',
+      severity: 'manual',
+      chip: 'compatible',
+      action: 'preview_only',
+    },
+    {
+      id: 'line-q5-1625',
+      time: '16:25',
+      zoneLabel: 'Q5',
+      title: 'Q5 nuevo giro',
+      subtitle: 'Pedido asignado',
+      severity: 'new',
+      chip: 'nuevo giro',
+      action: 'preview_only',
+    },
+    {
+      id: 'line-driver-1640',
+      time: '16:40',
+      zoneLabel: 'Driver',
+      title: 'Driver vuelve libre',
+      subtitle: 'Fin de ruta Q1+Q5',
+      severity: 'ok',
+      chip: 'libre',
+      action: 'preview_only',
+    },
+  ],
+  plannerNotes: [
+    'Agrupar Q1+Q5 añade ~13 min de ruta pero evita retorno.',
+    'Próximo hueco natural: 16:10.',
+    'Toca una línea para previsualizar, no se aplica automáticamente.',
+  ],
 };
 
-const quickOptions = [
-  { tone: 'ok', time: '15:55', title: 'Q1 compatible', note: 'Hueco disponible', icon: '✓' },
-  { tone: 'warn', time: '16:00', title: 'Ajuste +5 min', note: 'Ventana extendida', icon: '◷' },
-  { tone: 'manual', time: '16:10', title: 'Q1+Q5 compatible', note: 'Forzado por operador', icon: '↗' },
-  { tone: 'new', time: '16:25', title: 'Nuevo giro', note: 'Pedido asignado', icon: '↻' },
-];
-
-const timelineRows = [
-  { time: '15:45', title: 'Q1 en curso', note: 'Ruta actual', tone: 'current', chip: 'en curso' },
-  { time: '15:55', title: 'Q1 compatible', note: 'Hueco disponible', tone: 'ok', chip: 'libre' },
-  { time: '16:10', title: 'Q1+Q5 compatible', note: 'Forzado por operador', tone: 'manual', chip: 'compatible' },
-  { time: '16:25', title: 'Q5 nuevo giro', note: 'Pedido asignado', tone: 'new', chip: 'nuevo giro' },
-  { time: '16:40', title: 'Driver vuelve libre', note: 'Fin de ruta Q1+Q5', tone: 'ok', chip: 'libre' },
-];
+const zoneColors = PREMIUM_PLANNER_LAB_DATA.zoneMap.zones.reduce((acc, zone) => {
+  acc[zone.id] = zone.color;
+  return acc;
+}, {});
 
 const toneStyles = {
   ok: { accent: '#58E86B', bg: 'rgba(46, 210, 88, 0.10)', border: 'rgba(66, 232, 104, 0.38)' },
-  warn: { accent: '#F0C45C', bg: 'rgba(240, 178, 48, 0.09)', border: 'rgba(240, 178, 48, 0.40)' },
+  warning: { accent: '#F0C45C', bg: 'rgba(240, 178, 48, 0.09)', border: 'rgba(240, 178, 48, 0.40)' },
   manual: { accent: '#B77CFF', bg: 'rgba(145, 88, 255, 0.11)', border: 'rgba(183, 124, 255, 0.42)' },
   new: { accent: '#FF7A1A', bg: 'rgba(255, 122, 26, 0.10)', border: 'rgba(255, 122, 26, 0.42)' },
-  current: { accent: '#26DCEB', bg: 'rgba(38, 220, 235, 0.08)', border: 'rgba(38, 220, 235, 0.30)' },
+  info: { accent: '#26DCEB', bg: 'rgba(38, 220, 235, 0.08)', border: 'rgba(38, 220, 235, 0.30)' },
+  blocked: { accent: '#F87171', bg: 'rgba(248, 113, 113, 0.10)', border: 'rgba(248, 113, 113, 0.42)' },
 };
 
 const labLog = (eventName, payload) => {
@@ -36,11 +148,21 @@ const labLog = (eventName, payload) => {
 };
 
 const PremiumPlannerPopup = ({ onClose }) => {
-  const [selectedPreview, setSelectedPreview] = useState('15:55 · Q1 compatible');
+  const data = PREMIUM_PLANNER_LAB_DATA;
+  const [selectedPreviewId, setSelectedPreviewId] = useState(data.quickOptions[0]?.id || data.bestProposal.id);
 
-  const selectPreview = (label, payload) => {
-    setSelectedPreview(label);
-    labLog('preview-only', payload);
+  const selectedPreview =
+    data.quickOptions.find(item => item.id === selectedPreviewId) ||
+    data.serviceLine.find(item => item.id === selectedPreviewId) ||
+    data.bestProposal;
+
+  const previewLabel = selectedPreview.time
+    ? `${selectedPreview.time} · ${selectedPreview.title}`
+    : `${selectedPreview.entrega} · ${selectedPreview.label}`;
+
+  const selectPreview = (item) => {
+    setSelectedPreviewId(item.id);
+    labLog('preview-only', item);
   };
 
   return (
@@ -54,7 +176,7 @@ const PremiumPlannerPopup = ({ onClose }) => {
             <span>✦</span>
           </div>
           <h2>Propuestas de entrega</h2>
-          <span className="ppp-lab-pill">LAB · no guarda</span>
+          <span className="ppp-lab-pill">LAB · {data.source}</span>
           <button type="button" className="ppp-close" onClick={onClose} aria-label="Cerrar propuestas">×</button>
         </header>
 
@@ -62,43 +184,43 @@ const PremiumPlannerPopup = ({ onClose }) => {
           <section className="ppp-best-card" aria-label="Mejor propuesta">
             <div className="ppp-best-label">
               <span>✦</span>
-              <strong>Mejor propuesta</strong>
+              <strong>{data.bestProposal.label}</strong>
             </div>
-            <h3>Entrega 15:55</h3>
-            <p className="ppp-horno">Salida horno 15:48</p>
-            <p className="ppp-driver"><span>▣</span> Driver disponible</p>
-            <p className="ppp-type">Directa · recomendada</p>
+            <h3>Entrega {data.bestProposal.entrega}</h3>
+            <p className="ppp-horno">Salida horno {data.bestProposal.salidaHorno}</p>
+            <p className="ppp-driver"><span>▣</span> {data.bestProposal.driverStatus}</p>
+            <p className="ppp-type">{data.bestProposal.routeLabel}</p>
             <button
               type="button"
               className="ppp-apply"
-              onClick={() => selectPreview('Aplicar propuesta · LAB no-op', { action: 'apply_proposal' })}
+              onClick={() => selectPreview(data.bestProposal)}
             >
-              Aplicar propuesta
+              {data.bestProposal.ctaLabel}
             </button>
           </section>
 
-          <MiniZoneMap />
+          <MiniZoneMap zoneMap={data.zoneMap} />
         </div>
 
         <section className="ppp-quick-section">
           <h3>Otras opciones rápidas</h3>
           <div className="ppp-options">
-            {quickOptions.map(option => {
-              const tone = toneStyles[option.tone];
+            {data.quickOptions.map(option => {
+              const tone = toneStyles[option.severity] || toneStyles.info;
               return (
                 <button
                   type="button"
-                  key={`${option.time}-${option.title}`}
+                  key={option.id}
                   className="ppp-option-card"
                   style={{ '--tone': tone.accent, '--toneBg': tone.bg, '--toneBorder': tone.border }}
-                  onClick={() => selectPreview(`${option.time} · ${option.title}`, option)}
+                  onClick={() => selectPreview(option)}
                 >
                   <span className="ppp-option-top">
                     <strong>{option.time}</strong>
-                    <i>{option.icon}</i>
+                    <i>{option.actionLabel}</i>
                   </span>
                   <b>{option.title}</b>
-                  <small>{option.note}</small>
+                  <small>{option.subtitle}</small>
                 </button>
               );
             })}
@@ -111,21 +233,21 @@ const PremiumPlannerPopup = ({ onClose }) => {
             <p><span>↻</span> Actualizado ahora</p>
           </div>
           <div className="ppp-timeline" aria-label="Giros y huecos">
-            {timelineRows.map((row, index) => {
-              const tone = toneStyles[row.tone];
+            {data.serviceLine.map((row, index) => {
+              const tone = toneStyles[row.severity] || toneStyles.info;
               return (
                 <button
                   type="button"
-                  key={`${row.time}-${row.title}`}
+                  key={row.id}
                   className="ppp-timeline-row"
                   style={{ '--tone': tone.accent, '--toneBg': tone.bg, '--toneBorder': tone.border }}
-                  onClick={() => selectPreview(`${row.time} · ${row.title}`, row)}
+                  onClick={() => selectPreview(row)}
                 >
                   <span className="ppp-row-time">{row.time}</span>
-                  <span className={`ppp-row-dot${index === 3 ? ' is-new' : ''}`} />
+                  <span className={`ppp-row-dot${row.severity === 'new' || index === 3 ? ' is-new' : ''}`} />
                   <span className="ppp-row-copy">
                     <strong>{row.title}</strong>
-                    <small>{row.note}</small>
+                    <small>{row.subtitle}</small>
                   </span>
                   <span className="ppp-row-chip">{row.chip}</span>
                 </button>
@@ -137,29 +259,35 @@ const PremiumPlannerPopup = ({ onClose }) => {
         <section className="ppp-notes" aria-label="Notas del planner">
           <h3><span>♧</span> Notas del planner</h3>
           <ul>
-            <li>Agrupar Q1+Q5 añade ~13 min de ruta pero evita retorno.</li>
-            <li>Próximo hueco natural: 16:10.</li>
-            <li>Toca una línea para previsualizar, no se aplica automáticamente.</li>
+            {data.plannerNotes.map(note => (
+              <li key={note}>{note}</li>
+            ))}
           </ul>
-          <span className="ppp-selected">Preview local: {selectedPreview}</span>
+          <span className="ppp-selected">Preview local: {previewLabel}</span>
         </section>
       </section>
     </div>
   );
 };
 
-const MiniZoneMap = () => (
+const MiniZoneMap = ({ zoneMap }) => {
+  const zonesById = zoneMap.zones.reduce((acc, zone) => {
+    acc[zone.id] = zone;
+    return acc;
+  }, {});
+
+  return (
   <section className="ppp-map-card" aria-label="Esquema operativo por zonas">
-    <h3>Esquema operativo por zonas</h3>
+    <h3>{zoneMap.title}</h3>
     <div className="ppp-map">
       <span className="ppp-road road-a" />
       <span className="ppp-road road-b" />
       <span className="ppp-road road-c" />
-      <span className="ppp-zone zone-q4"><b>Q4</b><small>CORTIJOS</small></span>
-      <span className="ppp-zone zone-q3"><b>Q3</b><small>IES</small></span>
-      <span className="ppp-zone zone-q1"><b>Q1</b><small>CENTRO</small><em>🍕 Pizzería</em></span>
-      <span className="ppp-zone zone-q2"><b>Q2</b><small>BUENAVISTA</small></span>
-      <span className="ppp-zone zone-q5"><b>Q5</b><small>LAS MARINAS</small></span>
+      <span className="ppp-zone zone-q4"><b>{zonesById.Q4.id}</b><small>{zonesById.Q4.name.toUpperCase()}</small></span>
+      <span className="ppp-zone zone-q3"><b>{zonesById.Q3.id}</b><small>{zonesById.Q3.name.toUpperCase()}</small></span>
+      <span className="ppp-zone zone-q1"><b>{zonesById.Q1.id}</b><small>{zonesById.Q1.name.toUpperCase()}</small>{zonesById.Q1.hasPizzeria && <em>🍕 Pizzería</em>}</span>
+      <span className="ppp-zone zone-q2"><b>{zonesById.Q2.id}</b><small>{zonesById.Q2.name.toUpperCase()}</small></span>
+      <span className="ppp-zone zone-q5"><b>{zonesById.Q5.id}</b><small>{zonesById.Q5.name.toUpperCase()}</small></span>
       <span className="ppp-shop-dot" />
       <span className="ppp-route route-a" />
       <span className="ppp-route route-b" />
@@ -169,14 +297,15 @@ const MiniZoneMap = () => (
         <span>⌁⌁</span>
         <span>⌁⌁</span>
         <span>⌁⌁</span>
-        <strong>MAR<br />MEDITERRÁNEO</strong>
+        <strong>{zoneMap.seaLabel.split(' ').slice(0, 1).join(' ')}<br />{zoneMap.seaLabel.split(' ').slice(1).join(' ')}</strong>
         <span>⌁⌁</span>
         <span>⌁⌁</span>
       </div>
     </div>
-    <p>Ruta estimada: <strong>Pizzería</strong> → <b>Q1</b> → <em>Q5</em></p>
+    <p>{zoneMap.caption} <strong>{zoneMap.route[0]}</strong> → <b>{zoneMap.route[1]}</b> → <em>{zoneMap.route[2]}</em></p>
   </section>
-);
+  );
+};
 
 const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-overlay{ position:fixed; inset:0; z-index:12000; display:flex; align-items:center; justify-content:center; padding:28px; background:rgba(0,0,0,0.72); backdrop-filter:blur(8px); }
