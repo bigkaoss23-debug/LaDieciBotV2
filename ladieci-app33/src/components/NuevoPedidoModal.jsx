@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { C, genId, INGREDIENTI, calcTotale, DELIVERY_FEE, aplicarDescuento } from '../constants';
 import { api, sb } from '../api';
-import { assegnaZonaDaKeyword, suggerisciOrario, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, risolviTempoAndata, tempoAndata, proposeForNewOrder, BUFFER_OPS_DRIVER_MIN } from '../zones';
+import { assegnaZonaDaKeyword, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, BUFFER_OPS_DRIVER_MIN } from '../zones';
+// Migrazione planner-preview (2026-06-07): rimossi gli import di scheduling LOCALE
+// (proposeForNewOrder / suggerisciOrario / risolviTempoAndata / tempoAndata). Il
+// frontend Premium NON calcola disponibilità/lead-time/giri: la verità arriva dal
+// backend (previewOrderTiming oggi, previewOrderPlanner appena deployato).
 import ItemPickerModal from './ItemPickerModal';
 import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
@@ -164,52 +168,8 @@ function buildClosingOverrideNota(nota, hora) {
 // driver separati (salida_driver_estimada / entrega_estimada) con fallback
 // legacy forno_out / hora. Nessun calcolo di scheduling: solo lettura.
 const DISPONIBILIDAD_STATES = ["EN_COCINA", "POR_CONFIRMAR", "LISTO", "EN_ENTREGA"];
-const GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN = 20;
-// Margine (min): la pizza nuova può uscire dal forno fino a N minuti DOPO la
-// partenza del giro esistente ed essere ancora agganciabile (il driver può
-// attendere un paio di minuti). Oltre questo, il giro NON è aggregabile.
-const GIRO_AGGREGATION_MARGIN_MIN = 2;
-// Lead minimo (min) tra ADESSO e la partenza di un giro perché sia ancora
-// proponibile. Sotto questa soglia il giro è già partito / in corso / troppo
-// vicino: non c'è tempo materiale per preparazione + forno + assegnazione del
-// rider, quindi non è un'opzione operativa reale. Coerente in spirito col gate
-// `now + 5` di suggerisciOrario (zones.js), ma qui un filo più conservativo (10)
-// perché `startMin` è la PARTENZA del driver, non la sola disponibilità forno.
-const MIN_DELIVERY_LEAD_MIN = 10;
-
-// Minuti dall'inizio del giorno per l'ora corrente. Stessa convenzione naive
-// (HH:MM locale) già usata altrove nel file e in suggerisciOrario; non gestisce
-// il wrap oltre mezzanotte, ma il delivery è chiuso a quell'ora quindi i giri
-// post-mezzanotte non sono uno scenario reale.
-function nowMinutes() {
-  const d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
-}
-
-function timeDiffMin(a, b) {
-  const toM = (t) => {
-    if (!t) return null;
-    const m = String(t).trim().match(/^(\d{1,2}):([0-5]\d)$/);
-    if (!m) return null;
-    const h = Number(m[1]);
-    const min = Number(m[2]);
-    if (!Number.isFinite(h) || h < 0 || h > 23) return null;
-    return h * 60 + min;
-  };
-  const ma = toM(a);
-  const mb = toM(b);
-  if (ma == null || mb == null) return null;
-  return Math.abs(ma - mb);
-}
-
-function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, marginMin = GIRO_AGGREGATION_MARGIN_MIN, nowMin = nowMinutes()) {
+function buildDisponibilidad(ordenes) {
   const toM = (t) => { if (!t) return null; const [h, m] = String(t).split(":").map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
-  // forno_out del NUOVO ordine: minuto in cui la sua pizza esce dal forno.
-  // Serve a decidere se è ancora in tempo per agganciarsi a un giro esistente.
-  const newFornoMin = toM(newOrderFornoOut);
-  // Soglia temporale: la partenza di un giro deve essere ancora abbastanza nel
-  // futuro per essere un'opzione reale.
-  const minStartMin = nowMin + MIN_DELIVERY_LEAD_MIN;
   const rows = [];
   const byKey = new Map();
   for (const o of (ordenes || [])) {
@@ -220,31 +180,15 @@ function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, ma
     const end = o.entrega_estimada || o.hora || null;
     if (!start && !end) continue;
     const startMin = toM(start) ?? toM(end);
-    // Gate temporale: scarta i giri già partiti / in corso / troppo vicini alla
-    // partenza. Non sono opzioni operative reali e confondono l'operatore (es.
-    // mostrare 21:05–21:20 quando sono già le 21:17). Se non riusciamo a leggere
-    // l'orario di partenza, per prudenza non proponiamo la riga.
-    if (startMin == null || startMin < minStartMin) continue;
     const key = `${o.zona}|${start || end}`;
     if (byKey.has(key)) { byKey.get(key).count += 1; continue; }
-    const sameZone = !!currentZonaId && o.zona === currentZonaId;
-    // Agganciabile SOLO se la pizza nuova esce dal forno entro la partenza del
-    // giro (+margine): il driver parte a `startMin`, la pizza deve essere pronta.
-    // Niente più ramo ottimistico "forno_out nuovo sconosciuto => compatibile":
-    // senza forno_out non possiamo garantire che la pizza arrivi in tempo, quindi
-    // il giro resta NON agganciabile (no_agregable) finché non lo conosciamo.
-    const aggregable = sameZone
-      && startMin != null
-      && startMin >= minStartMin
-      && newFornoMin != null
-      && newFornoMin <= startMin + marginMin;
     const row = {
       key,
       zona: o.zona,
       startMin,
       range: (start && end && start !== end) ? `${start}–${end}` : (start || end),
-      slotHora: end || start, // hora da applicare cliccando un giro compatibile
-      kind: sameZone ? (aggregable ? "compatible" : "no_agregable") : "ocupado",
+      slotHora: end || start,
+      kind: "info",
       conflicto: o.conflicto_driver === true,
       count: 1,
     };
@@ -253,21 +197,6 @@ function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, ma
   }
   rows.sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0));
   return rows;
-}
-
-function findRecommendedCompatibleGiro(disponibilidad, currentZonaId, referenceHora, nowMin = nowMinutes()) {
-  if (!currentZonaId || !referenceHora) return null;
-  // Stesso gate di buildDisponibilidad: non raccomandare "Usar giro" per giri
-  // già partiti / in corso / troppo vicini alla partenza. Difesa ridondante (le
-  // righe arrivano già filtrate), ma esplicita per non regredire se la sorgente
-  // delle righe cambiasse.
-  const minStartMin = nowMin + MIN_DELIVERY_LEAD_MIN;
-  return (disponibilidad || [])
-    .filter(r => r.kind === "compatible" && r.zona === currentZonaId && r.slotHora)
-    .filter(r => r.startMin != null && r.startMin >= minStartMin)
-    .map(r => ({ ...r, diffMin: timeDiffMin(referenceHora, r.slotHora) }))
-    .filter(r => r.diffMin != null && r.diffMin <= GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN)
-    .sort((a, b) => (a.diffMin - b.diffMin) || ((a.startMin ?? 0) - (b.startMin ?? 0)))[0] || null;
 }
 
 const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }) => {
@@ -303,7 +232,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const geocodeTimer = useRef(null);
 
   // ── Feedback slot forno (solo delivery) ──────────────────────────────────
-  const [slotFeedback,   setSlotFeedback]   = useState(null);
+  // slotFeedback: motore di scheduling LOCALE rimosso (planner/backend è la fonte).
+  // Resta come costante null così i consumatori residui sono inerti senza calcolo.
+  const [slotFeedback] = useState(null);
   // Step 2 anti-cerotto: timing delivery AUTORITATIVO dal backend (fonte unica).
   // Popolato da api.previewOrderTiming. Il frontend MOSTRA questi valori (zona,
   // durata, source, forno_out, warnings, driver conflict, suggested_hora);
@@ -312,6 +243,15 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [backendTiming,    setBackendTiming]    = useState(null);
   const [backendTimingLoading, setBackendTimingLoading] = useState(false);
   const [horaTouchedByOperator, setHoraTouchedByOperator] = useState(false);
+  // ── Planner preview (contract "nuevo-pedido-planner-preview-v1") ──────────
+  // Fonte unica backend per disponibilità/lead-time/giri. Il frontend MOSTRA il
+  // contract, non lo ricalcola. Se il backend non risponde (es. action non
+  // ancora deployata) → plannerPreviewError = "Planner no disponible", NESSUN
+  // calcolo locale di fallback.
+  const [plannerPreview,        setPlannerPreview]        = useState(null);
+  const [plannerPreviewLoading, setPlannerPreviewLoading] = useState(false);
+  const [plannerPreviewError,   setPlannerPreviewError]   = useState("");
+  const [plannerPreviewLastKey, setPlannerPreviewLastKey] = useState("");
   // { horaForno, slotOk, load, slotSuggerito, consegnaSuggerita,
   //   scenario: "A"|"B"|"C"|"D"|"E"|"F", driverRientro, stessaZona }
 
@@ -682,106 +622,64 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     // calcolo locale resta spento: la zona serve solo a mostrare badge/hint.
   }, [zonaInfo]); // eslint-disable-line
 
-  // ── Calcolo slot forno + proposta delivery (cascade-aware, schedule-based) ──
-  // L'algoritmo:
-  //   1. proposeForNewOrder(ordenes, newOrder) simula la giornata del driver
-  //      considerando tempoGiro reale (haversine lat/lon) per ogni ordine e
-  //      la cascade dei giri. Ritorna { ok, consegnaPropostaH, motivo, aggregato }.
-  //   2. Il forno è calcolato a parte: conta pizze nello slot 10min di consegnaProposta
-  //      arretrato di tg_new. Se pieno propone slot successivo.
-  //   3. Il risultato finale combina i 2 vincoli.
+  // ── Planner preview backend (contract "nuevo-pedido-planner-preview-v1") ──
+  // Sostituisce il vecchio motore di scheduling LOCALE: niente proposeForNewOrder /
+  // risolviTempoAndata / conteggio slot forno calcolati nel frontend. Su cambio
+  // input rilevante chiamiamo api.previewOrderPlanner e MOSTRIAMO il contract.
+  // Debounce 450ms + guard su input-key per non rifare chiamate identiche.
+  // Se il backend non risponde (es. action non ancora deployata) → errore safe
+  // "Planner no disponible", NESSUN calcolo locale di fallback.
   useEffect(() => {
-    if (tipoConsegna !== "DOMICILIO" || !hora || !zonaInfo?.zona) {
-      setSlotFeedback(null);
+    if (!visible) {
+      setPlannerPreview(null); setPlannerPreviewError(""); setPlannerPreviewLoading(false);
       return;
     }
-    const zona = zonaInfo.zona;
-    // Cascata unica risolviTempoAndata: Google ?? Haversine ?? zona.tempoGiro.
-    const tgNew = risolviTempoAndata(zonaInfo.durataAndataMin, zonaInfo.lat, zonaInfo.lon, zona);
-    const horaFornMin = toMin(hora) - tgNew;
-    if (horaFornMin < 0) { setSlotFeedback(null); return; }
-    const horaForno = toHora(horaFornMin);
-    const slotOf = (min) => {
-      const mArr = Math.round(min / 10) * 10;
-      const h = Math.floor(mArr / 60), m = mArr % 60;
-      return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
-    };
-    const slot = slotOf(horaFornMin);
-
-    // ── Conta pizze nello slot 10min usando tempoGiro reale di ogni ordine ──
-    const MAX_SLOT = 4;
-    const countPizzeSlot = (targetSlot) =>
-      (ordenes || [])
-        .filter(o => ["EN_COCINA","POR_CONFIRMAR","LISTO"].includes(o.estado))
-        .filter(o => {
-          if (!o.hora || !o.zona) return false;
-          const zonaO = ZONE_DELIVERY.find(z => z.id === o.zona);
-          if (!zonaO) return false;
-          // Sorgente unica: o.forno_out (cascade-aware backend). Fallback legacy per
-          // ordini pre-migration: ricalcolo locale con snapshot durata_andata_min.
-          // Snooze visivo (ui_offset_min) → conta lo slot effettivo in cui la pizza esce per la cucina.
-          const tgO = tempoAndata(o, zonaO);
-          const baseFornoStr = o.forno_out || null;
-          const fornoStr = baseFornoStr
-            ? applyUiOffset(baseFornoStr, o.ui_offset_min)
-            : null;
-          const fornoMin = fornoStr ? toMin(fornoStr) : ((toMin(o.hora) - tgO) + (Number(o.ui_offset_min)||0));
-          return slotOf(fornoMin) === targetSlot;
-        })
-        .reduce((s, o) => s + (o.items||[])
-          .filter(it => it.n !== "Entrega a domicilio" && it.cat !== "Bebidas")
-          .reduce((a, it) => a + (parseInt(it.q)||1), 0), 0);
-
-    const pizzeSlot = countPizzeSlot(slot);
-    const slotOk = pizzeSlot < MAX_SLOT;
-
-    // Slot forno successivo libero, se quello richiesto è pieno
-    let slotSuggerito = null;
-    let consegnaSuggerita = null;
-    if (!slotOk) {
-      const allSlots = [];
-      for (let t = 19*60+30; t <= 23*60; t += 10) allSlots.push(toHora(t));
-      const idx = allSlots.indexOf(slot);
-      for (let i = idx+1; i < allSlots.length; i++) {
-        if (countPizzeSlot(allSlots[i]) < MAX_SLOT) { slotSuggerito = allSlots[i]; break; }
-      }
-      if (slotSuggerito) consegnaSuggerita = toHora(toMin(slotSuggerito) + tgNew);
+    // Dati minimi: RITIRO basta hora; DOMICILIO serve direccion sufficiente.
+    if (tipoConsegna === "DOMICILIO" && direccion.trim().length < 5) {
+      setPlannerPreview(null); setPlannerPreviewError(""); setPlannerPreviewLoading(false);
+      return;
     }
-
-    // ── Proposta schedule-aware (cascade) ──────────────────────────────────
-    const newOrderInfo = {
-      hora,
-      zona: zona.id,
-      zona_lat: zonaInfo.lat ?? null,
-      zona_lon: zonaInfo.lon ?? null,
-      durata_andata_min: zonaInfo.durataAndataMin ?? null,
+    const pizzasCount = items.reduce((s, it) => s + (parseInt(it.q) || 1), 0);
+    const input = {
+      tipo_consegna: tipoConsegna,
+      direccion: tipoConsegna === "DOMICILIO" ? direccion.trim() : null,
+      tel: tel || null,
+      hora: hora || null,
+      zona_manuale: tipoConsegna === "DOMICILIO" ? zonaManuale : false,
+      zona: (tipoConsegna === "DOMICILIO" && zonaManuale) ? (zonaInfo?.zona?.id || null) : null,
+      pizzas_count: pizzasCount,
     };
-    const propose = proposeForNewOrder(ordenes || [], newOrderInfo);
+    const key = JSON.stringify(input);
+    if (key === plannerPreviewLastKey) return; // input invariato → no rifetch
 
-    // Driver attuale (override real-time da DRIVER_STATO config)
-    const isInGiro = driverStato?.stato === "IN_GIRO";
-    let driverRientro = null;
-    if (isInGiro && driverStato.partito_alle) {
-      const zonaDriverObj = ZONE_DELIVERY.find(z => z.id === driverStato.zona);
-      if (zonaDriverObj) {
-        const partMin = (new Date(driverStato.partito_alle).getHours()) * 60
-          + new Date(driverStato.partito_alle).getMinutes();
-        // zonaDriverObj.tempoGiro: giro IN CORSO del driver, non un indirizzo da risolvere
-        driverRientro = toHora(partMin + zonaDriverObj.tempoGiro);
+    let cancelled = false;
+    setPlannerPreviewLoading(true);
+    setPlannerPreviewError("");
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.previewOrderPlanner(input);
+        if (cancelled) return;
+        // Guard di validità contract: accetta solo planner read-only v1.
+        if (res && res.contract === "nuevo-pedido-planner-preview-v1" && res.source === "planner") {
+          setPlannerPreview(res);
+          setPlannerPreviewError("");
+        } else {
+          setPlannerPreview(null);
+          setPlannerPreviewError("Planner no disponible");
+        }
+        setPlannerPreviewLastKey(key);
+      } catch (e) {
+        if (cancelled) return;
+        setPlannerPreview(null);
+        setPlannerPreviewError("Planner no disponible");
+        setPlannerPreviewLastKey(key);
+        console.warn("[previewOrderPlanner] failed:", e?.message || e);
+      } finally {
+        if (!cancelled) setPlannerPreviewLoading(false);
       }
-    }
-
-    setSlotFeedback({
-      // Forno
-      horaForno, slot, slotOk, load: pizzeSlot,
-      slotSuggerito, consegnaSuggerita,
-      tgNew,
-      // Driver real-time
-      isInGiro, driverRientro,
-      // Schedule-aware proposal
-      propose,
-    });
-  }, [hora, zonaInfo, tipoConsegna, ordenes, driverStato]); // eslint-disable-line
+    }, 450);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [visible, tipoConsegna, direccion, hora, zonaManuale, items]); // eslint-disable-line
 
   // ── Backend timing autoritativo (Step 2 anti-cerotto) ───────────────────
   // Su cambio di indirizzo / tipo consegna / hora / zona manuale, chiediamo al
@@ -939,14 +837,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const deliveryZona = zonaInfo?.zona;
   const deliveryZonaOk = !!deliveryZona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
   const deliveryFornoOut = backendTiming?.forno_out || slotFeedback?.horaForno || null;
-  const deliveryDisponibilidadTop = useMemo(() => {
-    if (tipoConsegna !== "DOMICILIO" || !deliveryZonaOk) return [];
-    return buildDisponibilidad(ordenes, deliveryZona.id, deliveryFornoOut);
-  }, [tipoConsegna, deliveryZonaOk, deliveryZona?.id, deliveryFornoOut, ordenes]);
-  const deliveryRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_proposta || hora;
-  const topRecommendedCompatibleGiro = !horaTouchedByOperator
-    ? findRecommendedCompatibleGiro(deliveryDisponibilidadTop, deliveryZona?.id, deliveryRecommendationRef)
-    : null;
+
+  // ── Helper planner preview (display-only, mai decisione locale) ──────────
+  const plannerRecommendation = plannerPreview?.recommendation || null;
+  const plannerGeo            = plannerPreview?.geo || null;
+  const plannerGiro           = plannerPreview?.giro || null;
+  const plannerWarnings       = plannerPreview?.warnings || [];
+  const plannerBlockers       = plannerPreview?.blockers || [];
 
   return (
     <>
@@ -1109,10 +1006,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       }}>
                         {deliveryStatus.isBlocked ? "Revisar" : "Compatible"}
                       </span>
-                      {(backendTiming?.giro?.suggested || topRecommendedCompatibleGiro) && (
+                      {backendTiming?.giro?.suggested && (
                         <span style={{ color: "#bbf7d0", background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.22)", borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 800 }}>
-                          Giro compatible {(backendTiming?.giro?.zona || topRecommendedCompatibleGiro?.zona || deliveryZona?.id || "").trim()}
-                          {(backendTiming?.giro?.slot_hora || topRecommendedCompatibleGiro?.slotHora) ? ` · ${backendTiming?.giro?.slot_hora || topRecommendedCompatibleGiro.slotHora}` : ""}
+                          Giro compatible {(backendTiming?.giro?.zona || deliveryZona?.id || "").trim()}
+                          {backendTiming?.giro?.slot_hora ? ` · ${backendTiming.giro.slot_hora}` : ""}
                         </span>
                       )}
                     </div>
@@ -1169,7 +1066,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               {/* ── Pill zona delivery (solo nel popup) ── */}
               {false && tipoConsegna === "DOMICILIO" && direccion.trim().length >= 5 && (() => {
                 const zona = zonaInfo?.zona;
-                const sugg = zona ? suggerisciOrario(zona.id, ordenes) : null;
+                const sugg = null; // suggerisciOrario locale rimosso (planner è la fonte)
                 return (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
                     {/* Badge zona rilevata o loading */}
@@ -1511,15 +1408,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         const bdCol  = isOk ? "rgba(34,197,94,0.35)" : isWarn ? "rgba(251,191,36,0.40)" : "rgba(249,115,22,0.45)";
         const txCol  = isOk ? "#86efac"              : isWarn ? "#fde68a"               : "#fed7aa";
         const zonaOkForDisponibilidad = !!zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
-        // forno_out del nuovo ordine (fonte più affidabile prima): backend → hint locale.
-        const newOrderFornoOut = backendTiming?.forno_out || slotFeedback?.horaForno || null;
         const deliveryDisponibilidad = (!zonaLoading && zonaOkForDisponibilidad)
-          ? buildDisponibilidad(ordenes, zona.id, newOrderFornoOut)
+          ? buildDisponibilidad(ordenes)
           : [];
-        const giroRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_proposta || hora;
-        const recommendedCompatibleGiro = !horaTouchedByOperator
-          ? findRecommendedCompatibleGiro(deliveryDisponibilidad, zona?.id, giroRecommendationRef)
-          : null;
 
         return (
           <div style={{
@@ -1669,55 +1560,77 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   </div>
                 )}
 
-                {/* Suggerimento giro esistente nella stessa zona */}
-                {!zonaLoading && zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache") && (() => {
-                  const sugg = suggerisciOrario(zona.id, ordenes);
-                  if (!sugg) return null;
-                  const toM = (t) => { const [h,m]=t.split(":").map(Number); return h*60+m; };
-                  const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
-                  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
-                  const tgReal = risolviTempoAndata(zonaInfo?.durataAndataMin, zonaInfo?.lat, zonaInfo?.lon, zona);
-                  const horaFornoMin = toM(sugg.orario) - tgReal;
-                  const fattibile = horaFornoMin >= nowMin + 5;
-
-                  if (fattibile) {
+                {/* ── Propuestas / Planner (fonte unica backend, display-only) ── */}
+                {tipoConsegna === "DOMICILIO" && (plannerPreviewLoading || plannerPreviewError || plannerPreview) && (() => {
+                  if (plannerPreviewLoading && !plannerPreview) {
                     return (
                       <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(0,151,167,0.1)", border: "1.5px solid rgba(0,151,167,0.5)",
-                        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 16 }}>🛵</span>
-                        <span style={{ color: "#67e8f9", fontWeight: 700, fontSize: 13, flex: 1 }}>
-                          Ya hay {sugg.nOrdini} pedido{sugg.nOrdini !== 1 ? "s" : ""} en {zona.id} a las {sugg.orario}
-                        </span>
-                        <button onClick={() => setHoraFromOperator(sugg.orario)} style={{
-                          background: "rgba(0,151,167,0.3)", border: "1px solid rgba(0,151,167,0.7)",
-                          color: "#fff", borderRadius: 8, padding: "6px 14px",
-                          fontSize: 13, fontWeight: 800, cursor: "pointer"
-                        }}>→ Añadir a este giro</button>
-                      </div>
-                    );
-                  } else {
-                    // Slot troppo vicino — trova il prossimo slot fattibile
-                    const toH10 = (m) => { const r = Math.ceil(m/10)*10; return toH(r); };
-                    const minForno = nowMin + 5;
-                    const minConsegna = minForno + tgReal;
-                    const prossimoSlot = toH10(minConsegna);
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(251,191,36,0.08)", border: "1.5px solid rgba(251,191,36,0.45)",
-                        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 16 }}>⚠️</span>
-                        <span style={{ color: "#fde68a", fontWeight: 700, fontSize: 13, flex: 1 }}>
-                          Giro {zona.id} {sugg.orario} demasiado cerca — siguiente slot: {prossimoSlot}
-                        </span>
-                        <button onClick={() => setHoraFromOperator(prossimoSlot)} style={{
-                          background: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.6)",
-                          color: "#fde68a", borderRadius: 8, padding: "6px 14px",
-                          fontSize: 13, fontWeight: 800, cursor: "pointer"
-                        }}>→ {prossimoSlot}</button>
+                        background: "rgba(255,255,255,0.04)", border: "1.5px solid rgba(255,255,255,0.14)",
+                        color: "rgba(255,255,255,0.72)", fontSize: 13, fontWeight: 700 }}>
+                        Consultando planner…
                       </div>
                     );
                   }
+                  if (plannerPreviewError || !plannerPreview) {
+                    // NESSUN calcolo locale: il planner è l'unica fonte. Se non c'è, lo diciamo.
+                    return (
+                      <div style={{ borderRadius: 10, padding: "12px 14px",
+                        background: "rgba(251,191,36,0.08)", border: "1.5px solid rgba(251,191,36,0.45)",
+                        display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 16 }}>⚠️</span>
+                        <span style={{ color: "#fde68a", fontWeight: 700, fontSize: 13 }}>
+                          {plannerPreviewError || "Planner no disponible"}
+                        </span>
+                      </div>
+                    );
+                  }
+                  const rec = plannerRecommendation || {};
+                  const hasWarn = plannerWarnings.length > 0 || plannerBlockers.length > 0;
+                  return (
+                    <div style={{ borderRadius: 10, padding: "12px 14px",
+                      background: hasWarn ? "rgba(251,191,36,0.08)" : "rgba(34,197,94,0.08)",
+                      border: `1.5px solid ${hasWarn ? "rgba(251,191,36,0.45)" : "rgba(34,197,94,0.45)"}`,
+                      display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 16 }}>🛰</span>
+                        <span style={{ color: hasWarn ? "#fde68a" : "#86efac", fontWeight: 800, fontSize: 14 }}>
+                          Planner{rec.recommended_hora ? ` · ${rec.recommended_hora}` : ""}
+                        </span>
+                        {plannerGiro?.recommended && (
+                          <span style={{ color: "#bbf7d0", background: "rgba(34,197,94,0.10)",
+                            border: "1px solid rgba(34,197,94,0.25)", borderRadius: 999,
+                            padding: "2px 9px", fontSize: 11, fontWeight: 800 }}>
+                            Giro recomendado{plannerGiro?.slot_hora ? ` · ${plannerGiro.slot_hora}` : ""}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", paddingLeft: 24, display: "flex", flexWrap: "wrap", gap: 12 }}>
+                        {rec.forno_out && <span>Salida horno {rec.forno_out}</span>}
+                        {rec.salida_driver && <span>🛵 Salida {rec.salida_driver}</span>}
+                        {rec.entrega_estimada && <span>📦 Entrega {rec.entrega_estimada}</span>}
+                        {plannerGeo?.zona && <span>🗺 {plannerGeo.zona}</span>}
+                      </div>
+                      {hasWarn && (
+                        <div style={{ fontSize: 12, paddingLeft: 24, display: "flex", flexDirection: "column", gap: 2 }}>
+                          {plannerBlockers.map((b, i) => (
+                            <span key={`b${i}`} style={{ color: "#fca5a5", fontWeight: 700 }}>⛔ {b.message || b.code || "Bloqueo"}</span>
+                          ))}
+                          {plannerWarnings.map((w, i) => (
+                            <span key={`w${i}`} style={{ color: "#fde68a" }}>⚠️ {w.message || w.code || "Aviso"}</span>
+                          ))}
+                        </div>
+                      )}
+                      {rec.recommended_hora && rec.recommended_hora !== hora && (
+                        <div style={{ paddingLeft: 24 }}>
+                          <button onClick={() => setHoraFromOperator(rec.recommended_hora)} style={{
+                            background: "rgba(34,197,94,0.14)", border: "1.5px solid rgba(34,197,94,0.5)",
+                            color: "#86efac", borderRadius: 8, padding: "5px 12px",
+                            fontSize: 12, fontWeight: 800, cursor: "pointer"
+                          }}>→ Usar hora sugerida {rec.recommended_hora}</button>
+                        </div>
+                      )}
+                    </div>
+                  );
                 })()}
 
                 {/* ── Status unificato: forno + driver (schedule-aware cascade) ── */}
@@ -1791,16 +1704,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ fontSize: 16 }}>✅</span>
                           <span style={{ color: "#86efac", fontWeight: 800, fontSize: 14 }}>
-                            {recommendedCompatibleGiro
-                              ? `Entrega separada seleccionada: ${selectedH}`
-                              : `${horaTouchedByOperator ? "Propón al cliente" : "Primera hora disponible"}: ${selectedH}`}
+                            {`${horaTouchedByOperator ? "Propón al cliente" : "Primera hora disponible"}: ${selectedH}`}
                           </span>
                         </div>
-                        {recommendedCompatibleGiro && (
-                          <div style={{ fontSize: 12, color: "#67e8f9", fontWeight: 600, paddingLeft: 24, lineHeight: 1.4 }}>
-                            🛵 Giro recomendado: {recommendedCompatibleGiro.slotHora} · pulsa «Usar giro» para usarlo
-                          </div>
-                        )}
                         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
                           Salida horno {fornoOut}{load}
                         </div>
@@ -2043,9 +1949,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   } else {
                     // Caso OK normale
                     bg = zonaOk ? zona.colore : "rgba(249,115,22,0.7)";
-                    label = recommendedCompatibleGiro && selectedH
-                      ? `✓ Confirmar entrega separada ${selectedH}`
-                      : deliveryStatus.fromBackend && selectedH
+                    label = deliveryStatus.fromBackend && selectedH
                       ? `✓ Confirmar entrega ${selectedH}`
                       : zonaOk ? `✓ Entrega en ${zona.id} confirmada` : "✓ Confirmar dirección";
                     onClick = () => {
@@ -2088,47 +1992,25 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                           ) : (
                             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                               {disp.slice(0, 3).map(r => {
-                                const isCompat = r.kind === "compatible";
-                                const isNoAgg  = r.kind === "no_agregable";
-                                const statusLabel = isCompat
-                                  ? `Usar giro ${r.slotHora} →`
-                                  : isNoAgg
-                                  ? "No agregable"
-                                  : (r.conflicto ? "Ocupado ⚠" : "Ocupado");
-                                const statusColor = isCompat
-                                  ? "#67e8f9"
-                                  : isNoAgg
-                                  ? "rgba(255,255,255,0.45)"
-                                  : (r.conflicto ? "#fca5a5" : "rgba(255,255,255,0.5)");
+                                const statusLabel = r.conflicto ? "Ocupado ⚠" : "En curso";
+                                const statusColor = r.conflicto ? "#fca5a5" : "rgba(255,255,255,0.5)";
                                 return (
                                   <div key={r.key}
-                                    onClick={isCompat ? () => setHoraFromOperator(r.slotHora) : undefined}
-                                    title={isCompat
-                                      ? `Agregar al giro ${r.zona} ${r.slotHora}`
-                                      : isNoAgg
-                                      ? `Giro ${r.zona} ${r.slotHora}: la pizza nueva saldría del horno demasiado tarde para este giro`
-                                      : undefined}
                                     style={{
                                       display: "flex", alignItems: "center", gap: 10, fontSize: 15,
                                       padding: "10px 12px", borderRadius: 10,
-                                      cursor: isCompat ? "pointer" : "default",
-                                      background: isCompat ? "rgba(0,151,167,0.20)" : "rgba(255,255,255,0.04)",
-                                      border: isCompat ? "1.5px solid rgba(0,151,167,0.75)" : "1px solid rgba(255,255,255,0.10)",
-                                      opacity: isNoAgg ? 0.7 : 1,
+                                      background: "rgba(255,255,255,0.04)",
+                                      border: "1px solid rgba(255,255,255,0.10)",
                                     }}>
                                     <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 16, fontWeight: 700, color: "#fff", minWidth: 104 }}>{r.range}</span>
                                     <span style={{
                                       fontSize: 14, fontWeight: 800, color: "#a5f3fc",
-                                      background: isCompat ? "rgba(0,151,167,0.30)" : "rgba(0,151,167,0.12)",
+                                      background: "rgba(0,151,167,0.12)",
                                       border: "1.5px solid rgba(0,151,167,0.85)", borderRadius: 7, padding: "2px 9px",
-                                      cursor: isCompat ? "pointer" : "default"
                                     }}>[{r.zona}]</span>
                                     <span style={{
                                       marginLeft: "auto", fontWeight: 800, fontSize: 14,
-                                      color: isCompat ? "#0b1220" : statusColor,
-                                      background: isCompat ? "#67e8f9" : "transparent",
-                                      borderRadius: isCompat ? 8 : 0,
-                                      padding: isCompat ? "5px 12px" : 0,
+                                      color: statusColor,
                                     }}>
                                       {statusLabel}{r.count > 1 ? ` ·${r.count}` : ""}
                                     </span>
