@@ -1,5 +1,28 @@
 import { useState } from 'react';
 
+/*
+ * PremiumPlannerPopup — LAB renderer ONLY (no engine).
+ *
+ * Todo PREMIUM_PLANNER_LAB_DATA es OUTPUT YA CALCULADO por el futuro
+ * planner/backend. El frontend NO calcula nada de esto: solo renderiza,
+ * selecciona localmente una opportunity y hace console.debug/no-op.
+ *
+ * Campos provistos por el motor (no derivados aquí):
+ *   - status      compatible | ajuste | no_recomendado | lleno
+ *   - kind        agregar | crear   (+ giroId)
+ *   - channel     sur | oeste | cross
+ *   - routeEtas[] eta / promised / slips / slipLabel (ej "+5")
+ *   - baseline    directEta
+ *   - capacity    pizzas / routeMin / limitMin / state
+ *   - blocked     bool   (mapa en rojo / "No recomendado")
+ *   - warning     string ya redactado
+ *
+ * BACKEND REQUIREMENT — previewManualGiro / strategic opportunities:
+ *   dado el pedido actual + un giro candidato, devuelve YA RESUELTO:
+ *   compatibilidad, canal, ETA por parada, retraso (+N) de cada parada,
+ *   baseline directa, capacidad y los flags blocked/warning. El popup
+ *   nunca recalcula tiempos ni decide si un pedido entra en un giro.
+ */
 const PREMIUM_PLANNER_LAB_DATA = {
   contract: 'premium-planner-popup-lab-v2',
   mode: 'static_lab',
@@ -32,6 +55,7 @@ const PREMIUM_PLANNER_LAB_DATA = {
   opportunities: [
     {
       id: 'opp-q2-q5-2100',
+      blocked: false,
       kind: 'agregar',
       giroId: 'giro-q5-2100',
       channel: 'sur',
@@ -58,6 +82,7 @@ const PREMIUM_PLANNER_LAB_DATA = {
     },
     {
       id: 'opp-q1-q5-2105',
+      blocked: false,
       kind: 'agregar',
       giroId: 'giro-q5-2100',
       channel: 'sur',
@@ -67,7 +92,7 @@ const PREMIUM_PLANNER_LAB_DATA = {
       mapPath: ['Pizzería', 'Q1', 'Q5'],
       routeEtas: [
         { zone: 'Q1', label: 'Pedido actual', eta: '20:48', isNew: true },
-        { zone: 'Q5', label: 'Las Marinas', eta: '21:05', promised: '21:00', slips: true },
+        { zone: 'Q5', label: 'Las Marinas', eta: '21:05', promised: '21:00', slips: true, slipLabel: '+5' },
       ],
       baseline: { directEta: '20:42', label: 'Directa sin giro' },
       capacity: { pizzas: '4/6', routeMin: 26, limitMin: 30, state: 'tight' },
@@ -84,6 +109,7 @@ const PREMIUM_PLANNER_LAB_DATA = {
     },
     {
       id: 'opp-crear-q2-q5-2055',
+      blocked: false,
       kind: 'crear',
       giroId: null,
       channel: 'sur',
@@ -110,6 +136,7 @@ const PREMIUM_PLANNER_LAB_DATA = {
     },
     {
       id: 'opp-q3-q5-2110',
+      blocked: true,
       kind: 'agregar',
       giroId: 'giro-q5-2100',
       channel: 'cross',
@@ -119,7 +146,7 @@ const PREMIUM_PLANNER_LAB_DATA = {
       mapPath: ['Pizzería', 'Q3', 'Q5'],
       routeEtas: [
         { zone: 'Q3', label: 'Pedido actual', eta: '21:02', isNew: true },
-        { zone: 'Q5', label: 'Las Marinas', eta: '21:18', promised: '21:00', slips: true },
+        { zone: 'Q5', label: 'Las Marinas', eta: '21:18', promised: '21:00', slips: true, slipLabel: '+18' },
       ],
       baseline: { directEta: '20:55', label: 'Directa sin giro' },
       capacity: { pizzas: '4/6', routeMin: 31, limitMin: 30, state: 'tight' },
@@ -136,6 +163,7 @@ const PREMIUM_PLANNER_LAB_DATA = {
     },
     {
       id: 'opp-lleno-sur-2115',
+      blocked: true,
       kind: 'agregar',
       giroId: 'giro-sur-2115',
       channel: 'sur',
@@ -145,8 +173,8 @@ const PREMIUM_PLANNER_LAB_DATA = {
       mapPath: ['Pizzería', 'Q1', 'Q2', 'Q5'],
       routeEtas: [
         { zone: 'Q1', label: 'Pedido actual', eta: '21:00', isNew: true },
-        { zone: 'Q2', label: 'Buenavista', eta: '21:08', promised: '21:05', slips: true },
-        { zone: 'Q5', label: 'Las Marinas', eta: '21:20', promised: '21:15', slips: true },
+        { zone: 'Q2', label: 'Buenavista', eta: '21:08', promised: '21:05', slips: true, slipLabel: '+3' },
+        { zone: 'Q5', label: 'Las Marinas', eta: '21:20', promised: '21:15', slips: true, slipLabel: '+5' },
       ],
       baseline: { directEta: '20:58', label: 'Directa sin giro' },
       capacity: { pizzas: '6/6', routeMin: 28, limitMin: 30, state: 'full' },
@@ -192,17 +220,9 @@ const statusLabels = {
 };
 const channelLabels = { sur: 'canal sur', oeste: 'canal oeste', cross: 'cruzado' };
 
-const minutesOf = (hhmm) => {
-  if (!hhmm || hhmm.indexOf(':') < 0) return null;
-  const [h, m] = hhmm.split(':').map(Number);
-  return h * 60 + m;
-};
-
-const etaSlipBadge = (eta) => {
-  if (!eta.slips || !eta.promised) return '';
-  const diff = (minutesOf(eta.eta) ?? 0) - (minutesOf(eta.promised) ?? 0);
-  return diff > 0 ? ` (+${diff})` : '';
-};
+// Render-only: muestra el badge YA CALCULADO por el planner (eta.slipLabel).
+// El frontend NO calcula el retraso ni compara eta/promised.
+const etaSlipBadge = (eta) => (eta.slips && eta.slipLabel ? ` (${eta.slipLabel})` : '');
 
 const labLog = (eventName, payload) => {
   console.debug('[PremiumPlannerPopup LAB]', eventName, payload);
@@ -340,7 +360,6 @@ const PremiumPlannerPopup = ({ onClose }) => {
 
 const OpportunityPreview = ({ opp }) => {
   const tone = toneStyles[opp.severity] || toneStyles.info;
-  const hasWarning = Boolean(opp.warning) || opp.status === 'no_recomendado' || opp.status === 'lleno';
   const propuesta = opp.routeEtas
     .map(eta => `${eta.zone} ${eta.eta}${etaSlipBadge(eta)}`)
     .join(' → ');
@@ -369,7 +388,7 @@ const OpportunityPreview = ({ opp }) => {
           <dd>{opp.capacity.pizzas} · {opp.capacity.routeMin}/{opp.capacity.limitMin} min</dd>
         </div>
       </dl>
-      {hasWarning && opp.warning && (
+      {opp.warning && (
         <p className="ppp-preview-warn">⚠ {opp.warning}</p>
       )}
     </section>
@@ -384,7 +403,7 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
 
   const tone = toneStyles[opp?.severity] || toneStyles.info;
   const activeZones = new Set(opp?.routeZones || []);
-  const isBlocked = opp?.status === 'no_recomendado' || opp?.status === 'lleno';
+  const isBlocked = Boolean(opp?.blocked);
   const zoneClass = (id) => `ppp-zone zone-${id.toLowerCase()}${activeZones.has(id) ? ' is-active' : ''}`;
 
   return (
