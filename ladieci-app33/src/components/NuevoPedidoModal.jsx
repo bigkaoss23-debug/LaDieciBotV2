@@ -8,6 +8,7 @@ import { assegnaZonaDaKeyword, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, BUFFER_
 // backend (previewOrderTiming oggi, previewOrderPlanner appena deployato).
 import ItemPickerModal from './ItemPickerModal';
 import PremiumPlannerPopup from './PremiumPlannerPopup';
+import DireccionInlinePanel from './DireccionInlinePanel';
 import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
 import { getKitchenCapacityStatus } from '../core/kitchen/capacity';
@@ -57,6 +58,9 @@ const NPFS_CSS = `
 /* Address panel */
 .npfs .np-address-input{ width:100%; }
 .npfs .np-address-input strong{ overflow:hidden; font-size:23px; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; font-weight:900; }
+.npfs .np-address-input .np-address-text{ flex:1; min-width:0; font-size:23px; line-height:1.15; font-weight:900; color:#fff7ea; background:transparent; border:none; outline:none; padding:0; }
+.npfs .np-address-input .np-address-text::placeholder{ color:rgba(255,247,234,0.45); font-weight:800; }
+.npfs .np-address-note{ width:100%; margin-top:8px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:9px 14px; font-size:13px; box-sizing:border-box; outline:none; }
 .npfs .np-address-ic{ font-size:20px; flex-shrink:0; }
 .npfs .np-delivery-line{ display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; color:#e8dfd0; font-size:14px; font-weight:900; }
 .npfs .np-delivery-line span{ display:inline-flex; align-items:center; gap:5px; border:1px solid rgba(208,184,145,0.18); border-radius:999px; padding:7px 12px; background:rgba(255,255,255,0.04); white-space:nowrap; }
@@ -135,7 +139,7 @@ const NPFS_CSS = `
   .npfs .np-input-like{ min-height:48px; }
   .npfs .np-input-like input{ font-size:18px; }
   .npfs .np-icon-action, .npfs .np-whatsapp{ min-height:48px; font-size:20px; }
-  .npfs .np-address-input strong{ font-size:18px; }
+  .npfs .np-address-input strong, .npfs .np-address-input .np-address-text{ font-size:18px; }
   .npfs .np-dcard{ min-height:52px; }
   .npfs .np-dcard strong, .npfs .np-dcard input[type=time]{ font-size:18px; }
   .npfs .np-customer-flags{ margin-top:10px; }
@@ -968,66 +972,28 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   )}
                 </section>
 
-                <section className="np-panel np-address-panel" aria-label="Dirección de entrega">
-                  <h2>Dirección de entrega</h2>
-                  {/* Indirizzo — solo display (il planner si apre da Recalcular) */}
-                  <div className="np-input-like np-address-input" style={{ cursor: "default" }}>
-                    {tipoConsegna === "DOMICILIO" && deliveryZona && <ZonaBadge zona={deliveryZona} size="sm" />}
-                    <span className="np-address-ic">{tipoConsegna === "DOMICILIO" ? "📍" : "🏪"}</span>
-                    <strong style={{ color: tipoConsegna === "DOMICILIO" ? "#fff7ea" : "rgba(255,247,234,0.5)" }}>
-                      {tipoConsegna === "DOMICILIO" ? direccion : "Añadir dirección de entrega"}
-                    </strong>
-                  </div>
-
-                  {/* Pills zona / minuti / fonte (solo domicilio, se disponibili) */}
-                  {tipoConsegna === "DOMICILIO" && (
-                    <div className="np-delivery-line">
-                      {(backendTiming?.zona || deliveryZona?.id) && (
-                        <span>🗺 {backendTiming?.zona || deliveryZona?.id}{deliveryZona?.nome ? ` ${deliveryZona.nome}` : ""}</span>
-                      )}
-                      {(backendTiming?.durata_andata_min != null || zonaInfo?.durataAndataMin != null) && (
-                        <span>↻ {backendTiming?.durata_andata_min ?? zonaInfo?.durataAndataMin} min</span>
-                      )}
-                      {(backendTiming?.geo_source || zonaInfo?.metodo) && (
-                        <span>📡 {backendTiming?.geo_source || zonaInfo?.metodo}</span>
-                      )}
-                      {backendTimingLoading && !backendTiming && <span>Calculando…</span>}
-                    </div>
-                  )}
-
-                  {/* Card orari: entrega estimada / salida horno / recalcular */}
-                  <div className="np-delivery-cards">
-                    <div className={`np-dcard${tipoConsegna === "DOMICILIO" ? " is-deliv" : ""}`}>
-                      <small>{tipoConsegna === "DOMICILIO" ? "Entrega estimada" : "Retirar a las"}</small>
-                      <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)} />
-                    </div>
-                    <div className="np-dcard">
-                      <small>Salida horno</small>
-                      <strong>{tipoConsegna === "DOMICILIO" ? (deliveryFornoOut || "—") : (hora || "—")}</strong>
-                    </div>
-                    <button type="button" className="np-recalc" onClick={() => setShowPlannerLabPopup(true)}>◎ Ver propuestas LAB</button>
-                  </div>
-
-                  {/* Stato compatibilità delivery + giro alternativo */}
-                  {tipoConsegna === "DOMICILIO" && (
-                    <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{
-                        color: deliveryStatus.isBlocked ? "#fca5a5" : "#86efac",
-                        background: deliveryStatus.isBlocked ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)",
-                        border: `1px solid ${deliveryStatus.isBlocked ? "rgba(239,68,68,0.30)" : "rgba(34,197,94,0.30)"}`,
-                        borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap"
-                      }}>
-                        {deliveryStatus.isBlocked ? "Revisar" : "Compatible"}
-                      </span>
-                      {backendTiming?.giro?.suggested && (
-                        <span style={{ color: "#bbf7d0", background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.22)", borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 800 }}>
-                          Giro compatible {(backendTiming?.giro?.zona || deliveryZona?.id || "").trim()}
-                          {backendTiming?.giro?.slot_hora ? ` · ${backendTiming.giro.slot_hora}` : ""}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </section>
+                <DireccionInlinePanel
+                  tipoConsegna={tipoConsegna}
+                  direccion={direccion}
+                  setDireccion={setDireccion}
+                  direccionNote={direccionNote}
+                  setDireccionNote={setDireccionNote}
+                  deliveryZona={deliveryZona}
+                  zonaInfo={zonaInfo}
+                  zonaLoading={zonaLoading}
+                  zonaManuale={zonaManuale}
+                  setZonaInfo={setZonaInfo}
+                  setZonaManuale={setZonaManuale}
+                  zoneOptions={ZONE_DELIVERY}
+                  ZonaBadgeComponent={ZonaBadge}
+                  backendTiming={backendTiming}
+                  backendTimingLoading={backendTimingLoading}
+                  deliveryFornoOut={deliveryFornoOut}
+                  hora={hora}
+                  setHoraFromOperator={setHoraFromOperator}
+                  deliveryStatus={deliveryStatus}
+                  onOpenPlannerLab={() => setShowPlannerLabPopup(true)}
+                />
               </div>
 
               {tipoConsegna === "DOMICILIO" && (backendTiming?.driver?.has_conflict && horaTouchedByOperator) && (
