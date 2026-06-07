@@ -307,6 +307,16 @@ const api = {
     return proxyPost({ action: 'previewOrderTiming', ...input });
   },
 
+  // Nuevo Pedido Premium → planner backend (read-only, contract
+  // "nuevo-pedido-planner-preview-v1"). Speculare a previewOrderTiming ma punta
+  // alla nuova action planner: fonte unica per disponibilità/lead-time/giri.
+  // Il frontend MOSTRA il contract, non lo ricalcola. NB: l'action backend è in
+  // lab e NON ancora deployata → finché non è live questa chiamata riceve
+  // "unknown action" dal proxy di produzione (additiva/preparatoria).
+  previewOrderPlanner: function(input = {}) {
+    return proxyPost({ action: 'previewOrderPlanner', ...input });
+  },
+
   // Crea ordine. THROW se Railway non conferma la creazione con un id valido.
   // Il chiamante DEVE wrappare in try/catch e fare rollback dello state ottimistico.
   // `data.client_req_id` (UUID) abilita l'idempotency: retry sicuri senza duplicati.
