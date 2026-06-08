@@ -37,6 +37,21 @@ const PREMIUM_PLANNER_LAB_DATA = {
     routeLabel: 'Directa · recomendada',
     severity: 'ok',
     ctaLabel: 'Aplicar propuesta',
+    // routeTimeline LAB (mock): mismo shape que el campo additivo del backend
+    // (route-timeline-v2). Solo datos de ejemplo ya "calculados"; el renderer no
+    // deriva nada. Permite ver la línea Pizzería → entrega → Regreso sin backend.
+    routeTimeline: {
+      version: 'route-timeline-v2',
+      proposalId: 'best-direct-q1-1555',
+      summary: { directEta: '15:55', giroEta: '15:55', returnEta: '16:03', tradeoffLabel: 'directa · sin desvío' },
+      risk: 'ok',
+      operatorMessage: 'Directa recomendada: sale del horno y entrega sin giro.',
+      timeline: [
+        { seq: 0, type: 'departure', zone: null, label: 'Pizzería', eta: '15:48', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
+        { seq: 1, type: 'delivery', zone: 'Q1', label: 'Pedido actual', eta: '15:55', promised: '15:55', slipLabel: null, status: 'ok', marginLabel: '+0 margen', isNewOrder: true, isAnchor: false, warning: null },
+        { seq: 2, type: 'return', zone: null, label: 'Regreso pizzería', eta: '16:03', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
+      ],
+    },
   },
   zoneMap: {
     title: 'Esquema operativo por zonas',
@@ -79,6 +94,19 @@ const PREMIUM_PLANNER_LAB_DATA = {
       actionLabel: '✓',
       explanation: 'Inserta Q2 antes del Q5 sin volver a pizzería.',
       warning: null,
+      routeTimeline: {
+        version: 'route-timeline-v2',
+        proposalId: 'opp-q2-q5-2100',
+        summary: { directEta: '20:40', giroEta: '21:00', returnEta: '21:10', tradeoffLabel: '+20 vs directa · 1 viaje ahorrado' },
+        risk: 'ok',
+        operatorMessage: 'Compatible: Q2 entra antes de Q5, sin retrasos.',
+        timeline: [
+          { seq: 0, type: 'departure', zone: null, label: 'Pizzería', eta: '20:42', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
+          { seq: 1, type: 'delivery', zone: 'Q2', label: 'Pedido actual', eta: '20:50', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: true, isAnchor: false, warning: null },
+          { seq: 2, type: 'delivery', zone: 'Q5', label: 'Las Marinas', eta: '21:00', promised: '21:00', slipLabel: null, status: 'ok', marginLabel: '+0 margen', isNewOrder: false, isAnchor: true, warning: null },
+          { seq: 3, type: 'return', zone: null, label: 'Regreso pizzería', eta: '21:10', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
+        ],
+      },
     },
     {
       id: 'opp-q1-q5-2105',
@@ -106,6 +134,19 @@ const PREMIUM_PLANNER_LAB_DATA = {
       actionLabel: '◷',
       explanation: 'Q1 cabe en el giro, pero retrasa Q5 sobre lo prometido.',
       warning: 'Q5 se mueve +5 min (prometido 21:00)',
+      routeTimeline: {
+        version: 'route-timeline-v2',
+        proposalId: 'opp-q1-q5-2105',
+        summary: { directEta: '20:42', giroEta: '21:05', returnEta: '21:15', tradeoffLabel: '+23 vs directa · 1 viaje ahorrado' },
+        risk: 'warning',
+        operatorMessage: 'Se puede, pero Q5 cede +5 min sobre lo prometido (prometido 21:00).',
+        timeline: [
+          { seq: 0, type: 'departure', zone: null, label: 'Pizzería', eta: '20:40', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
+          { seq: 1, type: 'delivery', zone: 'Q1', label: 'Pedido actual', eta: '20:48', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: true, isAnchor: false, warning: null },
+          { seq: 2, type: 'delivery', zone: 'Q5', label: 'Las Marinas', eta: '21:05', promised: '21:00', slipLabel: '+5', status: 'ajuste', marginLabel: '−5 vs prometido', isNewOrder: false, isAnchor: true, warning: 'Q5 se mueve +5 min' },
+          { seq: 3, type: 'return', zone: null, label: 'Regreso pizzería', eta: '21:15', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
+        ],
+      },
     },
     {
       id: 'opp-crear-q2-q5-2055',
@@ -273,6 +314,9 @@ const adaptStrategicContract = (contract) => {
     routeLabel: (bp && bp.title) || 'Directa',
     severity: (bp && bp.severity) || 'ok',
     ctaLabel: 'Aplicar propuesta',
+    // routeTimeline: pass-through del campo additivo YA CALCULADO por el backend
+    // (route-timeline-v2). No se deriva nada aquí; null si el backend no lo manda.
+    routeTimeline: (bp && bp.routeTimeline) || null,
     // SIN salidaHorno / driverStatus: no están en el contract strategic.
   };
   const notesFromContract = [
@@ -364,6 +408,12 @@ const PremiumPlannerPopup = ({ onClose, data = null, labWarning = '', loading = 
 
           <MiniZoneMap zoneMap={view.zoneMap} opp={selectedOpp} />
         </div>
+
+        {/* Línea del giro (Pizzería → entregas → Regreso) — render-only del campo
+            additivo routeTimeline. Prioridad: la proposal seleccionada; si no, la
+            bestProposal. Si ninguna lo trae (mock o backend sin routeTimeline) el
+            componente devuelve null → fallback a la UI actual sin romper nada. */}
+        <RouteTimeline routeTimeline={(selectedOpp && selectedOpp.routeTimeline) || best.routeTimeline || null} />
 
         {view.source === 'backend-readonly' && (
           <BackendSummary view={view} />
@@ -478,6 +528,92 @@ const OpportunityPreview = ({ opp }) => {
       {opp.warning && (
         <p className="ppp-preview-warn">⚠ {opp.warning}</p>
       )}
+    </section>
+  );
+};
+
+// ── RouteTimeline — renderer PURO del campo additivo `routeTimeline` ──────────
+// Dibuja la línea del giro Pizzería → entregas → Regreso usando SOLO datos YA
+// CALCULADOS por el backend (contract route-timeline-v2). REGLA renderer-only:
+// aquí NO se calcula ETA, retraso, margen, capacity, status, risk, compatibilidad
+// ni route impact; no hay Date.now, ni parsing HH:MM, ni aritmética de horas. Lo
+// único que se hace con los nodos es copiar+ordenar por el `seq` numérico que el
+// backend ya provee (rendering, no business) y mapear status/risk a clases/labels.
+const RT_RISK_LABELS = {
+  ok: 'OK',
+  tight: 'Margen justo',
+  warning: 'Con ajuste',
+  no_recomendado: 'No recomendado',
+  blocked: 'Bloqueado',
+  full: 'Lleno',
+};
+const RT_NODE_TYPE_LABELS = { departure: 'Salida', delivery: 'Entrega', return: 'Regreso' };
+
+const RouteTimeline = ({ routeTimeline, compact = false }) => {
+  // Fallback seguro: sin routeTimeline o sin timeline[] → no render (UI actual intacta).
+  if (!routeTimeline || !Array.isArray(routeTimeline.timeline) || routeTimeline.timeline.length === 0) {
+    return null;
+  }
+  // Copia + sort por el `seq` numérico YA dado por el backend (rendering, no lógica).
+  const nodes = [...routeTimeline.timeline].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+  const summary = routeTimeline.summary || null;
+  const risk = routeTimeline.risk || null;
+  const riskLabel = risk ? (RT_RISK_LABELS[risk] || risk) : null;
+
+  return (
+    <section className={`ppp-rt${compact ? ' is-compact' : ''}`} aria-label="Línea del giro">
+      <header className="ppp-rt-head">
+        <h3><span>🛵</span> Línea del giro</h3>
+        {riskLabel && <span className={`ppp-rt-risk rt-${risk}`}>{riskLabel}</span>}
+      </header>
+
+      {routeTimeline.operatorMessage && (
+        <p className="ppp-rt-msg">{routeTimeline.operatorMessage}</p>
+      )}
+
+      {summary && (summary.directEta || summary.giroEta || summary.returnEta || summary.tradeoffLabel) && (
+        <dl className="ppp-rt-summary">
+          {summary.directEta && (<div><dt>Directa</dt><dd>{summary.directEta}</dd></div>)}
+          {summary.giroEta && (<div><dt>En giro</dt><dd>{summary.giroEta}</dd></div>)}
+          {summary.returnEta && (<div><dt>Regreso</dt><dd>{summary.returnEta}</dd></div>)}
+          {summary.tradeoffLabel && (<div><dt>Balance</dt><dd>{summary.tradeoffLabel}</dd></div>)}
+        </dl>
+      )}
+
+      <ol className="ppp-rt-line">
+        {nodes.map((node, i) => {
+          const typeLabel = RT_NODE_TYPE_LABELS[node.type] || node.type || '';
+          const status = node.status || null;
+          const cls = [
+            'ppp-rt-node',
+            `rt-type-${node.type || 'x'}`,
+            status ? `rt-st-${status}` : '',
+            node.isNewOrder ? 'is-new' : '',
+            node.isAnchor ? 'is-anchor' : '',
+          ].filter(Boolean).join(' ');
+          return (
+            <li key={`${node.seq ?? i}-${node.type || 'x'}-${node.zone || ''}`} className={cls}>
+              <span className="ppp-rt-dot" aria-hidden="true" />
+              <div className="ppp-rt-body">
+                <div className="ppp-rt-top">
+                  <strong className="ppp-rt-label">{node.label || typeLabel}</strong>
+                  {node.eta && <span className="ppp-rt-eta">{node.eta}</span>}
+                </div>
+                <div className="ppp-rt-meta">
+                  <span className="ppp-rt-kind">{typeLabel}</span>
+                  {node.zone && <span className="ppp-rt-zone">{node.zone}</span>}
+                  {node.isNewOrder && <span className="ppp-rt-badge bd-new">nuevo</span>}
+                  {node.isAnchor && <span className="ppp-rt-badge bd-anchor">en giro</span>}
+                  {node.promised && <span className="ppp-rt-prom">prometido {node.promised}</span>}
+                  {node.slipLabel && <span className="ppp-rt-slip">{node.slipLabel}</span>}
+                  {node.marginLabel && <span className="ppp-rt-margin">{node.marginLabel}</span>}
+                </div>
+                {node.warning && <p className="ppp-rt-warn">⚠ {node.warning}</p>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </section>
   );
 };
@@ -649,6 +785,42 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-bs-block ul{ margin:0; padding-left:18px; color:#C7CDD1; font-size:14px; line-height:1.5; }
 .ppp-bs-warn ul{ color:#F8C16B; }
 .ppp-bs-err ul{ color:#F3A0A0; }
+.ppp-rt{ margin-top:18px; padding:18px 20px; border:1px solid rgba(88,239,117,0.30); border-radius:10px; background:linear-gradient(150deg,rgba(10,28,36,0.9),rgba(5,14,20,0.78)); }
+.ppp-rt-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.ppp-rt-head h3{ display:flex; align-items:center; gap:10px; margin:0; color:#F3F7F8; font-size:19px; font-weight:740; }
+.ppp-rt-risk{ border:1px solid currentColor; border-radius:999px; padding:4px 11px; font-size:12px; font-weight:800; letter-spacing:0.3px; }
+.ppp-rt-risk.rt-ok{ color:#58E86B; }
+.ppp-rt-risk.rt-tight{ color:#F0C45C; }
+.ppp-rt-risk.rt-warning{ color:#F8C16B; }
+.ppp-rt-risk.rt-no_recomendado,.ppp-rt-risk.rt-blocked,.ppp-rt-risk.rt-full{ color:#F87171; }
+.ppp-rt-msg{ margin:0 0 12px; color:#DDE5E8; font-size:15px; font-weight:560; line-height:1.4; }
+.ppp-rt-summary{ display:flex; flex-wrap:wrap; gap:10px 18px; margin:0 0 14px; }
+.ppp-rt-summary > div{ display:flex; flex-direction:column; gap:2px; }
+.ppp-rt-summary dt{ color:#8E99A1; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; }
+.ppp-rt-summary dd{ margin:0; color:#EEF3F4; font-size:16px; font-weight:680; font-variant-numeric:tabular-nums; }
+.ppp-rt-line{ list-style:none; position:relative; margin:0; padding:0 0 0 8px; }
+.ppp-rt-line::before{ content:""; position:absolute; left:14px; top:14px; bottom:14px; width:2px; border-radius:999px; background:rgba(120,140,152,0.45); }
+.ppp-rt-node{ position:relative; display:grid; grid-template-columns:24px minmax(0,1fr); gap:12px; padding:10px 0; }
+.ppp-rt-dot{ z-index:1; align-self:start; margin-top:4px; width:14px; height:14px; border-radius:999px; background:#9BA8B0; box-shadow:0 0 0 3px rgba(5,14,20,0.9); }
+.ppp-rt-node.rt-type-departure .ppp-rt-dot,.ppp-rt-node.rt-type-return .ppp-rt-dot{ background:#58EF75; box-shadow:0 0 0 3px rgba(5,14,20,0.9),0 0 14px rgba(88,239,117,0.55); }
+.ppp-rt-node.is-new .ppp-rt-dot{ background:#FF7A1A; box-shadow:0 0 0 3px rgba(5,14,20,0.9),0 0 14px rgba(255,122,26,0.55); }
+.ppp-rt-node.is-anchor .ppp-rt-dot{ background:#26DCEB; box-shadow:0 0 0 3px rgba(5,14,20,0.9),0 0 14px rgba(38,220,235,0.5); }
+.ppp-rt-node.rt-st-warning .ppp-rt-dot,.ppp-rt-node.rt-st-ajuste .ppp-rt-dot,.ppp-rt-node.rt-st-tight .ppp-rt-dot{ background:#F0C45C; }
+.ppp-rt-node.rt-st-blocked .ppp-rt-dot,.ppp-rt-node.rt-st-no_recomendado .ppp-rt-dot,.ppp-rt-node.rt-st-lleno .ppp-rt-dot{ background:#F87171; }
+.ppp-rt-body{ min-width:0; }
+.ppp-rt-top{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.ppp-rt-label{ color:#F1F6F7; font-size:16px; font-weight:680; line-height:1.2; }
+.ppp-rt-eta{ color:#EEF3F4; font-size:17px; font-weight:760; font-variant-numeric:tabular-nums; }
+.ppp-rt-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin-top:5px; }
+.ppp-rt-kind{ color:#8E99A1; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; }
+.ppp-rt-zone{ border:1px solid rgba(120,140,152,0.42); border-radius:6px; padding:2px 8px; color:#D8DEE2; font-size:13px; font-weight:650; }
+.ppp-rt-badge{ border-radius:6px; padding:2px 8px; font-size:12px; font-weight:750; }
+.ppp-rt-badge.bd-new{ border:1px solid rgba(255,122,26,0.5); color:#FFB07A; background:rgba(255,122,26,0.10); }
+.ppp-rt-badge.bd-anchor{ border:1px solid rgba(38,220,235,0.5); color:#7FE9F2; background:rgba(38,220,235,0.08); }
+.ppp-rt-prom{ color:#9CA6AD; font-size:13px; font-weight:560; }
+.ppp-rt-slip{ border:1px solid rgba(248,178,107,0.6); border-radius:6px; padding:2px 7px; color:#F8C16B; font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
+.ppp-rt-margin{ color:#9CA6AD; font-size:13px; font-weight:560; font-variant-numeric:tabular-nums; }
+.ppp-rt-warn{ margin:6px 0 0; color:#F8C16B; font-size:13px; font-weight:620; line-height:1.3; }
 .ppp-top-grid{ display:grid; grid-template-columns:0.96fr 1.16fr; gap:20px; align-items:stretch; }
 .ppp-best-card,.ppp-map-card,.ppp-timeline-card,.ppp-notes{ border:1px solid rgba(83,112,131,0.48); border-radius:10px; background:linear-gradient(155deg,rgba(10,28,36,0.96),rgba(5,14,20,0.92)); box-shadow:inset 0 1px 0 rgba(255,255,255,0.03),0 18px 52px rgba(0,0,0,0.20); }
 .ppp-best-card{ min-height:410px; display:flex; flex-direction:column; padding:28px; border-color:rgba(57,207,94,0.38); }
