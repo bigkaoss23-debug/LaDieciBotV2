@@ -629,6 +629,38 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
   const isBlocked = Boolean(opp?.blocked);
   const zoneClass = (id) => `ppp-zone zone-${id.toLowerCase()}${activeZones.has(id) ? ' is-active' : ''}`;
 
+  // Lookup zona → parada (orden de tappa + eta + status) para pintar el badge
+  // horario DENTRO de la zona del mapa. Datos YA CALCULADOS: preferimos los nodos
+  // delivery de routeTimeline (traen status); si no, caemos en routeEtas (slips →
+  // ajuste/ok). Render-only: solo se indexa y se mapea flag→clase, sin cálculo.
+  const rtNodes = opp && opp.routeTimeline && Array.isArray(opp.routeTimeline.timeline)
+    ? opp.routeTimeline.timeline
+    : null;
+  const stops = [];
+  if (rtNodes) {
+    rtNodes
+      .filter((n) => n.type === 'delivery' && n.zone)
+      .forEach((n, i) => stops.push({ zone: String(n.zone), order: i + 1, eta: n.eta || null, status: n.status || 'ok' }));
+  } else if (opp && Array.isArray(opp.routeEtas)) {
+    opp.routeEtas
+      .filter((e) => e.zone)
+      .forEach((e, i) => stops.push({ zone: String(e.zone), order: i + 1, eta: e.eta || null, status: e.slips ? 'ajuste' : 'ok' }));
+  }
+  const stopByZone = stops.reduce((acc, s) => { acc[s.zone] = s; return acc; }, {});
+
+  // Badge horario presentacional para una zona (null si la zona no es parada o no
+  // trae eta). El color sale del status YA dado; no se decide nada aquí.
+  const stopBadge = (id) => {
+    const s = stopByZone[id];
+    if (!s || !s.eta) return null;
+    return (
+      <span className={`ppp-zone-stop st-${s.status}`}>
+        <i className="ppp-zone-stop-n">{s.order}</i>
+        {s.eta}
+      </span>
+    );
+  };
+
   return (
     <section
       className={`ppp-map-card${isBlocked ? ' is-blocked' : ''}`}
@@ -640,11 +672,11 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
         <span className="ppp-road road-a" />
         <span className="ppp-road road-b" />
         <span className="ppp-road road-c" />
-        <span className={zoneClass('Q4')}><b>{zonesById.Q4.id}</b><small>{zonesById.Q4.name.toUpperCase()}</small></span>
-        <span className={zoneClass('Q3')}><b>{zonesById.Q3.id}</b><small>{zonesById.Q3.name.toUpperCase()}</small></span>
-        <span className={zoneClass('Q1')}><b>{zonesById.Q1.id}</b><small>{zonesById.Q1.name.toUpperCase()}</small>{zonesById.Q1.hasPizzeria && <em>🍕 Pizzería</em>}</span>
-        <span className={zoneClass('Q2')}><b>{zonesById.Q2.id}</b><small>{zonesById.Q2.name.toUpperCase()}</small></span>
-        <span className={zoneClass('Q5')}><b>{zonesById.Q5.id}</b><small>{zonesById.Q5.name.toUpperCase()}</small></span>
+        <span className={zoneClass('Q4')}><b>{zonesById.Q4.id}</b><small>{zonesById.Q4.name.toUpperCase()}</small>{stopBadge('Q4')}</span>
+        <span className={zoneClass('Q3')}><b>{zonesById.Q3.id}</b><small>{zonesById.Q3.name.toUpperCase()}</small>{stopBadge('Q3')}</span>
+        <span className={zoneClass('Q1')}><b>{zonesById.Q1.id}</b><small>{zonesById.Q1.name.toUpperCase()}</small>{zonesById.Q1.hasPizzeria && <em>🍕 Pizzería</em>}{stopBadge('Q1')}</span>
+        <span className={zoneClass('Q2')}><b>{zonesById.Q2.id}</b><small>{zonesById.Q2.name.toUpperCase()}</small>{stopBadge('Q2')}</span>
+        <span className={zoneClass('Q5')}><b>{zonesById.Q5.id}</b><small>{zonesById.Q5.name.toUpperCase()}</small>{stopBadge('Q5')}</span>
         <span className="ppp-shop-dot" />
         <div className="ppp-sea">
           <span>⌁⌁</span>
@@ -668,16 +700,8 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
             ))}
             {isBlocked && <em className="ppp-map-flag"> · No recomendado</em>}
           </p>
-          <div className="ppp-map-etas">
-            {opp.routeEtas.map(eta => (
-              <span
-                key={`${opp.id}-${eta.zone}`}
-                className={`ppp-eta-chip${eta.isNew ? ' is-new' : ''}${eta.slips ? ' is-slip' : ''}`}
-              >
-                {eta.zone} {eta.eta}{etaSlipBadge(eta)}
-              </span>
-            ))}
-          </div>
+          {/* Leyenda de ETAs aligerada: los horarios viven ahora como badge sobre
+              cada zona del mapa (ppp-zone-stop). Aquí solo queda ruta + canal. */}
           <span className="ppp-map-channel">{channelLabels[opp.channel] || opp.channel}</span>
         </div>
       )}
@@ -855,6 +879,14 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-zone b{ font-size:26px; font-weight:850; }
 .ppp-zone small{ margin-top:5px; font-size:12px; font-weight:780; }
 .ppp-zone em{ margin-top:9px; font-style:normal; font-size:12px; font-weight:650; }
+.ppp-zone-stop{ position:relative; z-index:7; display:inline-flex; align-items:center; gap:5px; margin-top:7px; padding:2px 9px 2px 3px; border-radius:999px; border:1.5px solid #58E86B; color:#FFFFFF; background:rgba(4,12,17,0.86); font-size:14px; font-weight:850; line-height:1; font-variant-numeric:tabular-nums; box-shadow:0 5px 12px rgba(0,0,0,0.45); }
+.ppp-zone-stop-n{ display:inline-grid; place-items:center; width:16px; height:16px; border-radius:999px; background:#58E86B; color:#06140f; font-style:normal; font-size:10px; font-weight:900; }
+.ppp-zone-stop.st-ok{ border-color:#58E86B; }
+.ppp-zone-stop.st-ok .ppp-zone-stop-n{ background:#58E86B; }
+.ppp-zone-stop.st-ajuste,.ppp-zone-stop.st-tight,.ppp-zone-stop.st-warning{ border-color:#F0C45C; }
+.ppp-zone-stop.st-ajuste .ppp-zone-stop-n,.ppp-zone-stop.st-tight .ppp-zone-stop-n,.ppp-zone-stop.st-warning .ppp-zone-stop-n{ background:#F0C45C; color:#1a1305; }
+.ppp-zone-stop.st-blocked,.ppp-zone-stop.st-no_recomendado,.ppp-zone-stop.st-lleno,.ppp-zone-stop.st-full{ border-color:#F87171; }
+.ppp-zone-stop.st-blocked .ppp-zone-stop-n,.ppp-zone-stop.st-no_recomendado .ppp-zone-stop-n,.ppp-zone-stop.st-lleno .ppp-zone-stop-n,.ppp-zone-stop.st-full .ppp-zone-stop-n{ background:#F87171; color:#fff; }
 .zone-q4{ left:3%; top:62px; width:30%; height:84px; background:${zoneColors.Q4}; clip-path:polygon(0 24%,8% 8%,45% 13%,100% 11%,90% 100%,9% 88%); }
 .zone-q3{ left:30%; top:54px; width:33%; height:110px; background:${zoneColors.Q3}; clip-path:polygon(0 18%,76% 0,100% 0,86% 42%,100% 70%,42% 100%,14% 73%); }
 .zone-q1{ right:12%; top:24px; width:31%; height:166px; background:${zoneColors.Q1}; clip-path:polygon(22% 10%,100% 0,92% 100%,40% 72%,0 46%); }
