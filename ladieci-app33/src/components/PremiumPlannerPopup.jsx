@@ -243,6 +243,19 @@ const zoneColors = PREMIUM_PLANNER_LAB_DATA.zoneMap.zones.reduce((acc, zone) => 
   return acc;
 }, {});
 
+// Centro visual de cada zona en el mapa (x,y en % del recuadro .ppp-map). Sirve
+// para colocar el nodo/badge en el CENTRO de la zona y para unir las paradas con
+// la línea de tragitto. Son coordenadas de layout (presentacional), no datos de
+// negocio. Pizzería vive en el centro de Q1.
+const MAP_ZONE_CENTERS = {
+  Q1: { x: 72, y: 36 },
+  Q2: { x: 64, y: 70 },
+  Q3: { x: 46, y: 36 },
+  Q4: { x: 18, y: 36 },
+  Q5: { x: 30, y: 80 },
+};
+const PIZZERIA_CENTER = MAP_ZONE_CENTERS.Q1;
+
 const toneStyles = {
   ok: { accent: '#58E86B', bg: 'rgba(46, 210, 88, 0.10)', border: 'rgba(66, 232, 104, 0.38)' },
   warning: { accent: '#F0C45C', bg: 'rgba(240, 178, 48, 0.09)', border: 'rgba(240, 178, 48, 0.40)' },
@@ -629,10 +642,10 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
   const isBlocked = Boolean(opp?.blocked);
   const zoneClass = (id) => `ppp-zone zone-${id.toLowerCase()}${activeZones.has(id) ? ' is-active' : ''}`;
 
-  // Lookup zona → parada (orden de tappa + eta + status) para pintar el badge
-  // horario DENTRO de la zona del mapa. Datos YA CALCULADOS: preferimos los nodos
-  // delivery de routeTimeline (traen status); si no, caemos en routeEtas (slips →
-  // ajuste/ok). Render-only: solo se indexa y se mapea flag→clase, sin cálculo.
+  // Paradas del giro (orden de tappa + eta + status) para dibujar nodos + línea de
+  // tragitto SOBRE el mapa. Datos YA CALCULADOS: preferimos los nodos delivery de
+  // routeTimeline (traen status); si no, caemos en routeEtas (slips → ajuste/ok).
+  // Render-only: solo se indexa y se mapea flag→clase, sin cálculo de tiempos.
   const rtNodes = opp && opp.routeTimeline && Array.isArray(opp.routeTimeline.timeline)
     ? opp.routeTimeline.timeline
     : null;
@@ -646,20 +659,18 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
       .filter((e) => e.zone)
       .forEach((e, i) => stops.push({ zone: String(e.zone), order: i + 1, eta: e.eta || null, status: e.slips ? 'ajuste' : 'ok' }));
   }
-  const stopByZone = stops.reduce((acc, s) => { acc[s.zone] = s; return acc; }, {});
 
-  // Badge horario presentacional para una zona (null si la zona no es parada o no
-  // trae eta). El color sale del status YA dado; no se decide nada aquí.
-  const stopBadge = (id) => {
-    const s = stopByZone[id];
-    if (!s || !s.eta) return null;
-    return (
-      <span className={`ppp-zone-stop st-${s.status}`}>
-        <i className="ppp-zone-stop-n">{s.order}</i>
-        {s.eta}
-      </span>
-    );
-  };
+  // Solo paradas con centro de zona conocido → nodos colocables en el mapa.
+  const placedStops = stops
+    .map((s) => ({ ...s, c: MAP_ZONE_CENTERS[s.zone] }))
+    .filter((s) => s.c);
+  // Puntos de la polilínea: Pizzería (centro Q1) → cada parada en orden. Solo
+  // une coordenadas ya definidas; ningún cálculo de ruta/tiempo aquí.
+  const linePts = placedStops.length
+    ? [PIZZERIA_CENTER, ...placedStops.map((s) => s.c)].map((p) => `${p.x},${p.y}`).join(' ')
+    : '';
+  const lastStop = placedStops.length ? placedStops[placedStops.length - 1].c : null;
+  const returnPts = lastStop ? `${lastStop.x},${lastStop.y} ${PIZZERIA_CENTER.x},${PIZZERIA_CENTER.y}` : '';
 
   return (
     <section
@@ -672,12 +683,11 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
         <span className="ppp-road road-a" />
         <span className="ppp-road road-b" />
         <span className="ppp-road road-c" />
-        <span className={zoneClass('Q4')}><b>{zonesById.Q4.id}</b><small>{zonesById.Q4.name.toUpperCase()}</small>{stopBadge('Q4')}</span>
-        <span className={zoneClass('Q3')}><b>{zonesById.Q3.id}</b><small>{zonesById.Q3.name.toUpperCase()}</small>{stopBadge('Q3')}</span>
-        <span className={zoneClass('Q1')}><b>{zonesById.Q1.id}</b><small>{zonesById.Q1.name.toUpperCase()}</small>{zonesById.Q1.hasPizzeria && <em>🍕 Pizzería</em>}{stopBadge('Q1')}</span>
-        <span className={zoneClass('Q2')}><b>{zonesById.Q2.id}</b><small>{zonesById.Q2.name.toUpperCase()}</small>{stopBadge('Q2')}</span>
-        <span className={zoneClass('Q5')}><b>{zonesById.Q5.id}</b><small>{zonesById.Q5.name.toUpperCase()}</small>{stopBadge('Q5')}</span>
-        <span className="ppp-shop-dot" />
+        <span className={zoneClass('Q4')}><b>{zonesById.Q4.id}</b><small>{zonesById.Q4.name.toUpperCase()}</small></span>
+        <span className={zoneClass('Q3')}><b>{zonesById.Q3.id}</b><small>{zonesById.Q3.name.toUpperCase()}</small></span>
+        <span className={zoneClass('Q1')}><b>{zonesById.Q1.id}</b><small>{zonesById.Q1.name.toUpperCase()}</small></span>
+        <span className={zoneClass('Q2')}><b>{zonesById.Q2.id}</b><small>{zonesById.Q2.name.toUpperCase()}</small></span>
+        <span className={zoneClass('Q5')}><b>{zonesById.Q5.id}</b><small>{zonesById.Q5.name.toUpperCase()}</small></span>
         <div className="ppp-sea">
           <span>⌁⌁</span>
           <span>⌁⌁</span>
@@ -686,6 +696,46 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
           <span>⌁⌁</span>
           <span>⌁⌁</span>
         </div>
+
+        {/* Capa de tragitto: línea que une Pizzería → paradas (en orden) + regreso
+            punteado, y un nodo con eta en el CENTRO de cada zona de parada. Todo
+            presentacional: une coordenadas y reexpone eta/status ya calculados. */}
+        {linePts && (
+          <svg className="ppp-route-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {returnPts && (
+              <polyline className="ppp-route-return" points={returnPts} fill="none" vectorEffect="non-scaling-stroke" />
+            )}
+            <polyline
+              className={`ppp-route-path${isBlocked ? ' is-blocked' : ''}`}
+              points={linePts}
+              fill="none"
+              stroke={tone.accent}
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        )}
+
+        {/* Pizzería: nodo origen en el centro de Q1 */}
+        <span className="ppp-route-hub" style={{ left: `${PIZZERIA_CENTER.x}%`, top: `${PIZZERIA_CENTER.y}%` }}>
+          <i className="ppp-route-hub-pin" aria-hidden="true">🍕</i>
+          <em>Pizzería</em>
+        </span>
+
+        {/* Nodos de parada: dot + badge (nº tappa + eta) en el centro de la zona */}
+        {placedStops.map((s) => (
+          <span
+            key={`${opp?.id}-stop-${s.zone}`}
+            className={`ppp-route-node st-${s.status}`}
+            style={{ left: `${s.c.x}%`, top: `${s.c.y}%` }}
+          >
+            <i className="ppp-route-dot" aria-hidden="true" />
+            {s.eta && (
+              <em className="ppp-route-eta">
+                <i className="ppp-route-n">{s.order}</i>{s.eta}
+              </em>
+            )}
+          </span>
+        ))}
       </div>
 
       {opp && (
@@ -879,14 +929,22 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-zone b{ font-size:26px; font-weight:850; }
 .ppp-zone small{ margin-top:5px; font-size:12px; font-weight:780; }
 .ppp-zone em{ margin-top:9px; font-style:normal; font-size:12px; font-weight:650; }
-.ppp-zone-stop{ position:relative; z-index:7; display:inline-flex; align-items:center; gap:5px; margin-top:7px; padding:2px 9px 2px 3px; border-radius:999px; border:1.5px solid #58E86B; color:#FFFFFF; background:rgba(4,12,17,0.86); font-size:14px; font-weight:850; line-height:1; font-variant-numeric:tabular-nums; box-shadow:0 5px 12px rgba(0,0,0,0.45); }
-.ppp-zone-stop-n{ display:inline-grid; place-items:center; width:16px; height:16px; border-radius:999px; background:#58E86B; color:#06140f; font-style:normal; font-size:10px; font-weight:900; }
-.ppp-zone-stop.st-ok{ border-color:#58E86B; }
-.ppp-zone-stop.st-ok .ppp-zone-stop-n{ background:#58E86B; }
-.ppp-zone-stop.st-ajuste,.ppp-zone-stop.st-tight,.ppp-zone-stop.st-warning{ border-color:#F0C45C; }
-.ppp-zone-stop.st-ajuste .ppp-zone-stop-n,.ppp-zone-stop.st-tight .ppp-zone-stop-n,.ppp-zone-stop.st-warning .ppp-zone-stop-n{ background:#F0C45C; color:#1a1305; }
-.ppp-zone-stop.st-blocked,.ppp-zone-stop.st-no_recomendado,.ppp-zone-stop.st-lleno,.ppp-zone-stop.st-full{ border-color:#F87171; }
-.ppp-zone-stop.st-blocked .ppp-zone-stop-n,.ppp-zone-stop.st-no_recomendado .ppp-zone-stop-n,.ppp-zone-stop.st-lleno .ppp-zone-stop-n,.ppp-zone-stop.st-full .ppp-zone-stop-n{ background:#F87171; color:#fff; }
+.ppp-route-svg{ position:absolute; inset:0; width:100%; height:100%; z-index:6; pointer-events:none; }
+.ppp-route-path{ stroke-width:3; stroke-linejoin:round; stroke-linecap:round; opacity:0.95; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.55)); }
+.ppp-route-path.is-blocked{ stroke:#F87171 !important; stroke-dasharray:5 4; }
+.ppp-route-return{ stroke:rgba(160,173,181,0.65); stroke-width:2; stroke-dasharray:3 4; stroke-linecap:round; }
+.ppp-route-hub,.ppp-route-node{ position:absolute; transform:translate(-50%,-50%); z-index:8; display:flex; flex-direction:column; align-items:center; gap:3px; pointer-events:none; white-space:nowrap; }
+.ppp-route-hub-pin{ width:30px; height:30px; display:grid; place-items:center; border-radius:999px; background:rgba(4,12,17,0.92); border:2px solid #58EF75; font-size:16px; font-style:normal; box-shadow:0 0 0 3px rgba(88,239,117,0.25),0 6px 14px rgba(0,0,0,0.55); }
+.ppp-route-hub em{ font-style:normal; font-size:11px; font-weight:800; color:#9DF5B0; text-shadow:0 1px 3px rgba(0,0,0,0.85); }
+.ppp-route-dot{ width:14px; height:14px; border-radius:999px; background:#58E86B; border:2px solid rgba(4,12,17,0.85); box-shadow:0 0 0 3px rgba(0,0,0,0.3),0 4px 10px rgba(0,0,0,0.5); }
+.ppp-route-eta{ display:inline-flex; align-items:center; gap:5px; padding:2px 9px 2px 3px; border-radius:999px; border:1.5px solid #58E86B; color:#FFFFFF; background:rgba(4,12,17,0.9); font-style:normal; font-size:14px; font-weight:850; line-height:1; font-variant-numeric:tabular-nums; box-shadow:0 5px 12px rgba(0,0,0,0.5); }
+.ppp-route-n{ display:inline-grid; place-items:center; width:16px; height:16px; border-radius:999px; background:#58E86B; color:#06140f; font-style:normal; font-size:10px; font-weight:900; }
+.ppp-route-node.st-ok .ppp-route-dot,.ppp-route-node.st-ok .ppp-route-n{ background:#58E86B; }
+.ppp-route-node.st-ok .ppp-route-eta{ border-color:#58E86B; }
+.ppp-route-node.st-ajuste .ppp-route-dot,.ppp-route-node.st-tight .ppp-route-dot,.ppp-route-node.st-warning .ppp-route-dot,.ppp-route-node.st-ajuste .ppp-route-n,.ppp-route-node.st-tight .ppp-route-n,.ppp-route-node.st-warning .ppp-route-n{ background:#F0C45C; color:#1a1305; }
+.ppp-route-node.st-ajuste .ppp-route-eta,.ppp-route-node.st-tight .ppp-route-eta,.ppp-route-node.st-warning .ppp-route-eta{ border-color:#F0C45C; }
+.ppp-route-node.st-blocked .ppp-route-dot,.ppp-route-node.st-no_recomendado .ppp-route-dot,.ppp-route-node.st-lleno .ppp-route-dot,.ppp-route-node.st-full .ppp-route-dot,.ppp-route-node.st-blocked .ppp-route-n,.ppp-route-node.st-no_recomendado .ppp-route-n,.ppp-route-node.st-lleno .ppp-route-n,.ppp-route-node.st-full .ppp-route-n{ background:#F87171; color:#fff; }
+.ppp-route-node.st-blocked .ppp-route-eta,.ppp-route-node.st-no_recomendado .ppp-route-eta,.ppp-route-node.st-lleno .ppp-route-eta,.ppp-route-node.st-full .ppp-route-eta{ border-color:#F87171; }
 .zone-q4{ left:3%; top:62px; width:30%; height:84px; background:${zoneColors.Q4}; clip-path:polygon(0 24%,8% 8%,45% 13%,100% 11%,90% 100%,9% 88%); }
 .zone-q3{ left:30%; top:54px; width:33%; height:110px; background:${zoneColors.Q3}; clip-path:polygon(0 18%,76% 0,100% 0,86% 42%,100% 70%,42% 100%,14% 73%); }
 .zone-q1{ right:12%; top:24px; width:31%; height:166px; background:${zoneColors.Q1}; clip-path:polygon(22% 10%,100% 0,92% 100%,40% 72%,0 46%); }
