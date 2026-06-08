@@ -220,6 +220,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // al click esplicito del botón Premium; null = el popup cae en fixture mock LAB.
   const [strategicPreview, setStrategicPreview] = useState(null);
   const [strategicWarning, setStrategicWarning] = useState("");
+  // Loading state read-only: true mentre la preview backend è in volo (solo se c'è
+  // hora). Render-only, nessun calcolo. Guard anti-stale: solo l'ultima richiesta
+  // (o apertura/chiusura) può aggiornare preview/warning/loading.
+  const [strategicLoading, setStrategicLoading] = useState(false);
+  const strategicReqIdRef = useRef(0);
   // Override esplicito: l'operatore ha cliccato "Forzar HORA" ignorando la proposta
   const [forzaHora, setForzaHora] = useState(false);
   const [yaPagedo,        setYaPagedo]        = useState(false);
@@ -738,13 +743,17 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // creato/modificato. La risposta NON viene mai usata per scrivere/salvare.
   const openPlannerLab = async () => {
     setShowPlannerLabPopup(true);
+    // Ogni apertura invalida le risposte in volo precedenti (anti-stale).
+    const reqId = ++strategicReqIdRef.current;
     if (!hora) {
+      setStrategicLoading(false);
       setStrategicPreview(null);
       setStrategicWarning("startTime mancante (hora no elegida) · backend preview NO llamada · mostrando mock LAB");
       return;
     }
     setStrategicWarning("");
     setStrategicPreview(null);
+    setStrategicLoading(true);
     const pizzasCount = items.reduce((s, it) => s + (parseInt(it.q) || 1), 0);
     const input = {
       startTime: hora,
@@ -758,19 +767,35 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     };
     try {
       const res = await api.previewStrategicOpportunities(input);
+      // Anti-stale: scarta se nel frattempo è arrivata una nuova apertura/chiusura.
+      if (reqId !== strategicReqIdRef.current) return;
       // Solo contract strategic válido alimenta el render backend-readonly.
       if (res && res.contract === "premium-planner-strategic-preview-v1") {
         setStrategicPreview(res);
         setStrategicWarning("");
+      } else if (res && res._status === 401) {
+        setStrategicPreview(null);
+        setStrategicWarning("Sesión expirada o autorización requerida · mostrando mock LAB");
       } else {
         setStrategicPreview(null);
         setStrategicWarning("Backend preview no disponible (contract inválido / unknown action) · mostrando mock LAB");
       }
     } catch (e) {
+      if (reqId !== strategicReqIdRef.current) return;
       setStrategicPreview(null);
       setStrategicWarning("Backend preview falló (internal_error / red) · mostrando mock LAB");
       console.warn("[previewStrategicOpportunities] failed:", e?.message || e);
+    } finally {
+      if (reqId === strategicReqIdRef.current) setStrategicLoading(false);
     }
+  };
+
+  // Chiusura popup: invalida eventuali risposte in volo (anti-stale) e azzera il
+  // loading, così una risposta vecchia non sporca un popup chiuso/riaperto.
+  const closePlannerLab = () => {
+    strategicReqIdRef.current++;
+    setStrategicLoading(false);
+    setShowPlannerLabPopup(false);
   };
 
   useEffect(() => {
@@ -1419,9 +1444,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
       {showPlannerLabPopup && (
         <PremiumPlannerPopup
-          onClose={() => setShowPlannerLabPopup(false)}
+          onClose={closePlannerLab}
           data={strategicPreview}
           labWarning={strategicWarning}
+          loading={strategicLoading}
         />
       )}
 

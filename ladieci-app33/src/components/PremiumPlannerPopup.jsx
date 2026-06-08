@@ -295,7 +295,7 @@ const adaptStrategicContract = (contract) => {
   };
 };
 
-const PremiumPlannerPopup = ({ onClose, data = null, labWarning = '' }) => {
+const PremiumPlannerPopup = ({ onClose, data = null, labWarning = '', loading = false }) => {
   // Fuente de datos: contract backend read-only si válido, si no fixture mock LAB.
   const isStrategic = !!(data && data.contract === STRATEGIC_CONTRACT);
   const view = isStrategic ? adaptStrategicContract(data) : PREMIUM_PLANNER_LAB_DATA;
@@ -327,11 +327,17 @@ const PremiumPlannerPopup = ({ onClose, data = null, labWarning = '' }) => {
             <span>✦</span>
           </div>
           <h2>Propuestas de entrega</h2>
-          <span className="ppp-lab-pill">LAB · {view.source}</span>
+          <span className="ppp-lab-pill">LAB · {loading ? 'consultando…' : view.source}</span>
           <button type="button" className="ppp-close" onClick={onClose} aria-label="Cerrar propuestas">×</button>
         </header>
 
-        {labWarning && (
+        {loading && (
+          <p className="ppp-lab-loading" role="status" aria-live="polite">
+            ⟳ Consultando planner read-only… <span>vista previa mock mientras tanto</span>
+          </p>
+        )}
+
+        {!loading && labWarning && (
           <p className="ppp-lab-warn" role="status">⚠ {labWarning}</p>
         )}
 
@@ -630,6 +636,8 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-close{ width:46px; height:46px; display:grid; place-items:center; border:1px solid rgba(154,176,191,0.30); border-radius:999px; color:#EFF5F6; background:rgba(255,255,255,0.035); font-size:30px; line-height:1; font-weight:250; cursor:pointer; }
 .ppp-close:hover{ background:rgba(255,255,255,0.08); }
 .ppp-lab-warn{ margin:0 0 16px; padding:10px 14px; border:1px solid rgba(240,178,48,0.42); border-radius:8px; color:#F8C16B; background:rgba(240,178,48,0.08); font-size:14px; font-weight:650; line-height:1.35; }
+.ppp-lab-loading{ margin:0 0 16px; padding:10px 14px; border:1px solid rgba(38,220,235,0.42); border-radius:8px; color:#7FE9F2; background:rgba(38,220,235,0.08); font-size:14px; font-weight:650; line-height:1.35; }
+.ppp-lab-loading span{ color:#9BB9C7; font-weight:500; }
 .ppp-backend-summary{ margin-top:18px; padding:16px 18px; border:1px solid rgba(38,220,235,0.30); border-radius:10px; background:rgba(38,220,235,0.05); }
 .ppp-bs-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
 .ppp-bs-badge{ border:1px solid rgba(38,220,235,0.42); border-radius:999px; padding:5px 10px; color:#7FE9F2; background:rgba(38,220,235,0.08); font-size:11px; font-weight:800; letter-spacing:0.3px; }
