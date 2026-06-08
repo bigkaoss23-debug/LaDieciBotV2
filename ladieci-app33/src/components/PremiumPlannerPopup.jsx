@@ -352,7 +352,22 @@ const adaptStrategicContract = (contract) => {
   };
 };
 
-const PremiumPlannerPopup = ({ onClose, data = null, labWarning = '', loading = false }) => {
+const PremiumPlannerPopup = ({
+  onClose,
+  data = null,
+  labWarning = '',
+  loading = false,
+  // ── Ruta manual LAB (click-zona → previewManualGiroRoute) ──────────────────
+  // Todos OPCIONALES: si onCalcManualRoute no se provee, la sección manual no se
+  // renderiza → comportamiento idéntico al uso solo-strategic (sin romper nada).
+  manualCurrentZone = null,   // zona del pedido actual ya resuelta (o null)
+  manualStartTime = null,     // hora del draft (startTime explícito, o null)
+  manualRoutePreview = null,  // contract premium-planner-manual-giro-route-preview-v1
+  manualRouteLoading = false,
+  manualRouteWarning = '',
+  onCalcManualRoute = null,   // (selectedStops) => void  — el modal valida + llama backend
+  onClearManualRoute = null,  // () => void
+}) => {
   // Fuente de datos: contract backend read-only si válido, si no fixture mock LAB.
   const isStrategic = !!(data && data.contract === STRATEGIC_CONTRACT);
   const view = isStrategic ? adaptStrategicContract(data) : PREMIUM_PLANNER_LAB_DATA;
@@ -427,6 +442,21 @@ const PremiumPlannerPopup = ({ onClose, data = null, labWarning = '', loading = 
             bestProposal. Si ninguna lo trae (mock o backend sin routeTimeline) el
             componente devuelve null → fallback a la UI actual sin romper nada. */}
         <RouteTimeline routeTimeline={(selectedOpp && selectedOpp.routeTimeline) || best.routeTimeline || null} />
+
+        {/* Ruta manual LAB: modo interactivo (operador propone Q2→Q5…). Solo se
+            renderiza si el contenedor pasa onCalcManualRoute. Recolector de clics +
+            renderer de la routeTimeline que devuelve el backend. */}
+        {onCalcManualRoute && (
+          <ManualRouteSection
+            currentZone={manualCurrentZone}
+            startTime={manualStartTime}
+            preview={manualRoutePreview}
+            loading={manualRouteLoading}
+            warning={manualRouteWarning}
+            onCalc={onCalcManualRoute}
+            onClear={onClearManualRoute}
+          />
+        )}
 
         {view.source === 'backend-readonly' && (
           <BackendSummary view={view} />
@@ -627,6 +657,151 @@ const RouteTimeline = ({ routeTimeline, compact = false }) => {
           );
         })}
       </ol>
+    </section>
+  );
+};
+
+// ── ManualRouteSection — recolector de clics + renderer (NO motor) ────────────
+// El operador construye una SECUENCIA de paradas (pedido actual + anclas Q1–Q5
+// que añade clicando) y pulsa "Calcular ruta LAB". La sección SOLO arma
+// `selectedStops` (zone + label genérica, SIN PII, SIN promised inventado) y los
+// pasa al contenedor (onCalc), que valida (hora + zona) y llama al backend. La
+// respuesta `routeTimeline` (route-timeline-v2) se dibuja con el MISMO renderer
+// puro <RouteTimeline/>. REGLA renderer-only: aquí NO se calcula ETA/slip/risk/
+// capacity/status, NO hay Date.now, NI parsing HH:MM, NI aritmética de horas.
+const MANUAL_ROUTE_ZONES = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'];
+
+const ManualRouteSection = ({ currentZone, startTime, preview, loading, warning, onCalc, onClear }) => {
+  const [anchorZones, setAnchorZones] = useState([]);
+  // Zona actual en modo LAB: si el draft NO trae zona resuelta (evitamos forzar
+  // geo_cache), el operador puede ELEGIRLA a mano aquí solo para la preview LAB.
+  // Presentacional: es solo el `zone` del stop current_order, sin PII, sin geo.
+  const [labCurrentZone, setLabCurrentZone] = useState(null);
+  const effectiveCurrentZone = currentZone || labCurrentZone;
+  const usingLabZone = !currentZone && !!labCurrentZone;
+
+  // Construye selectedStops: primero el pedido actual (si hay zona), luego las
+  // anclas en el ORDEN en que el operador las clicó (no se reordena nada).
+  const buildStops = () => {
+    const stops = [];
+    if (effectiveCurrentZone) stops.push({ type: 'current_order', zone: effectiveCurrentZone, label: 'Pedido actual' });
+    anchorZones.forEach((z) => stops.push({ type: 'anchor', zone: z, label: `${z} · ancla manual` }));
+    return stops;
+  };
+
+  const addZone = (z) => setAnchorZones((prev) => [...prev, z]);
+  const removeLast = () => setAnchorZones((prev) => prev.slice(0, -1));
+  const clearAll = () => {
+    setAnchorZones([]);
+    setLabCurrentZone(null);
+    if (onClear) onClear();
+  };
+  const calc = () => { if (onCalc) onCalc(buildStops()); };
+
+  const canCalc = !!effectiveCurrentZone && !!startTime && !loading;
+  const rt = preview && preview.routeTimeline ? preview.routeTimeline : null;
+  const blockers = preview && Array.isArray(preview.blockers) ? preview.blockers : [];
+  const pwarnings = preview && Array.isArray(preview.warnings) ? preview.warnings : [];
+
+  return (
+    <section className="ppp-mr" aria-label="Ruta manual LAB">
+      <header className="ppp-mr-head">
+        <h3><span>🧭</span> Ruta manual LAB</h3>
+        <span className="ppp-mr-pill">click-zona → backend read-only</span>
+      </header>
+
+      {!effectiveCurrentZone && (
+        <p className="ppp-mr-warn">⚠ Zona del pedido actual sin resolver — añade dirección/zona, o elige una zona LAB abajo.</p>
+      )}
+      {!startTime && (
+        <p className="ppp-mr-warn">⚠ Falta la hora (startTime) — elige hora antes de calcular.</p>
+      )}
+
+      <div className="ppp-mr-current">
+        <span className="ppp-mr-k">Pedido actual</span>
+        <strong>{effectiveCurrentZone || '—'}</strong>
+        {usingLabZone && <span className="ppp-mr-lab">LAB</span>}
+      </div>
+
+      {/* Selector LAB de zona actual: solo si el draft no trae zona resuelta. NO
+          escribe geo_cache; es presentacional para poder probar la ruta en LAB. */}
+      {!currentZone && (
+        <div className="ppp-mr-picker">
+          <span className="ppp-mr-k">Zona actual (LAB)</span>
+          {MANUAL_ROUTE_ZONES.map((z) => (
+            <button
+              type="button"
+              key={`lab-${z}`}
+              className={`ppp-mr-chip${labCurrentZone === z ? ' is-on' : ''}`}
+              onClick={() => setLabCurrentZone(z)}
+              aria-pressed={labCurrentZone === z}
+              aria-label={`Zona actual LAB ${z}`}
+            >
+              {z}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="ppp-mr-picker">
+        <span className="ppp-mr-k">Añadir parada</span>
+        {MANUAL_ROUTE_ZONES.map((z) => (
+          <button type="button" key={z} className="ppp-mr-chip" onClick={() => addZone(z)} aria-label={`Añadir parada ${z}`}>
+            {z}
+          </button>
+        ))}
+      </div>
+
+      <div className="ppp-mr-seq" aria-label="Secuencia de paradas">
+        <span className="ppp-mr-k">Secuencia</span>
+        <span className="ppp-mr-stop is-current">{effectiveCurrentZone || '—'} · actual</span>
+        {anchorZones.map((z, i) => (
+          <span key={`${z}-${i}`} className="ppp-mr-stop is-anchor">→ {z}</span>
+        ))}
+        {anchorZones.length === 0 && <em className="ppp-mr-empty">solo pedido actual</em>}
+      </div>
+
+      <div className="ppp-mr-actions">
+        <button type="button" className="ppp-mr-calc" onClick={calc} disabled={!canCalc}>
+          {loading ? 'Calculando…' : 'Calcular ruta LAB'}
+        </button>
+        {anchorZones.length > 0 && (
+          <button type="button" className="ppp-mr-undo" onClick={removeLast}>Quitar última</button>
+        )}
+        <button type="button" className="ppp-mr-clear" onClick={clearAll}>Limpiar ruta</button>
+      </div>
+
+      {loading && (
+        <p className="ppp-mr-loading" role="status" aria-live="polite">⟳ Consultando backend read-only…</p>
+      )}
+      {!loading && warning && (
+        <p className="ppp-mr-warn" role="status">⚠ {warning}</p>
+      )}
+
+      {preview && !loading && (
+        <div className="ppp-mr-result">
+          {blockers.length > 0 && (
+            <ul className="ppp-mr-blockers">
+              {blockers.map((b, i) => (<li key={`mb-${i}`}>✕ {msgOf(b)}</li>))}
+            </ul>
+          )}
+          {pwarnings.length > 0 && (
+            <ul className="ppp-mr-warns">
+              {pwarnings.map((w, i) => (<li key={`mw-${i}`}>⚠ {msgOf(w)}</li>))}
+            </ul>
+          )}
+          {/* Renderer puro de la línea backend; si no hay timeline → fallback safe. */}
+          {rt ? <RouteTimeline routeTimeline={rt} /> : (
+            <p className="ppp-mr-fallback">Sin línea de ruta calculable (revisa paradas/zonas).</p>
+          )}
+          {preview.safety && (
+            <span className="ppp-mr-safe">
+              {preview.safety.readOnly ? 'read-only ✓' : 'read-only ?'}
+              {preview.safety.writes ? ' · writes!' : ' · sin escrituras'}
+            </span>
+          )}
+        </div>
+      )}
     </section>
   );
 };
@@ -895,6 +1070,36 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-rt-slip{ border:1px solid rgba(248,178,107,0.6); border-radius:6px; padding:2px 7px; color:#F8C16B; font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
 .ppp-rt-margin{ color:#9CA6AD; font-size:13px; font-weight:560; font-variant-numeric:tabular-nums; }
 .ppp-rt-warn{ margin:6px 0 0; color:#F8C16B; font-size:13px; font-weight:620; line-height:1.3; }
+.ppp-mr{ margin-top:18px; padding:18px 20px; border:1px solid rgba(183,124,255,0.34); border-radius:10px; background:linear-gradient(150deg,rgba(20,12,34,0.9),rgba(10,6,20,0.78)); }
+.ppp-mr-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.ppp-mr-head h3{ display:flex; align-items:center; gap:10px; margin:0; color:#F3F0FA; font-size:19px; font-weight:740; }
+.ppp-mr-pill{ border:1px solid rgba(183,124,255,0.4); border-radius:999px; padding:4px 10px; color:#C9A6FF; background:rgba(183,124,255,0.08); font-size:11px; font-weight:800; white-space:nowrap; }
+.ppp-mr-k{ color:#8E99A1; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; margin-right:4px; }
+.ppp-mr-current{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.ppp-mr-current strong{ color:#FFB07A; font-size:16px; font-weight:760; }
+.ppp-mr-picker{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.ppp-mr-chip{ min-width:42px; border:1px solid rgba(183,124,255,0.42); border-radius:8px; padding:7px 12px; color:#E7DEFB; background:rgba(183,124,255,0.10); font-size:14px; font-weight:750; cursor:pointer; }
+.ppp-mr-chip:hover{ background:rgba(183,124,255,0.20); }
+.ppp-mr-chip.is-on{ border-color:#C9A6FF; color:#0A0414; background:linear-gradient(120deg,#C9A6FF,#B77CFF); }
+.ppp-mr-lab{ border:1px solid rgba(183,124,255,0.5); border-radius:6px; padding:2px 7px; color:#C9A6FF; background:rgba(183,124,255,0.10); font-size:11px; font-weight:800; }
+.ppp-mr-seq{ display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px; margin-bottom:14px; }
+.ppp-mr-stop{ border:1px solid rgba(120,140,152,0.42); border-radius:6px; padding:3px 9px; color:#D8DEE2; font-size:13px; font-weight:650; }
+.ppp-mr-stop.is-current{ border-color:rgba(255,122,26,0.5); color:#FFB07A; background:rgba(255,122,26,0.10); }
+.ppp-mr-stop.is-anchor{ border-color:rgba(38,220,235,0.5); color:#7FE9F2; background:rgba(38,220,235,0.08); }
+.ppp-mr-empty{ color:#8E99A1; font-size:13px; }
+.ppp-mr-actions{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.ppp-mr-calc{ border:1px solid rgba(183,124,255,0.6); border-radius:8px; padding:9px 18px; color:#0A0414; background:linear-gradient(120deg,#C9A6FF,#B77CFF); font-size:14px; font-weight:800; cursor:pointer; }
+.ppp-mr-calc:disabled{ opacity:0.45; cursor:not-allowed; }
+.ppp-mr-undo,.ppp-mr-clear{ border:1px solid rgba(154,176,191,0.34); border-radius:8px; padding:9px 14px; color:#D6DDE2; background:rgba(255,255,255,0.04); font-size:13px; font-weight:700; cursor:pointer; }
+.ppp-mr-undo:hover,.ppp-mr-clear:hover{ background:rgba(255,255,255,0.09); }
+.ppp-mr-loading{ margin:12px 0 0; padding:8px 12px; border:1px solid rgba(38,220,235,0.42); border-radius:8px; color:#7FE9F2; background:rgba(38,220,235,0.08); font-size:13px; font-weight:650; }
+.ppp-mr-warn{ margin:8px 0 0; padding:8px 12px; border:1px solid rgba(240,178,48,0.42); border-radius:8px; color:#F8C16B; background:rgba(240,178,48,0.08); font-size:13px; font-weight:640; line-height:1.35; }
+.ppp-mr-result{ margin-top:6px; }
+.ppp-mr-blockers,.ppp-mr-warns{ margin:12px 0 0; padding-left:18px; font-size:14px; line-height:1.5; }
+.ppp-mr-blockers{ color:#F3A0A0; }
+.ppp-mr-warns{ color:#F8C16B; }
+.ppp-mr-fallback{ margin:12px 0 0; color:#9CA6AD; font-size:14px; font-weight:560; }
+.ppp-mr-safe{ display:inline-block; margin-top:10px; color:#86C9D2; font-size:12px; font-weight:700; }
 .ppp-top-grid{ display:grid; grid-template-columns:0.96fr 1.16fr; gap:20px; align-items:stretch; }
 .ppp-best-card,.ppp-map-card,.ppp-timeline-card,.ppp-notes{ border:1px solid rgba(83,112,131,0.48); border-radius:10px; background:linear-gradient(155deg,rgba(10,28,36,0.96),rgba(5,14,20,0.92)); box-shadow:inset 0 1px 0 rgba(255,255,255,0.03),0 18px 52px rgba(0,0,0,0.20); }
 .ppp-best-card{ min-height:410px; display:flex; flex-direction:column; padding:28px; border-color:rgba(57,207,94,0.38); }

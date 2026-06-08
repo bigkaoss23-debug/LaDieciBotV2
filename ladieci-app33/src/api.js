@@ -328,6 +328,19 @@ const api = {
     return proxyPost({ action: 'previewStrategicOpportunities', ...input });
   },
 
+  // Premium Planner LAB → manual giro route preview backend (read-only, contract
+  // "premium-planner-manual-giro-route-preview-v1"). Modalidad INVERSA del strategic:
+  // el operador propone la SECUENCIA de paradas (selectedStops, ej Q2→Q5) y el
+  // backend devuelve YA CALCULADO un route-timeline-v2 (ETA/slip/return/risk/
+  // operatorMessage). El frontend SOLO recoge los clics y dibuja la respuesta: NO
+  // calcula ETA/slip/capacity/status/risk, NO inventa horarios. Mismo patrón
+  // read-only de previewStrategicOpportunities (proxyPost, sin API key expuesta).
+  // NB: si la action no está live en el proxy → "unknown action"/internal_error:
+  // el llamante gestiona el fallback (warning safe, sin línea).
+  previewManualGiroRoute: function(input = {}) {
+    return proxyPost({ action: 'previewManualGiroRoute', ...input });
+  },
+
   // Crea ordine. THROW se Railway non conferma la creazione con un id valido.
   // Il chiamante DEVE wrappare in try/catch e fare rollback dello state ottimistico.
   // `data.client_req_id` (UUID) abilita l'idempotency: retry sicuri senza duplicati.

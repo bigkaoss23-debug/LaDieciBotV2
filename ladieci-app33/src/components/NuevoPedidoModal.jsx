@@ -225,6 +225,14 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // (o apertura/chiusura) può aggiornare preview/warning/loading.
   const [strategicLoading, setStrategicLoading] = useState(false);
   const strategicReqIdRef = useRef(0);
+  // Ruta manual LAB → previewManualGiroRoute (read-only). El operador propone la
+  // secuencia de paradas en el popup; aquí guardamos la preview backend + warning +
+  // loading con el MISMO guard anti-stale del strategic. Nada de esto se usa para
+  // escribir/guardar: solo render. null = sin ruta manual calculada todavía.
+  const [manualRoutePreview, setManualRoutePreview] = useState(null);
+  const [manualRouteWarning, setManualRouteWarning] = useState("");
+  const [manualRouteLoading, setManualRouteLoading] = useState(false);
+  const manualReqIdRef = useRef(0);
   // Override esplicito: l'operatore ha cliccato "Forzar HORA" ignorando la proposta
   const [forzaHora, setForzaHora] = useState(false);
   const [yaPagedo,        setYaPagedo]        = useState(false);
@@ -795,7 +803,92 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const closePlannerLab = () => {
     strategicReqIdRef.current++;
     setStrategicLoading(false);
+    // Invalida también la ruta manual en vuelo y limpia su preview/warning.
+    manualReqIdRef.current++;
+    setManualRouteLoading(false);
+    setManualRoutePreview(null);
+    setManualRouteWarning("");
     setShowPlannerLabPopup(false);
+  };
+
+  // ── Ruta manual LAB — calcula la routeTimeline de una secuencia propuesta ────
+  // `selectedStops` llega YA construido por el popup (pedido actual + anclas
+  // clicadas, en orden). Aquí SOLO validamos (hora + zona resueltas), añadimos el
+  // currentOrderDraft no-PII y llamamos al backend read-only. startTime = `hora`
+  // del draft (NO Date.now). NO crea/modifica ordenes, NO toca `hora`. La respuesta
+  // se usa solo para render. Guard anti-stale: solo la última petición/cierre vale.
+  const calcManualRoute = async (selectedStops) => {
+    const reqId = ++manualReqIdRef.current;
+    if (!hora) {
+      setManualRouteLoading(false);
+      setManualRoutePreview(null);
+      setManualRouteWarning("startTime mancante (hora no elegida) · backend NO llamado");
+      return;
+    }
+    // Zona del pedido actual: la del stop current_order que arma el popup (puede
+    // ser la zona resuelta real O una elegida a mano en modo LAB, sin geo); si no,
+    // cae en la zona ya resuelta del draft. NO se resuelve geo aquí.
+    const currentStop = Array.isArray(selectedStops)
+      ? selectedStops.find((s) => s && s.type === "current_order")
+      : null;
+    const curZone = (currentStop && currentStop.zone) || zonaInfo?.zona?.id || null;
+    if (!curZone) {
+      setManualRouteLoading(false);
+      setManualRoutePreview(null);
+      setManualRouteWarning("Zona del pedido actual sin resolver · backend NO llamado");
+      return;
+    }
+    if (!Array.isArray(selectedStops) || selectedStops.length === 0) {
+      setManualRoutePreview(null);
+      setManualRouteWarning("Sin paradas seleccionadas");
+      return;
+    }
+    setManualRouteWarning("");
+    setManualRoutePreview(null);
+    setManualRouteLoading(true);
+    const pizzasCount = items.reduce((s, it) => s + (parseInt(it.q) || 1), 0);
+    const input = {
+      startTime: hora,
+      currentOrderDraft: {
+        tipoConsegna,
+        zone: curZone,
+        hora,
+        horaFlexible: !forzaHora,
+        pizzas: pizzasCount,
+      },
+      selectedStops,
+      includeReturn: true,
+      includeCrossZone: true,
+    };
+    try {
+      const res = await api.previewManualGiroRoute(input);
+      if (reqId !== manualReqIdRef.current) return;
+      if (res && res.contract === "premium-planner-manual-giro-route-preview-v1") {
+        setManualRoutePreview(res);
+        setManualRouteWarning("");
+      } else if (res && res._status === 401) {
+        setManualRoutePreview(null);
+        setManualRouteWarning("Sesión expirada o autorización requerida");
+      } else {
+        setManualRoutePreview(null);
+        setManualRouteWarning("Backend ruta manual no disponible (contract inválido / unknown action)");
+      }
+    } catch (e) {
+      if (reqId !== manualReqIdRef.current) return;
+      setManualRoutePreview(null);
+      setManualRouteWarning("Backend ruta manual falló (internal_error / red)");
+      console.warn("[previewManualGiroRoute] failed:", e?.message || e);
+    } finally {
+      if (reqId === manualReqIdRef.current) setManualRouteLoading(false);
+    }
+  };
+
+  // Limpia la preview manual (botón "Limpiar ruta" en el popup) e invalida vuelos.
+  const clearManualRoute = () => {
+    manualReqIdRef.current++;
+    setManualRouteLoading(false);
+    setManualRoutePreview(null);
+    setManualRouteWarning("");
   };
 
   useEffect(() => {
@@ -1448,6 +1541,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           data={strategicPreview}
           labWarning={strategicWarning}
           loading={strategicLoading}
+          manualCurrentZone={zonaInfo?.zona?.id || null}
+          manualStartTime={hora || null}
+          manualRoutePreview={manualRoutePreview}
+          manualRouteLoading={manualRouteLoading}
+          manualRouteWarning={manualRouteWarning}
+          onCalcManualRoute={calcManualRoute}
+          onClearManualRoute={clearManualRoute}
         />
       )}
 
