@@ -216,6 +216,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [clienteAbitual,  setClienteAbitual]  = useState(null);
   const [showNotaGen,     setShowNotaGen]     = useState(false);
   const [showPlannerLabPopup, setShowPlannerLabPopup] = useState(false);
+  // Premium Planner LAB → strategic preview backend (read-only). Si valorizza SOLO
+  // al click esplicito del botón Premium; null = el popup cae en fixture mock LAB.
+  const [strategicPreview, setStrategicPreview] = useState(null);
+  const [strategicWarning, setStrategicWarning] = useState("");
   // Override esplicito: l'operatore ha cliccato "Forzar HORA" ignorando la proposta
   const [forzaHora, setForzaHora] = useState(false);
   const [yaPagedo,        setYaPagedo]        = useState(false);
@@ -726,6 +730,49 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     return () => { cancelled = true; clearTimeout(t); setBackendTimingLoading(false); };
   }, [visible, tipoConsegna, direccion, hora, zonaManuale]); // eslint-disable-line
 
+  // ── Premium Planner LAB — apertura ESPLICITA del popup (mai automatica) ──────
+  // startTime = `hora` GIÀ scelta nel draft (no Date.now, no orologio client).
+  // Se manca hora → NON chiamiamo il backend: apriamo subito col mock + warning.
+  // currentOrderDraft: solo campi presentazionali grezzi, NESSUNA PII raw (zona/
+  // hora/pizzas bastano al planner — vedi contract §13). Read-only: nessun ordine
+  // creato/modificato. La risposta NON viene mai usata per scrivere/salvare.
+  const openPlannerLab = async () => {
+    setShowPlannerLabPopup(true);
+    if (!hora) {
+      setStrategicPreview(null);
+      setStrategicWarning("startTime mancante (hora no elegida) · backend preview NO llamada · mostrando mock LAB");
+      return;
+    }
+    setStrategicWarning("");
+    setStrategicPreview(null);
+    const pizzasCount = items.reduce((s, it) => s + (parseInt(it.q) || 1), 0);
+    const input = {
+      startTime: hora,
+      currentOrderDraft: {
+        tipoConsegna,
+        zone: zonaInfo?.zona?.id || null,   // zona ya resuelta; null si aún no
+        hora,
+        horaFlexible: !forzaHora,
+        pizzas: pizzasCount,
+      },
+    };
+    try {
+      const res = await api.previewStrategicOpportunities(input);
+      // Solo contract strategic válido alimenta el render backend-readonly.
+      if (res && res.contract === "premium-planner-strategic-preview-v1") {
+        setStrategicPreview(res);
+        setStrategicWarning("");
+      } else {
+        setStrategicPreview(null);
+        setStrategicWarning("Backend preview no disponible (contract inválido / unknown action) · mostrando mock LAB");
+      }
+    } catch (e) {
+      setStrategicPreview(null);
+      setStrategicWarning("Backend preview falló (internal_error / red) · mostrando mock LAB");
+      console.warn("[previewStrategicOpportunities] failed:", e?.message || e);
+    }
+  };
+
   useEffect(() => {
     if (!visible || tipoConsegna !== "DOMICILIO" || !backendTiming) return;
     if (horaTouchedByOperator) return;
@@ -984,7 +1031,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   hora={hora}
                   setHoraFromOperator={setHoraFromOperator}
                   deliveryStatus={deliveryStatus}
-                  onOpenPlannerLab={() => setShowPlannerLabPopup(true)}
+                  onOpenPlannerLab={openPlannerLab}
                 />
               </div>
 
@@ -1371,7 +1418,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       {/* Legacy delivery popup removed from render; PremiumPlannerPopup handles LAB proposals. */}
 
       {showPlannerLabPopup && (
-        <PremiumPlannerPopup onClose={() => setShowPlannerLabPopup(false)} />
+        <PremiumPlannerPopup
+          onClose={() => setShowPlannerLabPopup(false)}
+          data={strategicPreview}
+          labWarning={strategicWarning}
+        />
       )}
 
       {/* ── ItemPickerModal ────────────────────────────────────────────── */}

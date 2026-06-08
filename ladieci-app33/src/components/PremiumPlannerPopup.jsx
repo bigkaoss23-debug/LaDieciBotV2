@@ -228,9 +228,79 @@ const labLog = (eventName, payload) => {
   console.debug('[PremiumPlannerPopup LAB]', eventName, payload);
 };
 
-const PremiumPlannerPopup = ({ onClose }) => {
-  const data = PREMIUM_PLANNER_LAB_DATA;
-  const opportunities = data.opportunities;
+// ── Adapter PRESENTAZIONALE puro: contract backend → shape del renderer ───────
+// REGOLA renderer-only: qui si fanno SOLO lookup di label, join di routeZones e
+// pass-through di campi GIÀ CALCOLATI dal backend (eta/slip/status/capacity/
+// warning). NON si calcola ETA, ritardi, slip, capacity, compatibilità,
+// zone/channel, route impact, status o warning. Niente Date.now, niente parsing
+// orario, niente sottrazioni di tempo.
+const STRATEGIC_CONTRACT = 'premium-planner-strategic-preview-v1';
+
+// Icona presentazionale per stato (lookup, non calcolo).
+const ACTION_LABEL_BY_STATUS = { compatible: '✓', ajuste: '◷', no_recomendado: '⚠', lleno: '✕' };
+const actionLabelFor = (opp) => {
+  if (opp.kind === 'crear' && !opp.blocked) return '↗';
+  return ACTION_LABEL_BY_STATUS[opp.status] || '•';
+};
+// "time" della riga = ETA GIÀ CALCOLATO dell'ultima parada (solo lettura).
+const lastEtaOf = (opp) => {
+  const etas = Array.isArray(opp.routeEtas) ? opp.routeEtas : [];
+  return etas.length ? (etas[etas.length - 1].eta || '') : '';
+};
+const zoneLabelOf = (opp) => (Array.isArray(opp.routeZones) ? opp.routeZones.join('+') : '');
+
+// Aggiunge SOLO i 3 campi presentazionali mancanti; il resto è pass-through.
+const adaptOpportunity = (opp) => ({
+  ...opp,
+  time: opp.time || lastEtaOf(opp),
+  zoneLabel: opp.zoneLabel || zoneLabelOf(opp),
+  actionLabel: opp.actionLabel || actionLabelFor(opp),
+});
+
+// Contract strategic → oggetto con la stessa shape di PREMIUM_PLANNER_LAB_DATA
+// (+ extra read-only). bestProposal SOLO da firstAvailable/bestProposal reali:
+// niente salidaHorno/driverStatus inventati (non esistono nel contract).
+const adaptStrategicContract = (contract) => {
+  const opportunities = (Array.isArray(contract.opportunities) ? contract.opportunities : []).map(adaptOpportunity);
+  const fa = contract.firstAvailable || null;
+  const bp = contract.bestProposal || null;
+  const bpFirstEta = bp && Array.isArray(bp.routeEtas) && bp.routeEtas[0] ? bp.routeEtas[0].eta : null;
+  const bestProposal = {
+    id: (bp && bp.id) || 'best-strategic',
+    label: 'Mejor propuesta',
+    entrega: (fa && fa.eta) || bpFirstEta || null,
+    status: (fa && fa.status) || (bp && bp.status) || null,
+    routeLabel: (bp && bp.title) || 'Directa',
+    severity: (bp && bp.severity) || 'ok',
+    ctaLabel: 'Aplicar propuesta',
+    // SIN salidaHorno / driverStatus: no están en el contract strategic.
+  };
+  const notesFromContract = [
+    ...((contract.warnings || []).map((w) => w && w.message).filter(Boolean)),
+    ...((contract.blockers || []).map((b) => b && b.message).filter(Boolean)),
+  ];
+  return {
+    contract: contract.contract,
+    mode: contract.mode || 'read_only',
+    source: 'backend-readonly',
+    bestProposal,
+    zoneMap: PREMIUM_PLANNER_LAB_DATA.zoneMap, // config estática presentacional
+    opportunities,
+    plannerNotes: notesFromContract.length ? notesFromContract : PREMIUM_PLANNER_LAB_DATA.plannerNotes,
+    firstAvailable: fa,
+    serviceLine: Array.isArray(contract.serviceLine) ? contract.serviceLine : [],
+    warnings: Array.isArray(contract.warnings) ? contract.warnings : [],
+    blockers: Array.isArray(contract.blockers) ? contract.blockers : [],
+    safety: contract.safety || null,
+  };
+};
+
+const PremiumPlannerPopup = ({ onClose, data = null, labWarning = '' }) => {
+  // Fuente de datos: contract backend read-only si válido, si no fixture mock LAB.
+  const isStrategic = !!(data && data.contract === STRATEGIC_CONTRACT);
+  const view = isStrategic ? adaptStrategicContract(data) : PREMIUM_PLANNER_LAB_DATA;
+  const opportunities = Array.isArray(view.opportunities) ? view.opportunities : [];
+  const best = view.bestProposal || {};
   const [selectedOppId, setSelectedOppId] = useState(opportunities[0]?.id || null);
 
   const selectedOpp =
@@ -242,8 +312,8 @@ const PremiumPlannerPopup = ({ onClose }) => {
   };
 
   const applyBest = () => {
-    // LAB: no API, no save — solo log local.
-    labLog('apply-best-local', { id: data.bestProposal.id });
+    // LAB: no API, no save, no confirm — solo log local (no-op).
+    labLog('apply-best-local', { id: best.id, source: view.source });
   };
 
   return (
@@ -257,30 +327,41 @@ const PremiumPlannerPopup = ({ onClose }) => {
             <span>✦</span>
           </div>
           <h2>Propuestas de entrega</h2>
-          <span className="ppp-lab-pill">LAB · {data.source}</span>
+          <span className="ppp-lab-pill">LAB · {view.source}</span>
           <button type="button" className="ppp-close" onClick={onClose} aria-label="Cerrar propuestas">×</button>
         </header>
+
+        {labWarning && (
+          <p className="ppp-lab-warn" role="status">⚠ {labWarning}</p>
+        )}
 
         <div className="ppp-top-grid">
           <section className="ppp-best-card" aria-label="Mejor propuesta">
             <div className="ppp-best-label">
               <span>✦</span>
-              <strong>{data.bestProposal.label}</strong>
+              <strong>{best.label || 'Mejor propuesta'}</strong>
             </div>
-            <h3>Entrega {data.bestProposal.entrega}</h3>
-            <p className="ppp-horno">Salida horno {data.bestProposal.salidaHorno}</p>
-            <p className="ppp-driver"><span>▣</span> {data.bestProposal.driverStatus}</p>
-            <p className="ppp-type">{data.bestProposal.routeLabel}</p>
+            <h3>Entrega {best.entrega || '—'}</h3>
+            {/* salidaHorno/driverStatus solo si la fuente los provee (mock).
+                El contract strategic NO los tiene → no se inventan. */}
+            {best.salidaHorno && <p className="ppp-horno">Salida horno {best.salidaHorno}</p>}
+            {best.driverStatus && <p className="ppp-driver"><span>▣</span> {best.driverStatus}</p>}
+            {best.status && <p className="ppp-type">Estado: {statusLabels[best.status] || best.status}</p>}
+            {best.routeLabel && <p className="ppp-type">{best.routeLabel}</p>}
 
             {selectedOpp && <OpportunityPreview opp={selectedOpp} />}
 
             <button type="button" className="ppp-apply" onClick={applyBest}>
-              {data.bestProposal.ctaLabel}
+              {best.ctaLabel || 'Aplicar propuesta'}
             </button>
           </section>
 
-          <MiniZoneMap zoneMap={data.zoneMap} opp={selectedOpp} />
+          <MiniZoneMap zoneMap={view.zoneMap} opp={selectedOpp} />
         </div>
+
+        {view.source === 'backend-readonly' && (
+          <BackendSummary view={view} />
+        )}
 
         <section className="ppp-quick-section">
           <h3>Otras opciones rápidas</h3>
@@ -343,7 +424,7 @@ const PremiumPlannerPopup = ({ onClose }) => {
         <section className="ppp-notes" aria-label="Notas del planner">
           <h3><span>♧</span> Notas del planner</h3>
           <ul>
-            {data.plannerNotes.map(note => (
+            {view.plannerNotes.map(note => (
               <li key={note}>{note}</li>
             ))}
           </ul>
@@ -462,6 +543,78 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
   );
 };
 
+// BackendSummary — render-only del contract strategic. SOLO pass-through di campi
+// già calcolati dal backend (firstAvailable / serviceLine / warnings / blockers /
+// safety). Niente aritmetica, niente Date.now, niente derivazioni: solo lookup di
+// label presentazionale e lettura difensiva.
+const msgOf = (x) => (typeof x === 'string' ? x : (x && (x.message || x.label || x.text)) || '');
+const serviceLineLabelOf = (e) => {
+  if (typeof e === 'string') return e;
+  if (!e) return '';
+  const when = e.hora || e.eta || e.time || '';
+  const zone = e.zone || e.zoneLabel || '';
+  const label = e.label || e.title || '';
+  return [when, zone, label].filter(Boolean).join(' · ');
+};
+
+const BackendSummary = ({ view }) => {
+  const fa = view.firstAvailable || null;
+  const serviceLine = Array.isArray(view.serviceLine) ? view.serviceLine : [];
+  const warnings = Array.isArray(view.warnings) ? view.warnings : [];
+  const blockers = Array.isArray(view.blockers) ? view.blockers : [];
+  const safety = view.safety || null;
+  const faStatus = fa && fa.status ? (statusLabels[fa.status] || fa.status) : null;
+
+  return (
+    <section className="ppp-backend-summary" aria-label="Resumen backend read-only">
+      <header className="ppp-bs-head">
+        <span className="ppp-bs-badge">backend · read-only</span>
+        {safety && (
+          <span className="ppp-bs-safe">
+            {safety.readOnly ? 'read-only ✓' : 'read-only ?'}
+            {safety.writes ? ' · writes!' : ' · sin escrituras'}
+          </span>
+        )}
+      </header>
+      {fa && (fa.eta || faStatus) && (
+        <p className="ppp-bs-first">
+          <strong>Primera disponible:</strong> {fa.eta || '—'}{faStatus ? ` · ${faStatus}` : ''}
+        </p>
+      )}
+      {serviceLine.length > 0 && (
+        <div className="ppp-bs-block">
+          <h4>Línea de servicio</h4>
+          <ul>
+            {serviceLine.map((e, i) => (
+              <li key={`sl-${i}`}>{serviceLineLabelOf(e)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {warnings.length > 0 && (
+        <div className="ppp-bs-block ppp-bs-warn">
+          <h4>Avisos</h4>
+          <ul>
+            {warnings.map((w, i) => (
+              <li key={`w-${i}`}>⚠ {msgOf(w)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {blockers.length > 0 && (
+        <div className="ppp-bs-block ppp-bs-err">
+          <h4>Bloqueos</h4>
+          <ul>
+            {blockers.map((b, i) => (
+              <li key={`b-${i}`}>✕ {msgOf(b)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+};
+
 const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-overlay{ position:fixed; inset:0; z-index:12000; display:flex; align-items:center; justify-content:center; padding:28px; background:rgba(0,0,0,0.72); backdrop-filter:blur(8px); }
 .ppp-shell{ width:min(1040px,100%); max-height:92vh; overflow:auto; padding:28px; border:1px solid rgba(77,103,123,0.55); border-radius:18px; color:#F7F8FA; background:radial-gradient(circle at 16% 8%,rgba(13,78,62,0.22),transparent 28%),linear-gradient(145deg,#071018 0%,#0A151B 52%,#081116 100%); box-shadow:0 26px 90px rgba(0,0,0,0.78), inset 0 1px 0 rgba(255,255,255,0.04); font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
@@ -476,6 +629,18 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-lab-pill{ border:1px solid rgba(88,239,117,0.22); border-radius:999px; padding:7px 10px; color:#86F59A; background:rgba(88,239,117,0.07); font-size:11px; font-weight:800; white-space:nowrap; }
 .ppp-close{ width:46px; height:46px; display:grid; place-items:center; border:1px solid rgba(154,176,191,0.30); border-radius:999px; color:#EFF5F6; background:rgba(255,255,255,0.035); font-size:30px; line-height:1; font-weight:250; cursor:pointer; }
 .ppp-close:hover{ background:rgba(255,255,255,0.08); }
+.ppp-lab-warn{ margin:0 0 16px; padding:10px 14px; border:1px solid rgba(240,178,48,0.42); border-radius:8px; color:#F8C16B; background:rgba(240,178,48,0.08); font-size:14px; font-weight:650; line-height:1.35; }
+.ppp-backend-summary{ margin-top:18px; padding:16px 18px; border:1px solid rgba(38,220,235,0.30); border-radius:10px; background:rgba(38,220,235,0.05); }
+.ppp-bs-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.ppp-bs-badge{ border:1px solid rgba(38,220,235,0.42); border-radius:999px; padding:5px 10px; color:#7FE9F2; background:rgba(38,220,235,0.08); font-size:11px; font-weight:800; letter-spacing:0.3px; }
+.ppp-bs-safe{ color:#86C9D2; font-size:12px; font-weight:700; }
+.ppp-bs-first{ margin:0 0 10px; color:#E6EEF0; font-size:16px; font-weight:600; }
+.ppp-bs-first strong{ color:#9CA6AD; font-weight:700; }
+.ppp-bs-block{ margin-top:10px; }
+.ppp-bs-block h4{ margin:0 0 6px; color:#B7BCC2; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; }
+.ppp-bs-block ul{ margin:0; padding-left:18px; color:#C7CDD1; font-size:14px; line-height:1.5; }
+.ppp-bs-warn ul{ color:#F8C16B; }
+.ppp-bs-err ul{ color:#F3A0A0; }
 .ppp-top-grid{ display:grid; grid-template-columns:0.96fr 1.16fr; gap:20px; align-items:stretch; }
 .ppp-best-card,.ppp-map-card,.ppp-timeline-card,.ppp-notes{ border:1px solid rgba(83,112,131,0.48); border-radius:10px; background:linear-gradient(155deg,rgba(10,28,36,0.96),rgba(5,14,20,0.92)); box-shadow:inset 0 1px 0 rgba(255,255,255,0.03),0 18px 52px rgba(0,0,0,0.20); }
 .ppp-best-card{ min-height:410px; display:flex; flex-direction:column; padding:28px; border-color:rgba(57,207,94,0.38); }

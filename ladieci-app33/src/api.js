@@ -317,6 +317,17 @@ const api = {
     return proxyPost({ action: 'previewOrderPlanner', ...input });
   },
 
+  // Premium Planner LAB → strategic preview backend (read-only, contract
+  // "premium-planner-strategic-preview-v1"). Stesso pattern read-only di
+  // previewOrderPlanner: il frontend MOSTRA il contract (opportunities di giro,
+  // firstAvailable, bestProposal, serviceLine, warnings, blockers), NON calcola
+  // ETA/slip/capacity/compatibilità. NB: l'action backend potrebbe non essere
+  // ancora live sul proxy di produzione → in tal caso risponde "unknown action"
+  // / internal_error: il chiamante deve gestire il fallback (popup mock LAB).
+  previewStrategicOpportunities: function(input = {}) {
+    return proxyPost({ action: 'previewStrategicOpportunities', ...input });
+  },
+
   // Crea ordine. THROW se Railway non conferma la creazione con un id valido.
   // Il chiamante DEVE wrappare in try/catch e fare rollback dello state ottimistico.
   // `data.client_req_id` (UUID) abilita l'idempotency: retry sicuri senza duplicati.
