@@ -1,11 +1,151 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { C, genId, INGREDIENTI, calcTotale, DELIVERY_FEE, aplicarDescuento } from '../constants';
 import { api, sb } from '../api';
-import { assegnaZonaDaKeyword, suggerisciOrario, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, risolviTempoAndata, tempoAndata, proposeForNewOrder, BUFFER_OPS_DRIVER_MIN } from '../zones';
+import { assegnaZonaDaKeyword, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, BUFFER_OPS_DRIVER_MIN } from '../zones';
+// Migrazione planner-preview (2026-06-07): rimossi gli import di scheduling LOCALE
+// (proposeForNewOrder / suggerisciOrario / risolviTempoAndata / tempoAndata). Il
+// frontend Premium NON calcola disponibilità/lead-time/giri: la verità arriva dal
+// backend (previewOrderTiming oggi, previewOrderPlanner appena deployato).
 import ItemPickerModal from './ItemPickerModal';
+import PremiumPlannerPopup from './PremiumPlannerPopup';
+import DireccionInlinePanel from './DireccionInlinePanel';
 import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
 import { getKitchenCapacityStatus } from '../core/kitchen/capacity';
+
+// ──────────────────────────────────────────────────────────────────────────
+// Foglio di stile scoped (.npfs) — "visual foundation" allineata al mockup
+// __mockups__/NuevoPedidoModalCompactMockup.css. Palette calda oro/avana,
+// desktop-first con collasso mobile <900px. Scoped sotto .npfs per non
+// toccare la palette globale C (condivisa con Cocina/Entregas).
+// ──────────────────────────────────────────────────────────────────────────
+const NPFS_CSS = `
+.npfs{ font-family:'Satoshi',Inter,-apple-system,system-ui,sans-serif; color:#f7f0df; }
+.npfs *{ box-sizing:border-box; }
+
+/* Header */
+.npfs .np-header{ display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px 24px; border-bottom:1px solid rgba(208,184,145,0.22); flex-shrink:0; }
+.npfs .np-title-row{ display:flex; align-items:center; gap:24px; min-width:0; flex-wrap:wrap; }
+.npfs .np-header h1{ margin:0; color:#fbf6eb; font-size:32px; font-weight:900; line-height:1.05; letter-spacing:0; }
+.npfs .np-kicker{ margin:0; color:#ffc93d; font-size:17px; font-weight:900; white-space:nowrap; }
+.npfs .np-close{ width:52px; height:52px; border:1px solid rgba(246,230,196,0.18); border-radius:10px; color:#fff8ed; background:rgba(255,255,255,0.03); font-size:30px; line-height:1; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.npfs .np-close:hover{ background:rgba(255,255,255,0.07); }
+
+/* Fixed top region (cards + banner + warnings) */
+.npfs .np-fixedtop{ flex-shrink:0; display:flex; flex-direction:column; gap:12px; padding:14px 24px; }
+.npfs .np-top{ display:grid; grid-template-columns:0.95fr 1.05fr; gap:14px; }
+.npfs .np-panel{ min-width:0; border:1px solid rgba(208,184,145,0.22); border-radius:10px; padding:18px; background:linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)), #11100e; display:flex; flex-direction:column; gap:0; }
+.npfs .np-panel h2{ display:flex; align-items:center; gap:10px; margin:0 0 16px; color:#bcae93; font-size:15px; font-weight:900; text-transform:uppercase; letter-spacing:.5px; }
+.npfs .np-customer-panel.is-ok{ border-color:rgba(88,210,125,0.34); }
+.npfs .np-customer-panel h2::before{ content:"●"; color:#d7a84b; font-size:18px; }
+.npfs .np-address-panel h2::before{ content:"◆"; color:#d7a84b; font-size:16px; }
+
+/* Customer grid */
+.npfs .np-customer-grid{ display:grid; grid-template-columns:minmax(0,1fr) 60px; gap:14px; }
+.npfs .np-input-like{ min-width:0; min-height:60px; border:1px solid rgba(208,184,145,0.22); border-radius:10px; color:#fff7e8; background:rgba(255,255,255,0.025); display:flex; align-items:center; gap:12px; padding:0 16px; text-align:left; }
+.npfs .np-input-like input{ flex:1; min-width:0; background:transparent; border:none; outline:none; color:#fff7e8; font-family:inherit; font-size:23px; font-weight:800; padding:0; }
+.npfs .np-input-like input::placeholder{ color:rgba(255,247,232,0.4); font-weight:700; }
+.npfs .np-name-field{ position:relative; }
+.npfs .np-phone-field .np-phone-ic{ color:#d8cbb5; font-size:22px; flex-shrink:0; }
+.npfs .np-icon-action{ min-height:60px; border:1px solid rgba(208,184,145,0.22); border-radius:10px; background:rgba(255,255,255,0.025); color:#fff4dc; display:grid; place-items:center; font-size:22px; font-weight:900; cursor:pointer; }
+.npfs .np-whatsapp{ min-height:60px; border:1px solid rgba(74,222,128,0.35); border-radius:10px; color:#fff; background:linear-gradient(180deg,#37b968,#159447); display:grid; place-items:center; font-size:24px; cursor:pointer; }
+.npfs .np-ok{ flex:0 0 auto; width:28px; height:28px; display:grid; place-items:center; border-radius:999px; color:#062d16; background:#58d27d; font-size:17px; font-weight:900; }
+.npfs .np-customer-flags{ width:fit-content; max-width:100%; display:flex; align-items:center; margin-top:14px; border:1px solid rgba(208,184,145,0.20); border-radius:10px; overflow:hidden; color:#efe4cc; background:rgba(255,255,255,0.025); font-weight:900; font-size:13px; }
+.npfs .np-customer-flags span{ padding:11px 16px; white-space:nowrap; }
+.npfs .np-customer-flags span + span{ border-left:1px solid rgba(208,184,145,0.28); }
+.npfs .np-customer-flags span:first-child{ color:#ffd13d; }
+
+/* Address panel */
+.npfs .np-address-input{ width:100%; }
+.npfs .np-address-input strong{ overflow:hidden; font-size:23px; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; font-weight:900; }
+.npfs .np-address-input .np-address-text{ flex:1; min-width:0; font-size:23px; line-height:1.15; font-weight:900; color:#fff7ea; background:transparent; border:none; outline:none; padding:0; }
+.npfs .np-address-input .np-address-text::placeholder{ color:rgba(255,247,234,0.45); font-weight:800; }
+.npfs .np-address-note{ width:100%; margin-top:8px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:9px 14px; font-size:13px; box-sizing:border-box; outline:none; }
+.npfs .np-address-ic{ font-size:20px; flex-shrink:0; }
+.npfs .np-delivery-line{ display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; color:#e8dfd0; font-size:14px; font-weight:900; }
+.npfs .np-delivery-line span{ display:inline-flex; align-items:center; gap:5px; border:1px solid rgba(208,184,145,0.18); border-radius:999px; padding:7px 12px; background:rgba(255,255,255,0.04); white-space:nowrap; }
+.npfs .np-delivery-cards{ display:grid; grid-template-columns:1fr 1fr minmax(140px,auto); gap:12px; margin-top:16px; }
+.npfs .np-dcard{ min-height:64px; border:1px solid rgba(208,184,145,0.18); border-radius:8px; padding:10px 14px; color:#f8f0df; background:rgba(255,255,255,0.025); display:flex; flex-direction:column; justify-content:center; }
+.npfs .np-dcard small{ display:block; margin-bottom:3px; color:#c6b6a0; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; }
+.npfs .np-dcard strong{ color:#fff3dc; font-size:22px; font-weight:900; }
+.npfs .np-dcard input[type=time]{ background:transparent; border:none; outline:none; color:#fff3dc; font-family:'DM Mono',monospace; font-size:22px; font-weight:900; width:100%; padding:0; }
+.npfs .np-dcard.is-deliv input[type=time]{ color:#7ee2a0; }
+.npfs .np-recalc{ min-height:64px; border:1px solid rgba(208,184,145,0.18); border-radius:8px; padding:10px 14px; color:#fff8ee; background:rgba(255,255,255,0.02); font-size:15px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; }
+.npfs .np-recalc:hover{ background:rgba(255,255,255,0.05); }
+
+/* Products head */
+.npfs .np-products-head{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 24px; flex-shrink:0; }
+.npfs .np-products-head > div{ display:flex; align-items:center; gap:14px; min-width:0; }
+.npfs .np-products-head h2{ margin:0; color:#fff7ed; font-size:23px; font-weight:900; text-transform:uppercase; }
+.npfs .np-count-pill{ border:1px solid rgba(208,184,145,0.16); border-radius:999px; padding:6px 12px; color:#cfc3ae; background:rgba(255,255,255,0.025); font-weight:900; font-size:13px; white-space:nowrap; }
+.npfs .np-gold-btn{ min-height:46px; border:1px solid rgba(246,189,59,0.36); border-radius:8px; padding:0 18px; color:#111; background:linear-gradient(180deg,#ffd866,#f4b82f); font-weight:900; font-size:16px; cursor:pointer; flex-shrink:0; }
+.npfs .np-gold-btn:hover{ filter:brightness(1.05); }
+
+/* Products list */
+.npfs .np-products{ flex:1; min-height:0; overflow-y:auto; padding:0 24px 10px; -webkit-overflow-scrolling:touch; scrollbar-color:rgba(208,184,145,0.45) transparent; }
+.npfs .np-row{ min-height:66px; display:grid; grid-template-columns:44px minmax(120px,0.7fr) minmax(200px,1.6fr) 92px auto; align-items:center; gap:16px; border:1px solid rgba(208,184,145,0.16); border-radius:8px; margin-bottom:8px; padding:10px 16px; background:linear-gradient(90deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)), #15130f; cursor:pointer; }
+.npfs .np-index{ width:44px; height:44px; display:grid; place-items:center; border:1px solid rgba(208,184,145,0.24); border-radius:8px; color:#fff7e7; font-size:20px; font-weight:900; }
+.npfs .np-product-name{ min-width:0; }
+.npfs .np-product-name strong{ display:block; overflow:hidden; color:#fff7ea; font-size:20px; font-weight:900; line-height:1.1; text-overflow:ellipsis; white-space:nowrap; }
+.npfs .np-note{ margin:0; overflow:hidden; color:#ffd439; font-size:16px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
+.npfs .np-note-muted{ color:#8f887b; }
+.npfs .np-price{ color:#fff8ec; font-size:18px; font-weight:900; text-align:right; font-family:'DM Mono',monospace; }
+.npfs .np-actions{ display:grid; grid-template-columns:repeat(5,auto); align-items:center; gap:10px; }
+.npfs .np-actions button, .npfs .np-actions .np-qty{ width:46px; height:44px; display:grid; place-items:center; border:1px solid rgba(208,184,145,0.20); border-radius:8px; color:#fff5e4; background:rgba(255,255,255,0.035); font-size:20px; font-weight:900; cursor:pointer; padding:0; }
+.npfs .np-actions .np-qty{ background:rgba(0,0,0,0.28); font-family:'DM Mono',monospace; cursor:default; }
+.npfs .np-actions .np-danger{ border-color:rgba(239,68,68,0.35); color:#fff; background:rgba(127,29,29,0.72); }
+.npfs .np-empty{ height:100%; min-height:220px; display:grid; place-content:center; justify-items:center; gap:12px; color:#d3c5ae; text-align:center; }
+
+/* Footer */
+.npfs .np-footer{ display:grid; grid-template-columns:minmax(280px,1fr) auto auto minmax(210px,auto); align-items:center; gap:20px; padding:14px 24px; border-top:1px solid rgba(208,184,145,0.28); background:rgba(12,11,9,0.96); flex-shrink:0; }
+.npfs .np-summary{ display:flex; align-items:baseline; gap:18px; flex-wrap:wrap; min-width:0; }
+.npfs .np-summary .np-items{ color:#efe4d0; font-size:22px; font-weight:900; }
+.npfs .np-summary .np-total{ color:#fff3df; font-size:30px; font-weight:900; font-family:'DM Mono',monospace; }
+.npfs .np-summary small{ color:#bcb09f; font-size:14px; font-weight:800; }
+.npfs .np-confirm{ min-height:56px; border:1px solid rgba(74,222,128,0.36); border-radius:10px; color:#effff3; background:linear-gradient(180deg,#2eb45e,#218f4d); font-size:20px; font-weight:900; cursor:pointer; padding:0 20px; white-space:nowrap; }
+.npfs .np-confirm:disabled{ color:#8a8276; background:#27231d; border-color:rgba(208,184,145,0.18); cursor:not-allowed; }
+
+/* Responsive collapse */
+@media (max-width:900px){
+  .npfs .np-header{ padding:12px 14px; }
+  .npfs .np-header h1{ font-size:24px; }
+  .npfs .np-title-row{ gap:10px; }
+  .npfs .np-close{ width:42px; height:42px; font-size:26px; }
+  .npfs .np-fixedtop{ padding:12px 14px; gap:10px; }
+  .npfs .np-top{ grid-template-columns:1fr; }
+  .npfs .np-panel{ padding:14px; }
+  .npfs .np-customer-grid{ grid-template-columns:1fr; }
+  .npfs .np-customer-flags{ width:100%; flex-wrap:wrap; }
+  .npfs .np-delivery-cards{ grid-template-columns:1fr 1fr; }
+  .npfs .np-products-head{ padding:10px 14px; }
+  .npfs .np-products{ padding:0 14px 10px; }
+  .npfs .np-row{ grid-template-columns:38px minmax(80px,0.9fr) 1fr; gap:10px; }
+  .npfs .np-price{ display:none; }
+  .npfs .np-actions{ grid-column:1 / -1; justify-content:flex-end; }
+  .npfs .np-footer{ grid-template-columns:1fr; gap:12px; padding:12px 14px; }
+
+  /* Mobile/tablet portrait: il blocco superiore (cliente+dirección) impilato
+     riempiva tutta la viewport e schiacciava la lista prodotti a ~10px. Qui
+     facciamo scorrere l'intero corpo (unico <div> figlio di .npfs) invece
+     della sola lista interna, così i prodotti mantengono altezza usabile. Il
+     footer è fratello del corpo → resta sempre visibile. */
+  .npfs > div{ overflow-y:auto !important; -webkit-overflow-scrolling:touch; }
+  .npfs .np-products{ flex:0 0 auto; min-height:240px; overflow:visible; }
+
+  /* Top cards più compatte: leggibili ma non dominanti */
+  .npfs .np-fixedtop{ gap:8px; }
+  .npfs .np-panel{ padding:12px; }
+  .npfs .np-panel h2{ margin:0 0 10px; font-size:13px; }
+  .npfs .np-input-like{ min-height:48px; }
+  .npfs .np-input-like input{ font-size:18px; }
+  .npfs .np-icon-action, .npfs .np-whatsapp{ min-height:48px; font-size:20px; }
+  .npfs .np-address-input strong, .npfs .np-address-input .np-address-text{ font-size:18px; }
+  .npfs .np-dcard{ min-height:52px; }
+  .npfs .np-dcard strong, .npfs .np-dcard input[type=time]{ font-size:18px; }
+  .npfs .np-customer-flags{ margin-top:10px; }
+  .npfs .np-delivery-cards{ margin-top:12px; }
+}
+`;
 
 const CLOSING_TIME_MIN = 23 * 60;
 const CLOSING_TIME_ERROR = "Hora inválida.";
@@ -33,52 +173,8 @@ function buildClosingOverrideNota(nota, hora) {
 // driver separati (salida_driver_estimada / entrega_estimada) con fallback
 // legacy forno_out / hora. Nessun calcolo di scheduling: solo lettura.
 const DISPONIBILIDAD_STATES = ["EN_COCINA", "POR_CONFIRMAR", "LISTO", "EN_ENTREGA"];
-const GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN = 20;
-// Margine (min): la pizza nuova può uscire dal forno fino a N minuti DOPO la
-// partenza del giro esistente ed essere ancora agganciabile (il driver può
-// attendere un paio di minuti). Oltre questo, il giro NON è aggregabile.
-const GIRO_AGGREGATION_MARGIN_MIN = 2;
-// Lead minimo (min) tra ADESSO e la partenza di un giro perché sia ancora
-// proponibile. Sotto questa soglia il giro è già partito / in corso / troppo
-// vicino: non c'è tempo materiale per preparazione + forno + assegnazione del
-// rider, quindi non è un'opzione operativa reale. Coerente in spirito col gate
-// `now + 5` di suggerisciOrario (zones.js), ma qui un filo più conservativo (10)
-// perché `startMin` è la PARTENZA del driver, non la sola disponibilità forno.
-const MIN_DELIVERY_LEAD_MIN = 10;
-
-// Minuti dall'inizio del giorno per l'ora corrente. Stessa convenzione naive
-// (HH:MM locale) già usata altrove nel file e in suggerisciOrario; non gestisce
-// il wrap oltre mezzanotte, ma il delivery è chiuso a quell'ora quindi i giri
-// post-mezzanotte non sono uno scenario reale.
-function nowMinutes() {
-  const d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
-}
-
-function timeDiffMin(a, b) {
-  const toM = (t) => {
-    if (!t) return null;
-    const m = String(t).trim().match(/^(\d{1,2}):([0-5]\d)$/);
-    if (!m) return null;
-    const h = Number(m[1]);
-    const min = Number(m[2]);
-    if (!Number.isFinite(h) || h < 0 || h > 23) return null;
-    return h * 60 + min;
-  };
-  const ma = toM(a);
-  const mb = toM(b);
-  if (ma == null || mb == null) return null;
-  return Math.abs(ma - mb);
-}
-
-function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, marginMin = GIRO_AGGREGATION_MARGIN_MIN, nowMin = nowMinutes()) {
+function buildDisponibilidad(ordenes) {
   const toM = (t) => { if (!t) return null; const [h, m] = String(t).split(":").map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
-  // forno_out del NUOVO ordine: minuto in cui la sua pizza esce dal forno.
-  // Serve a decidere se è ancora in tempo per agganciarsi a un giro esistente.
-  const newFornoMin = toM(newOrderFornoOut);
-  // Soglia temporale: la partenza di un giro deve essere ancora abbastanza nel
-  // futuro per essere un'opzione reale.
-  const minStartMin = nowMin + MIN_DELIVERY_LEAD_MIN;
   const rows = [];
   const byKey = new Map();
   for (const o of (ordenes || [])) {
@@ -89,31 +185,15 @@ function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, ma
     const end = o.entrega_estimada || o.hora || null;
     if (!start && !end) continue;
     const startMin = toM(start) ?? toM(end);
-    // Gate temporale: scarta i giri già partiti / in corso / troppo vicini alla
-    // partenza. Non sono opzioni operative reali e confondono l'operatore (es.
-    // mostrare 21:05–21:20 quando sono già le 21:17). Se non riusciamo a leggere
-    // l'orario di partenza, per prudenza non proponiamo la riga.
-    if (startMin == null || startMin < minStartMin) continue;
     const key = `${o.zona}|${start || end}`;
     if (byKey.has(key)) { byKey.get(key).count += 1; continue; }
-    const sameZone = !!currentZonaId && o.zona === currentZonaId;
-    // Agganciabile SOLO se la pizza nuova esce dal forno entro la partenza del
-    // giro (+margine): il driver parte a `startMin`, la pizza deve essere pronta.
-    // Niente più ramo ottimistico "forno_out nuovo sconosciuto => compatibile":
-    // senza forno_out non possiamo garantire che la pizza arrivi in tempo, quindi
-    // il giro resta NON agganciabile (no_agregable) finché non lo conosciamo.
-    const aggregable = sameZone
-      && startMin != null
-      && startMin >= minStartMin
-      && newFornoMin != null
-      && newFornoMin <= startMin + marginMin;
     const row = {
       key,
       zona: o.zona,
       startMin,
       range: (start && end && start !== end) ? `${start}–${end}` : (start || end),
-      slotHora: end || start, // hora da applicare cliccando un giro compatibile
-      kind: sameZone ? (aggregable ? "compatible" : "no_agregable") : "ocupado",
+      slotHora: end || start,
+      kind: "info",
       conflicto: o.conflicto_driver === true,
       count: 1,
     };
@@ -122,21 +202,6 @@ function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, ma
   }
   rows.sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0));
   return rows;
-}
-
-function findRecommendedCompatibleGiro(disponibilidad, currentZonaId, referenceHora, nowMin = nowMinutes()) {
-  if (!currentZonaId || !referenceHora) return null;
-  // Stesso gate di buildDisponibilidad: non raccomandare "Usar giro" per giri
-  // già partiti / in corso / troppo vicini alla partenza. Difesa ridondante (le
-  // righe arrivano già filtrate), ma esplicita per non regredire se la sorgente
-  // delle righe cambiasse.
-  const minStartMin = nowMin + MIN_DELIVERY_LEAD_MIN;
-  return (disponibilidad || [])
-    .filter(r => r.kind === "compatible" && r.zona === currentZonaId && r.slotHora)
-    .filter(r => r.startMin != null && r.startMin >= minStartMin)
-    .map(r => ({ ...r, diffMin: timeDiffMin(referenceHora, r.slotHora) }))
-    .filter(r => r.diffMin != null && r.diffMin <= GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN)
-    .sort((a, b) => (a.diffMin - b.diffMin) || ((a.startMin ?? 0) - (b.startMin ?? 0)))[0] || null;
 }
 
 const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }) => {
@@ -150,7 +215,24 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [direccionNote,   setDireccionNote]   = useState("");
   const [clienteAbitual,  setClienteAbitual]  = useState(null);
   const [showNotaGen,     setShowNotaGen]     = useState(false);
-  const [showDeliveryPopup, setShowDeliveryPopup] = useState(false);
+  const [showPlannerLabPopup, setShowPlannerLabPopup] = useState(false);
+  // Premium Planner LAB → strategic preview backend (read-only). Si valorizza SOLO
+  // al click esplicito del botón Premium; null = el popup cae en fixture mock LAB.
+  const [strategicPreview, setStrategicPreview] = useState(null);
+  const [strategicWarning, setStrategicWarning] = useState("");
+  // Loading state read-only: true mentre la preview backend è in volo (solo se c'è
+  // hora). Render-only, nessun calcolo. Guard anti-stale: solo l'ultima richiesta
+  // (o apertura/chiusura) può aggiornare preview/warning/loading.
+  const [strategicLoading, setStrategicLoading] = useState(false);
+  const strategicReqIdRef = useRef(0);
+  // Ruta manual LAB → previewManualGiroRoute (read-only). El operador propone la
+  // secuencia de paradas en el popup; aquí guardamos la preview backend + warning +
+  // loading con el MISMO guard anti-stale del strategic. Nada de esto se usa para
+  // escribir/guardar: solo render. null = sin ruta manual calculada todavía.
+  const [manualRoutePreview, setManualRoutePreview] = useState(null);
+  const [manualRouteWarning, setManualRouteWarning] = useState("");
+  const [manualRouteLoading, setManualRouteLoading] = useState(false);
+  const manualReqIdRef = useRef(0);
   // Override esplicito: l'operatore ha cliccato "Forzar HORA" ignorando la proposta
   const [forzaHora, setForzaHora] = useState(false);
   const [yaPagedo,        setYaPagedo]        = useState(false);
@@ -172,7 +254,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const geocodeTimer = useRef(null);
 
   // ── Feedback slot forno (solo delivery) ──────────────────────────────────
-  const [slotFeedback,   setSlotFeedback]   = useState(null);
+  // slotFeedback: motore di scheduling LOCALE rimosso (planner/backend è la fonte).
+  // Resta come costante null così i consumatori residui sono inerti senza calcolo.
+  const [slotFeedback] = useState(null);
   // Step 2 anti-cerotto: timing delivery AUTORITATIVO dal backend (fonte unica).
   // Popolato da api.previewOrderTiming. Il frontend MOSTRA questi valori (zona,
   // durata, source, forno_out, warnings, driver conflict, suggested_hora);
@@ -181,6 +265,15 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [backendTiming,    setBackendTiming]    = useState(null);
   const [backendTimingLoading, setBackendTimingLoading] = useState(false);
   const [horaTouchedByOperator, setHoraTouchedByOperator] = useState(false);
+  // ── Planner preview (contract "nuevo-pedido-planner-preview-v1") ──────────
+  // Fonte unica backend per disponibilità/lead-time/giri. Il frontend MOSTRA il
+  // contract, non lo ricalcola. Se il backend non risponde (es. action non
+  // ancora deployata) → plannerPreviewError = "Planner no disponible", NESSUN
+  // calcolo locale di fallback.
+  const [plannerPreview,        setPlannerPreview]        = useState(null);
+  const [plannerPreviewLoading, setPlannerPreviewLoading] = useState(false);
+  const [plannerPreviewError,   setPlannerPreviewError]   = useState("");
+  const [plannerPreviewLastKey, setPlannerPreviewLastKey] = useState("");
   // { horaForno, slotOk, load, slotSuggerito, consegnaSuggerita,
   //   scenario: "A"|"B"|"C"|"D"|"E"|"F", driverRientro, stessaZona }
 
@@ -551,106 +644,67 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     // calcolo locale resta spento: la zona serve solo a mostrare badge/hint.
   }, [zonaInfo]); // eslint-disable-line
 
-  // ── Calcolo slot forno + proposta delivery (cascade-aware, schedule-based) ──
-  // L'algoritmo:
-  //   1. proposeForNewOrder(ordenes, newOrder) simula la giornata del driver
-  //      considerando tempoGiro reale (haversine lat/lon) per ogni ordine e
-  //      la cascade dei giri. Ritorna { ok, consegnaPropostaH, motivo, aggregato }.
-  //   2. Il forno è calcolato a parte: conta pizze nello slot 10min di consegnaProposta
-  //      arretrato di tg_new. Se pieno propone slot successivo.
-  //   3. Il risultato finale combina i 2 vincoli.
+  // ── Planner preview backend (contract "nuevo-pedido-planner-preview-v1") ──
+  // Sostituisce il vecchio motore di scheduling LOCALE: niente proposeForNewOrder /
+  // risolviTempoAndata / conteggio slot forno calcolati nel frontend. Su cambio
+  // input rilevante chiamiamo api.previewOrderPlanner e MOSTRIAMO il contract.
+  // Debounce 450ms + guard su input-key per non rifare chiamate identiche.
+  // Se il backend non risponde (es. action non ancora deployata) → errore safe
+  // "Planner no disponible", NESSUN calcolo locale di fallback.
   useEffect(() => {
-    if (tipoConsegna !== "DOMICILIO" || !hora || !zonaInfo?.zona) {
-      setSlotFeedback(null);
+    if (!visible) {
+      setPlannerPreview(null); setPlannerPreviewError(""); setPlannerPreviewLoading(false);
       return;
     }
-    const zona = zonaInfo.zona;
-    // Cascata unica risolviTempoAndata: Google ?? Haversine ?? zona.tempoGiro.
-    const tgNew = risolviTempoAndata(zonaInfo.durataAndataMin, zonaInfo.lat, zonaInfo.lon, zona);
-    const horaFornMin = toMin(hora) - tgNew;
-    if (horaFornMin < 0) { setSlotFeedback(null); return; }
-    const horaForno = toHora(horaFornMin);
-    const slotOf = (min) => {
-      const mArr = Math.round(min / 10) * 10;
-      const h = Math.floor(mArr / 60), m = mArr % 60;
-      return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
-    };
-    const slot = slotOf(horaFornMin);
-
-    // ── Conta pizze nello slot 10min usando tempoGiro reale di ogni ordine ──
-    const MAX_SLOT = 4;
-    const countPizzeSlot = (targetSlot) =>
-      (ordenes || [])
-        .filter(o => ["EN_COCINA","POR_CONFIRMAR","LISTO"].includes(o.estado))
-        .filter(o => {
-          if (!o.hora || !o.zona) return false;
-          const zonaO = ZONE_DELIVERY.find(z => z.id === o.zona);
-          if (!zonaO) return false;
-          // Sorgente unica: o.forno_out (cascade-aware backend). Fallback legacy per
-          // ordini pre-migration: ricalcolo locale con snapshot durata_andata_min.
-          // Snooze visivo (ui_offset_min) → conta lo slot effettivo in cui la pizza esce per la cucina.
-          const tgO = tempoAndata(o, zonaO);
-          const baseFornoStr = o.forno_out || null;
-          const fornoStr = baseFornoStr
-            ? applyUiOffset(baseFornoStr, o.ui_offset_min)
-            : null;
-          const fornoMin = fornoStr ? toMin(fornoStr) : ((toMin(o.hora) - tgO) + (Number(o.ui_offset_min)||0));
-          return slotOf(fornoMin) === targetSlot;
-        })
-        .reduce((s, o) => s + (o.items||[])
-          .filter(it => it.n !== "Entrega a domicilio" && it.cat !== "Bebidas")
-          .reduce((a, it) => a + (parseInt(it.q)||1), 0), 0);
-
-    const pizzeSlot = countPizzeSlot(slot);
-    const slotOk = pizzeSlot < MAX_SLOT;
-
-    // Slot forno successivo libero, se quello richiesto è pieno
-    let slotSuggerito = null;
-    let consegnaSuggerita = null;
-    if (!slotOk) {
-      const allSlots = [];
-      for (let t = 19*60+30; t <= 23*60; t += 10) allSlots.push(toHora(t));
-      const idx = allSlots.indexOf(slot);
-      for (let i = idx+1; i < allSlots.length; i++) {
-        if (countPizzeSlot(allSlots[i]) < MAX_SLOT) { slotSuggerito = allSlots[i]; break; }
-      }
-      if (slotSuggerito) consegnaSuggerita = toHora(toMin(slotSuggerito) + tgNew);
+    // Dati minimi: RITIRO basta hora; DOMICILIO serve direccion sufficiente.
+    if (tipoConsegna === "DOMICILIO" && direccion.trim().length < 5) {
+      setPlannerPreview(null); setPlannerPreviewError(""); setPlannerPreviewLoading(false);
+      return;
     }
-
-    // ── Proposta schedule-aware (cascade) ──────────────────────────────────
-    const newOrderInfo = {
-      hora,
-      zona: zona.id,
-      zona_lat: zonaInfo.lat ?? null,
-      zona_lon: zonaInfo.lon ?? null,
-      durata_andata_min: zonaInfo.durataAndataMin ?? null,
+    const pizzasCount = items.reduce((s, it) => s + (parseInt(it.q) || 1), 0);
+    const input = {
+      tipo_consegna: tipoConsegna,
+      direccion: tipoConsegna === "DOMICILIO" ? direccion.trim() : null,
+      tel: tel || null,
+      hora: hora || null,
+      zona_manuale: tipoConsegna === "DOMICILIO" ? zonaManuale : false,
+      zona: (tipoConsegna === "DOMICILIO" && zonaManuale) ? (zonaInfo?.zona?.id || null) : null,
+      pizzas_count: pizzasCount,
     };
-    const propose = proposeForNewOrder(ordenes || [], newOrderInfo);
+    const key = JSON.stringify(input);
+    if (key === plannerPreviewLastKey) return; // input invariato → no rifetch
 
-    // Driver attuale (override real-time da DRIVER_STATO config)
-    const isInGiro = driverStato?.stato === "IN_GIRO";
-    let driverRientro = null;
-    if (isInGiro && driverStato.partito_alle) {
-      const zonaDriverObj = ZONE_DELIVERY.find(z => z.id === driverStato.zona);
-      if (zonaDriverObj) {
-        const partMin = (new Date(driverStato.partito_alle).getHours()) * 60
-          + new Date(driverStato.partito_alle).getMinutes();
-        // zonaDriverObj.tempoGiro: giro IN CORSO del driver, non un indirizzo da risolvere
-        driverRientro = toHora(partMin + zonaDriverObj.tempoGiro);
+    let cancelled = false;
+    setPlannerPreviewLoading(true);
+    setPlannerPreviewError("");
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.previewOrderPlanner(input);
+        if (cancelled) return;
+        // Guard di validità contract: accetta solo planner read-only v1.
+        // ok:true e ok:false sono ENTRAMBI contract validi → li conserviamo e il
+        // rendering distingue (recommendation vs blocker). Solo contract/source
+        // mancanti = "Planner no disponible". NESSUN calcolo locale di fallback.
+        if (res && res.contract === "nuevo-pedido-planner-preview-v1" && res.source === "planner") {
+          setPlannerPreview(res);
+          setPlannerPreviewError("");
+        } else {
+          setPlannerPreview(null);
+          setPlannerPreviewError("Planner no disponible");
+        }
+        setPlannerPreviewLastKey(key);
+      } catch (e) {
+        if (cancelled) return;
+        setPlannerPreview(null);
+        setPlannerPreviewError("Planner no disponible");
+        setPlannerPreviewLastKey(key);
+        console.warn("[previewOrderPlanner] failed:", e?.message || e);
+      } finally {
+        if (!cancelled) setPlannerPreviewLoading(false);
       }
-    }
-
-    setSlotFeedback({
-      // Forno
-      horaForno, slot, slotOk, load: pizzeSlot,
-      slotSuggerito, consegnaSuggerita,
-      tgNew,
-      // Driver real-time
-      isInGiro, driverRientro,
-      // Schedule-aware proposal
-      propose,
-    });
-  }, [hora, zonaInfo, tipoConsegna, ordenes, driverStato]); // eslint-disable-line
+    }, 450);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [visible, tipoConsegna, direccion, hora, zonaManuale, items]); // eslint-disable-line
 
   // ── Backend timing autoritativo (Step 2 anti-cerotto) ───────────────────
   // Su cambio di indirizzo / tipo consegna / hora / zona manuale, chiediamo al
@@ -689,6 +743,154 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     return () => { cancelled = true; clearTimeout(t); setBackendTimingLoading(false); };
   }, [visible, tipoConsegna, direccion, hora, zonaManuale]); // eslint-disable-line
 
+  // ── Premium Planner LAB — apertura ESPLICITA del popup (mai automatica) ──────
+  // startTime = `hora` GIÀ scelta nel draft (no Date.now, no orologio client).
+  // Se manca hora → NON chiamiamo il backend: apriamo subito col mock + warning.
+  // currentOrderDraft: solo campi presentazionali grezzi, NESSUNA PII raw (zona/
+  // hora/pizzas bastano al planner — vedi contract §13). Read-only: nessun ordine
+  // creato/modificato. La risposta NON viene mai usata per scrivere/salvare.
+  const openPlannerLab = async () => {
+    setShowPlannerLabPopup(true);
+    // Ogni apertura invalida le risposte in volo precedenti (anti-stale).
+    const reqId = ++strategicReqIdRef.current;
+    if (!hora) {
+      setStrategicLoading(false);
+      setStrategicPreview(null);
+      setStrategicWarning("startTime mancante (hora no elegida) · backend preview NO llamada · mostrando mock LAB");
+      return;
+    }
+    setStrategicWarning("");
+    setStrategicPreview(null);
+    setStrategicLoading(true);
+    const pizzasCount = items.reduce((s, it) => s + (parseInt(it.q) || 1), 0);
+    const input = {
+      startTime: hora,
+      currentOrderDraft: {
+        tipoConsegna,
+        zone: zonaInfo?.zona?.id || null,   // zona ya resuelta; null si aún no
+        hora,
+        horaFlexible: !forzaHora,
+        pizzas: pizzasCount,
+      },
+    };
+    try {
+      const res = await api.previewStrategicOpportunities(input);
+      // Anti-stale: scarta se nel frattempo è arrivata una nuova apertura/chiusura.
+      if (reqId !== strategicReqIdRef.current) return;
+      // Solo contract strategic válido alimenta el render backend-readonly.
+      if (res && res.contract === "premium-planner-strategic-preview-v1") {
+        setStrategicPreview(res);
+        setStrategicWarning("");
+      } else if (res && res._status === 401) {
+        setStrategicPreview(null);
+        setStrategicWarning("Sesión expirada o autorización requerida · mostrando mock LAB");
+      } else {
+        setStrategicPreview(null);
+        setStrategicWarning("Backend preview no disponible (contract inválido / unknown action) · mostrando mock LAB");
+      }
+    } catch (e) {
+      if (reqId !== strategicReqIdRef.current) return;
+      setStrategicPreview(null);
+      setStrategicWarning("Backend preview falló (internal_error / red) · mostrando mock LAB");
+      console.warn("[previewStrategicOpportunities] failed:", e?.message || e);
+    } finally {
+      if (reqId === strategicReqIdRef.current) setStrategicLoading(false);
+    }
+  };
+
+  // Chiusura popup: invalida eventuali risposte in volo (anti-stale) e azzera il
+  // loading, così una risposta vecchia non sporca un popup chiuso/riaperto.
+  const closePlannerLab = () => {
+    strategicReqIdRef.current++;
+    setStrategicLoading(false);
+    // Invalida también la ruta manual en vuelo y limpia su preview/warning.
+    manualReqIdRef.current++;
+    setManualRouteLoading(false);
+    setManualRoutePreview(null);
+    setManualRouteWarning("");
+    setShowPlannerLabPopup(false);
+  };
+
+  // ── Ruta manual LAB — calcula la routeTimeline de una secuencia propuesta ────
+  // `selectedStops` llega YA construido por el popup (pedido actual + anclas
+  // clicadas, en orden). Aquí SOLO validamos (hora + zona resueltas), añadimos el
+  // currentOrderDraft no-PII y llamamos al backend read-only. startTime = `hora`
+  // del draft (NO Date.now). NO crea/modifica ordenes, NO toca `hora`. La respuesta
+  // se usa solo para render. Guard anti-stale: solo la última petición/cierre vale.
+  const calcManualRoute = async (selectedStops) => {
+    const reqId = ++manualReqIdRef.current;
+    if (!hora) {
+      setManualRouteLoading(false);
+      setManualRoutePreview(null);
+      setManualRouteWarning("startTime mancante (hora no elegida) · backend NO llamado");
+      return;
+    }
+    // Zona del pedido actual: la del stop current_order que arma el popup (puede
+    // ser la zona resuelta real O una elegida a mano en modo LAB, sin geo); si no,
+    // cae en la zona ya resuelta del draft. NO se resuelve geo aquí.
+    const currentStop = Array.isArray(selectedStops)
+      ? selectedStops.find((s) => s && s.type === "current_order")
+      : null;
+    const curZone = (currentStop && currentStop.zone) || zonaInfo?.zona?.id || null;
+    if (!curZone) {
+      setManualRouteLoading(false);
+      setManualRoutePreview(null);
+      setManualRouteWarning("Zona del pedido actual sin resolver · backend NO llamado");
+      return;
+    }
+    if (!Array.isArray(selectedStops) || selectedStops.length === 0) {
+      setManualRoutePreview(null);
+      setManualRouteWarning("Sin paradas seleccionadas");
+      return;
+    }
+    setManualRouteWarning("");
+    setManualRoutePreview(null);
+    setManualRouteLoading(true);
+    const pizzasCount = items.reduce((s, it) => s + (parseInt(it.q) || 1), 0);
+    const input = {
+      startTime: hora,
+      currentOrderDraft: {
+        tipoConsegna,
+        zone: curZone,
+        hora,
+        horaFlexible: !forzaHora,
+        pizzas: pizzasCount,
+      },
+      selectedStops,
+      includeReturn: true,
+      includeCrossZone: true,
+    };
+    try {
+      const res = await api.previewManualGiroRoute(input);
+      if (reqId !== manualReqIdRef.current) return;
+      if (res && res.contract === "premium-planner-manual-giro-route-preview-v1") {
+        setManualRoutePreview(res);
+        setManualRouteWarning("");
+      } else if (res && res._status === 401) {
+        setManualRoutePreview(null);
+        setManualRouteWarning("Sesión expirada o autorización requerida");
+      } else {
+        setManualRoutePreview(null);
+        setManualRouteWarning("Backend ruta manual no disponible (contract inválido / unknown action)");
+      }
+    } catch (e) {
+      if (reqId !== manualReqIdRef.current) return;
+      setManualRoutePreview(null);
+      setManualRouteWarning("Backend ruta manual falló (internal_error / red)");
+      console.warn("[previewManualGiroRoute] failed:", e?.message || e);
+    } finally {
+      if (reqId === manualReqIdRef.current) setManualRouteLoading(false);
+    }
+  };
+
+  // Limpia la preview manual (botón "Limpiar ruta" en el popup) e invalida vuelos.
+  const clearManualRoute = () => {
+    manualReqIdRef.current++;
+    setManualRouteLoading(false);
+    setManualRoutePreview(null);
+    setManualRouteWarning("");
+  };
+
   useEffect(() => {
     if (!visible || tipoConsegna !== "DOMICILIO" || !backendTiming) return;
     if (horaTouchedByOperator) return;
@@ -726,13 +928,6 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     }
     if (!visible) { reset(); setForzaHora(false); }
   }, [visible]); // eslint-disable-line
-
-  // Reset forzaHora e horaCustom quando l'operatore apre il popup delivery o cambia l'indirizzo
-  // (zona potrebbe cambiare → ricalcolo ora necessario anche se l'operatore aveva toccato il campo)
-  useEffect(() => {
-    if (!showDeliveryPopup) return; // non resettare alla CHIUSURA: preserva forzaHora fino al submit
-    setForzaHora(false);
-  }, [showDeliveryPopup, direccion]);
 
   // ── Render extras badge per un item ─────────────────────────────────────
   const extrasLabel = (item) => {
@@ -801,6 +996,28 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const showDeliveryOutOfServiceAlert = tipoConsegna === "DOMICILIO" && deliveryStatus.outOfServiceWindow;
   const showDeliveryAvailabilityLoading = tipoConsegna === "DOMICILIO" && !!direccion && zonaLoading === true;
   const hasOperationalInfo = pickupKitchenStatus || showDeliveryOutOfServiceAlert || showDeliveryAvailabilityLoading;
+  const itemQtyTotal = items.reduce((s, i) => s + i.q, 0);
+  const isCompact = items.length > 5;
+  const clienteOk = nombre.trim().length > 0;
+  const contactAvailable = tel.trim().length > 0;
+  const deliveryZona = zonaInfo?.zona;
+  const deliveryZonaOk = !!deliveryZona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
+  const deliveryFornoOut = backendTiming?.forno_out || slotFeedback?.horaForno || null;
+
+  // ── Helper planner preview (display-only, mai decisione locale) ──────────
+  const plannerRecommendation = plannerPreview?.recommendation || null;
+  const plannerGeo            = plannerPreview?.geo || null;
+  const plannerGiro           = plannerPreview?.giro || null;
+  const plannerWarnings       = plannerPreview?.warnings || [];
+  const plannerBlockers       = plannerPreview?.blockers || [];
+  // ok:false è un contract VALIDO (errore deciso dal backend), non un guasto.
+  // null = nessun preview ancora; true/false = esito del planner.
+  const plannerOk             = plannerPreview ? plannerPreview.ok !== false : null;
+  // Il backend espone geo.source; normalizziamo anche un eventuale geo_source.
+  const plannerGeoSource      = plannerGeo?.source || plannerGeo?.geo_source || null;
+  // Superficie contract non ancora renderizzata: difesa contro null/array vuoti.
+  const plannerAlternatives   = plannerPreview?.alternatives || [];
+  const plannerAvailability   = plannerPreview?.availability_rows || [];
 
   return (
     <>
@@ -808,7 +1025,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       <div onClick={handleClose} style={{
         position: "fixed", inset: 0, zIndex: 500,
         display: visible ? "flex" : "none",
-        flexDirection: "column", justifyContent: "flex-end",
+        flexDirection: "column", justifyContent: "center", alignItems: "center",
         pointerEvents: visible ? "auto" : "none"
       }}>
         <div style={{
@@ -816,343 +1033,168 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           background: "rgba(0,0,0,.75)", backdropFilter: "blur(4px)"
         }} />
 
-        <div onClick={e => e.stopPropagation()} style={{
-          position: "relative", background: C.carbone,
-          borderRadius: "22px 22px 0 0",
-          height: "92vh", display: "flex", flexDirection: "column",
-          boxShadow: "0 -10px 40px rgba(0,0,0,.5)"
+        <div className="npfs" onClick={e => e.stopPropagation()} style={{
+          position: "relative",
+          background: "linear-gradient(145deg,#090908 0%,#10100f 48%,#070707 100%)",
+          borderRadius: 18,
+          width: "min(1540px, calc(100vw - 24px))",
+          height: "94dvh", maxHeight: "94vh", display: "flex", flexDirection: "column",
+          boxShadow: "0 20px 60px rgba(0,0,0,.6)", overflow: "hidden"
         }}>
+          <style>{NPFS_CSS}</style>
 
-          {/* Handle */}
-          <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px", flexShrink: 0 }}>
-            <div style={{ width: 36, height: 4, borderRadius: 2, background: C.fumo }} />
-          </div>
-
-          {/* ── Header: canal + tipo consegna ─────────────────────────── */}
-          <div style={{
-            padding: "6px 18px 12px",
-            borderBottom: `1px solid ${C.fumo}`,
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            flexShrink: 0
-          }}>
-            <div>
-              <div style={{ color: C.bianco, fontWeight: 800, fontSize: 18 }}>Nuevo pedido</div>
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                {[{ id: "TEL", label: "📞 Teléfono" }, { id: "WA", label: "💬 WhatsApp" }, { id: "BANCO", label: "🏪 Barra" }].map(c => (
-                  <button key={c.id} onClick={() => setCanal(c.id)} style={{
-                    background: canal === c.id ? C.rosso : "transparent",
-                    border: `1.5px solid ${canal === c.id ? C.rosso : C.fumo}`,
-                    color: canal === c.id ? "#fff" : C.grigio,
-                    borderRadius: 20, padding: "5px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer"
-                  }}>{c.label}</button>
-                ))}
-              </div>
-              {/* Indicatore automatico ritiro/domicilio — solo informativo */}
-              <div style={{ marginTop: 6, fontSize: 12, color: tipoConsegna === "DOMICILIO" ? "#F97316" : C.grigio, fontWeight: 600 }}>
-                {tipoConsegna === "DOMICILIO" ? "🛵 Entrega a domicilio" : "🏪 Retiro en local"}
-              </div>
+          {/* ── Header ──────────────────────────────────────────────────── */}
+          <header className="np-header">
+            <div className="np-title-row">
+              <h1>Nuevo Pedido</h1>
+              <p className="np-kicker">☎ Origen: Teléfono · {tipoConsegna === "DOMICILIO" ? "Entrega a domicilio" : "Retiro en local"}</p>
             </div>
-            <button onClick={handleClose} style={{
-              background: C.fumo, color: C.grigio, border: "none",
-              borderRadius: "50%", width: 32, height: 32, fontSize: 16,
-              display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer"
-            }}>✕</button>
-          </div>
+            <button className="np-close" onClick={handleClose} aria-label="Cerrar">×</button>
+          </header>
 
-          {/* ── Corpo scrollabile ──────────────────────────────────────── */}
-          <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", display: "flex", flexDirection: "column" }}>
+          {/* ── Corpo: top fisso + lista prodotti con scroll dedicato ───── */}
+          <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
 
-            {/* Form cliente */}
-            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.fumo}`, display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ display: "flex", gap: 8 }}>
-                <div style={{ flex: 2, position: "relative" }}>
-                  <input value={nombre}
-                    onChange={e => { setNombre(e.target.value); setClienteId(null); setShowSugerencias(true); }}
-                    onFocus={() => { setNombreFocus(true); setShowSugerencias(true); }}
-                    onBlur={() => { setNombreFocus(false); setTimeout(() => setShowSugerencias(false), 200); }}
-                    placeholder="👤 Nombre *"
-                    style={{
-                      width: "100%", background: C.carbone2, boxSizing: "border-box",
-                      border: `1.5px solid ${nombre.length > 0 ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.18)"}`,
-                      borderRadius: 9, color: "#fff", padding: "9px 36px 9px 12px", fontSize: 14, fontWeight: 500
-                    }} />
-                  {/* Bottone Preferito: grigio off → giallo on */}
-                  <button type="button"
-                    onClick={() => setPreferito(p => !p)}
-                    title={preferito ? "Quitar de preferidos" : "Guardar como preferido"}
-                    style={{
-                      position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
-                      background: "transparent", border: "none", cursor: "pointer",
-                      fontSize: 18, padding: 4, lineHeight: 1,
-                      color: preferito ? "#FACC15" : "rgba(255,255,255,0.35)",
-                      filter: preferito ? "drop-shadow(0 0 4px rgba(250,204,21,0.55))" : "none"
-                    }}>
-                    {preferito ? "★" : "☆"}
-                  </button>
-                  {/* Dropdown suggerimenti */}
-                  {showSugerencias && sugerencias.length > 0 && (
-                    <div style={{
-                      position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
-                      marginTop: 4, background: C.carbone2,
-                      border: "1px solid rgba(255,255,255,0.18)", borderRadius: 9,
-                      boxShadow: "0 8px 20px rgba(0,0,0,0.45)",
-                      maxHeight: 220, overflowY: "auto"
-                    }}>
-                      {sugerencias.map(c => (
-                        <div key={c.id}
-                          onMouseDown={() => pickCliente(c)}
-                          style={{
-                            padding: "8px 10px", cursor: "pointer", fontSize: 13,
-                            borderBottom: "1px solid rgba(255,255,255,0.06)",
-                            display: "flex", alignItems: "center", gap: 8
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                          <span style={{ color: "#fff", fontWeight: 600 }}>
-                            {c.alias || c.nombre}
-                          </span>
-                          {c.vip && <span title={`VIP · ${c.ordini_30gg} pedidos en 30 días`} style={{ color: "#FACC15", fontSize: 14 }}>⭐</span>}
-                          <span style={{ flex: 1 }} />
-                          <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>
-                            {c.zona || c.direccion || (c.tel ? c.tel : "")}
-                          </span>
+            {/* Form cliente + delivery cards */}
+            <div className="np-fixedtop">
+              <div className="np-top">
+                <section className={`np-panel np-customer-panel${clienteOk ? " is-ok" : ""}`} aria-label="Cliente">
+                  <h2>Cliente</h2>
+                  <div className="np-customer-grid">
+                    {/* Nombre + autocomplete */}
+                    <div className="np-input-like np-name-field">
+                      <input value={nombre}
+                        onChange={e => { setNombre(e.target.value); setClienteId(null); setShowSugerencias(true); }}
+                        onFocus={() => { setNombreFocus(true); setShowSugerencias(true); }}
+                        onBlur={() => { setNombreFocus(false); setTimeout(() => setShowSugerencias(false), 200); }}
+                        placeholder="Nombre *" />
+                      {clienteOk && <span className="np-ok" title="Datos cliente OK">✓</span>}
+                      {showSugerencias && sugerencias.length > 0 && (
+                        <div style={{
+                          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
+                          marginTop: 4, background: "#15130f",
+                          border: "1px solid rgba(208,184,145,0.28)", borderRadius: 10,
+                          boxShadow: "0 8px 20px rgba(0,0,0,0.5)",
+                          maxHeight: 240, overflowY: "auto"
+                        }}>
+                          {sugerencias.map(c => (
+                            <div key={c.id}
+                              onMouseDown={() => pickCliente(c)}
+                              style={{
+                                padding: "10px 12px", cursor: "pointer", fontSize: 14,
+                                borderBottom: "1px solid rgba(208,184,145,0.12)",
+                                display: "flex", alignItems: "center", gap: 8
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                              <span style={{ color: "#fff7ea", fontWeight: 700 }}>
+                                {c.alias || c.nombre}
+                              </span>
+                              {c.vip && <span title={`VIP · ${c.ordini_30gg} pedidos en 30 días`} style={{ color: "#FACC15", fontSize: 14 }}>⭐</span>}
+                              <span style={{ flex: 1 }} />
+                              <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 12 }}>
+                                {c.zona || c.direccion || (c.tel ? c.tel : "")}
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <input value={tel} onChange={e => setTel(e.target.value)}
-                  placeholder="📞 Tel (opcional)" type="tel"
-                  style={{
-                    flex: 1, background: C.carbone2,
-                    border: "1.5px solid rgba(255,255,255,0.18)",
-                    borderRadius: 9, color: "#fff", padding: "9px 12px", fontSize: 14
-                  }} />
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  background: C.carbone2, border: "1.5px solid rgba(255,255,255,0.22)",
-                  borderRadius: 9, padding: "7px 12px", minWidth: 130
-                }}>
-                  <span style={{ fontSize: 16 }}>🕐</span>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                    <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 9, fontWeight: 800, letterSpacing: .8, textTransform: "uppercase", lineHeight: 1 }}>
-                      {tipoConsegna === "DOMICILIO" ? "Entrega a las" : "Retirar a las"}
-                    </span>
-                    <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)}
-                      style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: 14, fontWeight: 700, width: 80, outline: "none", lineHeight: 1 }} />
-                  </div>
-                  {tipoConsegna === "DOMICILIO" && zonaInfo?.durataAndataMin != null && (
-                    <span title="Tiempo de ida en coche (Google)" style={{
-                      marginLeft: 4,
-                      display: "inline-flex", alignItems: "center", gap: 3,
-                      color: "#fdba74", fontSize: 11, fontWeight: 700,
-                      fontFamily: "'DM Mono',monospace",
-                      background: "rgba(249,115,22,0.12)",
-                      border: "1px solid rgba(249,115,22,0.3)",
-                      borderRadius: 6, padding: "2px 6px", lineHeight: 1
-                    }}>
-                      🛵 ~{zonaInfo.durataAndataMin}min
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* ── Step 2 anti-cerotto: timing AUTORITATIVO dal backend ──────── */}
-              {/* Fonte unica: zona/durata/source/forno_out/warnings/driver/giro
-                  arrivano dal backend (previewOrderTiming). Il frontend mostra,
-                  non ricalcola. */}
-              {tipoConsegna === "DOMICILIO" && (backendTiming || backendTimingLoading) && (
-                <div style={{
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 9, padding: "8px 10px", fontSize: 11,
-                  display: "flex", flexDirection: "column", gap: 6
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 800, letterSpacing: .6, textTransform: "uppercase", fontSize: 9 }}>
-                      Backend
-                    </span>
-                    {backendTimingLoading && !backendTiming && (
-                      <span style={{ color: "rgba(255,255,255,0.5)" }}>Calculando…</span>
-                    )}
-                    {backendTiming?.zona && (
-                      <span style={{ color: "#fff", fontWeight: 700 }}>Zona {backendTiming.zona}</span>
-                    )}
-                    {backendTiming?.durata_andata_min != null && (
-                      <span title="Duración de ida (backend)" style={{
-                        color: "#fdba74", fontFamily: "'DM Mono',monospace", fontWeight: 700,
-                        background: "rgba(249,115,22,0.12)", border: "1px solid rgba(249,115,22,0.3)",
-                        borderRadius: 6, padding: "1px 6px"
-                      }}>🛵 {backendTiming.durata_andata_min}min</span>
-                    )}
-                    {backendTiming?.geo_source && (
-                      <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 10 }}>
-                        {backendTiming.geo_source}
-                      </span>
-                    )}
-                    {backendTiming?.forno_out && (
-                      <span title="Salida del horno (backend)" style={{
-                        color: "#86efac", fontFamily: "'DM Mono',monospace", fontWeight: 700,
-                        background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)",
-                        borderRadius: 6, padding: "1px 6px"
-                      }}>🔥 {backendTiming.forno_out}</span>
-                    )}
-                  </div>
-
-                  {/* Conflicto driver: advisory, NO cambia la hora automáticamente */}
-                  {backendTiming?.driver?.has_conflict && horaTouchedByOperator && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#fca5a5" }}>
-                      <span>⚠️ {backendTiming.driver.message || "Driver ocupado"}</span>
-                      {backendTiming.suggested_hora && (
-                        <span style={{ color: "rgba(255,255,255,0.7)" }}>
-                          · sugerido {backendTiming.suggested_hora} (no se aplica solo)
-                        </span>
                       )}
                     </div>
-                  )}
-
-                  {/* Giro compatible sugerido */}
-                  {backendTiming?.giro?.suggested && (
-                    <div style={{ color: "#93c5fd" }}>
-                      🔁 Compatible con giro {backendTiming.giro.manual_giro_id}
-                      {backendTiming.giro.orders?.length ? ` (${backendTiming.giro.orders.length} pedidos)` : ""}
+                    {/* Preferito (slot azione icona) */}
+                    <button type="button" className="np-icon-action"
+                      onClick={() => setPreferito(p => !p)}
+                      title={preferito ? "Quitar de preferidos" : "Guardar como preferido"}
+                      style={preferito ? { color: "#FACC15", borderColor: "rgba(250,204,21,0.5)", background: "rgba(250,204,21,0.12)" } : undefined}>
+                      {preferito ? "★" : "☆"}
+                    </button>
+                    {/* Telefono */}
+                    <div className="np-input-like np-phone-field">
+                      <span className="np-phone-ic">☎</span>
+                      <input value={tel} onChange={e => setTel(e.target.value)}
+                        placeholder="Tel (opcional)" type="tel" />
+                    </div>
+                    {/* Contatto cliente — no-op (non invia nulla) */}
+                    <button type="button" className="np-whatsapp"
+                      onClick={e => e.preventDefault()}
+                      title={contactAvailable ? "Contacto cliente (no envía nada automáticamente)" : "Añade un teléfono para contactar"}>
+                      {canal === "WA" ? "💬" : "📞"}
+                    </button>
+                  </div>
+                  {clienteAbitual && (
+                    <div className="np-customer-flags">
+                      <span>★ Cliente habitual</span>
+                      <span>{clienteAbitual.total_pedidos || 0} pedidos</span>
+                      {clienteAbitual.direccion && <span>Dirección guardada</span>}
                     </div>
                   )}
+                </section>
 
-                  {/* Warnings (duración estimada / sin verificar / zona) */}
-                  {(backendTiming?.warnings || [])
-                    .filter(w => w.code !== "driver_conflict")
-                    .map((w, i) => (
-                      <div key={i} style={{ color: "#fbbf24", fontSize: 10 }}>• {w.message}</div>
-                    ))}
+                <DireccionInlinePanel
+                  tipoConsegna={tipoConsegna}
+                  direccion={direccion}
+                  setDireccion={setDireccion}
+                  direccionNote={direccionNote}
+                  setDireccionNote={setDireccionNote}
+                  deliveryZona={deliveryZona}
+                  zonaInfo={zonaInfo}
+                  zonaLoading={zonaLoading}
+                  zonaManuale={zonaManuale}
+                  setZonaInfo={setZonaInfo}
+                  setZonaManuale={setZonaManuale}
+                  zoneOptions={ZONE_DELIVERY}
+                  ZonaBadgeComponent={ZonaBadge}
+                  backendTiming={backendTiming}
+                  backendTimingLoading={backendTimingLoading}
+                  deliveryFornoOut={deliveryFornoOut}
+                  hora={hora}
+                  setHoraFromOperator={setHoraFromOperator}
+                  deliveryStatus={deliveryStatus}
+                  onOpenPlannerLab={openPlannerLab}
+                />
+              </div>
+
+              {tipoConsegna === "DOMICILIO" && (backendTiming?.driver?.has_conflict && horaTouchedByOperator) && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#fca5a5", fontSize: 11, fontWeight: 700 }}>
+                  <span>⚠️ {backendTiming.driver.message || "Driver ocupado"}</span>
+                  {backendTiming.suggested_hora && (
+                    <span style={{ color: "rgba(255,255,255,0.7)" }}>
+                      · sugerido {backendTiming.suggested_hora} (no se aplica solo)
+                    </span>
+                  )}
                 </div>
               )}
 
-              {/* Badge cliente abituale */}
-              {clienteAbitual && (
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.35)",
-                  borderRadius: 9, padding: "6px 10px", fontSize: 11
-                }}>
-                  <span style={{ fontSize: 14 }}>✨</span>
-                  <span style={{ flex: 1, color: "#86efac", fontWeight: 600 }}>
-                    Cliente habitual · {clienteAbitual.total_pedidos || 0} pedidos
-                    {clienteAbitual.direccion && <span style={{ color: "#bbf7d0", fontWeight: 400 }}> · dir. guardada</span>}
-                  </span>
-                </div>
-              )}
-
-              {/* ── Trigger delivery popup ── */}
-              {(() => {
-                const zona = zonaInfo?.zona;
-                const hasDir = direccion.trim().length > 0;
-                const hasConflict = deliveryStatus.isBlocked;
-                return (
-                  <button onClick={() => setShowDeliveryPopup(true)} style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    background: hasDir ? "rgba(249,115,22,0.08)" : C.carbone2,
-                    border: hasConflict
-                      ? "2px solid rgba(239,68,68,0.7)"
-                      : hasDir
-                      ? "1.5px solid rgba(249,115,22,0.5)"
-                      : "1.5px solid rgba(255,255,255,0.15)",
-                    borderRadius: 10, padding: "10px 14px",
-                    cursor: "pointer", textAlign: "left", width: "100%",
-                    transition: "border-color 0.2s"
-                  }}>
-                    {hasDir ? (
-                      <>
-                        {zona && <ZonaBadge zona={zona} size="sm" />}
-                        {hasConflict && (
-                          <span style={{ fontSize: 14, flexShrink: 0 }}>🚨</span>
-                        )}
-                        <span style={{ color: "#fff", fontSize: 13, fontWeight: 600, flex: 1,
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {direccion}
-                        </span>
-                        {hora && (
-                          <span style={{ color: "rgba(249,115,22,0.9)", fontSize: 13,
-                            fontWeight: 800, fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
-                            {hora}
-                          </span>
-                        )}
-                        <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 12, flexShrink: 0 }}>✏️</span>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{ fontSize: 18 }}>📍</span>
-                        <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
-                          Añadir dirección de entrega
-                        </span>
-                        <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.2)", fontSize: 12 }}>→</span>
-                      </>
-                    )}
-                  </button>
-                );
-              })()}
+              {tipoConsegna === "DOMICILIO" && (backendTiming?.warnings || [])
+                .filter(w => w.code !== "driver_conflict")
+                .map((w, i) => (
+                  <div key={i} style={{ color: "#fbbf24", fontSize: 10, fontWeight: 700 }}>• {w.message}</div>
+                ))}
 
               {hasOperationalInfo && (
                 <div style={{
-                  display: "flex", flexDirection: "column", gap: 6,
+                  display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
                   background: (pickupKitchenStatus?.overloaded || showDeliveryOutOfServiceAlert) ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.03)",
-                  border: (pickupKitchenStatus?.overloaded || showDeliveryOutOfServiceAlert) ? "1.5px solid rgba(239,68,68,0.40)" : "1px solid rgba(255,255,255,0.10)",
-                  borderRadius: 9,
-                  padding: "8px 10px",
+                  border: (pickupKitchenStatus?.overloaded || showDeliveryOutOfServiceAlert) ? "1px solid rgba(239,68,68,0.40)" : "1px solid rgba(208,184,145,0.18)",
+                  borderRadius: 999,
+                  padding: isCompact ? "4px 12px" : "5px 14px",
+                  width: "fit-content", maxWidth: "100%",
+                  fontSize: 12, fontWeight: 700,
                 }}>
-                  <div style={{
-                    color: "rgba(255,255,255,0.45)",
-                    fontSize: 9,
-                    fontWeight: 800,
-                    letterSpacing: .8,
-                    textTransform: "uppercase",
-                  }}>
-                    Info operativa
-                  </div>
                   {pickupKitchenStatus && (
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: pickupKitchenStatus.overloaded ? "#fca5a5" : "#86efac",
-                    }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: pickupKitchenStatus.overloaded ? "#fca5a5" : "#86efac" }}>
                       <span>{pickupKitchenStatus.overloaded ? "⚠️" : "✅"}</span>
-                      <span style={{ flex: 1 }}>
-                        {pickupKitchenStatus.overloaded
-                          ? <>Horno sobrecargado: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min.{pickupKitchenStatus.suggestedHora ? <> Sugerido: {pickupKitchenStatus.suggestedHora}</> : null}</>
-                          : <>Horno ok: {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} pizzas en {pickupKitchenStatus.windowMinutes} min</>}
-                      </span>
-                    </div>
+                      {pickupKitchenStatus.overloaded
+                        ? <>Horno sobrecargado {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} · {pickupKitchenStatus.windowMinutes} min{pickupKitchenStatus.suggestedHora ? ` · sug. ${pickupKitchenStatus.suggestedHora}` : ""}</>
+                        : <>Horno OK {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} · {pickupKitchenStatus.windowMinutes} min</>}
+                    </span>
                   )}
                   {showDeliveryOutOfServiceAlert && (
-                    <div style={{
-                      display: "flex", alignItems: "flex-start", gap: 8,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: "#fca5a5",
-                      lineHeight: 1.4,
-                    }}>
-                      <span>🚨</span>
-                      <span style={{ flex: 1 }}>
-                        Delivery no disponible después de las 23:00.
-                        <br />
-                        <span style={{ color: "rgba(255,255,255,0.68)", fontWeight: 600 }}>
-                          Abre el detalle de domicilio para forzarlo como excepción.
-                        </span>
-                      </span>
-                    </div>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#fca5a5" }}>
+                      <span>🚨</span> Delivery no disponible después de las 23:00 · ábrelo para forzar
+                    </span>
                   )}
                   {showDeliveryAvailabilityLoading && (
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: "rgba(255,255,255,0.72)",
-                    }}>
-                      <span style={{ flex: 1 }}>
-                        Calculando zona y disponibilidad de delivery...
-                      </span>
-                    </div>
+                    <span style={{ color: "rgba(255,255,255,0.72)" }}>Calculando zona y disponibilidad…</span>
                   )}
                 </div>
               )}
@@ -1160,7 +1202,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               {/* ── Pill zona delivery (solo nel popup) ── */}
               {false && tipoConsegna === "DOMICILIO" && direccion.trim().length >= 5 && (() => {
                 const zona = zonaInfo?.zona;
-                const sugg = zona ? suggerisciOrario(zona.id, ordenes) : null;
+                const sugg = null; // suggerisciOrario locale rimosso (planner è la fonte)
                 return (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
                     {/* Badge zona rilevata o loading */}
@@ -1365,91 +1407,55 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               })()}
             </div>
 
-            {/* ── Lista items ─────────────────────────────────────────── */}
-            <div style={{ flex: 1, padding: "10px 16px" }}>
+            {/* ── Header prodotti ─────────────────────────────────────────── */}
+            <div className="np-products-head">
+              <div>
+                <h2>Productos</h2>
+                <span className="np-count-pill">{items.length} línea{items.length !== 1 ? "s" : ""} · {itemQtyTotal} item{itemQtyTotal !== 1 ? "s" : ""}</span>
+              </div>
+              <button className="np-gold-btn" onClick={() => { setEditingItem(null); setPickerVisible(true); }}>⊕ Añadir producto</button>
+            </div>
+
+            {/* ── Lista items: unico scroll principale prodotti ───────── */}
+            <div className="np-products">
 
               {items.length === 0 ? (
                 /* Stato vuoto */
-                <div style={{
-                  display: "flex", flexDirection: "column", alignItems: "center",
-                  justifyContent: "center", padding: "32px 0", gap: 12, opacity: 0.5
-                }}>
+                <div className="np-empty">
                   <span style={{ fontSize: 40 }}>🍕</span>
-                  <div style={{ color: C.grigio, fontSize: 14, fontWeight: 600 }}>Todavía no hay nada</div>
-                  <div style={{ color: C.grigio, fontSize: 12 }}>Pulsa «+» para añadir</div>
+                  <strong style={{ color: "#e7dcc4", fontSize: 17, fontWeight: 900 }}>Todavía no hay nada</strong>
+                  <span style={{ color: "#a99f8b", fontSize: 14 }}>Pulsa «Añadir producto» para empezar</span>
                 </div>
               ) : (
-                items.map(item => (
-                  <div key={item._uid} style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    padding: "9px 10px",
-                    marginBottom: 6,
-                    background: C.carbone2,
-                    borderRadius: 12,
-                    border: `1px solid ${C.fumo}`,
-                    cursor: "pointer"
-                  }}
-                    onClick={() => handleEditItem(item)}
-                  >
-                    <span style={{ fontSize: 22, flexShrink: 0 }}>{item.e}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ color: C.bianco, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {item.n}
-                      </div>
-                      {item.sub && (
-                        <div style={{ color: "#a855f7", fontSize: 11, fontWeight: 500, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {extrasLabel(item)}
-                        </div>
-                      )}
+                items.map((item, idx) => (
+                  <div key={item._uid} className="np-row" onClick={() => handleEditItem(item)}>
+                    <span className="np-index">{idx + 1}</span>
+                    <div className="np-product-name">
+                      <strong>{item.n}</strong>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                      <button onClick={e => { e.stopPropagation(); adj(item._uid, -1); }} style={{
-                        background: C.fumo, color: C.bianco, border: "none",
-                        borderRadius: 6, width: 26, height: 26, fontSize: 15, fontWeight: 700,
-                        display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer"
-                      }}>−</button>
-                      <span style={{ color: C.bianco, fontWeight: 800, minWidth: 18, textAlign: "center", fontFamily: "'DM Mono',monospace" }}>
-                        {item.q}
-                      </span>
-                      <button onClick={e => { e.stopPropagation(); adj(item._uid, +1); }} style={{
-                        background: C.fumo, color: C.bianco, border: "none",
-                        borderRadius: 6, width: 26, height: 26, fontSize: 15, fontWeight: 700,
-                        display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer"
-                      }}>+</button>
+                    <p className={item.sub ? "np-note" : "np-note np-note-muted"} title={item.sub ? extrasLabel(item) : undefined}>
+                      {item.sub ? extrasLabel(item) : "—"}
+                    </p>
+                    <strong className="np-price">{(item.p * item.q).toFixed(2)}€</strong>
+                    <div className="np-actions" aria-label={`Acciones ${item.n}`}>
+                      <button title="Editar ingredientes" onClick={e => { e.stopPropagation(); handleEditItem(item); }}>✎</button>
+                      <button title="Quitar una unidad" onClick={e => { e.stopPropagation(); adj(item._uid, -1); }}>−</button>
+                      <strong className="np-qty">{item.q}</strong>
+                      <button title="Añadir una unidad" onClick={e => { e.stopPropagation(); adj(item._uid, +1); }}>+</button>
+                      <button className="np-danger" title="Eliminar" onClick={e => { e.stopPropagation(); handleRemoveItem(item._uid); }}>🗑</button>
                     </div>
-                    <span style={{ color: C.grigio, fontSize: 12, fontWeight: 700, minWidth: 44, textAlign: "right", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
-                      {(item.p * item.q).toFixed(2)}€
-                    </span>
-                    <button onClick={e => { e.stopPropagation(); handleRemoveItem(item._uid); }} style={{
-                      background: "transparent", color: C.grigio, border: "none",
-                      fontSize: 14, cursor: "pointer", padding: "2px 4px", flexShrink: 0
-                    }}>🗑</button>
                   </div>
                 ))
               )}
-
-              {/* Bottone + Añadir */}
-              <button
-                onClick={() => { setEditingItem(null); setPickerVisible(true); }}
-                style={{
-                  width: "100%", marginTop: items.length > 0 ? 8 : 0,
-                  background: "rgba(232,52,28,0.1)",
-                  border: `2px dashed ${C.rosso}88`,
-                  borderRadius: 12, color: C.rosso,
-                  padding: "12px 0", fontWeight: 800, fontSize: 15,
-                  cursor: "pointer", letterSpacing: 0.3
-                }}>
-                + Añadir pizza, bebida o postre
-              </button>
             </div>
 
             {/* Nota generale (opzionale, collassabile) */}
-            <div style={{ padding: "0 16px 4px" }}>
+            <div style={{ padding: "6px 24px 8px", flexShrink: 0, borderTop: "1px solid rgba(208,184,145,0.18)" }}>
               <button
                 onClick={() => setShowNotaGen(v => !v)}
                 style={{
-                  background: "transparent", border: "none", color: C.grigio,
-                  fontSize: 12, cursor: "pointer", padding: "4px 0"
+                  background: "transparent", border: "none", color: "#bcae93",
+                  fontSize: 13, fontWeight: 800, cursor: "pointer", padding: "4px 0"
                 }}>
                 {showNotaGen ? "▲ Ocultar nota general" : "▼ Añadir nota general"}
               </button>
@@ -1458,734 +1464,92 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   placeholder="Notas generales del pedido..."
                   rows={2}
                   style={{
-                    width: "100%", background: C.carbone2,
-                    border: "1.5px solid rgba(255,255,255,0.18)",
-                    borderRadius: 9, color: "#fff",
-                    padding: "8px 10px", fontSize: 12, resize: "none",
+                    width: "100%", background: "rgba(255,255,255,0.025)",
+                    border: "1px solid rgba(208,184,145,0.22)",
+                    borderRadius: 8, color: "#fff7e8",
+                    padding: "8px 10px", fontSize: 13, resize: "none",
                     marginTop: 6, boxSizing: "border-box"
                   }} />
               )}
             </div>
           </div>
 
-          {/* ── Footer: totale + conferma ──────────────────────────────── */}
-          <div style={{
-            padding: "12px 16px",
-            borderTop: `1px solid ${C.fumo}`,
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            flexShrink: 0, background: C.carbone2
-          }}>
-            <div>
-              <div style={{ color: C.grigio, fontSize: 11 }}>Total · {items.reduce((s, i) => s + i.q, 0)} item{items.reduce((s, i) => s + i.q, 0) !== 1 ? "s" : ""}</div>
-              <div style={{ color: C.verde, fontWeight: 800, fontSize: 22, fontFamily: "'DM Mono',monospace" }}>{total}€</div>
+          {/* ── Footer: totale + conferma ─────────────────────────── */}
+          <footer className="np-footer">
+            <div className="np-summary">
+              <span className="np-items">{itemQtyTotal} item{itemQtyTotal !== 1 ? "s" : ""}</span>
+              <span className="np-total">Total {total}€</span>
               {tipoConsegna === "DOMICILIO" && (
-                <div style={{ color: "#fb923c", fontSize: 10, fontWeight: 600, marginTop: 1 }}>🛵 incl. {DELIVERY_FEE.toFixed(2).replace(".",",")}€ entrega</div>
+                <small>Incl. {DELIVERY_FEE.toFixed(2).replace(".", ",")}€ entrega</small>
               )}
               {descuentoImporte > 0 && (
-                <div style={{ color: "#F59E0B", fontSize: 10, fontWeight: 700, marginTop: 1 }}>
-                  -{descuentoImporte.toFixed(2)}€ descuento · subtotal {totaleBase.toFixed(2)}€
-                </div>
+                <small style={{ color: "#f0b429" }}>−{descuentoImporte.toFixed(2)}€ desc · subtotal {totaleBase.toFixed(2)}€</small>
               )}
               {tipoConsegna === "DOMICILIO" && !zonaAssegnata && (
-                <div style={{ color: "#fbbf24", fontSize: 10, fontWeight: 700, marginTop: 2 }}>⚠️ Zona no detectada</div>
+                <small style={{ color: "#fbbf24" }}>⚠️ Zona no detectada</small>
               )}
-              {/* Descuento */}
-              <div style={{ marginTop: 8 }}>
-                <DescuentoInput
-                  tipo={descuentoTipo}
-                  valor={descuentoValor}
-                  onChange={(t, v) => { setDescuentoTipo(t); setDescuentoValor(v); }}
-                  totaleBase={totaleBase}
-                  compact
-                />
-              </div>
-              {/* Ya pagado toggle */}
-              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                <button onClick={() => { setYaPagedo(v => !v); setMetodoPago(""); }} style={{
-                  background: yaPagedo ? "rgba(34,197,94,0.15)" : "transparent",
-                  border: `1.5px solid ${yaPagedo ? "rgba(34,197,94,0.5)" : "rgba(255,255,255,0.15)"}`,
-                  color: yaPagedo ? "#4ADE80" : "rgba(255,255,255,0.4)",
-                  borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer"
-                }}>
-                  {yaPagedo ? "✅" : "⬜"} Ya pagado
-                </button>
-                {yaPagedo && (<>
-                  <button onClick={() => setMetodoPago("efectivo")} style={{
-                    background: metodoPago === "efectivo" ? "#16A34A" : "rgba(255,255,255,0.06)",
-                    border: `1.5px solid ${metodoPago === "efectivo" ? "#16A34A" : "rgba(255,255,255,0.15)"}`,
-                    color: "#fff", borderRadius: 8, padding: "4px 12px",
-                    fontSize: 12, fontWeight: 700, cursor: "pointer"
-                  }}>💵 Efectivo</button>
-                  <button onClick={() => setMetodoPago("tarjeta")} style={{
-                    background: metodoPago === "tarjeta" ? "#2563EB" : "rgba(255,255,255,0.06)",
-                    border: `1.5px solid ${metodoPago === "tarjeta" ? "#2563EB" : "rgba(255,255,255,0.15)"}`,
-                    color: "#fff", borderRadius: 8, padding: "4px 12px",
-                    fontSize: 12, fontWeight: 700, cursor: "pointer"
-                  }}>💳 Tarjeta</button>
-                </>)}
-              </div>
             </div>
-            <button onClick={handleConfirm} disabled={!ok || submitting} style={{
-              background: (!ok || submitting) ? C.fumo : C.rosso,
-              color: (!ok || submitting) ? C.grigio : "#fff",
-              border: "none", borderRadius: 12,
-              padding: "14px 24px", fontWeight: 800, fontSize: 15,
-              boxShadow: (!ok || submitting) ? "none" : `0 4px 16px ${C.rosso}55`,
-              cursor: submitting ? "wait" : (ok ? "pointer" : "default")
-            }}>
-              {submitting ? "Confirmando…" : "✅ Confirmar pedido"}
+
+            {/* Descuento (componente esistente, non modificato) */}
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <DescuentoInput
+                tipo={descuentoTipo}
+                valor={descuentoValor}
+                onChange={(t, v) => { setDescuentoTipo(t); setDescuentoValor(v); }}
+                totaleBase={totaleBase}
+                compact
+              />
+            </div>
+
+            {/* Ya pagado + metodo */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => { setYaPagedo(v => !v); setMetodoPago(""); }} style={{
+                background: yaPagedo ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.03)",
+                border: `1px solid ${yaPagedo ? "rgba(34,197,94,0.5)" : "rgba(208,184,145,0.22)"}`,
+                color: yaPagedo ? "#7ee2a0" : "#cfc3ae",
+                borderRadius: 8, padding: "9px 12px", fontSize: 15, fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap"
+              }}>
+                {yaPagedo ? "☑" : "☐"} Pagado
+              </button>
+              {yaPagedo && (<>
+                <button onClick={() => setMetodoPago("efectivo")} style={{
+                  background: metodoPago === "efectivo" ? "#16A34A" : "rgba(255,255,255,0.06)",
+                  border: `1px solid ${metodoPago === "efectivo" ? "#16A34A" : "rgba(208,184,145,0.22)"}`,
+                  color: "#fff", borderRadius: 8, padding: "9px 12px", fontSize: 14, fontWeight: 800, cursor: "pointer"
+                }}>💵 Efectivo</button>
+                <button onClick={() => setMetodoPago("tarjeta")} style={{
+                  background: metodoPago === "tarjeta" ? "#2563EB" : "rgba(255,255,255,0.06)",
+                  border: `1px solid ${metodoPago === "tarjeta" ? "#2563EB" : "rgba(208,184,145,0.22)"}`,
+                  color: "#fff", borderRadius: 8, padding: "9px 12px", fontSize: 14, fontWeight: 800, cursor: "pointer"
+                }}>💳 Tarjeta</button>
+              </>)}
+            </div>
+
+            <button className="np-confirm" onClick={handleConfirm} disabled={!ok || submitting}
+              style={(!ok || submitting) ? undefined : { boxShadow: "0 6px 20px rgba(33,143,77,0.4)" }}>
+              {submitting ? "Confirmando…" : "✓ Confirmar pedido"}
             </button>
-          </div>
+          </footer>
         </div>
       </div>
 
-      {/* ── Delivery Popup ─────────────────────────────────────────────── */}
-      {showDeliveryPopup && (() => {
-        const zona = zonaInfo?.zona;
-        const sf   = slotFeedback;
-        const sc   = sf?.scenario;
-        const isOk   = ["A","C","D"].includes(sc);
-        const isWarn = sc === "E";
-        const bgCol  = isOk ? "rgba(34,197,94,0.08)" : isWarn ? "rgba(251,191,36,0.08)" : "rgba(249,115,22,0.10)";
-        const bdCol  = isOk ? "rgba(34,197,94,0.35)" : isWarn ? "rgba(251,191,36,0.40)" : "rgba(249,115,22,0.45)";
-        const txCol  = isOk ? "#86efac"              : isWarn ? "#fde68a"               : "#fed7aa";
-        const zonaOkForDisponibilidad = !!zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
-        // forno_out del nuovo ordine (fonte più affidabile prima): backend → hint locale.
-        const newOrderFornoOut = backendTiming?.forno_out || slotFeedback?.horaForno || null;
-        const deliveryDisponibilidad = (!zonaLoading && zonaOkForDisponibilidad)
-          ? buildDisponibilidad(ordenes, zona.id, newOrderFornoOut)
-          : [];
-        const giroRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_proposta || hora;
-        const recommendedCompatibleGiro = !horaTouchedByOperator
-          ? findRecommendedCompatibleGiro(deliveryDisponibilidad, zona?.id, giroRecommendationRef)
-          : null;
+      {/* Legacy delivery popup removed from render; PremiumPlannerPopup handles LAB proposals. */}
 
-        return (
-          <div style={{
-            position: "fixed", inset: 0, zIndex: 10000,
-            background: "rgba(0,0,0,0.65)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            padding: "20px"
-          }} onClick={() => setShowDeliveryPopup(false)}>
-            <div onClick={e => e.stopPropagation()} style={{
-              background: "#1a1a2e",
-              borderRadius: 20,
-              width: "100%", maxWidth: 880,
-              padding: "0 0 24px",
-              boxShadow: "0 8px 60px rgba(0,0,0,0.7)",
-              maxHeight: "85vh", overflowY: "auto"
-            }}>
-              {/* Spacer top */}
-              <div style={{ height: 4 }} />
-
-              {/* Header */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "8px 20px 16px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 20 }}>🛵</span>
-                  <span style={{ color: "#fff", fontWeight: 900, fontSize: 18 }}>Entrega a domicilio</span>
-                </div>
-                <button onClick={() => setShowDeliveryPopup(false)} style={{
-                  background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 8,
-                  color: "#fff", width: 32, height: 32, fontSize: 16, cursor: "pointer"
-                }}>✕</button>
-              </div>
-
-              <div style={{ padding: "20px 20px 0", display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
-
-                {/* ── Columna izquierda: dirección, hora, zona, status, confirmar ── */}
-                <div style={{ flex: "1 1 320px", minWidth: 280, display: "flex", flexDirection: "column", gap: 14 }}>
-
-                {/* Dirección */}
-                <div>
-                  <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700,
-                    letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Dirección</div>
-                  <input value={direccion} onChange={e => setDireccion(e.target.value)}
-                    placeholder="Calle, número..."
-                    autoFocus
-                    style={{
-                      width: "100%", background: "rgba(255,255,255,0.07)",
-                      border: "1.5px solid rgba(249,115,22,0.5)",
-                      borderRadius: 10, color: "#fff", padding: "11px 14px",
-                      fontSize: 15, fontWeight: 500, boxSizing: "border-box", outline: "none"
-                    }} />
-                  <input value={direccionNote} onChange={e => setDireccionNote(e.target.value)}
-                    placeholder="🏠 Planta, timbre, referencias (opcional)"
-                    style={{
-                      width: "100%", background: "rgba(255,255,255,0.04)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 10, color: "#fff", padding: "9px 14px",
-                      fontSize: 13, marginTop: 8, boxSizing: "border-box", outline: "none"
-                    }} />
-                </div>
-
-                {/* Hora */}
-                <div>
-                  <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700,
-                    letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Hora de entrega</div>
-                  <input type="time" value={hora}
-                    onChange={e => { setForzaHora(false); setHoraFromOperator(e.target.value); }}
-                    style={{
-                      background: forzaHora ? "rgba(251,191,36,0.15)" : "rgba(255,255,255,0.07)",
-                      border: forzaHora ? "2px solid rgba(251,191,36,0.7)" : "1.5px solid rgba(255,255,255,0.2)",
-                      borderRadius: 10, color: "#fff", padding: "10px 14px",
-                      fontSize: 18, fontWeight: 700, outline: "none"
-                    }} />
-                  {forzaHora && (
-                    <div style={{ marginTop: 4, fontSize: 11, color: "#fde68a", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-                      <span>⚠️</span> Hora forzada por operador
-                    </div>
-                  )}
-                </div>
-
-                {/* Zona */}
-                {direccion.trim().length >= 3 && (
-                  <div>
-                    <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700,
-                      letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Zona</div>
-                    {zonaLoading && !zonaManuale && (
-                      <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", fontStyle: "italic" }}>Detectando zona...</span>
-                    )}
-                    {/* Zona confermata: polygon o manuale */}
-                    {!zonaLoading && zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache") && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <ZonaBadge zona={zona} size="lg" />
-                          {zonaManuale && (
-                            <button onClick={() => { setZonaManuale(false); setZonaInfo(null); }} style={{
-                              background: "transparent", border: "1px solid rgba(255,255,255,0.2)",
-                              color: "rgba(255,255,255,0.4)", borderRadius: 6,
-                              padding: "3px 10px", fontSize: 11, cursor: "pointer"
-                            }}>↺ auto</button>
-                          )}
-                        </div>
-                        {zonaInfo?.displayName && !zonaManuale && (
-                          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", lineHeight: 1.4 }}>
-                            📍 {zonaInfo.displayName.split(",").slice(0,2).join(",")}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {/* Zona non trovata o solo keyword — selezione manuale obbligatoria */}
-                    {!zonaLoading && (!zona || (zonaInfo?.metodo === "keyword" && !zonaManuale)) && zonaInfo !== null && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {zonaInfo?.metodo === "keyword" && zona ? (
-                          <span style={{ fontSize: 12, color: "rgba(255,200,50,0.9)", fontWeight: 700 }}>
-                            ⚠️ Calle no encontrada — selecciona zona manualmente
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 12, color: "rgba(255,200,50,0.8)", fontWeight: 600 }}>⚠️ No detectada —</span>
-                        )}
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          {ZONE_DELIVERY.map(z => (
-                            <button key={z.id} onClick={() => {
-                              setZonaInfo({ zona: z, lat: null, lon: null, metodo: "manuale" });
-                              setZonaManuale(true);
-                            }} style={{
-                              background: "transparent", border: `2px solid ${z.colore}`,
-                              color: z.colore, borderRadius: 8,
-                              padding: "5px 12px", cursor: "pointer",
-                              display: "inline-flex", flexDirection: "column",
-                              alignItems: "center", lineHeight: 1, gap: 2
-                            }}>
-                              <span style={{ fontSize: 13, fontWeight: 900 }}>{z.id}</span>
-                              <span style={{ fontSize: 9, fontWeight: 700, opacity: 0.8 }}>
-                                {(z.nomeBreve || z.nome).toUpperCase()}
-                              </span>
-                            </button>
-                          ))}
-                          {direccion.trim() && (
-                            <a href={`https://www.google.com/maps/dir/${encodeURIComponent("Plaza Italica 8, Roquetas de Mar")}/${encodeURIComponent(direccion.trim() + ", Roquetas de Mar")}`}
-                              target="_blank" rel="noopener noreferrer"
-                              style={{ background: "#1D4ED8", color: "#fff", borderRadius: 6,
-                                padding: "4px 12px", fontSize: 12, fontWeight: 800, textDecoration: "none" }}>
-                              🗺 Ver ruta
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Suggerimento giro esistente nella stessa zona */}
-                {!zonaLoading && zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache") && (() => {
-                  const sugg = suggerisciOrario(zona.id, ordenes);
-                  if (!sugg) return null;
-                  const toM = (t) => { const [h,m]=t.split(":").map(Number); return h*60+m; };
-                  const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
-                  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
-                  const tgReal = risolviTempoAndata(zonaInfo?.durataAndataMin, zonaInfo?.lat, zonaInfo?.lon, zona);
-                  const horaFornoMin = toM(sugg.orario) - tgReal;
-                  const fattibile = horaFornoMin >= nowMin + 5;
-
-                  if (fattibile) {
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(0,151,167,0.1)", border: "1.5px solid rgba(0,151,167,0.5)",
-                        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 16 }}>🛵</span>
-                        <span style={{ color: "#67e8f9", fontWeight: 700, fontSize: 13, flex: 1 }}>
-                          Ya hay {sugg.nOrdini} pedido{sugg.nOrdini !== 1 ? "s" : ""} en {zona.id} a las {sugg.orario}
-                        </span>
-                        <button onClick={() => setHoraFromOperator(sugg.orario)} style={{
-                          background: "rgba(0,151,167,0.3)", border: "1px solid rgba(0,151,167,0.7)",
-                          color: "#fff", borderRadius: 8, padding: "6px 14px",
-                          fontSize: 13, fontWeight: 800, cursor: "pointer"
-                        }}>→ Añadir a este giro</button>
-                      </div>
-                    );
-                  } else {
-                    // Slot troppo vicino — trova il prossimo slot fattibile
-                    const toH10 = (m) => { const r = Math.ceil(m/10)*10; return toH(r); };
-                    const minForno = nowMin + 5;
-                    const minConsegna = minForno + tgReal;
-                    const prossimoSlot = toH10(minConsegna);
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(251,191,36,0.08)", border: "1.5px solid rgba(251,191,36,0.45)",
-                        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 16 }}>⚠️</span>
-                        <span style={{ color: "#fde68a", fontWeight: 700, fontSize: 13, flex: 1 }}>
-                          Giro {zona.id} {sugg.orario} demasiado cerca — siguiente slot: {prossimoSlot}
-                        </span>
-                        <button onClick={() => setHoraFromOperator(prossimoSlot)} style={{
-                          background: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.6)",
-                          color: "#fde68a", borderRadius: 8, padding: "6px 14px",
-                          fontSize: 13, fontWeight: 800, cursor: "pointer"
-                        }}>→ {prossimoSlot}</button>
-                      </div>
-                    );
-                  }
-                })()}
-
-                {/* ── Status unificato: forno + driver (schedule-aware cascade) ── */}
-                {(deliveryStatus.fromBackend || (!backendTimingLoading && sf)) && hora && zona && (() => {
-                  if (deliveryStatus.fromBackend && backendTiming) {
-                    const selectedH = deliveryStatus.selectedH || hora;
-                    const firstAvailableH = deliveryStatus.firstAvailableH || deliveryStatus.sugeridoH;
-                    const driverConflict = !!deliveryStatus.isBlocked;
-                    const hasAlternative = driverConflict && firstAvailableH && firstAvailableH !== selectedH;
-                    const fornoOut = backendTiming.forno_out || sf?.horaForno || "—";
-                    const load = sf?.load != null ? ` (${sf.load}/4)` : "";
-
-                    if (deliveryStatus.outOfServiceWindow) {
-                      return (
-                        <div style={{ borderRadius: 10, padding: "12px 14px",
-                          background: forzaHora ? "rgba(251,191,36,0.10)" : "rgba(239,68,68,0.12)",
-                          border: forzaHora ? "1.5px solid rgba(251,191,36,0.5)" : "2px solid rgba(239,68,68,0.6)",
-                          display: "flex", flexDirection: "column", gap: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 18 }}>{forzaHora ? "⚠️" : "🚨"}</span>
-                            <span style={{ color: forzaHora ? "#fde68a" : "#fca5a5", fontWeight: 800, fontSize: 14 }}>
-                              Delivery no disponible después de las 23:00. Puedes forzarlo solo como excepción especial.
-                            </span>
-                          </div>
-                          <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, paddingLeft: 26, lineHeight: 1.45 }}>
-                            No se aplicará ninguna sugerencia automática fuera del horario normal.
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    if (driverConflict) {
-                      return (
-                        <div style={{ borderRadius: 10, padding: "12px 14px",
-                          background: forzaHora ? "rgba(251,191,36,0.10)" : "rgba(239,68,68,0.12)",
-                          border: forzaHora ? "1.5px solid rgba(251,191,36,0.5)" : "2px solid rgba(239,68,68,0.6)",
-                          display: "flex", flexDirection: "column", gap: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 18 }}>{forzaHora ? "⚠️" : "🚨"}</span>
-                            <span style={{ color: forzaHora ? "#fde68a" : "#fca5a5", fontWeight: 800, fontSize: 14 }}>
-                              Hora pedida: {selectedH}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", paddingLeft: 26, lineHeight: 1.45 }}>
-                            {backendTiming.driver?.message || "Driver ocupado"}
-                          </div>
-                          {hasAlternative && (
-                            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", paddingLeft: 26 }}>
-                              Primera hora disponible: <strong style={{ color: "#86efac", fontWeight: 900, fontSize: 15 }}>{firstAvailableH}</strong>
-                            </div>
-                          )}
-                          {!forzaHora && (
-                            <div style={{ paddingLeft: 26 }}>
-                              <button onClick={() => setForzaHora(true)} style={{
-                                background: "rgba(251,191,36,0.12)", border: "1.5px solid rgba(251,191,36,0.6)",
-                                color: "#fde68a", borderRadius: 8, padding: "5px 12px",
-                                fontSize: 12, fontWeight: 800, cursor: "pointer"
-                              }}>
-                                ⚠️ Confirmar {selectedH} forzado
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(34,197,94,0.08)", border: "1.5px solid rgba(34,197,94,0.45)",
-                        display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 16 }}>✅</span>
-                          <span style={{ color: "#86efac", fontWeight: 800, fontSize: 14 }}>
-                            {recommendedCompatibleGiro
-                              ? `Entrega separada seleccionada: ${selectedH}`
-                              : `${horaTouchedByOperator ? "Propón al cliente" : "Primera hora disponible"}: ${selectedH}`}
-                          </span>
-                        </div>
-                        {recommendedCompatibleGiro && (
-                          <div style={{ fontSize: 12, color: "#67e8f9", fontWeight: 600, paddingLeft: 24, lineHeight: 1.4 }}>
-                            🛵 Giro recomendado: {recommendedCompatibleGiro.slotHora} · pulsa «Usar giro» para usarlo
-                          </div>
-                        )}
-                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
-                          Salida horno {fornoOut}{load}
-                        </div>
-                        <div style={{ fontSize: 12, color: "#86efac", fontWeight: 600, paddingLeft: 24 }}>
-                          🛵 Driver disponible
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  const toM = (t) => { if (!t) return null; const [h,m]=String(t).split(":").map(Number); return h*60+(m||0); };
-                  const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
-                  const horaMin = toM(hora);
-                  const isOutOfService = deliveryStatus.outOfServiceWindow || sf.propose?.outOfServiceWindow;
-
-                  if (isOutOfService) {
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: forzaHora ? "rgba(251,191,36,0.10)" : "rgba(239,68,68,0.12)",
-                        border: forzaHora ? "1.5px solid rgba(251,191,36,0.5)" : "2px solid rgba(239,68,68,0.6)",
-                        display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 18 }}>{forzaHora ? "⚠️" : "🚨"}</span>
-                          <span style={{ color: forzaHora ? "#fde68a" : "#fca5a5", fontWeight: 800, fontSize: 14 }}>
-                            Delivery no disponible después de las 23:00. Puedes forzarlo solo como excepción especial.
-                          </span>
-                        </div>
-                        <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, paddingLeft: 26, lineHeight: 1.45 }}>
-                          No se aplicará ninguna sugerencia automática fuera del horario normal.
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // ── Sintesi vincoli per il render (display) ─────────────────────
-                  // Costruiti da: sf.propose (driver schedule cascade) + forno
-                  const driverConflicts = []; // {zona, hora, rientroH, rientroM} — giri bloccanti
-                  const constraints = [];
-
-                  // Vincolo forno (slot pizze pieno)
-                  if (!sf.slotOk && sf.consegnaSuggerita) {
-                    constraints.push({
-                      kind: "forno",
-                      minHora: toM(sf.consegnaSuggerita),
-                      reason: `Horno lleno a las ${sf.slotSuggerito} (${sf.load}/4)`
-                    });
-                  }
-
-                  // Vincolo driver: usa sf.propose (schedule-aware con cascade reale)
-                  if (sf.propose && !sf.propose.ok) {
-                    // Estrai giri bloccanti dalla simulazione (cascadeati realisticamente)
-                    const giriBloccanti = (sf.propose.sim?.giri || [])
-                      .filter(g => g.horaMin < horaMin);
-                    giriBloccanti.forEach(g => {
-                      driverConflicts.push({
-                        zona: g.zona, hora: toH(g.horaMin),
-                        // rientro REALE cascadeato, non teorico
-                        rientroM: g.rientroMin, rientroH: toH(g.rientroMin)
-                      });
-                    });
-                    constraints.push({
-                      kind: "driverFuture",
-                      minHora: sf.propose.consegnaPropostaMin,
-                      reason: driverConflicts.length === 0 ? sf.propose.motivo : null,
-                    });
-                  }
-
-                  // Override real-time driver IN_GIRO (DRIVER_STATO config) —
-                  // aggiunge il check solo se non già coperto da propose
-                  if (sf.isInGiro && sf.driverRientro && (!sf.propose || sf.propose.ok)) {
-                    const driverMin = Math.ceil((toM(sf.driverRientro) + (sf.tgNew || zona.tempoGiro)) / 5) * 5;
-                    const driverZona = driverStato?.zona || "otra zona";
-                    constraints.push({
-                      kind: "driverNow",
-                      minHora: driverMin,
-                      reason: `Driver en ${driverZona} ahora · vuelve ~${sf.driverRientro}`
-                    });
-                  }
-
-                  // ── STATO OK ─────────────────────────────────────
-                  if (constraints.length === 0) {
-                    // Driver line dipende dall'aggregazione same-zone-slot e da DRIVER_STATO
-                    let driverLine = `🛵 Driver disponible`;
-                    if (sf.propose?.aggregato) {
-                      driverLine = `🛵 Agregar al giro ${zona.id} ${sf.propose.giroEsistente?.hora} (${(sf.propose.giroEsistente?.count || 0) + 1}/${zona.maxOrdiniPerGiro})`;
-                    } else if (sf.isInGiro && sf.driverRientro) {
-                      driverLine = `🛵 Driver vuelve ~${sf.driverRientro} · OK`;
-                    }
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(34,197,94,0.08)", border: "1.5px solid rgba(34,197,94,0.45)",
-                        display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 16 }}>✅</span>
-                          <span style={{ color: "#86efac", fontWeight: 800, fontSize: 14 }}>
-                            Propón al cliente: {hora}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
-                          Salida horno {sf.horaForno} ({sf.load}/4)
-                        </div>
-                        <div style={{ fontSize: 12, color: "#86efac", fontWeight: 600, paddingLeft: 24 }}>
-                          {driverLine}
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // ── Stato non OK: blocco o warning ───────────────
-                  // sugeridoH già calcolato in deliveryStatus useMemo (single source of truth)
-                  const sugeridoH = deliveryStatus.sugeridoH || "??:??";
-                  const isBlocked = deliveryStatus.isBlocked;
-
-                  // Helper: una riga per ogni "tipo" di vincolo, aggregando i driverFuture
-                  const renderConstraintLines = (color) => {
-                    const lines = [];
-                    constraints.forEach((c, i) => {
-                      if (c.kind === "driverFuture" && driverConflicts.length > 0) {
-                        const maxRientro = driverConflicts.reduce((a, b) => a.rientroM > b.rientroM ? a : b);
-                        const elenco = driverConflicts
-                          .map(d => `${d.zona} ${d.hora}`)
-                          .join(" · ");
-                        lines.push(
-                          <div key={`c-${i}`} style={{ fontSize: 12, color, paddingLeft: 24, lineHeight: 1.5 }}>
-                            🛵 Driver ocupado hasta ~{maxRientro.rientroH}
-                            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 11, marginTop: 2 }}>
-                              Pedidos en curso: {elenco}
-                            </div>
-                          </div>
-                        );
-                      } else if (c.reason) {
-                        lines.push(
-                          <div key={`c-${i}`} style={{ fontSize: 12, color, paddingLeft: 24 }}>
-                            · {c.reason}
-                          </div>
-                        );
-                      }
-                    });
-                    return lines;
-                  };
-
-                  // ── STATO BLOCCATO ───────────────────────────────
-                  // Se l'operatore ha forzato → box ridotto, conferma forzata in basso
-                  if (isBlocked && forzaHora) {
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(251,191,36,0.10)", border: "1.5px solid rgba(251,191,36,0.5)",
-                        display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 16 }}>⚠️</span>
-                          <span style={{ color: "#fde68a", fontWeight: 800, fontSize: 13 }}>
-                            Hora {hora} forzada — el driver puede llegar tarde
-                          </span>
-                        </div>
-                        <div style={{ paddingLeft: 24 }}>
-                          <button onClick={() => setForzaHora(false)} style={{
-                            background: "transparent", border: "1px solid rgba(255,255,255,0.25)",
-                            color: "rgba(255,255,255,0.7)", borderRadius: 6, padding: "4px 12px",
-                            fontSize: 12, fontWeight: 700, cursor: "pointer"
-                          }}>↩ Usar sugerencia {sugeridoH}</button>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  if (isBlocked) {
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(239,68,68,0.12)", border: "2px solid rgba(239,68,68,0.6)",
-                        display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 18 }}>🚨</span>
-                          <span style={{ color: "#fca5a5", fontWeight: 800, fontSize: 14 }}>
-                            {hora} no es posible
-                          </span>
-                        </div>
-                        {renderConstraintLines("rgba(255,255,255,0.75)")}
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, paddingLeft: 24, flexWrap: "wrap" }}>
-                          <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 13 }}>
-                            Hora sugerida: <strong style={{ color: "#86efac", fontWeight: 900, fontSize: 15 }}>{sugeridoH}</strong>
-                          </span>
-                          <button onClick={() => setForzaHora(true)} style={{
-                            background: "rgba(251,191,36,0.12)", border: "1.5px solid rgba(251,191,36,0.6)",
-                            color: "#fde68a", borderRadius: 8, padding: "5px 12px",
-                            fontSize: 12, fontWeight: 800, cursor: "pointer",
-                            display: "inline-flex", alignItems: "center", gap: 5
-                          }} title="Forzar la hora original — el driver puede llegar tarde">
-                            ⚠️ Forzar {hora}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // ── STATO ATTENZIONE: hora OK ma con vincoli noti ─────
-                  return (
-                    <div style={{ borderRadius: 10, padding: "12px 14px",
-                      background: "rgba(251,191,36,0.10)", border: "1.5px solid rgba(251,191,36,0.5)",
-                      display: "flex", flexDirection: "column", gap: 6 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 16 }}>⚠️</span>
-                        <span style={{ color: "#fde68a", fontWeight: 800, fontSize: 14 }}>
-                          Propón al cliente: {hora} <span style={{ fontWeight: 500, color: "rgba(255,255,255,0.55)", fontSize: 12 }}>· ajustado</span>
-                        </span>
-                      </div>
-                      {renderConstraintLines("rgba(255,255,255,0.7)")}
-                    </div>
-                  );
-                })()}
-
-                {/* Tasto conferma — 3 stati visivi:
-                    1. OK / sin zona     → verde (colore zona) "Entrega en {Q} confirmada"
-                    2. BLOCKED no forzato → verde, APPLICA la sugerencia al click
-                    3. BLOCKED forzato    → arancione/giallo, conferma hora forzata
-                */}
-                {(() => {
-                  const { isBlocked, selectedH, sugeridoH, outOfServiceWindow } = deliveryStatus;
-                  const zonaOk = zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
-                  let bg, label, onClick;
-                  if (isBlocked && forzaHora) {
-                    // Caso forzato — visivamente arancione/giallo per segnalare scelta non standard
-                    bg = "linear-gradient(135deg, #F59E0B, #D97706)";
-                    label = `⚠️ Confirmar ${selectedH || hora} forzado`;
-                    onClick = () => {
-                      if (deliveryStatus.fromBackend && selectedH && selectedH !== hora) {
-                        setHoraFromOperator(selectedH);
-                      }
-                      setShowDeliveryPopup(false);
-                    };
-                  } else if (isBlocked && outOfServiceWindow) {
-                    // Fuori orario servizio: nessuna sugerencia da applicare, solo forzatura esplicita.
-                    bg = "linear-gradient(135deg, #F59E0B, #D97706)";
-                    label = "⚠️ Forzar como excepción";
-                    onClick = () => setForzaHora(true);
-                  } else if (isBlocked && sugeridoH) {
-                    // Caso BLOCKED non forzato — il click applica la prima disponibilità backend
-                    bg = "linear-gradient(135deg, #16A34A, #15803D)";
-                    label = `✅ Aplicar primera disponible ${sugeridoH} y confirmar`;
-                    onClick = () => { setHoraFromOperator(sugeridoH); setShowDeliveryPopup(false); };
-                  } else {
-                    // Caso OK normale
-                    bg = zonaOk ? zona.colore : "rgba(249,115,22,0.7)";
-                    label = recommendedCompatibleGiro && selectedH
-                      ? `✓ Confirmar entrega separada ${selectedH}`
-                      : deliveryStatus.fromBackend && selectedH
-                      ? `✓ Confirmar entrega ${selectedH}`
-                      : zonaOk ? `✓ Entrega en ${zona.id} confirmada` : "✓ Confirmar dirección";
-                    onClick = () => {
-                      if (deliveryStatus.fromBackend && selectedH && selectedH !== hora) {
-                        setHora(selectedH);
-                      }
-                      setShowDeliveryPopup(false);
-                    };
-                  }
-                  return (
-                    <button onClick={onClick} style={{
-                      width: "100%", padding: "15px",
-                      background: bg,
-                      border: "none", borderRadius: 12,
-                      color: "#fff", fontWeight: 900, fontSize: 16,
-                      cursor: "pointer", marginTop: 4,
-                      boxShadow: zonaOk && !isBlocked ? `0 4px 20px ${zona.colore}55`
-                        : isBlocked && forzaHora ? "0 4px 20px rgba(245,158,11,0.45)"
-                        : isBlocked ? "0 4px 20px rgba(22,163,74,0.45)"
-                        : "none"
-                    }}>
-                      {label}
-                    </button>
-                  );
-                })()}
-                </div>
-
-                {/* ── Columna derecha: card Disponibilidad (lateral en desktop/tablet,
-                    debajo en móvil via flex-wrap). Misma lógica de presentación. ── */}
-                {!zonaLoading && zonaOkForDisponibilidad && (
-                  <div style={{ flex: "1 1 300px", minWidth: 260 }}>
-                    {(() => {
-                      const disp = deliveryDisponibilidad;
-                      return (
-                        <div>
-                          <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, fontWeight: 800,
-                            letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>Disponibilidad</div>
-                          {disp.length === 0 ? (
-                            <span style={{ fontSize: 14, color: "#86efac" }}>Sin giros activos · todo libre</span>
-                          ) : (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                              {disp.slice(0, 3).map(r => {
-                                const isCompat = r.kind === "compatible";
-                                const isNoAgg  = r.kind === "no_agregable";
-                                const statusLabel = isCompat
-                                  ? `Usar giro ${r.slotHora} →`
-                                  : isNoAgg
-                                  ? "No agregable"
-                                  : (r.conflicto ? "Ocupado ⚠" : "Ocupado");
-                                const statusColor = isCompat
-                                  ? "#67e8f9"
-                                  : isNoAgg
-                                  ? "rgba(255,255,255,0.45)"
-                                  : (r.conflicto ? "#fca5a5" : "rgba(255,255,255,0.5)");
-                                return (
-                                  <div key={r.key}
-                                    onClick={isCompat ? () => setHoraFromOperator(r.slotHora) : undefined}
-                                    title={isCompat
-                                      ? `Agregar al giro ${r.zona} ${r.slotHora}`
-                                      : isNoAgg
-                                      ? `Giro ${r.zona} ${r.slotHora}: la pizza nueva saldría del horno demasiado tarde para este giro`
-                                      : undefined}
-                                    style={{
-                                      display: "flex", alignItems: "center", gap: 10, fontSize: 15,
-                                      padding: "10px 12px", borderRadius: 10,
-                                      cursor: isCompat ? "pointer" : "default",
-                                      background: isCompat ? "rgba(0,151,167,0.20)" : "rgba(255,255,255,0.04)",
-                                      border: isCompat ? "1.5px solid rgba(0,151,167,0.75)" : "1px solid rgba(255,255,255,0.10)",
-                                      opacity: isNoAgg ? 0.7 : 1,
-                                    }}>
-                                    <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 16, fontWeight: 700, color: "#fff", minWidth: 104 }}>{r.range}</span>
-                                    <span style={{
-                                      fontSize: 14, fontWeight: 800, color: "#a5f3fc",
-                                      background: isCompat ? "rgba(0,151,167,0.30)" : "rgba(0,151,167,0.12)",
-                                      border: "1.5px solid rgba(0,151,167,0.85)", borderRadius: 7, padding: "2px 9px",
-                                      cursor: isCompat ? "pointer" : "default"
-                                    }}>[{r.zona}]</span>
-                                    <span style={{
-                                      marginLeft: "auto", fontWeight: 800, fontSize: 14,
-                                      color: isCompat ? "#0b1220" : statusColor,
-                                      background: isCompat ? "#67e8f9" : "transparent",
-                                      borderRadius: isCompat ? 8 : 0,
-                                      padding: isCompat ? "5px 12px" : 0,
-                                    }}>
-                                      {statusLabel}{r.count > 1 ? ` ·${r.count}` : ""}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {showPlannerLabPopup && (
+        <PremiumPlannerPopup
+          onClose={closePlannerLab}
+          data={strategicPreview}
+          labWarning={strategicWarning}
+          loading={strategicLoading}
+          manualCurrentZone={zonaInfo?.zona?.id || null}
+          manualStartTime={hora || null}
+          manualRoutePreview={manualRoutePreview}
+          manualRouteLoading={manualRouteLoading}
+          manualRouteWarning={manualRouteWarning}
+          onCalcManualRoute={calcManualRoute}
+          onClearManualRoute={clearManualRoute}
+        />
+      )}
 
       {/* ── ItemPickerModal ────────────────────────────────────────────── */}
       <ItemPickerModal

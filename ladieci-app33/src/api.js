@@ -307,6 +307,31 @@ const api = {
     return proxyPost({ action: 'previewOrderTiming', ...input });
   },
 
+  // Nuevo Pedido Premium → planner backend (read-only, contract
+  // "nuevo-pedido-planner-preview-v1"). Speculare a previewOrderTiming ma punta
+  // alla nuova action planner: fonte unica per disponibilità/lead-time/giri.
+  // Il frontend MOSTRA il contract, non lo ricalcola.
+  previewOrderPlanner: function(input = {}) {
+    return proxyPost({ action: 'previewOrderPlanner', ...input });
+  },
+
+  // Premium Planner → strategic preview backend (read-only, contract
+  // "premium-planner-strategic-preview-v1"). Il frontend MOSTRA il contract
+  // (proposals/opportunities, firstAvailable, bestProposal, warnings, blockers),
+  // NON calcola ETA/slip/capacity/compatibilità.
+  previewStrategicOpportunities: function(input = {}) {
+    return proxyPost({ action: 'previewStrategicOpportunities', ...input });
+  },
+
+  // Premium Planner → manual giro route preview backend (read-only, contract
+  // "premium-planner-manual-giro-route-preview-v1"). El operador propone la
+  // SECUENCIA de paradas (selectedStops/selectedZones, ej Q2→Q5) y el backend
+  // devuelve un route-timeline-v2 (ETA/slip/return/risk/operatorMessage). El
+  // frontend SOLO dibuja la respuesta. READ-ONLY: no escribe nada.
+  previewManualGiroRoute: function(input = {}) {
+    return proxyPost({ action: 'previewManualGiroRoute', ...input });
+  },
+
   // Crea ordine. THROW se Railway non conferma la creazione con un id valido.
   // Il chiamante DEVE wrappare in try/catch e fare rollback dello state ottimistico.
   // `data.client_req_id` (UUID) abilita l'idempotency: retry sicuri senza duplicati.
