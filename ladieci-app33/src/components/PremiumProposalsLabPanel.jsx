@@ -20,6 +20,7 @@
 import React, { useState, useCallback } from "react";
 import { isPremiumProposalsEnabled } from "../featureFlags";
 import { fetchPremiumProposals } from "../api/premiumProposals";
+import PremiumProposalsCompact from "./PremiumProposalsCompact";
 
 const wrap = {
   minHeight: "100vh",
@@ -243,12 +244,14 @@ export default function PremiumProposalsLabPanel({ onBack }) {
   const [view, setView] = useState(null); // summary normalizzato, mai il body grezzo
   const [selectedRank, setSelectedRank] = useState(null); // selezione LOCALE
   const [showTech, setShowTech] = useState(false); // dettagli tecnici collassati
+  const [rawProposals, setRawProposals] = useState(null); // proposals grezze (stesso fetch) per la Vista compacta
 
   const run = useCallback(async () => {
     setLoading(true);
     setError("");
     setView(null);
     setSelectedRank(null);
+    setRawProposals(null);
     const res = await fetchPremiumProposals();
     if (!res.ok) {
       setError(errorText(res.status, res.data));
@@ -277,6 +280,8 @@ export default function PremiumProposalsLabPanel({ onBack }) {
       warningsCount: Array.isArray(d.warnings) ? d.warnings.length : 0,
       blockersCount: Array.isArray(d.blockers) ? d.blockers.length : 0,
     });
+    // Stesse proposals grezze (nessun nuovo fetch) per la Vista compacta.
+    setRawProposals(Array.isArray(d.proposals) ? d.proposals : []);
     // Auto-seleziona la migliore (rank più basso) per mostrare subito ruta+mappa.
     setSelectedRank(rows.length > 0 ? rows[0].rank : null);
     setLoading(false);
@@ -316,8 +321,22 @@ export default function PremiumProposalsLabPanel({ onBack }) {
               </div>
             )}
 
+            {/* Vista compacta: anteprima del blocco LEGGERO per NuevoPedidoModal.
+                Usa gli STESSI proposals già caricati (rawProposals) — nessun fetch
+                nuovo; il bottone interno riusa `run`. NON è montato nel modal. */}
+            <div style={sectionTitle}>Vista compacta (preview modal)</div>
+            <PremiumProposalsCompact
+              proposals={rawProposals || []}
+              loading={loading}
+              error={error}
+              onRunPreview={run}
+              disabled={loading}
+              hint="Vista ligera para el modal de Nuevo Pedido"
+            />
+
             {view && !error && (
               <div style={{ marginTop: 6 }}>
+                <div style={sectionTitle}>Central de reparto · detalle completo</div>
                 {rows.length === 0 ? (
                   <div style={{ color: "#6a6a72", fontSize: 13, padding: "12px 0" }}>
                     Sin propuestas para esta situación.
