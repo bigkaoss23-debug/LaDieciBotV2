@@ -1407,6 +1407,55 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               })()}
             </div>
 
+            {/* ── Inline planner hint (consejero read-only, auto-fetched) ─── */}
+            {(plannerPreviewLoading || plannerPreview || plannerPreviewError) && (
+              <div style={{
+                padding: "5px 24px",
+                display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                borderBottom: "1px solid rgba(208,184,145,0.10)",
+                fontSize: 11, fontWeight: 700,
+              }}>
+                {plannerPreviewLoading && !plannerPreview && (
+                  <span style={{ color: "rgba(255,255,255,0.38)", fontStyle: "italic" }}>⟳ Planner calculando…</span>
+                )}
+                {!plannerPreviewLoading && plannerPreviewError && (
+                  <span style={{ color: "rgba(255,255,255,0.25)", fontStyle: "italic" }}>{plannerPreviewError}</span>
+                )}
+                {plannerPreview && (
+                  <>
+                    <span style={{
+                      color: plannerOk === false ? "#fca5a5" : "#86efac",
+                      background: plannerOk === false ? "rgba(239,68,68,0.10)" : "rgba(34,197,94,0.10)",
+                      border: `1px solid ${plannerOk === false ? "rgba(239,68,68,0.26)" : "rgba(34,197,94,0.26)"}`,
+                      borderRadius: 999, padding: "2px 8px",
+                    }}>
+                      {plannerOk === false ? "⚠ Bloqueado" : "✓ Planner OK"}
+                    </span>
+                    {plannerBlockers.length > 0 && (
+                      <span style={{ color: "#fca5a5" }}>
+                        {plannerBlockers[0]?.message || String(plannerBlockers[0])}
+                      </span>
+                    )}
+                    {plannerOk !== false && (plannerRecommendation?.hora_proposta || plannerRecommendation?.suggested_hora) && (
+                      <span style={{ color: "#d1fae5" }}>
+                        → {plannerRecommendation.hora_proposta || plannerRecommendation.suggested_hora}
+                      </span>
+                    )}
+                    {plannerOk !== false && plannerGiro?.slot_hora && (
+                      <span style={{ color: "#a5f3fc" }}>
+                        🔄 {plannerGiro.slot_hora}{plannerGiro.zona ? ` · ${plannerGiro.zona}` : ""}
+                      </span>
+                    )}
+                    {plannerWarnings.slice(0, 2).map((w, i) => (
+                      <span key={i} style={{ color: "#fbbf24" }}>
+                        · {w?.message || String(w)}
+                      </span>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+
             {/* ── Header prodotti ─────────────────────────────────────────── */}
             <div className="np-products-head">
               <div>
