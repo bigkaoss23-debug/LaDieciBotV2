@@ -21,6 +21,7 @@ import React, { useState, useCallback } from "react";
 import { isPremiumProposalsEnabled } from "../featureFlags";
 import { fetchPremiumProposals } from "../api/premiumProposals";
 import PremiumProposalsCompact from "./PremiumProposalsCompact";
+import ManualGiroSection from "./ManualGiroSection";
 
 const wrap = {
   minHeight: "100vh",
@@ -311,6 +312,12 @@ export default function PremiumProposalsLabPanel({ onBack }) {
               </span>
             </div>
 
+            {/* Centralina manuale multizona: comporre tappe → preview → forzar.
+                È l'attività principale di questa pagina. Scrive sul DB live solo
+                all'Aplicar/Forzar (createManualGiro); il preview è read-only. */}
+            <ManualGiroSection />
+
+            <div style={sectionTitle}>Propuestas automáticas (read-only)</div>
             <button type="button" style={runBtn(loading)} onClick={run} disabled={loading}>
               {loading ? "Calculando…" : "▷ Calcular propuestas"}
             </button>
