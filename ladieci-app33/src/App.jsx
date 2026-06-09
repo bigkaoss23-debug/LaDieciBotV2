@@ -12,6 +12,7 @@ import ServicioPage from './components/ServicioPage';
 import EconomiaPage from './components/EconomiaPage';
 import RepartidorPage from './components/repartidor/RepartidorPage';
 import ShadowPreviewPanel from './components/ShadowPreviewPanel';
+import PremiumProposalsLabPanel from './components/PremiumProposalsLabPanel';
 import { DevHeartbeatSender } from './components/DevPresence';
 import OpsHealthBadge from './components/OpsHealthBadge';
 
@@ -48,8 +49,9 @@ export default function App() {
     if (!path || path === 'repartidor') return;
     // Deep-link interno/admin NASCOSTO: /shadow-preview → vista read-only del planner.
     // Protetto dal PIN come /servizio, NON linkato da nessuna vista operatore.
-    const dest  = path === 'servizio'       ? 'servicio'
-                : path === 'shadow-preview' ? 'shadowpreview'
+    const dest  = path === 'servizio'          ? 'servicio'
+                : path === 'shadow-preview'    ? 'shadowpreview'
+                : path === 'premium-proposals' ? 'premiumproposalslab'
                 : 'econbot';
     const go    = () => setScreen(dest);
     if (auth.isAuthenticated()) {
@@ -349,6 +351,10 @@ export default function App() {
       {/* Vista interna/admin read-only del Delivery Planner. Accesso solo via
           deep-link nascosto /shadow-preview (dietro PIN), nessun bottone operatore. */}
       {screen==="shadowpreview" && <ShadowPreviewPanel onBack={()=>setScreen("home")}/>}
+      {/* Vista interna/admin SCAFFOLD Premium Planner proposals. Accesso solo via
+          deep-link nascosto /premium-proposals (dietro PIN), flag REACT_APP_PREMIUM_PROPOSALS
+          default OFF, nessun bottone operatore, nessuna chiamata backend in questo step. */}
+      {screen==="premiumproposalslab" && <PremiumProposalsLabPanel onBack={()=>setScreen("home")}/>}
 
       {/* ─── Modal PIN — si apre quando si clicca Servicio/Economía/Bot ─── */}
       {showPin && (
