@@ -351,9 +351,10 @@ export default function App() {
       {/* Vista interna/admin read-only del Delivery Planner. Accesso solo via
           deep-link nascosto /shadow-preview (dietro PIN), nessun bottone operatore. */}
       {screen==="shadowpreview" && <ShadowPreviewPanel onBack={()=>setScreen("home")}/>}
-      {/* Vista interna/admin SCAFFOLD Premium Planner proposals. Accesso solo via
-          deep-link nascosto /premium-proposals (dietro PIN), flag REACT_APP_PREMIUM_PROPOSALS
-          default OFF, nessun bottone operatore, nessuna chiamata backend in questo step. */}
+      {/* Premium Planner · DEBUG (degradato 2026-06-09): il prodotto vive ora in
+          NuevoPedidoModal. Questa è solo diagnostica del contract backend. Accesso
+          via deep-link nascosto /premium-proposals (dietro PIN), flag
+          REACT_APP_PREMIUM_PROPOSALS default OFF, nessun bottone operatore. */}
       {screen==="premiumproposalslab" && <PremiumProposalsLabPanel onBack={()=>setScreen("home")}/>}
 
       {/* ─── Modal PIN — si apre quando si clicca Servicio/Economía/Bot ─── */}

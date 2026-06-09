@@ -1,18 +1,28 @@
 // src/components/PremiumProposalsLabPanel.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-// "Central de reparto" — pannello interno/admin del Premium Planner (LAB).
+// Premium Planner · DEBUG — pannello diagnostico interno (NON è il prodotto).
+//
+// ⚠️ DEGRADATO A DEBUG (consolidamento 2026-06-09): il prodotto Premium Planner
+// vive ora dentro NuevoPedidoModal (bottone "◎ Ver propuestas LAB" → popup con
+// mappa + propuestas + ruta manual + planner hint inline). Questa pagina resta
+// SOLO come banco di prova / diagnostica del contract backend: serve a verificare
+// le stesse action read-only (previewStrategicOpportunities, fetchPremiumProposals,
+// previewManualGiroRoute) in isolamento, senza il rumore del modal. NON è una
+// vista operatore e NON va promossa a prodotto.
 //
 // Accesso SOLO via deep-link nascosto /premium-proposals (dietro PIN), come
 // /shadow-preview. NESSUN bottone/menu operatore punta qui.
 //
-// READ-ONLY: con flag ON un bottone chiama l'azione backend live
+// READ-ONLY (propuestas): un bottone chiama l'azione backend live
 // `previewStrategicOpportunities` (preview, safety writes:false) con una fixture
 // sintetica senza PII, e mostra: "Mejor propuesta" + cards selezionabili + ruta
 // (routeTimeline) + mini-mappa zone con ETA. Tutti i valori arrivano dal backend:
-// il frontend NON calcola ETA/ranking/status, NON applica nulla, NON crea
-// manual_giros, NON tocca NuevoPedidoModal, NON mostra il body grezzo né PII.
-// Se proposals[] manca → "backend contract unavailable" (NIENTE fallback da
-// opportunities[]).
+// il frontend NON calcola ETA/ranking/status, NON applica nulla, NON tocca
+// NuevoPedidoModal, NON mostra il body grezzo né PII. Se proposals[] manca →
+// "backend contract unavailable" (NIENTE fallback da opportunities[]).
+//
+// ⚠️ ManualGiroSection (sotto) è l'UNICO punto con WRITE possibile (createManualGiro),
+// doppiamente disarmato: flag REACT_APP_MANUAL_GIRO_WRITE (default OFF) + conferma.
 //
 // Il flag REACT_APP_PREMIUM_PROPOSALS (default OFF) decide cosa mostrare.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -304,12 +314,19 @@ export default function PremiumProposalsLabPanel({ onBack }) {
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <div>
-                <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: -0.3 }}>Central de reparto</h2>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>Vista interna · solo lectura</div>
+                <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: -0.3 }}>Premium Planner · DEBUG</h2>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>Banco de pruebas interno · solo lectura</div>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#7cb342", background: "rgba(124,179,66,0.1)", border: "1px solid rgba(124,179,66,0.35)", borderRadius: 20, padding: "5px 11px" }}>
-                🔒 Read-only · backend verified
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 20, padding: "5px 11px" }}>
+                🧪 DEBUG · no es el producto
               </span>
+            </div>
+
+            {/* Banner di degradazione: indirizza al prodotto reale (il modal). */}
+            <div style={{ marginTop: 14, padding: "10px 13px", borderRadius: 10, border: "1px solid rgba(245,158,11,0.30)", background: "rgba(245,158,11,0.06)", fontSize: 12.5, color: "#d9c08a", lineHeight: 1.5 }}>
+              El producto Premium Planner vive ahora en <b style={{ color: "#f3e3b8" }}>Nuevo Pedido</b> (botón
+              «◎ Ver propuestas LAB» → popup con mapa, propuestas y ruta manual). Esta página es solo un
+              banco de pruebas del contract backend en aislamiento.
             </div>
 
             {/* Centralina manuale multizona: comporre tappe → preview → forzar.
