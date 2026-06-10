@@ -24,7 +24,6 @@ const DireccionInlinePanel = ({
   hora,
   setHoraFromOperator,
   deliveryStatus,
-  onOpenPlannerLab,
   onParaAhora,
   paraAhoraLoading,
   ritiroInmediato,
@@ -191,9 +190,12 @@ const DireccionInlinePanel = ({
             </div>
           </>
         )}
-        {isDomicilio && (
-          <button type="button" className="np-recalc" onClick={onOpenPlannerLab}>◎ Ver propuestas de entrega</button>
-        )}
+        {/* "Ver propuestas de entrega" (abría PremiumPlannerPopup) RETIRADO del flujo
+            operador V1 (decisión producto A1, opción C 2026-06-10): el popup puede
+            mostrar mock LAB si backend/contract/sesión/red fallan, inaceptable en
+            servicio real. La V1 usa solo el inline planner hint (read-only,
+            backend-driven). PremiumPlannerPopup queda en el repo como LAB, no
+            abrible desde este modal. */}
       </div>
 
       {isDomicilio && (
