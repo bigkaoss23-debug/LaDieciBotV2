@@ -141,7 +141,9 @@ const DireccionInlinePanel = ({
           <small>Salida horno</small>
           <strong>{isDomicilio ? (deliveryFornoOut || "—") : (hora || "—")}</strong>
         </div>
-        <button type="button" className="np-recalc" onClick={onOpenPlannerLab}>◎ Ver propuestas LAB</button>
+        {isDomicilio && (
+          <button type="button" className="np-recalc" onClick={onOpenPlannerLab}>◎ Ver propuestas de entrega</button>
+        )}
       </div>
 
       {isDomicilio && (

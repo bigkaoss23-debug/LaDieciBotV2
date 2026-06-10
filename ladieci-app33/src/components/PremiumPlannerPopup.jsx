@@ -36,7 +36,7 @@ const PREMIUM_PLANNER_LAB_DATA = {
     driverStatus: 'Driver disponible',
     routeLabel: 'Directa · recomendada',
     severity: 'ok',
-    ctaLabel: 'Aplicar propuesta',
+    ctaLabel: 'Seleccionar en vista previa',
     // routeTimeline LAB (mock): mismo shape que el campo additivo del backend
     // (route-timeline-v2). Solo datos de ejemplo ya "calculados"; el renderer no
     // deriva nada. Permite ver la línea Pizzería → entrega → Regreso sin backend.
@@ -326,7 +326,7 @@ const adaptStrategicContract = (contract) => {
     status: (fa && fa.status) || (bp && bp.status) || null,
     routeLabel: (bp && bp.title) || 'Directa',
     severity: (bp && bp.severity) || 'ok',
-    ctaLabel: 'Aplicar propuesta',
+    ctaLabel: 'Seleccionar en vista previa',
     // routeTimeline: pass-through del campo additivo YA CALCULADO por el backend
     // (route-timeline-v2). No se deriva nada aquí; null si el backend no lo manda.
     routeTimeline: (bp && bp.routeTimeline) || null,
@@ -374,6 +374,8 @@ const PremiumPlannerPopup = ({
   const opportunities = Array.isArray(view.opportunities) ? view.opportunities : [];
   const best = view.bestProposal || {};
   const [selectedOppId, setSelectedOppId] = useState(opportunities[0]?.id || null);
+  // Sección avanzada (ruta sugerida manual + resumen): cerrada por defecto.
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const selectedOpp =
     opportunities.find(item => item.id === selectedOppId) || opportunities[0] || null;
@@ -391,7 +393,7 @@ const PremiumPlannerPopup = ({
   return (
     <div className="ppp-overlay" onClick={onClose}>
       <style>{PREMIUM_PLANNER_POPUP_CSS}</style>
-      <section className="ppp-shell" aria-label="Propuestas de entrega LAB" onClick={e => e.stopPropagation()}>
+      <section className="ppp-shell" aria-label="Propuestas de entrega" onClick={e => e.stopPropagation()}>
         <header className="ppp-header">
           <div className="ppp-brand-mark" aria-hidden="true">
             <span>✦</span>
@@ -399,13 +401,13 @@ const PremiumPlannerPopup = ({
             <span>✦</span>
           </div>
           <h2>Propuestas de entrega</h2>
-          <span className="ppp-lab-pill">LAB · {loading ? 'consultando…' : view.source}</span>
+          <span className="ppp-lab-pill">{loading ? 'Consultando…' : 'Vista previa'}</span>
           <button type="button" className="ppp-close" onClick={onClose} aria-label="Cerrar propuestas">×</button>
         </header>
 
         {loading && (
           <p className="ppp-lab-loading" role="status" aria-live="polite">
-            ⟳ Consultando planner read-only… <span>vista previa mock mientras tanto</span>
+            ⟳ Consultando… <span>vista previa mientras tanto</span>
           </p>
         )}
 
@@ -429,8 +431,10 @@ const PremiumPlannerPopup = ({
 
             {selectedOpp && <OpportunityPreview opp={selectedOpp} />}
 
+            {/* no-op: applyBest no escribe / no llama API / no confirma. Por eso
+                la etiqueta deja claro que es solo vista previa, no una acción. */}
             <button type="button" className="ppp-apply" onClick={applyBest}>
-              {best.ctaLabel || 'Aplicar propuesta'}
+              Seleccionar en vista previa
             </button>
           </section>
 
@@ -443,23 +447,49 @@ const PremiumPlannerPopup = ({
             componente devuelve null → fallback a la UI actual sin romper nada. */}
         <RouteTimeline routeTimeline={(selectedOpp && selectedOpp.routeTimeline) || best.routeTimeline || null} />
 
-        {/* Ruta manual LAB: modo interactivo (operador propone Q2→Q5…). Solo se
-            renderiza si el contenedor pasa onCalcManualRoute. Recolector de clics +
-            renderer de la routeTimeline que devuelve el backend. */}
-        {onCalcManualRoute && (
-          <ManualRouteSection
-            currentZone={manualCurrentZone}
-            startTime={manualStartTime}
-            preview={manualRoutePreview}
-            loading={manualRouteLoading}
-            warning={manualRouteWarning}
-            onCalc={onCalcManualRoute}
-            onClear={onClearManualRoute}
-          />
-        )}
+        {/* Sección "Avanzado": colapsable y CERRADA por defecto. Contiene la ruta
+            sugerida manual (interactiva, read-only: previewManualGiroRoute, NUNCA
+            createManualGiro) y el resumen. Fuera de la vista principal del operador. */}
+        {(onCalcManualRoute || view.source === 'backend-readonly') && (
+          <section className="ppp-advanced" aria-label="Avanzado">
+            <button
+              type="button"
+              className="ppp-adv-toggle"
+              onClick={() => setShowAdvanced(v => !v)}
+              aria-expanded={showAdvanced}
+              style={{
+                width: '100%', textAlign: 'left', cursor: 'pointer', marginTop: 10,
+                background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 10, color: '#cfcfd4', fontWeight: 800, fontSize: 13,
+                padding: '10px 14px',
+              }}
+            >
+              {showAdvanced ? '▾' : '▸'} Avanzado
+            </button>
 
-        {view.source === 'backend-readonly' && (
-          <BackendSummary view={view} />
+            {showAdvanced && (
+              <>
+                {/* Ruta sugerida manual: modo interactivo (operador propone Q2→Q5…).
+                    Solo se renderiza si el contenedor pasa onCalcManualRoute. Recolector
+                    de clics + renderer de la routeTimeline read-only del backend. */}
+                {onCalcManualRoute && (
+                  <ManualRouteSection
+                    currentZone={manualCurrentZone}
+                    startTime={manualStartTime}
+                    preview={manualRoutePreview}
+                    loading={manualRouteLoading}
+                    warning={manualRouteWarning}
+                    onCalc={onCalcManualRoute}
+                    onClear={onClearManualRoute}
+                  />
+                )}
+
+                {view.source === 'backend-readonly' && (
+                  <BackendSummary view={view} />
+                )}
+              </>
+            )}
+          </section>
         )}
 
         <section className="ppp-quick-section">
@@ -678,7 +708,6 @@ const ManualRouteSection = ({ currentZone, startTime, preview, loading, warning,
   // Presentacional: es solo el `zone` del stop current_order, sin PII, sin geo.
   const [labCurrentZone, setLabCurrentZone] = useState(null);
   const effectiveCurrentZone = currentZone || labCurrentZone;
-  const usingLabZone = !currentZone && !!labCurrentZone;
 
   // Construye selectedStops: primero el pedido actual (si hay zona), luego las
   // anclas en el ORDEN en que el operador las clicó (no se reordena nada).
@@ -704,14 +733,14 @@ const ManualRouteSection = ({ currentZone, startTime, preview, loading, warning,
   const pwarnings = preview && Array.isArray(preview.warnings) ? preview.warnings : [];
 
   return (
-    <section className="ppp-mr" aria-label="Ruta manual LAB">
+    <section className="ppp-mr" aria-label="Ruta sugerida">
       <header className="ppp-mr-head">
-        <h3><span>🧭</span> Ruta manual LAB</h3>
-        <span className="ppp-mr-pill">click-zona → backend read-only</span>
+        <h3><span>🧭</span> Ruta sugerida</h3>
+        <span className="ppp-mr-pill">Vista previa</span>
       </header>
 
       {!effectiveCurrentZone && (
-        <p className="ppp-mr-warn">⚠ Zona del pedido actual sin resolver — añade dirección/zona, o elige una zona LAB abajo.</p>
+        <p className="ppp-mr-warn">⚠ Zona del pedido actual sin resolver — añade dirección/zona, o elige una zona abajo.</p>
       )}
       {!startTime && (
         <p className="ppp-mr-warn">⚠ Falta la hora (startTime) — elige hora antes de calcular.</p>
@@ -720,14 +749,13 @@ const ManualRouteSection = ({ currentZone, startTime, preview, loading, warning,
       <div className="ppp-mr-current">
         <span className="ppp-mr-k">Pedido actual</span>
         <strong>{effectiveCurrentZone || '—'}</strong>
-        {usingLabZone && <span className="ppp-mr-lab">LAB</span>}
       </div>
 
       {/* Selector LAB de zona actual: solo si el draft no trae zona resuelta. NO
           escribe geo_cache; es presentacional para poder probar la ruta en LAB. */}
       {!currentZone && (
         <div className="ppp-mr-picker">
-          <span className="ppp-mr-k">Zona actual (LAB)</span>
+          <span className="ppp-mr-k">Zona actual</span>
           {MANUAL_ROUTE_ZONES.map((z) => (
             <button
               type="button"
@@ -735,7 +763,7 @@ const ManualRouteSection = ({ currentZone, startTime, preview, loading, warning,
               className={`ppp-mr-chip${labCurrentZone === z ? ' is-on' : ''}`}
               onClick={() => setLabCurrentZone(z)}
               aria-pressed={labCurrentZone === z}
-              aria-label={`Zona actual LAB ${z}`}
+              aria-label={`Zona actual ${z}`}
             >
               {z}
             </button>
@@ -763,7 +791,7 @@ const ManualRouteSection = ({ currentZone, startTime, preview, loading, warning,
 
       <div className="ppp-mr-actions">
         <button type="button" className="ppp-mr-calc" onClick={calc} disabled={!canCalc}>
-          {loading ? 'Calculando…' : 'Calcular ruta LAB'}
+          {loading ? 'Calculando…' : 'Calcular ruta'}
         </button>
         {anchorZones.length > 0 && (
           <button type="button" className="ppp-mr-undo" onClick={removeLast}>Quitar última</button>
@@ -772,7 +800,7 @@ const ManualRouteSection = ({ currentZone, startTime, preview, loading, warning,
       </div>
 
       {loading && (
-        <p className="ppp-mr-loading" role="status" aria-live="polite">⟳ Consultando backend read-only…</p>
+        <p className="ppp-mr-loading" role="status" aria-live="polite">⟳ Calculando…</p>
       )}
       {!loading && warning && (
         <p className="ppp-mr-warn" role="status">⚠ {warning}</p>
@@ -794,12 +822,7 @@ const ManualRouteSection = ({ currentZone, startTime, preview, loading, warning,
           {rt ? <RouteTimeline routeTimeline={rt} /> : (
             <p className="ppp-mr-fallback">Sin línea de ruta calculable (revisa paradas/zonas).</p>
           )}
-          {preview.safety && (
-            <span className="ppp-mr-safe">
-              {preview.safety.readOnly ? 'read-only ✓' : 'read-only ?'}
-              {preview.safety.writes ? ' · writes!' : ' · sin escrituras'}
-            </span>
-          )}
+          {/* safety read-only/writes: dato interno, NO visible al operador. */}
         </div>
       )}
     </section>
@@ -953,19 +976,13 @@ const BackendSummary = ({ view }) => {
   const serviceLine = Array.isArray(view.serviceLine) ? view.serviceLine : [];
   const warnings = Array.isArray(view.warnings) ? view.warnings : [];
   const blockers = Array.isArray(view.blockers) ? view.blockers : [];
-  const safety = view.safety || null;
   const faStatus = fa && fa.status ? (statusLabels[fa.status] || fa.status) : null;
 
   return (
-    <section className="ppp-backend-summary" aria-label="Resumen backend read-only">
+    <section className="ppp-backend-summary" aria-label="Resumen">
       <header className="ppp-bs-head">
-        <span className="ppp-bs-badge">backend · read-only</span>
-        {safety && (
-          <span className="ppp-bs-safe">
-            {safety.readOnly ? 'read-only ✓' : 'read-only ?'}
-            {safety.writes ? ' · writes!' : ' · sin escrituras'}
-          </span>
-        )}
+        <span className="ppp-bs-badge">Vista previa</span>
+        {/* safety read-only/writes: dato interno, NO visible al operador. */}
       </header>
       {fa && (fa.eta || faStatus) && (
         <p className="ppp-bs-first">
