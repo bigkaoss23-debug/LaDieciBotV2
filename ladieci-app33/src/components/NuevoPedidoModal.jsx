@@ -235,6 +235,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const manualReqIdRef = useRef(0);
   // Override esplicito: l'operatore ha cliccato "Forzar HORA" ignorando la proposta
   const [forzaHora, setForzaHora] = useState(false);
+  // "Para ahora" (RITIRO): in volo mentre chiediamo al backend il primo ritiro fattibile
+  const [paraAhoraLoading, setParaAhoraLoading] = useState(false);
+  // RITIRO in modalità "ritiro inmediato": l'ora è imposta dal backend (adesso +
+  // cottura) e il campo ora è offuscato/non interattivo finché resta attiva.
+  const [ritiroInmediato, setRitiroInmediato] = useState(false);
   const [yaPagedo,        setYaPagedo]        = useState(false);
   const [metodoPago,      setMetodoPago]      = useState("");
   const [descuentoTipo,   setDescuentoTipo]   = useState(null);
@@ -323,6 +328,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setBackendTiming(null); setBackendTimingLoading(false);
     horaCustom.current = false;
     setHoraTouchedByOperator(false);
+    setRitiroInmediato(false);
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
     submittingRef.current = false;
     setSubmitting(false);
@@ -577,6 +583,36 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setHoraTouchedByOperator(true);
     setHora(nextHora);
   };
+
+  // "Para ahora" (solo RITIRO): chiede al backend il primo ritiro fattibile
+  // (adesso Madrid + cottura) e lo applica come hora. NESSUN calcolo locale:
+  // il "+5" e l'ora di Madrid vivono nel backend (previewOrderTiming →
+  // earliest_hora). Se il backend non lo espone ancora, non facciamo nulla.
+  const aplicarParaAhora = async () => {
+    // Toggle: se già in ritiro inmediato, lo spengo e l'ora torna editabile.
+    if (ritiroInmediato) { setRitiroInmediato(false); return; }
+    setParaAhoraLoading(true);
+    try {
+      const res = await api.previewOrderTiming({ tipo_consegna: "RITIRO" });
+      const earliest = res && res.earliest_hora ? res.earliest_hora : null;
+      if (earliest) {
+        setHoraFromOperator(earliest);
+        setRitiroInmediato(true);
+      } else {
+        console.warn("[paraAhora] backend sin earliest_hora (¿backend no desplegado?)");
+      }
+    } catch (err) {
+      console.warn("[paraAhora] failed:", err?.message || err);
+    } finally {
+      setParaAhoraLoading(false);
+    }
+  };
+
+  // "Ritiro inmediato" è RITIRO-only: se l'operatore inserisce un indirizzo
+  // (→ DOMICILIO) lo spegniamo, così non resta un campo ora offuscato.
+  useEffect(() => {
+    if (tipoConsegna === "DOMICILIO" && ritiroInmediato) setRitiroInmediato(false);
+  }, [tipoConsegna, ritiroInmediato]);
 
   // ── Geocoding zona — debounce 800ms sull'indirizzo ─────────────────────
   // ENGINE UNICO: chiama api.resolveAddress sul backend (stessa cascata del bot WhatsApp).
@@ -1150,6 +1186,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   setHoraFromOperator={setHoraFromOperator}
                   deliveryStatus={deliveryStatus}
                   onOpenPlannerLab={openPlannerLab}
+                  onParaAhora={aplicarParaAhora}
+                  paraAhoraLoading={paraAhoraLoading}
+                  ritiroInmediato={ritiroInmediato}
                 />
               </div>
 

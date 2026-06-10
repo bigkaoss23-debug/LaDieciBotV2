@@ -25,6 +25,9 @@ const DireccionInlinePanel = ({
   setHoraFromOperator,
   deliveryStatus,
   onOpenPlannerLab,
+  onParaAhora,
+  paraAhoraLoading,
+  ritiroInmediato,
 }) => {
   const isDomicilio = tipoConsegna === "DOMICILIO";
   const trimmedDireccion = direccion.trim();
@@ -133,14 +136,61 @@ const DireccionInlinePanel = ({
       )}
 
       <div className="np-delivery-cards">
-        <div className={`np-dcard${isDomicilio ? " is-deliv" : ""}`}>
-          <small>{isDomicilio ? "Entrega estimada" : "Retirar a las"}</small>
-          <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)} />
-        </div>
-        <div className="np-dcard">
-          <small>Salida horno</small>
-          <strong>{isDomicilio ? (deliveryFornoOut || "—") : (hora || "—")}</strong>
-        </div>
+        {isDomicilio ? (
+          <>
+            <div className="np-dcard is-deliv">
+              <small>Entrega estimada</small>
+              <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)} />
+            </div>
+            <div className="np-dcard">
+              <small>Salida horno</small>
+              <strong>{deliveryFornoOut || "—"}</strong>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* RITIRO: l'ora RESTA selezionabile (l'operatore deve poter inserire
+                orari validi). Il ⚡ è al lato, al posto dell'orologio. Premendolo →
+                "ritiro inmediato": il campo ora si offusca e non è più interattivo,
+                l'ora la mette il backend (ahora + cocción). */}
+            <div className="np-dcard">
+              <small>{ritiroInmediato ? "Retiro inmediato" : "Retirar a las"}</small>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="time"
+                  value={hora}
+                  disabled={ritiroInmediato}
+                  onChange={e => setHoraFromOperator(e.target.value)}
+                  style={ritiroInmediato ? { opacity: 0.4, pointerEvents: "none" } : undefined}
+                />
+                <button
+                  type="button"
+                  className="np-paraahora"
+                  onClick={onParaAhora}
+                  disabled={paraAhoraLoading}
+                  aria-pressed={ritiroInmediato}
+                  title="Para ahora: retiro inmediato (ahora + cocción, lo calcula el backend)"
+                  style={{
+                    background: ritiroInmediato ? "rgba(250,204,21,0.28)" : "rgba(250,204,21,0.12)",
+                    border: `1px solid rgba(250,204,21,${ritiroInmediato ? 0.9 : 0.5})`,
+                    color: "#FACC15",
+                    borderRadius: 8,
+                    fontSize: 18,
+                    lineHeight: 1,
+                    padding: "6px 12px",
+                    cursor: paraAhoraLoading ? "default" : "pointer",
+                  }}
+                >
+                  {paraAhoraLoading ? "…" : "⚡"}
+                </button>
+              </div>
+            </div>
+            <div className="np-dcard">
+              <small>Salida horno</small>
+              <strong>{hora || "—"}</strong>
+            </div>
+          </>
+        )}
         {isDomicilio && (
           <button type="button" className="np-recalc" onClick={onOpenPlannerLab}>◎ Ver propuestas de entrega</button>
         )}
