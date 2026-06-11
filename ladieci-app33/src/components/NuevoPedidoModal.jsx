@@ -27,6 +27,10 @@ const NPFS_CSS = `
 .npfs .np-title-row{ display:flex; align-items:center; gap:24px; min-width:0; flex-wrap:wrap; }
 .npfs .np-header h1{ margin:0; color:#fbf6eb; font-size:32px; font-weight:900; line-height:1.05; letter-spacing:0; }
 .npfs .np-kicker{ margin:0; color:#ffc93d; font-size:17px; font-weight:900; white-space:nowrap; }
+/* Badge stato tipo ordine (P1a) — SOLO display, legge tipoConsegna; nessun toggle. */
+.npfs .np-tipo-badge{ display:inline-flex; align-items:center; gap:8px; border-radius:999px; padding:7px 16px; font-size:18px; font-weight:900; letter-spacing:.3px; white-space:nowrap; }
+.npfs .np-tipo-badge.is-ritiro{ color:#ffd24a; background:rgba(250,204,21,0.14); border:1.5px solid rgba(250,204,21,0.55); }
+.npfs .np-tipo-badge.is-domicilio{ color:#7cc4ff; background:rgba(56,150,255,0.16); border:1.5px solid rgba(56,150,255,0.55); }
 .npfs .np-close{ width:52px; height:52px; border:1px solid rgba(246,230,196,0.18); border-radius:10px; color:#fff8ed; background:rgba(255,255,255,0.03); font-size:30px; line-height:1; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
 .npfs .np-close:hover{ background:rgba(255,255,255,0.07); }
 
@@ -47,7 +51,9 @@ const NPFS_CSS = `
 .npfs .np-name-field{ position:relative; }
 .npfs .np-phone-field .np-phone-ic{ color:#d8cbb5; font-size:22px; flex-shrink:0; }
 .npfs .np-icon-action{ min-height:60px; border:1px solid rgba(208,184,145,0.22); border-radius:10px; background:rgba(255,255,255,0.025); color:#fff4dc; display:grid; place-items:center; font-size:22px; font-weight:900; cursor:pointer; }
-.npfs .np-whatsapp{ min-height:60px; border:1px solid rgba(74,222,128,0.35); border-radius:10px; color:#fff; background:linear-gradient(180deg,#37b968,#159447); display:grid; place-items:center; font-size:24px; cursor:pointer; }
+/* Contatto cliente (P1b): elemento INFORMATIVO neutro, non un'azione (era un
+   bottone verde no-op che sembrava "enviar"). Niente verde-azione, cursor default. */
+.npfs .np-contact-info{ min-height:60px; border:1px solid rgba(208,184,145,0.20); border-radius:10px; color:#bcae93; background:rgba(255,255,255,0.03); display:grid; place-items:center; font-size:22px; cursor:default; }
 .npfs .np-ok{ flex:0 0 auto; width:28px; height:28px; display:grid; place-items:center; border-radius:999px; color:#062d16; background:#58d27d; font-size:17px; font-weight:900; }
 .npfs .np-customer-flags{ width:fit-content; max-width:100%; display:flex; align-items:center; margin-top:14px; border:1px solid rgba(208,184,145,0.20); border-radius:10px; overflow:hidden; color:#efe4cc; background:rgba(255,255,255,0.025); font-weight:900; font-size:13px; }
 .npfs .np-customer-flags span{ padding:11px 16px; white-space:nowrap; }
@@ -145,7 +151,7 @@ const NPFS_CSS = `
   .npfs .np-panel h2{ margin:0 0 10px; font-size:13px; }
   .npfs .np-input-like{ min-height:48px; }
   .npfs .np-input-like input{ font-size:18px; }
-  .npfs .np-icon-action, .npfs .np-whatsapp{ min-height:48px; font-size:20px; }
+  .npfs .np-icon-action, .npfs .np-contact-info{ min-height:48px; font-size:20px; }
   .npfs .np-address-input strong, .npfs .np-address-input .np-address-text{ font-size:18px; }
   .npfs .np-dcard{ min-height:52px; }
   .npfs .np-dcard strong, .npfs .np-dcard input[type=time]{ font-size:18px; }
@@ -924,7 +930,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           <header className="np-header">
             <div className="np-title-row">
               <h1>Nuevo Pedido</h1>
-              <p className="np-kicker">☎ Origen: Teléfono · {tipoConsegna === "DOMICILIO" ? "Entrega a domicilio" : "Retiro en local"}</p>
+              {/* Badge stato tipo (P1a): solo display, riflette tipoConsegna (derivato dall'indirizzo). */}
+              <span className={`np-tipo-badge ${tipoConsegna === "DOMICILIO" ? "is-domicilio" : "is-ritiro"}`}>
+                {tipoConsegna === "DOMICILIO" ? "🛵 DOMICILIO" : "🏪 RITIRO"}
+              </span>
+              <p className="np-kicker">☎ Origen: Teléfono</p>
             </div>
             <button className="np-close" onClick={handleClose} aria-label="Cerrar">×</button>
           </header>
@@ -990,12 +1000,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       <input value={tel} onChange={e => setTel(e.target.value)}
                         placeholder="Tel (opcional)" type="tel" />
                     </div>
-                    {/* Contatto cliente — no-op (non invia nulla) */}
-                    <button type="button" className="np-whatsapp"
-                      onClick={e => e.preventDefault()}
-                      title={contactAvailable ? "Contacto cliente (no envía nada automáticamente)" : "Añade un teléfono para contactar"}>
+                    {/* Contatto cliente — elemento informativo neutro, NON un'azione (P1b) */}
+                    <span className="np-contact-info" role="img" aria-disabled="true"
+                      aria-label="Contacto cliente (informativo, no envía nada)"
+                      title={contactAvailable ? "Contacto cliente (informativo, no envía nada)" : "Añade un teléfono para contactar"}>
                       {canal === "WA" ? "💬" : "📞"}
-                    </button>
+                    </span>
                   </div>
                   {clienteAbitual && (
                     <div className="np-customer-flags">
