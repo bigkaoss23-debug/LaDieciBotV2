@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { C, genId, INGREDIENTI, calcTotale, DELIVERY_FEE, aplicarDescuento } from '../constants';
+import { C, genId, MENU, INGREDIENTI, calcTotale, DELIVERY_FEE, aplicarDescuento } from '../constants';
 import { api, sb } from '../api';
 import { assegnaZonaDaKeyword, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, BUFFER_OPS_DRIVER_MIN } from '../zones';
 // Migrazione planner-preview (2026-06-07): rimossi gli import di scheduling LOCALE
@@ -86,6 +86,15 @@ const NPFS_CSS = `
 .npfs .np-gold-btn{ min-height:46px; border:1px solid rgba(246,189,59,0.36); border-radius:8px; padding:0 18px; color:#111; background:linear-gradient(180deg,#ffd866,#f4b82f); font-weight:900; font-size:16px; cursor:pointer; flex-shrink:0; }
 .npfs .np-gold-btn:hover{ filter:brightness(1.05); }
 
+/* Quick-add (P2): chips di aggiunta rapida prodotti comuni. Percorso sicuro
+   MENU.find → handleAdd → total derivato; nessun prezzo/oggetto hardcoded. */
+.npfs .np-quickadd{ display:flex; align-items:center; gap:10px; padding:0 24px 6px; flex-shrink:0; }
+.npfs .np-qa-label{ flex-shrink:0; color:#bcae93; font-size:12px; font-weight:900; text-transform:uppercase; letter-spacing:.5px; }
+.npfs .np-qa-chips{ display:flex; gap:8px; flex-wrap:wrap; min-width:0; }
+.npfs .np-qa-chip{ display:inline-flex; align-items:center; gap:7px; min-height:40px; border:1px solid rgba(208,184,145,0.28); border-radius:999px; padding:6px 14px; color:#fff3dc; background:rgba(255,255,255,0.03); font-size:14px; font-weight:800; cursor:pointer; white-space:nowrap; }
+.npfs .np-qa-chip:hover{ background:rgba(250,204,21,0.10); border-color:rgba(250,204,21,0.45); }
+.npfs .np-qa-chip .np-qa-price{ color:#cbb88f; font-size:12px; font-weight:900; font-family:'DM Mono',monospace; }
+
 /* Products list */
 .npfs .np-products{ flex:1; min-height:0; overflow-y:auto; padding:0 24px 10px; -webkit-overflow-scrolling:touch; scrollbar-color:rgba(208,184,145,0.45) transparent; }
 .npfs .np-row{ min-height:66px; display:grid; grid-template-columns:44px minmax(120px,0.7fr) minmax(200px,1.6fr) 92px auto; align-items:center; gap:16px; border:1px solid rgba(208,184,145,0.16); border-radius:8px; margin-bottom:8px; padding:10px 16px; background:linear-gradient(90deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)), #15130f; cursor:pointer; }
@@ -123,6 +132,11 @@ const NPFS_CSS = `
   .npfs .np-customer-flags{ width:100%; flex-wrap:wrap; }
   .npfs .np-delivery-cards{ grid-template-columns:1fr 1fr; }
   .npfs .np-products-head{ padding:10px 14px; }
+  /* Quick-add mobile/tablet: scroll orizzontale per non spingere il footer. */
+  .npfs .np-quickadd{ padding:0 14px 6px; gap:8px; }
+  .npfs .np-qa-chips{ flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px; scrollbar-width:none; }
+  .npfs .np-qa-chips::-webkit-scrollbar{ display:none; }
+  .npfs .np-qa-chip{ flex-shrink:0; min-height:38px; }
   .npfs .np-products{ padding:0 14px 10px; }
   .npfs .np-row{ grid-template-columns:38px minmax(80px,0.9fr) 1fr; gap:10px; }
   .npfs .np-price{ display:none; }
@@ -163,6 +177,14 @@ const NPFS_CSS = `
 const CLOSING_TIME_MIN = 23 * 60;
 const CLOSING_TIME_ERROR = "Hora inválida.";
 const CLOSING_TIME_OVERRIDE_MARKER = "FUERA_HORARIO_FORZADO";
+
+// Quick-add (P2): id dei prodotti comuni, risolti runtime via MENU.find
+// (constants.js). NIENTE prezzi/oggetti hardcoded — prezzo/nome/emoji vengono
+// sempre dal MENU. Lista corta curata: 6 pizze classiche + 2 bebidas comuni.
+//   Pizzas: 1 El Pelusa · 2 Zizou · 5 El Gaucho(Diavola) ·
+//           6 El Divino Codino(Prosciutto) · 7 La Pulga · 8 Il Tulipano Nero(4 Quesos)
+//   Bebidas: 26 Coca Cola 0,5L · 25 Agua Natural 0,5L
+const QUICK_ADD_IDS = [1, 2, 5, 6, 7, 8, 26, 25];
 
 function horaToMinStrict(hora) {
   const m = String(hora || "").trim().match(/^(\d{1,2}):([0-5]\d)$/);
@@ -1353,6 +1375,41 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               </div>
               <button className="np-gold-btn" onClick={() => { setEditingItem(null); setPickerVisible(true); }}>⊕ Añadir producto</button>
             </div>
+
+            {/* ── Quick-add: prodotti comuni in un tap ─────────────────────
+                Percorso sicuro identico al picker: l'oggetto prodotto viene
+                da MENU.find (guard se non trovato) e passa a handleAdd, che
+                fonde/incrementa la quantità. Il totale si ricalcola da solo
+                (calcTotale). Nessun prezzo hardcoded, nessuna modifica a
+                handleAdd/extras/sub. Il bottone "Añadir producto" resta com'è.
+                NB: in MENU `sub` è il sottotitolo descrittivo della pizza
+                ("Diavola", "Jamón y Champiñones", "0,5L"), MA nel modello item
+                d'ordine `sub` = variazioni/extra ed è la condizione di merge di
+                handleAdd. Quindi passiamo `{ ...p, sub: "" }` — esattamente come
+                ItemPickerModal (increment) — così il quick-add fonde la quantità
+                e NON inietta il sottotitolo come variazione. */}
+            {(() => {
+              const quickItems = QUICK_ADD_IDS
+                .map(id => MENU.find(m => m.id === id))
+                .filter(Boolean);
+              if (quickItems.length === 0) return null;
+              return (
+                <div className="np-quickadd">
+                  <span className="np-qa-label">Rápido</span>
+                  <div className="np-qa-chips">
+                    {quickItems.map(p => (
+                      <button key={p.id} type="button" className="np-qa-chip"
+                        onClick={() => handleAdd({ ...p, sub: "" })}
+                        title={`Añadir ${p.n}${p.sub ? " · " + p.sub : ""}`}>
+                        <span aria-hidden="true">{p.e}</span>
+                        <span>{p.n}</span>
+                        <span className="np-qa-price">{p.p.toFixed(2).replace(".", ",")}€</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ── Lista items: unico scroll principale prodotti ───────── */}
             <div className="np-products">
