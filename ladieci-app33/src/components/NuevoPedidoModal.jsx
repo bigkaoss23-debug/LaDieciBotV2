@@ -97,7 +97,7 @@ const NPFS_CSS = `
 
 /* Products list */
 .npfs .np-products{ flex:1; min-height:0; overflow-y:auto; padding:0 24px 10px; -webkit-overflow-scrolling:touch; scrollbar-color:rgba(208,184,145,0.45) transparent; }
-.npfs .np-row{ min-height:66px; display:grid; grid-template-columns:44px minmax(120px,0.7fr) minmax(200px,1.6fr) 92px auto; align-items:center; gap:16px; border:1px solid rgba(208,184,145,0.16); border-radius:8px; margin-bottom:8px; padding:10px 16px; background:linear-gradient(90deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)), #15130f; cursor:pointer; }
+.npfs .np-row{ min-height:66px; display:grid; grid-template-columns:44px minmax(120px,0.7fr) minmax(200px,1.6fr) 92px auto; align-items:center; gap:16px; border:1px solid rgba(208,184,145,0.16); border-radius:8px; margin-bottom:8px; padding:10px 16px; background:linear-gradient(90deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)), #15130f; }
 .npfs .np-index{ width:44px; height:44px; display:grid; place-items:center; border:1px solid rgba(208,184,145,0.24); border-radius:8px; color:#fff7e7; font-size:20px; font-weight:900; }
 .npfs .np-product-name{ min-width:0; }
 .npfs .np-product-name strong{ display:block; overflow:hidden; color:#fff7ea; font-size:20px; font-weight:900; line-height:1.1; text-overflow:ellipsis; white-space:nowrap; }
@@ -107,7 +107,12 @@ const NPFS_CSS = `
 .npfs .np-actions{ display:grid; grid-template-columns:repeat(5,auto); align-items:center; gap:10px; }
 .npfs .np-actions button, .npfs .np-actions .np-qty{ width:46px; height:44px; display:grid; place-items:center; border:1px solid rgba(208,184,145,0.20); border-radius:8px; color:#fff5e4; background:rgba(255,255,255,0.035); font-size:20px; font-weight:900; cursor:pointer; padding:0; }
 .npfs .np-actions .np-qty{ background:rgba(0,0,0,0.28); font-family:'DM Mono',monospace; cursor:default; }
-.npfs .np-actions .np-danger{ border-color:rgba(239,68,68,0.35); color:#fff; background:rgba(127,29,29,0.72); }
+/* Danger (🗑): separato dal "+" per ridurre il rischio di delete accidentale
+   (P3). Solo spaziatura visiva, nessun cambio logico su handleRemoveItem. */
+.npfs .np-actions .np-danger{ border-color:rgba(239,68,68,0.35); color:#fff; background:rgba(127,29,29,0.72); margin-left:10px; }
+/* Zona editabile (P3): solo #idx + nome aprono l'edit (era l'intera riga →
+   tap accidentale). I bottoni −/+/🗑 restano invariati. */
+.npfs .np-edit-zone{ cursor:pointer; }
 .npfs .np-empty{ height:100%; min-height:220px; display:grid; place-content:center; justify-items:center; gap:12px; color:#d3c5ae; text-align:center; }
 
 /* Footer */
@@ -141,6 +146,9 @@ const NPFS_CSS = `
   .npfs .np-row{ grid-template-columns:38px minmax(80px,0.9fr) 1fr; gap:10px; }
   .npfs .np-price{ display:none; }
   .npfs .np-actions{ grid-column:1 / -1; justify-content:flex-end; }
+  /* Mobile (P3): tap target più comodo e 🗑 più staccato dal "+". */
+  .npfs .np-actions button, .npfs .np-actions .np-qty{ width:48px; height:46px; }
+  .npfs .np-actions .np-danger{ margin-left:16px; }
   /* Footer compatto: era 4 righe impilate (~261px, ~31% di uno schermo 844) e
      comprimeva il corpo scrollabile. Ora 3 righe: riepilogo / [descuento·pagado] /
      confirmar full-width. Riduce l'altezza ~30% liberando spazio per le card
@@ -1423,9 +1431,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 </div>
               ) : (
                 items.map((item, idx) => (
-                  <div key={item._uid} className="np-row" onClick={() => handleEditItem(item)}>
-                    <span className="np-index">{idx + 1}</span>
-                    <div className="np-product-name">
+                  <div key={item._uid} className="np-row">
+                    <span className="np-index np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">{idx + 1}</span>
+                    <div className="np-product-name np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">
                       <strong>{item.n}</strong>
                     </div>
                     <p className={item.sub ? "np-note" : "np-note np-note-muted"} title={item.sub ? extrasLabel(item) : undefined}>
