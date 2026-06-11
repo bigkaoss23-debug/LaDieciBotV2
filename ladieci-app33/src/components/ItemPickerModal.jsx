@@ -81,7 +81,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
         }
       };
     });
-    setExtrasOpen(null);
+    // Il popup ingredienti resta aperto: si possono aggiungere più extra di fila
   };
 
   // Rimuove extra da una pizza nel carrello
@@ -111,10 +111,35 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
     setCart(prev => prev[uid] ? { ...prev, [uid]: { ...prev[uid], sub: val } } : prev);
   };
 
+  // Separa, dentro lo stesso campo `sub`, gli extra ("+Jamón cocido") dalla
+  // nota libera rossa di cucina ("cortar en 4"). Gli extra restano chip; la
+  // nota resta libera. Il formato salvato in `sub` non cambia (backend invariato).
+  const splitSub = (sub) => {
+    const parts = (sub || "").split(",").map(s => s.trim()).filter(Boolean);
+    return {
+      extras: parts.filter(p => p.startsWith("+")),
+      note: parts.filter(p => !p.startsWith("+")).join(", ")
+    };
+  };
+  // Modifica SOLO la nota libera, preservando gli extra già aggiunti
+  const setNotaLibera = (uid, noteVal) => {
+    setCart(prev => {
+      if (!prev[uid]) return prev;
+      const { extras } = splitSub(prev[uid].sub);
+      return { ...prev, [uid]: { ...prev[uid], sub: [noteVal, ...extras].filter(Boolean).join(", ") } };
+    });
+  };
+
+  // Descrizione prodotto dal MENU (es. "Margarita Clásica") — doppio nome
+  const descrizioneDi = (item) => (MENU.find(m => String(m.id) === String(item.id)) || {}).sub || "";
+
   // Totale items nel carrello
   const cartItems = Object.values(cart);
   const totalCart = cartItems.reduce((s, i) => s + i.p * i.q, 0);
   const totalQty  = cartItems.reduce((s, i) => s + i.q, 0);
+
+  // Item su cui è aperto il popup ingredienti extra (matita)
+  const extrasTarget = extrasOpen ? cart[extrasOpen] : null;
 
   // Conferma
   const handleConfirm = () => {
@@ -148,7 +173,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
           display: "flex",
           flexDirection: "column",
           boxShadow: "0 20px 60px rgba(0,0,0,0.7)",
-          overflow: "hidden"
+          overflow: "hidden", position: "relative"
         }}
       >
         {/* ── Header ─────────────────────────────── */}
@@ -228,7 +253,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                       )}
                       <span style={{ fontSize: 30, pointerEvents: "none" }}>{p.e}</span>
                       <span style={{ color: C.bianco, fontSize: 14, fontWeight: 700, textAlign: "center", lineHeight: 1.25 }}>{p.n}</span>
-                      {p.sub && <span style={{ color: "#888", fontSize: 12, textAlign: "center", lineHeight: 1.2 }}>{p.sub}</span>}
+                      {p.sub && <span style={{ color: "#a99f8b", fontSize: 13, textAlign: "center", lineHeight: 1.2 }}>{p.sub}</span>}
                       <span style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 14, fontWeight: 800, marginTop: 2 }}>
                         {p.p.toFixed(2)}€
                       </span>
@@ -269,9 +294,46 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                         border: `1px solid ${C.fumo}`
                       }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 20 }}>{item.e}</span>
-                          <span style={{ color: C.bianco, fontSize: 14, flex: 1, fontWeight: 600, minWidth: 0 }}>{item.n}</span>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                          {/* Colonna: riga1 = nome + chip extra (centrati col nome), riga2 = descrizione sotto */}
+                          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+                              <span style={{ color: C.bianco, fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>{item.n}</span>
+                              {extrasAttuali.map((ex, i) => (
+                                <span key={i} style={{
+                                  background: "rgba(255,255,255,0.05)",
+                                  border: `1px solid ${C.fumo}`,
+                                  borderRadius: 8, padding: "3px 4px 3px 9px",
+                                  fontSize: 12, color: "#fff5e4", fontWeight: 700,
+                                  display: "inline-flex", alignItems: "center", gap: 4
+                                }}>
+                                  {ex.name}{ex.qty > 1 ? ` ×${ex.qty}` : ""}
+                                  <button onClick={() => removeExtra(item._uid, ex.name)} style={{
+                                    background: "none", border: "none", color: "#E8341C",
+                                    fontSize: 13, fontWeight: 900, cursor: "pointer",
+                                    width: 24, height: 24, lineHeight: 1, borderRadius: "50%",
+                                    display: "flex", alignItems: "center", justifyContent: "center"
+                                  }}>✕</button>
+                                </span>
+                              ))}
+                            </div>
+                            {descrizioneDi(item) && (
+                              <span style={{ color: "#a99f8b", fontSize: 13, fontWeight: 500, lineHeight: 1.2 }}>{descrizioneDi(item)}</span>
+                            )}
+                          </div>
+                          {/* Azioni a destra: matita (quadratino grigio) + quantità — come la riga Nuevo Pedido */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginLeft: 12 }}>
+                            {item.cat === "Pizzas" && (
+                              <button
+                                onClick={() => { if (isOpen) setExtrasOpen(null); else setExtrasOpen(item._uid); }}
+                                title={isOpen ? "Cerrar ingredientes" : "Añadir ingrediente extra"}
+                                style={{
+                                  background: isOpen ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.035)",
+                                  border: `1px solid ${isOpen ? "rgba(255,255,255,0.4)" : "rgba(208,184,145,0.20)"}`,
+                                  borderRadius: 8, width: 34, height: 34, fontSize: 16, fontWeight: 700,
+                                  color: "#fff5e4", cursor: "pointer", marginRight: 6,
+                                  display: "flex", alignItems: "center", justifyContent: "center"
+                                }}>{isOpen ? "✕" : "✎"}</button>
+                            )}
                             {!isModifica && (
                             <button onClick={() => decrement(item._uid)} style={{
                               background: C.fumo, color: C.bianco, border: "none",
@@ -293,87 +355,27 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           </span>
                         </div>
 
-                        {/* Extras già aggiunti */}
-                        {extrasAttuali.length > 0 && (
-                          <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
-                            {extrasAttuali.map((ex, i) => (
-                              <span key={i} style={{
-                                background: "rgba(168,85,247,0.15)",
-                                border: "1px solid rgba(168,85,247,0.35)",
-                                borderRadius: 20, padding: "3px 4px 3px 10px",
-                                fontSize: 12, color: "#a855f7", fontWeight: 600,
-                                display: "flex", alignItems: "center", gap: 4
-                              }}>
-                                {ex.e} {ex.name} +{ex.prezzo.toFixed(2)}€
-                                <button onClick={() => removeExtra(item._uid, ex.name)} style={{
-                                  background: "none", border: "none", color: "#E8341C",
-                                  fontSize: 13, fontWeight: 900, cursor: "pointer",
-                                  width: 24, height: 24, lineHeight: 1, borderRadius: "50%",
-                                  display: "flex", alignItems: "center", justifyContent: "center"
-                                }}>✕</button>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Campo variazioni libero — solo per pizze */}
-                        {item.cat === "Pizzas" && (
+                        {/* Nota cucina rossa — SOLO la nota libera, NON gli extra (che restano chip) */}
+                        {item.cat === "Pizzas" && (() => {
+                          const notaLibera = splitSub(item.sub).note;
+                          return (
                           <input
-                            value={item.sub || ""}
-                            onChange={e => setNota(item._uid, e.target.value)}
-                            placeholder="Variaciones (sin cebolla, extra picante...)"
+                            value={notaLibera}
+                            onChange={e => setNotaLibera(item._uid, e.target.value)}
+                            placeholder="Nota cocina (cortar en 4, sin cebolla...)"
                             style={{
                               width: "100%", marginTop: 6,
                               background: "rgba(232,52,28,0.08)",
-                              border: `1px solid ${item.sub ? "#E8341C88" : C.fumo}`,
+                              border: `1px solid ${notaLibera ? "#E8341C88" : C.fumo}`,
                               borderRadius: 7,
-                              color: item.sub ? "#E8341C" : C.grigio,
+                              color: notaLibera ? "#E8341C" : C.grigio,
                               padding: "5px 9px", fontSize: 12,
-                              fontWeight: item.sub ? 700 : 400,
+                              fontWeight: notaLibera ? 700 : 400,
                               boxSizing: "border-box"
                             }}
                           />
-                        )}
-
-                        {/* Bottone extras — solo per pizze, griglia appare subito */}
-                        {item.cat === "Pizzas" && (
-                          <div style={{ marginTop: 6 }}>
-                            <button
-                              onClick={() => {
-                                if (isOpen) setExtrasOpen(null);
-                                else setExtrasOpen(item._uid);
-                              }}
-                              style={{
-                                background: "rgba(168,85,247,0.1)",
-                                border: `1px solid ${isOpen ? "#a855f7" : "rgba(168,85,247,0.3)"}`,
-                                borderRadius: 7, color: "#a855f7", fontSize: 11, fontWeight: 700,
-                                padding: "4px 10px", cursor: "pointer", width: "100%"
-                              }}>
-                              {isOpen ? "✕ Cerrar extras" : "➕ Añadir ingrediente extra"}
-                            </button>
-                            {isOpen && (
-                              <div style={{
-                                marginTop: 6, background: "rgba(14,14,14,0.95)",
-                                borderRadius: 10, border: "1px solid rgba(168,85,247,0.3)",
-                                padding: 10, display: "flex", flexWrap: "wrap", gap: 6
-                              }}>
-                                {INGREDIENTI.filter(ing => ing.prezzo > 0).map(ing => (
-                                  <button key={ing.id} onClick={() => addExtra(item._uid, ing)} style={{
-                                    background: "rgba(168,85,247,0.1)",
-                                    border: "1px solid rgba(168,85,247,0.35)",
-                                    borderRadius: 7, color: "#ccc", fontSize: 11,
-                                    padding: "5px 8px", cursor: "pointer",
-                                    display: "flex", alignItems: "center", gap: 4
-                                  }}>
-                                    <span>{ing.e}</span>
-                                    <span style={{ fontWeight: 600 }}>{ing.n}</span>
-                                    <span style={{ color: "#a855f7", fontWeight: 800 }}>+{ing.prezzo.toFixed(2)}€</span>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {/* Nota libera (non pizza) */}
                         {item.cat !== "Pizzas" && (
@@ -444,6 +446,86 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
               }}>
               {isModifica ? "✏️ Actualizar" : `✅ Añadir${totalQty > 0 ? ` (${totalQty})` : ""}`}
             </button>
+          </div>
+        )}
+
+        {/* ── Popup ingredienti extra (stile picker pizze) — aperto dalla matita ── */}
+        {extrasTarget && extrasTarget.cat === "Pizzas" && (
+          <div
+            onClick={() => setExtrasOpen(null)}
+            style={{
+              position: "absolute", inset: 0, zIndex: 20,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "rgba(0,0,0,0.6)", backdropFilter: "blur(3px)", padding: 16
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: C.carbone, borderRadius: 16,
+                width: "min(560px, 100%)", maxHeight: "84%",
+                display: "flex", flexDirection: "column",
+                border: `1px solid ${C.fumo}`, boxShadow: "0 16px 50px rgba(0,0,0,0.7)", overflow: "hidden"
+              }}
+            >
+              {/* Header */}
+              <div style={{
+                padding: "12px 16px", borderBottom: `1px solid ${C.fumo}`,
+                display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: C.bianco, fontWeight: 800, fontSize: 15 }}>🧀 Ingredientes extra</div>
+                  <div style={{ color: "#a99f8b", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{extrasTarget.n}</div>
+                </div>
+                <button onClick={() => setExtrasOpen(null)} style={{
+                  background: C.fumo, color: C.bianco, border: "none", borderRadius: "50%",
+                  width: 32, height: 32, fontSize: 15, cursor: "pointer", flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center"
+                }}>✕</button>
+              </div>
+
+              {/* Griglia ingredienti — card come le pizze */}
+              <div style={{
+                flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 14,
+                display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10
+              }}>
+                {INGREDIENTI.filter(ing => ing.prezzo > 0).map(ing => {
+                  const veces = splitSub(extrasTarget.sub).extras.filter(t => t === `+${ing.n}`).length;
+                  return (
+                    <button key={ing.id} onClick={() => addExtra(extrasTarget._uid, ing)} style={{
+                      background: veces > 0 ? C.rosso + "22" : C.carbone2,
+                      border: `2px solid ${veces > 0 ? C.rosso : C.fumo}`,
+                      borderRadius: 14, padding: "12px 8px", minHeight: 104,
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                      gap: 5, position: "relative", cursor: "pointer"
+                    }}>
+                      {veces > 0 && (
+                        <span style={{
+                          position: "absolute", top: -8, right: -8,
+                          background: C.rosso, color: "#fff", border: `2px solid ${C.carbone}`,
+                          borderRadius: "50%", width: 22, height: 22, fontSize: 11, fontWeight: 900,
+                          display: "flex", alignItems: "center", justifyContent: "center"
+                        }}>{veces}</span>
+                      )}
+                      <span style={{ fontSize: 26, pointerEvents: "none" }}>{ing.e}</span>
+                      <span style={{ color: C.bianco, fontSize: 13, fontWeight: 700, textAlign: "center", lineHeight: 1.2 }}>{ing.n}</span>
+                      <span style={{ color: "#ffd439", fontSize: 13, fontWeight: 800 }}>+{ing.prezzo.toFixed(2)}€</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                padding: "10px 16px", borderTop: `1px solid ${C.fumo}`, flexShrink: 0,
+                background: C.carbone2, display: "flex", justifyContent: "flex-end"
+              }}>
+                <button onClick={() => setExtrasOpen(null)} style={{
+                  background: C.rosso, color: "#fff", border: "none", borderRadius: 10,
+                  padding: "10px 22px", fontWeight: 800, fontSize: 14, cursor: "pointer"
+                }}>Listo</button>
+              </div>
+            </div>
           </div>
         )}
       </div>
