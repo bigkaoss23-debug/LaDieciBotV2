@@ -121,7 +121,15 @@ const NPFS_CSS = `
   .npfs .np-row{ grid-template-columns:38px minmax(80px,0.9fr) 1fr; gap:10px; }
   .npfs .np-price{ display:none; }
   .npfs .np-actions{ grid-column:1 / -1; justify-content:flex-end; }
-  .npfs .np-footer{ grid-template-columns:1fr; gap:12px; padding:12px 14px; }
+  /* Footer compatto: era 4 righe impilate (~261px, ~31% di uno schermo 844) e
+     comprimeva il corpo scrollabile. Ora 3 righe: riepilogo / [descuento·pagado] /
+     confirmar full-width. Riduce l'altezza ~30% liberando spazio per le card
+     timing + productos. Confirmar resta full-width e grande (tap target). */
+  .npfs .np-footer{ grid-template-columns:auto 1fr; gap:8px 10px; padding:10px 14px 12px; }
+  .npfs .np-footer > .np-summary{ grid-column:1 / -1; gap:4px 14px; }
+  .npfs .np-footer > .np-summary .np-total{ font-size:24px; }
+  .npfs .np-footer > .np-summary .np-items{ font-size:18px; }
+  .npfs .np-footer > .np-confirm{ grid-column:1 / -1; min-height:52px; }
 
   /* Mobile/tablet portrait: il blocco superiore (cliente+dirección) impilato
      riempiva tutta la viewport e schiacciava la lista prodotti a ~10px. Qui
