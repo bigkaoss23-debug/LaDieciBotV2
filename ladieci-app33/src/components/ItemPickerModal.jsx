@@ -27,12 +27,13 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
   useEffect(() => {
     if (!visible) return;
     if (isModifica) {
-      // Modalità modifica: carica l'item nel carrello
+      // Modalità modifica: carica l'item nel carrello.
+      // Per le pizze apriamo SUBITO il popup ingredienti: la matita in Nuevo Pedido
+      // porta diretto agli extra, senza passare per l'editor intermedio.
       const uid = itemEsistente._uid || genId();
       setCart({ [uid]: { ...itemEsistente, _uid: uid } });
       setCat(itemEsistente.cat || "Pizzas");
-      setExtrasOpen(null);
-      setExtrasOpen(null);
+      setExtrasOpen(itemEsistente.cat === "Pizzas" ? uid : null);
     } else {
       setCart({});
       setCat("Pizzas");
@@ -152,6 +153,14 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
     onClose();
   };
 
+  // Chiusura del popup ingredienti.
+  // In modifica il popup È la schermata: "Listo"/✕/backdrop salvano e chiudono tutto.
+  // In aggiunta torna semplicemente al carrello interno.
+  const closeExtras = () => {
+    if (isModifica) handleConfirm();
+    else setExtrasOpen(null);
+  };
+
   if (!visible) return null;
 
   return (
@@ -170,6 +179,9 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
           borderRadius: 20,
           width: "min(700px, 96vw)",
           maxHeight: "90vh",
+          // In modifica di una pizza il popup ingredienti è la schermata: il modal
+          // dev'essere alto come in aggiunta, così l'overlay mostra la tabella completa.
+          ...(isModifica && itemEsistente?.cat === "Pizzas" ? { height: "90vh" } : {}),
           display: "flex",
           flexDirection: "column",
           boxShadow: "0 20px 60px rgba(0,0,0,0.7)",
@@ -452,7 +464,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
         {/* ── Popup ingredienti extra (stile picker pizze) — aperto dalla matita ── */}
         {extrasTarget && extrasTarget.cat === "Pizzas" && (
           <div
-            onClick={() => setExtrasOpen(null)}
+            onClick={closeExtras}
             style={{
               position: "absolute", inset: 0, zIndex: 20,
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -463,7 +475,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
               onClick={e => e.stopPropagation()}
               style={{
                 background: C.carbone, borderRadius: 16,
-                width: "min(560px, 100%)", maxHeight: "84%",
+                width: "min(560px, 100%)", maxHeight: "92%",
                 display: "flex", flexDirection: "column",
                 border: `1px solid ${C.fumo}`, boxShadow: "0 16px 50px rgba(0,0,0,0.7)", overflow: "hidden"
               }}
@@ -474,10 +486,12 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                 display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0
               }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ color: C.bianco, fontWeight: 800, fontSize: 15 }}>🧀 Ingredientes extra</div>
-                  <div style={{ color: "#a99f8b", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{extrasTarget.n}</div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ color: C.bianco, fontWeight: 800, fontSize: 18 }}>🧀 Ingredientes extra</span>
+                    <span style={{ color: "#ffd439", fontWeight: 800, fontSize: 13 }}>(+0,50€ c/u)</span>
+                  </div>
                 </div>
-                <button onClick={() => setExtrasOpen(null)} style={{
+                <button onClick={closeExtras} style={{
                   background: C.fumo, color: C.bianco, border: "none", borderRadius: "50%",
                   width: 32, height: 32, fontSize: 15, cursor: "pointer", flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center"
@@ -486,8 +500,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
 
               {/* Griglia ingredienti — card come le pizze */}
               <div style={{
-                flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 14,
-                display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10
+                flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 12,
+                display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8
               }}>
                 {INGREDIENTI.filter(ing => ing.prezzo > 0).map(ing => {
                   const veces = splitSub(extrasTarget.sub).extras.filter(t => t === `+${ing.n}`).length;
@@ -495,9 +509,9 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                     <button key={ing.id} onClick={() => addExtra(extrasTarget._uid, ing)} style={{
                       background: veces > 0 ? C.rosso + "22" : C.carbone2,
                       border: `2px solid ${veces > 0 ? C.rosso : C.fumo}`,
-                      borderRadius: 14, padding: "12px 8px", minHeight: 104,
+                      borderRadius: 12, padding: "10px 4px", minHeight: 76,
                       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                      gap: 5, position: "relative", cursor: "pointer"
+                      gap: 4, position: "relative", cursor: "pointer"
                     }}>
                       {veces > 0 && (
                         <span style={{
@@ -507,9 +521,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           display: "flex", alignItems: "center", justifyContent: "center"
                         }}>{veces}</span>
                       )}
-                      <span style={{ fontSize: 26, pointerEvents: "none" }}>{ing.e}</span>
+                      <span style={{ fontSize: 20, pointerEvents: "none" }}>{ing.e}</span>
                       <span style={{ color: C.bianco, fontSize: 13, fontWeight: 700, textAlign: "center", lineHeight: 1.2 }}>{ing.n}</span>
-                      <span style={{ color: "#ffd439", fontSize: 13, fontWeight: 800 }}>+{ing.prezzo.toFixed(2)}€</span>
                     </button>
                   );
                 })}
@@ -520,7 +533,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                 padding: "10px 16px", borderTop: `1px solid ${C.fumo}`, flexShrink: 0,
                 background: C.carbone2, display: "flex", justifyContent: "flex-end"
               }}>
-                <button onClick={() => setExtrasOpen(null)} style={{
+                <button onClick={closeExtras} style={{
                   background: C.rosso, color: "#fff", border: "none", borderRadius: 10,
                   padding: "10px 22px", fontWeight: 800, fontSize: 14, cursor: "pointer"
                 }}>Listo</button>
