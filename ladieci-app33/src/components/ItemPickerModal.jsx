@@ -528,14 +528,34 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                 })}
               </div>
 
-              {/* Footer */}
+              {/* Footer: nota cucina (stesso campo/dato di item.sub, stesso salvataggio) + Listo */}
               <div style={{
                 padding: "10px 16px", borderTop: `1px solid ${C.fumo}`, flexShrink: 0,
-                background: C.carbone2, display: "flex", justifyContent: "flex-end"
+                background: C.carbone2, display: "flex", alignItems: "center", gap: 10
               }}>
+                {(() => {
+                  const notaLibera = splitSub(extrasTarget.sub).note;
+                  return (
+                    <input
+                      value={notaLibera}
+                      onChange={e => setNotaLibera(extrasTarget._uid, e.target.value)}
+                      placeholder="Nota cocina (cortar en 4, sin cebolla...)"
+                      style={{
+                        flex: 1, minWidth: 0,
+                        background: "rgba(232,52,28,0.08)",
+                        border: `1px solid ${notaLibera ? "#E8341C88" : C.fumo}`,
+                        borderRadius: 8,
+                        color: notaLibera ? "#E8341C" : C.grigio,
+                        padding: "9px 11px", fontSize: 13,
+                        fontWeight: notaLibera ? 700 : 400,
+                        boxSizing: "border-box"
+                      }}
+                    />
+                  );
+                })()}
                 <button onClick={closeExtras} style={{
                   background: C.rosso, color: "#fff", border: "none", borderRadius: 10,
-                  padding: "10px 22px", fontWeight: 800, fontSize: 14, cursor: "pointer"
+                  padding: "10px 22px", fontWeight: 800, fontSize: 14, cursor: "pointer", flexShrink: 0
                 }}>Listo</button>
               </div>
             </div>

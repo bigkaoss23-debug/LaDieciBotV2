@@ -843,14 +843,33 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   }, [visible]); // eslint-disable-line
 
   // ── Render extras badge per un item ─────────────────────────────────────
-  const extrasLabel = (item) => {
-    if (!item.sub) return null;
-    const matches = item.sub.match(/\+[^,]+/g) || [];
-    if (!matches.length) return item.sub;
-    const names = matches.map(m => m.replace(/^\+/, "").trim()).join(", ");
-    const extra = matches.length;
-    return `+${extra} extra · ${names}`;
+  // Allinea la riga al chip dell'overlay ingredienti: gli extra duplicati
+  // diventano "Nome ×N" (ordine di prima comparsa), l'eventuale nota libera
+  // resta. È solo formattazione display — NON tocca item.sub salvato.
+  //   "+Jamón cocido, +Jamón cocido"            → "Jamón cocido ×2"
+  //   "+Jamón cocido, +Pancetta"                → "Jamón cocido, Pancetta"
+  //   "+Jamón cocido, +Jamón cocido, +Pancetta" → "Jamón cocido ×2, Pancetta"
+  const formatExtrasLabel = (sub) => {
+    if (!sub) return null;
+    const parts = sub.split(",").map(s => s.trim()).filter(Boolean);
+    const order = [];           // nomi extra nell'ordine di prima comparsa
+    const counts = {};
+    const notes = [];           // testo non-extra (variazioni / nota libera)
+    parts.forEach(p => {
+      if (p.startsWith("+")) {
+        const name = p.replace(/^\+/, "").trim();
+        if (!(name in counts)) order.push(name);
+        counts[name] = (counts[name] || 0) + 1;
+      } else {
+        notes.push(p);
+      }
+    });
+    const extrasStr = order.map(n => counts[n] > 1 ? `${n} ×${counts[n]}` : n).join(", ");
+    const noteStr = notes.join(", ");
+    if (!extrasStr) return noteStr || null;        // solo nota libera
+    return noteStr ? `${noteStr} · ${extrasStr}` : extrasStr;
   };
+  const extrasLabel = (item) => formatExtrasLabel(item.sub);
 
   // Stato delivery unificato — combina la proposta schedule-aware del driver
   // con il vincolo forno. Il bottone "Aplicar sugerencia" usa questo.
