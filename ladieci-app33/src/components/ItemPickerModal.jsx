@@ -168,7 +168,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
           }}>✕</button>
         </div>
 
-        {/* ── Tab categorie ───────────────────────── */}
+        {/* ── Tab categorie (nascoste in modifica: la matita apre l'editor ingredienti) ── */}
+        {!isModifica && (
         <div style={{
           display: "flex", gap: 8, padding: "10px 14px",
           borderBottom: `1px solid ${C.fumo}`,
@@ -181,22 +182,24 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                 : "transparent",
               border: `1.5px solid ${cat === c ? (c === "⭐ Custom" ? "#C4A87A" : C.rosso) : C.fumo}`,
               color: cat === c ? "#fff" : C.grigio,
-              borderRadius: 20, padding: "6px 16px",
-              fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer"
+              borderRadius: 22, padding: "9px 18px",
+              fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer"
             }}>{c}</button>
           ))}
         </div>
+        )}
 
         {/* ── Corpo scrollabile ────────────────────── */}
         <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 14 }}>
 
           {cat !== "⭐ Custom" ? (
             <>
-              {/* ── Griglia prodotti ── */}
+              {/* ── Griglia prodotti (nascosta in modifica) ── */}
+              {!isModifica && (
               <div style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
-                gap: 10
+                gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                gap: 12
               }}>
                 {MENU.filter(m => m.cat === cat).map(p => {
                   const qty = qtyOf(p.id);
@@ -206,9 +209,9 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                       style={{
                       background: qty > 0 ? C.rosso + "22" : C.carbone2,
                       border: `2px solid ${qty > 0 ? C.rosso : C.fumo}`,
-                      borderRadius: 14, padding: "12px 8px",
+                      borderRadius: 16, padding: "16px 10px", minHeight: 116,
                       display: "flex", flexDirection: "column",
-                      alignItems: "center", gap: 5, position: "relative",
+                      alignItems: "center", justifyContent: "center", gap: 7, position: "relative",
                       boxShadow: qty > 0 ? `0 4px 16px ${C.rosso}33` : "none",
                       cursor: "pointer"
                     }}>
@@ -218,28 +221,31 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           position: "absolute", top: -8, right: -8,
                           background: C.rosso, color: "#fff",
                           border: `2px solid ${C.carbone}`,
-                          borderRadius: "50%", width: 22, height: 22,
-                          fontSize: 11, fontWeight: 900,
+                          borderRadius: "50%", width: 24, height: 24,
+                          fontSize: 12, fontWeight: 900,
                           display: "flex", alignItems: "center", justifyContent: "center"
                         }}>{qty}</span>
                       )}
-                      <span style={{ fontSize: 26, pointerEvents: "none" }}>{p.e}</span>
-                      <span style={{ color: C.bianco, fontSize: 13, fontWeight: 700, textAlign: "center", lineHeight: 1.2 }}>{p.n}</span>
+                      <span style={{ fontSize: 30, pointerEvents: "none" }}>{p.e}</span>
+                      <span style={{ color: C.bianco, fontSize: 14, fontWeight: 700, textAlign: "center", lineHeight: 1.25 }}>{p.n}</span>
                       {p.sub && <span style={{ color: "#888", fontSize: 12, textAlign: "center", lineHeight: 1.2 }}>{p.sub}</span>}
-                      <span style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 13, fontWeight: 700 }}>
+                      <span style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 14, fontWeight: 800, marginTop: 2 }}>
                         {p.p.toFixed(2)}€
                       </span>
                     </div>
                   );
                 })}
               </div>
+              )}
 
               {/* ── Riepilogo carrello interno con extras pizza ── */}
               {cartItems.length > 0 && (
-                <div style={{ marginTop: 14 }}>
+                <div style={{ marginTop: isModifica ? 0 : 14 }}>
+                  {!isModifica && (
                   <div style={{ color: C.grigio, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>
                     En el pedido
                   </div>
+                  )}
                   {cartItems.map(item => {
                     const extrasAttuali = (() => {
                       if (!item.sub) return [];
@@ -258,25 +264,29 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
 
                     return (
                       <div key={item._uid} style={{
-                        marginBottom: 8, padding: "8px 10px",
-                        background: C.carbone2, borderRadius: 10,
+                        marginBottom: 10, padding: "10px 12px",
+                        background: C.carbone2, borderRadius: 12,
                         border: `1px solid ${C.fumo}`
                       }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 18 }}>{item.e}</span>
-                          <span style={{ color: C.bianco, fontSize: 13, flex: 1, fontWeight: 600 }}>{item.n}</span>
-                          <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                          <span style={{ fontSize: 20 }}>{item.e}</span>
+                          <span style={{ color: C.bianco, fontSize: 14, flex: 1, fontWeight: 600, minWidth: 0 }}>{item.n}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                            {!isModifica && (
                             <button onClick={() => decrement(item._uid)} style={{
                               background: C.fumo, color: C.bianco, border: "none",
-                              borderRadius: 5, width: 24, height: 24, fontSize: 14, fontWeight: 700,
+                              borderRadius: 8, width: 34, height: 34, fontSize: 18, fontWeight: 700,
                               cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
                             }}>−</button>
-                            <span style={{ color: C.bianco, fontWeight: 800, minWidth: 16, textAlign: "center", fontFamily: "'DM Mono',monospace" }}>{item.q}</span>
+                            )}
+                            <span style={{ color: C.bianco, fontWeight: 800, fontSize: 15, minWidth: 20, textAlign: "center", fontFamily: "'DM Mono',monospace" }}>{isModifica ? `× ${item.q}` : item.q}</span>
+                            {!isModifica && (
                             <button onClick={() => increment(item)} style={{
                               background: C.fumo, color: C.bianco, border: "none",
-                              borderRadius: 5, width: 24, height: 24, fontSize: 14, fontWeight: 700,
+                              borderRadius: 8, width: 34, height: 34, fontSize: 18, fontWeight: 700,
                               cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
                             }}>+</button>
+                            )}
                           </div>
                           <span style={{ color: C.grigio, fontSize: 12, fontWeight: 700, minWidth: 42, textAlign: "right", fontFamily: "'DM Mono',monospace" }}>
                             {(item.p * item.q).toFixed(2)}€
@@ -290,14 +300,16 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                               <span key={i} style={{
                                 background: "rgba(168,85,247,0.15)",
                                 border: "1px solid rgba(168,85,247,0.35)",
-                                borderRadius: 20, padding: "2px 8px",
-                                fontSize: 11, color: "#a855f7", fontWeight: 600,
+                                borderRadius: 20, padding: "3px 4px 3px 10px",
+                                fontSize: 12, color: "#a855f7", fontWeight: 600,
                                 display: "flex", alignItems: "center", gap: 4
                               }}>
                                 {ex.e} {ex.name} +{ex.prezzo.toFixed(2)}€
                                 <button onClick={() => removeExtra(item._uid, ex.name)} style={{
                                   background: "none", border: "none", color: "#E8341C",
-                                  fontSize: 10, fontWeight: 900, cursor: "pointer", padding: 0, lineHeight: 1
+                                  fontSize: 13, fontWeight: 900, cursor: "pointer",
+                                  width: 24, height: 24, lineHeight: 1, borderRadius: "50%",
+                                  display: "flex", alignItems: "center", justifyContent: "center"
                                 }}>✕</button>
                               </span>
                             ))}
@@ -402,9 +414,9 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
             padding: "12px 16px",
             borderTop: `1px solid ${C.fumo}`,
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            flexShrink: 0, background: C.carbone2
+            gap: 12, flexShrink: 0, background: C.carbone2
           }}>
-            <div>
+            <div style={{ minWidth: 0 }}>
               {totalQty > 0 ? (
                 <>
                   <div style={{ color: C.grigio, fontSize: 11 }}>
@@ -425,11 +437,12 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                 background: totalQty > 0 ? C.rosso : C.fumo,
                 color: totalQty > 0 ? "#fff" : C.grigio,
                 border: "none", borderRadius: 12,
-                padding: "13px 22px", fontWeight: 800, fontSize: 15,
+                padding: "14px 24px", fontWeight: 800, fontSize: 16,
+                whiteSpace: "nowrap", flexShrink: 0,
                 boxShadow: totalQty > 0 ? `0 4px 16px ${C.rosso}55` : "none",
                 cursor: totalQty > 0 ? "pointer" : "default"
               }}>
-              {isModifica ? "✏️ Actualizar" : `✅ Añadir ${totalQty > 0 ? totalQty + " item" + (totalQty !== 1 ? "s" : "") : ""} al pedido`}
+              {isModifica ? "✏️ Actualizar" : `✅ Añadir${totalQty > 0 ? ` (${totalQty})` : ""}`}
             </button>
           </div>
         )}
