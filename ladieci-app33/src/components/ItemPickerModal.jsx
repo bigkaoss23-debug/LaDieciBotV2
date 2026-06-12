@@ -501,7 +501,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
               {/* Griglia ingredienti — card come le pizze */}
               <div style={{
                 flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 12,
-                display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8
+                display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(116px, 1fr))", gap: 8
               }}>
                 {INGREDIENTI.filter(ing => ing.prezzo > 0).map(ing => {
                   const veces = splitSub(extrasTarget.sub).extras.filter(t => t === `+${ing.n}`).length;

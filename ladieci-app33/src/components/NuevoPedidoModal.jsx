@@ -159,7 +159,10 @@ const NPFS_CSS = `
   .npfs .np-products-head{ padding:10px 14px; }
   .npfs .np-products{ padding:0 14px 10px; }
   .npfs .np-row{ grid-template-columns:32px minmax(0,1fr); gap:10px; }
-  .npfs .np-row-right{ grid-column:1 / -1; justify-content:flex-end; }
+  /* Mobile: prezzo+actions su riga intera. flex-wrap così le actions vanno a
+     capo SOTTO il prezzo se non c'è spazio, invece di overflow→clip a sinistra
+     (bug "13.00€" tagliato a ".00€" su <400px). Desktop invariato. */
+  .npfs .np-row-right{ grid-column:1 / -1; justify-content:flex-end; flex-wrap:wrap; row-gap:8px; }
   /* Mobile (P3): tap target più comodo e 🗑 più staccato dal "+". */
   .npfs .np-actions button, .npfs .np-actions .np-qty{ width:44px; height:42px; }
   .npfs .np-actions .np-danger{ margin-left:16px; }
