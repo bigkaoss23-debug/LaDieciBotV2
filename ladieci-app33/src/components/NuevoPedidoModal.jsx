@@ -7,6 +7,7 @@ import { assegnaZonaDaKeyword, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, BUFFER_
 // frontend Premium NON calcola disponibilità/lead-time/giri: la verità arriva dal
 // backend (previewOrderTiming oggi, previewOrderPlanner appena deployato).
 import ItemPickerModal from './ItemPickerModal';
+import PremiumPlannerPopup from './PremiumPlannerPopup';
 import DireccionInlinePanel from './DireccionInlinePanel';
 import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
@@ -23,37 +24,39 @@ const NPFS_CSS = `
 .npfs *{ box-sizing:border-box; }
 
 /* Header */
-.npfs .np-header{ display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px 24px; border-bottom:1px solid rgba(208,184,145,0.22); flex-shrink:0; }
-.npfs .np-title-row{ display:flex; align-items:center; gap:24px; min-width:0; flex-wrap:wrap; }
-.npfs .np-header h1{ margin:0; color:#fbf6eb; font-size:32px; font-weight:900; line-height:1.05; letter-spacing:0; }
-.npfs .np-kicker{ margin:0; color:#ffc93d; font-size:17px; font-weight:900; white-space:nowrap; }
+.npfs .np-header{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 20px; border-bottom:1px solid rgba(208,184,145,0.22); flex-shrink:0; }
+.npfs .np-title-row{ display:flex; align-items:center; gap:18px; min-width:0; flex-wrap:wrap; }
+.npfs .np-header h1{ margin:0; color:#fbf6eb; font-size:21px; font-weight:900; line-height:1.05; letter-spacing:0; }
+.npfs .np-kicker{ margin:0; color:#ffc93d; font-size:13px; font-weight:900; white-space:nowrap; }
 /* Badge stato tipo ordine (P1a) — SOLO display, legge tipoConsegna; nessun toggle. */
-.npfs .np-tipo-badge{ display:inline-flex; align-items:center; gap:8px; border-radius:999px; padding:7px 16px; font-size:18px; font-weight:900; letter-spacing:.3px; white-space:nowrap; }
+.npfs .np-tipo-badge{ display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:5px 12px; font-size:13px; font-weight:900; letter-spacing:.3px; white-space:nowrap; }
 .npfs .np-tipo-badge.is-ritiro{ color:#ffd24a; background:rgba(250,204,21,0.14); border:1.5px solid rgba(250,204,21,0.55); }
 .npfs .np-tipo-badge.is-domicilio{ color:#7cc4ff; background:rgba(56,150,255,0.16); border:1.5px solid rgba(56,150,255,0.55); }
-.npfs .np-close{ width:52px; height:52px; border:1px solid rgba(246,230,196,0.18); border-radius:10px; color:#fff8ed; background:rgba(255,255,255,0.03); font-size:30px; line-height:1; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.npfs .np-close{ width:40px; height:40px; border:1px solid rgba(246,230,196,0.18); border-radius:10px; color:#fff8ed; background:rgba(255,255,255,0.03); font-size:24px; line-height:1; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
 .npfs .np-close:hover{ background:rgba(255,255,255,0.07); }
 
 /* Fixed top region (cards + banner + warnings) */
-.npfs .np-fixedtop{ flex-shrink:0; display:flex; flex-direction:column; gap:12px; padding:14px 24px; }
-.npfs .np-top{ display:grid; grid-template-columns:0.95fr 1.05fr; gap:14px; }
-.npfs .np-panel{ min-width:0; border:1px solid rgba(208,184,145,0.22); border-radius:10px; padding:18px; background:linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)), #11100e; display:flex; flex-direction:column; gap:0; }
-.npfs .np-panel h2{ display:flex; align-items:center; gap:10px; margin:0 0 16px; color:#bcae93; font-size:15px; font-weight:900; text-transform:uppercase; letter-spacing:.5px; }
+.npfs .np-fixedtop{ flex-shrink:0; display:flex; flex-direction:column; gap:10px; padding:12px 20px; }
+/* align-items:start → il box Cliente prende solo l'altezza del suo contenuto e
+   non viene stirato all'altezza del box Dirección (eliminava l'aria morta sotto). */
+.npfs .np-top{ display:grid; grid-template-columns:0.95fr 1.05fr; gap:12px; align-items:start; }
+.npfs .np-panel{ min-width:0; border:1px solid rgba(208,184,145,0.22); border-radius:10px; padding:14px; background:linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)), #11100e; display:flex; flex-direction:column; gap:0; }
+.npfs .np-panel h2{ display:flex; align-items:center; gap:8px; margin:0 0 12px; color:#bcae93; font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.5px; }
 .npfs .np-customer-panel.is-ok{ border-color:rgba(88,210,125,0.34); }
 .npfs .np-customer-panel h2::before{ content:"●"; color:#d7a84b; font-size:18px; }
 .npfs .np-address-panel h2::before{ content:"◆"; color:#d7a84b; font-size:16px; }
 
 /* Customer grid */
-.npfs .np-customer-grid{ display:grid; grid-template-columns:minmax(0,1fr) 60px; gap:14px; }
-.npfs .np-input-like{ min-width:0; min-height:60px; border:1px solid rgba(208,184,145,0.22); border-radius:10px; color:#fff7e8; background:rgba(255,255,255,0.025); display:flex; align-items:center; gap:12px; padding:0 16px; text-align:left; }
-.npfs .np-input-like input{ flex:1; min-width:0; background:transparent; border:none; outline:none; color:#fff7e8; font-family:inherit; font-size:23px; font-weight:800; padding:0; }
+.npfs .np-customer-grid{ display:grid; grid-template-columns:minmax(0,1fr) 52px; gap:12px; }
+.npfs .np-input-like{ min-width:0; min-height:46px; border:1px solid rgba(208,184,145,0.22); border-radius:10px; color:#fff7e8; background:rgba(255,255,255,0.025); display:flex; align-items:center; gap:10px; padding:0 14px; text-align:left; }
+.npfs .np-input-like input{ flex:1; min-width:0; background:transparent; border:none; outline:none; color:#fff7e8; font-family:inherit; font-size:16px; font-weight:800; padding:0; }
 .npfs .np-input-like input::placeholder{ color:rgba(255,247,232,0.4); font-weight:700; }
 .npfs .np-name-field{ position:relative; }
-.npfs .np-phone-field .np-phone-ic{ color:#d8cbb5; font-size:22px; flex-shrink:0; }
-.npfs .np-icon-action{ min-height:60px; border:1px solid rgba(208,184,145,0.22); border-radius:10px; background:rgba(255,255,255,0.025); color:#fff4dc; display:grid; place-items:center; font-size:22px; font-weight:900; cursor:pointer; }
+.npfs .np-phone-field .np-phone-ic{ color:#d8cbb5; font-size:17px; flex-shrink:0; }
+.npfs .np-icon-action{ min-height:46px; border:1px solid rgba(208,184,145,0.22); border-radius:10px; background:rgba(255,255,255,0.025); color:#fff4dc; display:grid; place-items:center; font-size:18px; font-weight:900; cursor:pointer; }
 /* Contatto cliente (P1b): elemento INFORMATIVO neutro, non un'azione (era un
    bottone verde no-op che sembrava "enviar"). Niente verde-azione, cursor default. */
-.npfs .np-contact-info{ min-height:60px; border:1px solid rgba(208,184,145,0.20); border-radius:10px; color:#bcae93; background:rgba(255,255,255,0.03); display:grid; place-items:center; font-size:22px; cursor:default; }
+.npfs .np-contact-info{ min-height:46px; border:1px solid rgba(208,184,145,0.20); border-radius:10px; color:#bcae93; background:rgba(255,255,255,0.03); display:grid; place-items:center; font-size:18px; cursor:default; }
 .npfs .np-ok{ flex:0 0 auto; width:28px; height:28px; display:grid; place-items:center; border-radius:999px; color:#062d16; background:#58d27d; font-size:17px; font-weight:900; }
 .npfs .np-customer-flags{ width:fit-content; max-width:100%; display:flex; align-items:center; margin-top:14px; border:1px solid rgba(208,184,145,0.20); border-radius:10px; overflow:hidden; color:#efe4cc; background:rgba(255,255,255,0.025); font-weight:900; font-size:13px; }
 .npfs .np-customer-flags span{ padding:11px 16px; white-space:nowrap; }
@@ -62,50 +65,57 @@ const NPFS_CSS = `
 
 /* Address panel */
 .npfs .np-address-input{ width:100%; }
-.npfs .np-address-input strong{ overflow:hidden; font-size:23px; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; font-weight:900; }
-.npfs .np-address-input .np-address-text{ flex:1; min-width:0; font-size:23px; line-height:1.15; font-weight:900; color:#fff7ea; background:transparent; border:none; outline:none; padding:0; }
+.npfs .np-address-input strong{ overflow:hidden; font-size:16px; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; font-weight:900; }
+.npfs .np-address-input .np-address-text{ flex:1; min-width:0; font-size:16px; line-height:1.15; font-weight:900; color:#fff7ea; background:transparent; border:none; outline:none; padding:0; }
 .npfs .np-address-input .np-address-text::placeholder{ color:rgba(255,247,234,0.45); font-weight:800; }
 .npfs .np-address-note{ width:100%; margin-top:8px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:9px 14px; font-size:13px; box-sizing:border-box; outline:none; }
 .npfs .np-address-ic{ font-size:20px; flex-shrink:0; }
 .npfs .np-delivery-line{ display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; color:#e8dfd0; font-size:14px; font-weight:900; }
 .npfs .np-delivery-line span{ display:inline-flex; align-items:center; gap:5px; border:1px solid rgba(208,184,145,0.18); border-radius:999px; padding:7px 12px; background:rgba(255,255,255,0.04); white-space:nowrap; }
-.npfs .np-delivery-cards{ display:grid; grid-template-columns:1fr 1fr minmax(140px,auto); gap:12px; margin-top:16px; }
-.npfs .np-dcard{ min-height:64px; border:1px solid rgba(208,184,145,0.18); border-radius:8px; padding:10px 14px; color:#f8f0df; background:rgba(255,255,255,0.025); display:flex; flex-direction:column; justify-content:center; }
-.npfs .np-dcard small{ display:block; margin-bottom:3px; color:#c6b6a0; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; }
-.npfs .np-dcard strong{ color:#fff3dc; font-size:22px; font-weight:900; }
-.npfs .np-dcard input[type=time]{ background:transparent; border:none; outline:none; color:#fff3dc; font-family:'DM Mono',monospace; font-size:22px; font-weight:900; width:100%; padding:0; }
+.npfs .np-delivery-cards{ display:grid; grid-template-columns:1fr 1fr minmax(120px,auto); gap:10px; margin-top:12px; }
+.npfs .np-dcard{ min-height:52px; border:1px solid rgba(208,184,145,0.18); border-radius:8px; padding:8px 12px; color:#f8f0df; background:rgba(255,255,255,0.025); display:flex; flex-direction:column; justify-content:center; }
+.npfs .np-dcard small{ display:block; margin-bottom:3px; color:#c6b6a0; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; }
+.npfs .np-dcard strong{ color:#fff3dc; font-size:16px; font-weight:900; }
+.npfs .np-dcard input[type=time]{ background:transparent; border:none; outline:none; color:#fff3dc; font-family:'DM Mono',monospace; font-size:16px; font-weight:900; width:100%; padding:0; }
 .npfs .np-dcard.is-deliv input[type=time]{ color:#7ee2a0; }
-.npfs .np-recalc{ min-height:64px; border:1px solid rgba(208,184,145,0.18); border-radius:8px; padding:10px 14px; color:#fff8ee; background:rgba(255,255,255,0.02); font-size:15px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; }
+.npfs .np-recalc{ min-height:52px; border:1px solid rgba(208,184,145,0.18); border-radius:8px; padding:8px 12px; color:#fff8ee; background:rgba(255,255,255,0.02); font-size:14px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; }
 .npfs .np-recalc:hover{ background:rgba(255,255,255,0.05); }
 
 /* Products head */
-.npfs .np-products-head{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 24px; flex-shrink:0; }
-.npfs .np-products-head > div{ display:flex; align-items:center; gap:14px; min-width:0; }
-.npfs .np-products-head h2{ margin:0; color:#fff7ed; font-size:23px; font-weight:900; text-transform:uppercase; }
-.npfs .np-count-pill{ border:1px solid rgba(208,184,145,0.16); border-radius:999px; padding:6px 12px; color:#cfc3ae; background:rgba(255,255,255,0.025); font-weight:900; font-size:13px; white-space:nowrap; }
-.npfs .np-gold-btn{ min-height:46px; border:1px solid rgba(246,189,59,0.36); border-radius:8px; padding:0 18px; color:#111; background:linear-gradient(180deg,#ffd866,#f4b82f); font-weight:900; font-size:16px; cursor:pointer; flex-shrink:0; }
+.npfs .np-products-head{ display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 20px; flex-shrink:0; }
+.npfs .np-products-head > div{ display:flex; align-items:center; gap:12px; min-width:0; }
+.npfs .np-products-head h2{ margin:0; color:#fff7ed; font-size:16px; font-weight:900; text-transform:uppercase; }
+.npfs .np-count-pill{ border:1px solid rgba(208,184,145,0.16); border-radius:999px; padding:5px 11px; color:#cfc3ae; background:rgba(255,255,255,0.025); font-weight:900; font-size:12px; white-space:nowrap; }
+.npfs .np-gold-btn{ min-height:38px; border:1px solid rgba(246,189,59,0.36); border-radius:8px; padding:0 16px; color:#111; background:linear-gradient(180deg,#ffd866,#f4b82f); font-weight:900; font-size:14px; cursor:pointer; flex-shrink:0; }
 .npfs .np-gold-btn:hover{ filter:brightness(1.05); }
 
 /* Quick-add (P2): chips di aggiunta rapida prodotti comuni. Percorso sicuro
    MENU.find → handleAdd → total derivato; nessun prezzo/oggetto hardcoded. */
-.npfs .np-quickadd{ display:flex; align-items:center; gap:10px; padding:0 24px 6px; flex-shrink:0; }
-.npfs .np-qa-label{ flex-shrink:0; color:#bcae93; font-size:12px; font-weight:900; text-transform:uppercase; letter-spacing:.5px; }
-.npfs .np-qa-chips{ display:flex; gap:8px; flex-wrap:wrap; min-width:0; }
-.npfs .np-qa-chip{ display:inline-flex; align-items:center; gap:7px; min-height:40px; border:1px solid rgba(208,184,145,0.28); border-radius:999px; padding:6px 14px; color:#fff3dc; background:rgba(255,255,255,0.03); font-size:14px; font-weight:800; cursor:pointer; white-space:nowrap; }
+.npfs .np-quickadd{ display:flex; align-items:center; gap:10px; padding:0 20px 6px; flex-shrink:0; }
+.npfs .np-qa-label{ flex-shrink:0; color:#bcae93; font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.5px; }
+/* Una sola riga compatta scrollabile: le chip non devono mai mangiare spazio verticale. */
+.npfs .np-qa-chips{ display:flex; gap:7px; flex-wrap:nowrap; overflow-x:auto; min-width:0; scrollbar-width:none; padding-bottom:2px; }
+.npfs .np-qa-chips::-webkit-scrollbar{ display:none; }
+.npfs .np-qa-chip{ display:inline-flex; align-items:center; gap:6px; flex-shrink:0; min-height:32px; border:1px solid rgba(208,184,145,0.28); border-radius:999px; padding:5px 11px; color:#fff3dc; background:rgba(255,255,255,0.03); font-size:13px; font-weight:800; cursor:pointer; white-space:nowrap; }
 .npfs .np-qa-chip:hover{ background:rgba(250,204,21,0.10); border-color:rgba(250,204,21,0.45); }
-.npfs .np-qa-chip .np-qa-price{ color:#cbb88f; font-size:12px; font-weight:900; font-family:'DM Mono',monospace; }
+.npfs .np-qa-chip .np-qa-price{ color:#cbb88f; font-size:11px; font-weight:900; font-family:'DM Mono',monospace; }
 
 /* Products list */
-.npfs .np-products{ flex:1; min-height:0; overflow-y:auto; padding:0 24px 10px; -webkit-overflow-scrolling:touch; scrollbar-color:rgba(208,184,145,0.45) transparent; }
-.npfs .np-row{ min-height:66px; display:grid; grid-template-columns:44px minmax(120px,0.7fr) minmax(200px,1.6fr) 92px auto; align-items:center; gap:16px; border:1px solid rgba(208,184,145,0.16); border-radius:8px; margin-bottom:8px; padding:10px 16px; background:linear-gradient(90deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)), #15130f; }
-.npfs .np-index{ width:44px; height:44px; display:grid; place-items:center; border:1px solid rgba(208,184,145,0.24); border-radius:8px; color:#fff7e7; font-size:20px; font-weight:900; }
-.npfs .np-product-name{ min-width:0; }
-.npfs .np-product-name strong{ display:block; overflow:hidden; color:#fff7ea; font-size:20px; font-weight:900; line-height:1.1; text-overflow:ellipsis; white-space:nowrap; }
-.npfs .np-note{ margin:0; overflow:hidden; color:#ffd439; font-size:16px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
-.npfs .np-note-muted{ color:#8f887b; }
-.npfs .np-price{ color:#fff8ec; font-size:18px; font-weight:900; text-align:right; font-family:'DM Mono',monospace; }
-.npfs .np-actions{ display:grid; grid-template-columns:repeat(5,auto); align-items:center; gap:10px; }
-.npfs .np-actions button, .npfs .np-actions .np-qty{ width:46px; height:44px; display:grid; place-items:center; border:1px solid rgba(208,184,145,0.20); border-radius:8px; color:#fff5e4; background:rgba(255,255,255,0.035); font-size:20px; font-weight:900; cursor:pointer; padding:0; }
+.npfs .np-products{ flex:1; min-height:0; overflow-y:auto; padding:0 20px 10px; -webkit-overflow-scrolling:touch; scrollbar-color:rgba(208,184,145,0.45) transparent; }
+/* Riga prodotto: index | blocco principale (nome+prezzo su riga 1, nota+extra su
+   riga 2) | azioni. Niente più cella nota schiacciata/troncata a destra. */
+.npfs .np-row{ display:grid; grid-template-columns:34px minmax(0,1fr) auto; align-items:center; gap:14px; border:1px solid rgba(208,184,145,0.16); border-radius:8px; margin-bottom:8px; padding:9px 14px; background:linear-gradient(90deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)), #15130f; }
+.npfs .np-index{ width:34px; height:34px; display:grid; place-items:center; border:1px solid rgba(208,184,145,0.24); border-radius:8px; color:#fff7e7; font-size:15px; font-weight:900; }
+.npfs .np-row-main{ min-width:0; display:flex; flex-direction:column; gap:5px; }
+.npfs .np-row-head{ display:flex; align-items:baseline; gap:12px; }
+.npfs .np-pname{ flex:1; min-width:0; overflow:hidden; color:#fff7ea; font-size:15px; font-weight:900; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; }
+.npfs .np-price{ flex-shrink:0; color:#fff8ec; font-size:15px; font-weight:900; text-align:right; font-family:'DM Mono',monospace; }
+/* Riga 2: nota cucina rossa + chip extra tan — vanno a capo, mai troncati. */
+.npfs .np-row-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.npfs .np-note-red{ display:inline-flex; align-items:center; gap:5px; border-radius:6px; padding:2px 9px; font-size:12px; font-weight:800; color:#ff8f7a; background:rgba(232,52,28,0.12); border:1px solid rgba(232,52,28,0.42); }
+.npfs .np-extra-chip{ display:inline-flex; align-items:center; border-radius:6px; padding:2px 9px; font-size:12px; font-weight:800; color:#e9c98a; background:rgba(208,184,145,0.10); border:1px solid rgba(208,184,145,0.30); }
+.npfs .np-actions{ display:grid; grid-template-columns:repeat(5,auto); align-items:center; gap:8px; }
+.npfs .np-actions button, .npfs .np-actions .np-qty{ width:34px; height:32px; display:grid; place-items:center; border:1px solid rgba(208,184,145,0.20); border-radius:8px; color:#fff5e4; background:rgba(255,255,255,0.035); font-size:16px; font-weight:900; cursor:pointer; padding:0; }
 .npfs .np-actions .np-qty{ background:rgba(0,0,0,0.28); font-family:'DM Mono',monospace; cursor:default; }
 /* Danger (🗑): separato dal "+" per ridurre il rischio di delete accidentale
    (P3). Solo spaziatura visiva, nessun cambio logico su handleRemoveItem. */
@@ -116,16 +126,18 @@ const NPFS_CSS = `
 .npfs .np-empty{ height:100%; min-height:220px; display:grid; place-content:center; justify-items:center; gap:12px; color:#d3c5ae; text-align:center; }
 
 /* Footer */
-.npfs .np-footer{ display:grid; grid-template-columns:minmax(280px,1fr) auto auto minmax(210px,auto); align-items:center; gap:20px; padding:14px 24px; border-top:1px solid rgba(208,184,145,0.28); background:rgba(12,11,9,0.96); flex-shrink:0; }
-.npfs .np-summary{ display:flex; align-items:baseline; gap:18px; flex-wrap:wrap; min-width:0; }
-.npfs .np-summary .np-items{ color:#efe4d0; font-size:22px; font-weight:900; }
-.npfs .np-summary .np-total{ color:#fff3df; font-size:30px; font-weight:900; font-family:'DM Mono',monospace; }
-.npfs .np-summary small{ color:#bcb09f; font-size:14px; font-weight:800; }
-.npfs .np-confirm{ min-height:56px; border:1px solid rgba(74,222,128,0.36); border-radius:10px; color:#effff3; background:linear-gradient(180deg,#2eb45e,#218f4d); font-size:20px; font-weight:900; cursor:pointer; padding:0 20px; white-space:nowrap; }
+.npfs .np-footer{ display:grid; grid-template-columns:minmax(240px,1fr) auto auto minmax(190px,auto); align-items:center; gap:16px; padding:12px 20px; border-top:1px solid rgba(208,184,145,0.28); background:rgba(12,11,9,0.96); flex-shrink:0; }
+.npfs .np-summary{ display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; min-width:0; }
+.npfs .np-summary .np-items{ color:#efe4d0; font-size:15px; font-weight:900; }
+.npfs .np-summary .np-total{ color:#fff3df; font-size:22px; font-weight:900; font-family:'DM Mono',monospace; }
+.npfs .np-summary small{ color:#bcb09f; font-size:12px; font-weight:800; }
+.npfs .np-confirm{ min-height:46px; border:1px solid rgba(74,222,128,0.36); border-radius:10px; color:#effff3; background:linear-gradient(180deg,#2eb45e,#218f4d); font-size:15px; font-weight:900; cursor:pointer; padding:0 18px; white-space:nowrap; }
 .npfs .np-confirm:disabled{ color:#8a8276; background:#27231d; border-color:rgba(208,184,145,0.18); cursor:not-allowed; }
 
-/* Responsive collapse */
-@media (max-width:900px){
+/* Responsive collapse — solo mobile vero. Tablet/finestre desktop strette
+   (>=680px) restano sul layout orizzontale a 2 colonne così la lista prodotti
+   resta visibile senza scroll forzato (no effetto "mobile ingrandito"). */
+@media (max-width:680px){
   .npfs .np-header{ padding:12px 14px; }
   .npfs .np-header h1{ font-size:24px; }
   .npfs .np-title-row{ gap:10px; }
@@ -143,11 +155,10 @@ const NPFS_CSS = `
   .npfs .np-qa-chips::-webkit-scrollbar{ display:none; }
   .npfs .np-qa-chip{ flex-shrink:0; min-height:38px; }
   .npfs .np-products{ padding:0 14px 10px; }
-  .npfs .np-row{ grid-template-columns:38px minmax(80px,0.9fr) 1fr; gap:10px; }
-  .npfs .np-price{ display:none; }
+  .npfs .np-row{ grid-template-columns:32px minmax(0,1fr); gap:10px; }
   .npfs .np-actions{ grid-column:1 / -1; justify-content:flex-end; }
   /* Mobile (P3): tap target più comodo e 🗑 più staccato dal "+". */
-  .npfs .np-actions button, .npfs .np-actions .np-qty{ width:48px; height:46px; }
+  .npfs .np-actions button, .npfs .np-actions .np-qty{ width:44px; height:42px; }
   .npfs .np-actions .np-danger{ margin-left:16px; }
   /* Footer compatto: era 4 righe impilate (~261px, ~31% di uno schermo 844) e
      comprimeva il corpo scrollabile. Ora 3 righe: riepilogo / [descuento·pagado] /
@@ -247,6 +258,57 @@ function buildDisponibilidad(ordenes) {
   return rows;
 }
 
+// Overlay di stato del planner: loading oppure errore sicuro. NON mostra MAI
+// proposte/orari/mappa — le proposte reali vivono SOLO in PremiumPlannerPopup,
+// montato esclusivamente con un contract valido. Nessun mock/fixture qui.
+const PlannerStatusOverlay = ({ loading, message, onClose }) => (
+  <div
+    onClick={onClose}
+    style={{
+      position: "fixed", inset: 0, zIndex: 700,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
+    }}
+  >
+    <div
+      onClick={e => e.stopPropagation()}
+      style={{
+        background: "#15130f", border: "1px solid rgba(208,184,145,0.28)",
+        borderRadius: 14, padding: "26px 28px", width: "min(420px, 92vw)",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.6)", textAlign: "center",
+        color: "#f7f0df", fontFamily: "'Satoshi',Inter,system-ui,sans-serif",
+      }}
+    >
+      {loading ? (
+        <>
+          <div style={{ fontSize: 30, marginBottom: 10 }}>⟳</div>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>Calculando propuestas…</div>
+          <div style={{ fontSize: 13, color: "#bcae93", marginTop: 6 }}>Consultando el planner</div>
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 30, marginBottom: 10 }}>⚠</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "#fca5a5" }}>Planner no disponible</div>
+          <div style={{ fontSize: 13, color: "#e8dfd0", marginTop: 8, lineHeight: 1.4 }}>
+            {message || "No se pudieron cargar las propuestas. Usa la hora manual."}
+          </div>
+        </>
+      )}
+      <button
+        onClick={onClose}
+        style={{
+          marginTop: 18, minHeight: 42, padding: "0 22px",
+          border: "1px solid rgba(208,184,145,0.4)", borderRadius: 9,
+          background: "rgba(255,255,255,0.04)", color: "#fff5e4",
+          fontWeight: 800, fontSize: 14, cursor: "pointer",
+        }}
+      >
+        Cerrar
+      </button>
+    </div>
+  </div>
+);
+
 const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }) => {
   const [items,           setItems]           = useState([]);
   const [tel,             setTel]             = useState("");
@@ -258,6 +320,25 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [direccionNote,   setDireccionNote]   = useState("");
   const [clienteAbitual,  setClienteAbitual]  = useState(null);
   const [showNotaGen,     setShowNotaGen]     = useState(false);
+  const [showPlannerLabPopup, setShowPlannerLabPopup] = useState(false);
+  // Planner propuestas → strategic preview backend (read-only). Si valorizza SOLO
+  // al click. null + showPlannerLabPopup = estado loading/error (NUNCA mock): el
+  // popup de propuestas se monta solo con un contract válido.
+  const [strategicPreview, setStrategicPreview] = useState(null);
+  const [strategicError,   setStrategicError]   = useState("");
+  // Loading state read-only: true mentre la preview backend è in volo (solo se c'è
+  // hora). Render-only, nessun calcolo. Guard anti-stale: solo l'ultima richiesta
+  // (o apertura/chiusura) può aggiornare preview/warning/loading.
+  const [strategicLoading, setStrategicLoading] = useState(false);
+  const strategicReqIdRef = useRef(0);
+  // Ruta manual LAB → previewManualGiroRoute (read-only). El operador propone la
+  // secuencia de paradas en el popup; aquí guardamos la preview backend + warning +
+  // loading con el MISMO guard anti-stale del strategic. Nada de esto se usa para
+  // escribir/guardar: solo render. null = sin ruta manual calculada todavía.
+  const [manualRoutePreview, setManualRoutePreview] = useState(null);
+  const [manualRouteWarning, setManualRouteWarning] = useState("");
+  const [manualRouteLoading, setManualRouteLoading] = useState(false);
+  const manualReqIdRef = useRef(0);
   // Override esplicito: l'operatore ha cliccato "Forzar HORA" ignorando la proposta
   const [forzaHora, setForzaHora] = useState(false);
   // "Para ahora" (RITIRO): in volo mentre chiediamo al backend il primo ritiro fattibile
@@ -804,6 +885,154 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     return () => { cancelled = true; clearTimeout(t); setBackendTimingLoading(false); };
   }, [visible, tipoConsegna, direccion, hora, zonaManuale]); // eslint-disable-line
 
+  // ── Planner propuestas — apertura ESPLICITA (mai automatica), SOLO dati reali ──
+  // startTime = `hora` GIÀ scelta nel draft (no Date.now). Read-only: nessun ordine
+  // creato/modificato. REGOLA V1: niente mock/LAB nel flusso operatore. Se manca
+  // hora o il backend non risponde con un contract valido → stato di ERRORE sicuro
+  // (mai dati finti). Il popup proposte si monta solo con strategicPreview valido.
+  const openPlannerLab = async () => {
+    setShowPlannerLabPopup(true);
+    // Ogni apertura invalida le risposte in volo precedenti (anti-stale).
+    const reqId = ++strategicReqIdRef.current;
+    setStrategicPreview(null);
+    if (!hora) {
+      setStrategicLoading(false);
+      setStrategicError("Falta la hora de entrega · elígela y vuelve a abrir el planner.");
+      return;
+    }
+    setStrategicError("");
+    setStrategicLoading(true);
+    const pizzasCount = items.reduce((s, it) => s + (parseInt(it.q) || 1), 0);
+    const input = {
+      startTime: hora,
+      currentOrderDraft: {
+        tipoConsegna,
+        zone: zonaInfo?.zona?.id || null,   // zona ya resuelta; null si aún no
+        hora,
+        horaFlexible: !forzaHora,
+        pizzas: pizzasCount,
+      },
+    };
+    try {
+      const res = await api.previewStrategicOpportunities(input);
+      // Anti-stale: scarta se nel frattempo è arrivata una nuova apertura/chiusura.
+      if (reqId !== strategicReqIdRef.current) return;
+      // SOLO contract strategic válido alimenta el render. Cualquier otra cosa
+      // (contract inválido / 401 / error) → estado de error, NUNCA mock.
+      if (res && res.contract === "premium-planner-strategic-preview-v1") {
+        setStrategicPreview(res);
+        setStrategicError("");
+      } else if (res && res._status === 401) {
+        setStrategicPreview(null);
+        setStrategicError("Sesión expirada · vuelve a entrar. Usa la hora manual.");
+      } else {
+        setStrategicPreview(null);
+        setStrategicError("Planner no disponible · usa la hora manual.");
+      }
+    } catch (e) {
+      if (reqId !== strategicReqIdRef.current) return;
+      setStrategicPreview(null);
+      setStrategicError("Planner no disponible · usa la hora manual.");
+      console.warn("[previewStrategicOpportunities] failed:", e?.message || e);
+    } finally {
+      if (reqId === strategicReqIdRef.current) setStrategicLoading(false);
+    }
+  };
+
+  // Chiusura popup: invalida eventuali risposte in volo (anti-stale) e azzera il
+  // loading/errore, così una risposta vecchia non sporca un popup chiuso/riaperto.
+  const closePlannerLab = () => {
+    strategicReqIdRef.current++;
+    setStrategicLoading(false);
+    setStrategicError("");
+    // Invalida también la ruta manual en vuelo y limpia su preview/warning.
+    manualReqIdRef.current++;
+    setManualRouteLoading(false);
+    setManualRoutePreview(null);
+    setManualRouteWarning("");
+    setShowPlannerLabPopup(false);
+  };
+
+  // ── Ruta manual LAB — calcula la routeTimeline de una secuencia propuesta ────
+  // `selectedStops` llega YA construido por el popup (pedido actual + anclas
+  // clicadas, en orden). Aquí SOLO validamos (hora + zona resueltas), añadimos el
+  // currentOrderDraft no-PII y llamamos al backend read-only. startTime = `hora`
+  // del draft (NO Date.now). NO crea/modifica ordenes, NO toca `hora`. La respuesta
+  // se usa solo para render. Guard anti-stale: solo la última petición/cierre vale.
+  const calcManualRoute = async (selectedStops) => {
+    const reqId = ++manualReqIdRef.current;
+    if (!hora) {
+      setManualRouteLoading(false);
+      setManualRoutePreview(null);
+      setManualRouteWarning("startTime mancante (hora no elegida) · backend NO llamado");
+      return;
+    }
+    // Zona del pedido actual: la del stop current_order que arma el popup (puede
+    // ser la zona resuelta real O una elegida a mano en modo LAB, sin geo); si no,
+    // cae en la zona ya resuelta del draft. NO se resuelve geo aquí.
+    const currentStop = Array.isArray(selectedStops)
+      ? selectedStops.find((s) => s && s.type === "current_order")
+      : null;
+    const curZone = (currentStop && currentStop.zone) || zonaInfo?.zona?.id || null;
+    if (!curZone) {
+      setManualRouteLoading(false);
+      setManualRoutePreview(null);
+      setManualRouteWarning("Zona del pedido actual sin resolver · backend NO llamado");
+      return;
+    }
+    if (!Array.isArray(selectedStops) || selectedStops.length === 0) {
+      setManualRoutePreview(null);
+      setManualRouteWarning("Sin paradas seleccionadas");
+      return;
+    }
+    setManualRouteWarning("");
+    setManualRoutePreview(null);
+    setManualRouteLoading(true);
+    const pizzasCount = items.reduce((s, it) => s + (parseInt(it.q) || 1), 0);
+    const input = {
+      startTime: hora,
+      currentOrderDraft: {
+        tipoConsegna,
+        zone: curZone,
+        hora,
+        horaFlexible: !forzaHora,
+        pizzas: pizzasCount,
+      },
+      selectedStops,
+      includeReturn: true,
+      includeCrossZone: true,
+    };
+    try {
+      const res = await api.previewManualGiroRoute(input);
+      if (reqId !== manualReqIdRef.current) return;
+      if (res && res.contract === "premium-planner-manual-giro-route-preview-v1") {
+        setManualRoutePreview(res);
+        setManualRouteWarning("");
+      } else if (res && res._status === 401) {
+        setManualRoutePreview(null);
+        setManualRouteWarning("Sesión expirada o autorización requerida");
+      } else {
+        setManualRoutePreview(null);
+        setManualRouteWarning("Backend ruta manual no disponible (contract inválido / unknown action)");
+      }
+    } catch (e) {
+      if (reqId !== manualReqIdRef.current) return;
+      setManualRoutePreview(null);
+      setManualRouteWarning("Backend ruta manual falló (internal_error / red)");
+      console.warn("[previewManualGiroRoute] failed:", e?.message || e);
+    } finally {
+      if (reqId === manualReqIdRef.current) setManualRouteLoading(false);
+    }
+  };
+
+  // Limpia la preview manual (botón "Limpiar ruta" en el popup) e invalida vuelos.
+  const clearManualRoute = () => {
+    manualReqIdRef.current++;
+    setManualRouteLoading(false);
+    setManualRoutePreview(null);
+    setManualRouteWarning("");
+  };
+
   useEffect(() => {
     if (!visible || tipoConsegna !== "DOMICILIO" || !backendTiming) return;
     if (horaTouchedByOperator) return;
@@ -842,16 +1071,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     if (!visible) { reset(); setForzaHora(false); }
   }, [visible]); // eslint-disable-line
 
-  // ── Render extras badge per un item ─────────────────────────────────────
-  // Allinea la riga al chip dell'overlay ingredienti: gli extra duplicati
-  // diventano "Nome ×N" (ordine di prima comparsa), l'eventuale nota libera
-  // resta. È solo formattazione display — NON tocca item.sub salvato.
-  //   "+Jamón cocido, +Jamón cocido"            → "Jamón cocido ×2"
-  //   "+Jamón cocido, +Pancetta"                → "Jamón cocido, Pancetta"
-  //   "+Jamón cocido, +Jamón cocido, +Pancetta" → "Jamón cocido ×2, Pancetta"
-  const formatExtrasLabel = (sub) => {
-    if (!sub) return null;
-    const parts = sub.split(",").map(s => s.trim()).filter(Boolean);
+  // ── Parsing item.sub: separa nota cucina libera dagli ingredienti extra ──
+  // Sorgente unica per il display della riga prodotto. NON tocca item.sub salvato.
+  //   "+Jamón cocido, +Jamón cocido, cortar en 4"
+  //     → { note: "cortar en 4", extras: [{name:"Jamón cocido", qty:2}] }
+  const splitItemSub = (sub) => {
+    const parts = String(sub || "").split(",").map(s => s.trim()).filter(Boolean);
     const order = [];           // nomi extra nell'ordine di prima comparsa
     const counts = {};
     const notes = [];           // testo non-extra (variazioni / nota libera)
@@ -864,10 +1089,14 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         notes.push(p);
       }
     });
-    const extrasStr = order.map(n => counts[n] > 1 ? `${n} ×${counts[n]}` : n).join(", ");
-    const noteStr = notes.join(", ");
-    if (!extrasStr) return noteStr || null;        // solo nota libera
-    return noteStr ? `${noteStr} · ${extrasStr}` : extrasStr;
+    return { note: notes.join(", "), extras: order.map(n => ({ name: n, qty: counts[n] })) };
+  };
+  // Label testuale (tooltip): "cortar en 4 · Jamón cocido ×2, Pancetta"
+  const formatExtrasLabel = (sub) => {
+    const { note, extras } = splitItemSub(sub);
+    const extrasStr = extras.map(e => e.qty > 1 ? `${e.name} ×${e.qty}` : e.name).join(", ");
+    if (!extrasStr) return note || null;
+    return note ? `${note} · ${extrasStr}` : extrasStr;
   };
   const extrasLabel = (item) => formatExtrasLabel(item.sub);
 
@@ -969,7 +1198,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           position: "relative",
           background: "linear-gradient(145deg,#090908 0%,#10100f 48%,#070707 100%)",
           borderRadius: 18,
-          width: "min(1540px, calc(100vw - 24px))",
+          width: "min(1280px, calc(100vw - 32px))",
           height: "94dvh", maxHeight: "94vh", display: "flex", flexDirection: "column",
           boxShadow: "0 20px 60px rgba(0,0,0,.6)", overflow: "hidden"
         }}>
@@ -1085,6 +1314,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   hora={hora}
                   setHoraFromOperator={setHoraFromOperator}
                   deliveryStatus={deliveryStatus}
+                  onOpenPlannerLab={openPlannerLab}
                   onParaAhora={aplicarParaAhora}
                   paraAhoraLoading={paraAhoraLoading}
                   ritiroInmediato={ritiroInmediato}
@@ -1452,13 +1682,24 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 items.map((item, idx) => (
                   <div key={item._uid} className="np-row">
                     <span className="np-index np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">{idx + 1}</span>
-                    <div className="np-product-name np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">
-                      <strong>{item.n}</strong>
+                    <div className="np-row-main">
+                      <div className="np-row-head np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">
+                        <strong className="np-pname">{item.n}</strong>
+                        <strong className="np-price">{(item.p * item.q).toFixed(2)}€</strong>
+                      </div>
+                      {(() => {
+                        const { note, extras } = splitItemSub(item.sub);
+                        if (!note && extras.length === 0) return null;
+                        return (
+                          <div className="np-row-meta" title={extrasLabel(item) || undefined}>
+                            {note && <span className="np-note-red">⚠ {note}</span>}
+                            {extras.map((ex, i) => (
+                              <span key={i} className="np-extra-chip">{ex.name}{ex.qty > 1 ? ` ×${ex.qty}` : ""}</span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
-                    <p className={item.sub ? "np-note" : "np-note np-note-muted"} title={item.sub ? extrasLabel(item) : undefined}>
-                      {item.sub ? extrasLabel(item) : "—"}
-                    </p>
-                    <strong className="np-price">{(item.p * item.q).toFixed(2)}€</strong>
                     <div className="np-actions" aria-label={`Acciones ${item.n}`}>
                       <button title="Editar ingredientes" onClick={e => { e.stopPropagation(); handleEditItem(item); }}>✎</button>
                       <button title="Quitar una unidad" onClick={e => { e.stopPropagation(); adj(item._uid, -1); }}>−</button>
@@ -1554,6 +1795,34 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           </footer>
         </div>
       </div>
+
+      {/* ── Planner propuestas (apertura esplicita dal botón delivery) ──────────
+          SOLO dati reali read-only: il popup proposte si monta ESCLUSIVAMENTE con
+          un contract strategic valido (strategicPreview). Loading/errore → overlay
+          di stato sicuro, MAI la fixture mock. Nessuna scrittura ordine. */}
+      {showPlannerLabPopup && (
+        strategicPreview ? (
+          <PremiumPlannerPopup
+            onClose={closePlannerLab}
+            data={strategicPreview}
+            labWarning=""
+            loading={false}
+            manualCurrentZone={zonaInfo?.zona?.id || null}
+            manualStartTime={hora || null}
+            manualRoutePreview={manualRoutePreview}
+            manualRouteLoading={manualRouteLoading}
+            manualRouteWarning={manualRouteWarning}
+            onCalcManualRoute={calcManualRoute}
+            onClearManualRoute={clearManualRoute}
+          />
+        ) : (
+          <PlannerStatusOverlay
+            loading={strategicLoading}
+            message={strategicError}
+            onClose={closePlannerLab}
+          />
+        )
+      )}
 
       {/* ── ItemPickerModal ────────────────────────────────────────────── */}
       <ItemPickerModal

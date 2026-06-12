@@ -24,6 +24,7 @@ const DireccionInlinePanel = ({
   hora,
   setHoraFromOperator,
   deliveryStatus,
+  onOpenPlannerLab,
   onParaAhora,
   paraAhoraLoading,
   ritiroInmediato,
@@ -39,7 +40,33 @@ const DireccionInlinePanel = ({
 
   return (
     <section className="np-panel np-address-panel" aria-label="Dirección de entrega">
-      <h2>Dirección de entrega</h2>
+      {/* Header: titolo + indicador compacto de compatibilidad (era una pill aislada
+          debajo que comía altura). Solo estado, no es un botón. */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", margin: "0 0 12px" }}>
+        <h2 style={{ margin: 0 }}>Dirección de entrega</h2>
+        {isDomicilio && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{
+              color: deliveryStatus.isBlocked ? "#fca5a5" : "#86efac",
+              background: deliveryStatus.isBlocked ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)",
+              border: `1px solid ${deliveryStatus.isBlocked ? "rgba(239,68,68,0.30)" : "rgba(34,197,94,0.30)"}`,
+              borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap",
+            }}>
+              {deliveryStatus.isBlocked ? "⚠ Revisar" : "✅ Compatible"}
+            </span>
+            {backendTiming?.giro?.suggested && (
+              <span style={{
+                color: "#bbf7d0", background: "rgba(34,197,94,0.08)",
+                border: "1px solid rgba(34,197,94,0.22)", borderRadius: 999,
+                padding: "3px 10px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap",
+              }}>
+                Giro {(backendTiming?.giro?.zona || deliveryZona?.id || "").trim()}
+                {backendTiming?.giro?.slot_hora ? ` · ${backendTiming.giro.slot_hora}` : ""}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="np-input-like np-address-input">
         {isDomicilio && deliveryZona && <ZonaBadgeComponent zona={deliveryZona} size="sm" />}
@@ -190,44 +217,13 @@ const DireccionInlinePanel = ({
             </div>
           </>
         )}
-        {/* "Ver propuestas de entrega" (abría PremiumPlannerPopup) RETIRADO del flujo
-            operador V1 (decisión producto A1, opción C 2026-06-10): el popup puede
-            mostrar mock LAB si backend/contract/sesión/red fallan, inaceptable en
-            servicio real. La V1 usa solo el inline planner hint (read-only,
-            backend-driven). PremiumPlannerPopup queda en el repo como LAB, no
-            abrible desde este modal. */}
+        {/* CTA planner (V1 operatore): apre le proposte di consegna REALI dal backend
+            read-only (orari suggeriti, ETA per fermata, ruta manual). Se il backend
+            non risponde → stato di errore sicuro, MAI mock (gestito nel modal). */}
+        {isDomicilio && onOpenPlannerLab && (
+          <button type="button" className="np-recalc" onClick={onOpenPlannerLab}>◎ Ver propuestas</button>
+        )}
       </div>
-
-      {isDomicilio && (
-        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{
-            color: deliveryStatus.isBlocked ? "#fca5a5" : "#86efac",
-            background: deliveryStatus.isBlocked ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)",
-            border: `1px solid ${deliveryStatus.isBlocked ? "rgba(239,68,68,0.30)" : "rgba(34,197,94,0.30)"}`,
-            borderRadius: 999,
-            padding: "3px 10px",
-            fontSize: 12,
-            fontWeight: 900,
-            whiteSpace: "nowrap",
-          }}>
-            {deliveryStatus.isBlocked ? "Revisar" : "Compatible"}
-          </span>
-          {backendTiming?.giro?.suggested && (
-            <span style={{
-              color: "#bbf7d0",
-              background: "rgba(34,197,94,0.08)",
-              border: "1px solid rgba(34,197,94,0.22)",
-              borderRadius: 999,
-              padding: "3px 10px",
-              fontSize: 12,
-              fontWeight: 800,
-            }}>
-              Giro compatible {(backendTiming?.giro?.zona || deliveryZona?.id || "").trim()}
-              {backendTiming?.giro?.slot_hora ? ` · ${backendTiming.giro.slot_hora}` : ""}
-            </span>
-          )}
-        </div>
-      )}
     </section>
   );
 };
