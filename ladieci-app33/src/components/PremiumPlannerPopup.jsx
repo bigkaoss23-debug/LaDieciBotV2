@@ -23,6 +23,24 @@ import { useState } from 'react';
  *   baseline directa, capacidad y los flags blocked/warning. El popup
  *   nunca recalcula tiempos ni decide si un pedido entra en un giro.
  */
+
+// Geografia statica reale del locale; no ETA, no proposte, no mock operativo.
+// Solo identità zona (id ↔ quartiere reale) + color + label della mappa. È la
+// UNICA fonte di questa geografia: la usa sia il percorso reale (adapter
+// strategic) sia il fallback LAB. Non duplicare i valori altrove.
+const LOCAL_ZONE_MAP = {
+  title: 'Esquema operativo por zonas',
+  caption: 'Ruta estimada:',
+  seaLabel: 'MAR MEDITERRÁNEO',
+  zones: [
+    { id: 'Q1', name: 'Centro', color: '#0097A7', hasPizzeria: true },
+    { id: 'Q2', name: 'Buenavista', color: '#CE93D8' },
+    { id: 'Q3', name: 'IES', color: '#E65100' },
+    { id: 'Q4', name: 'Cortijos', color: '#C2185B' },
+    { id: 'Q5', name: 'Las Marinas', color: '#7CB342' },
+  ],
+};
+
 const PREMIUM_PLANNER_LAB_DATA = {
   contract: 'premium-planner-popup-lab-v2',
   mode: 'static_lab',
@@ -53,18 +71,7 @@ const PREMIUM_PLANNER_LAB_DATA = {
       ],
     },
   },
-  zoneMap: {
-    title: 'Esquema operativo por zonas',
-    caption: 'Ruta estimada:',
-    seaLabel: 'MAR MEDITERRÁNEO',
-    zones: [
-      { id: 'Q1', name: 'Centro', color: '#0097A7', hasPizzeria: true },
-      { id: 'Q2', name: 'Buenavista', color: '#CE93D8' },
-      { id: 'Q3', name: 'IES', color: '#E65100' },
-      { id: 'Q4', name: 'Cortijos', color: '#C2185B' },
-      { id: 'Q5', name: 'Las Marinas', color: '#7CB342' },
-    ],
-  },
+  zoneMap: LOCAL_ZONE_MAP, // geografía real → única fuente LOCAL_ZONE_MAP (no duplicar)
   // Cada fila de "Giros y huecos" es una OPORTUNIDAD sugerida por el planner,
   // no un pedido real. Click = preview local (mapa + impacto), nunca confirma.
   opportunities: [
@@ -238,7 +245,7 @@ const PREMIUM_PLANNER_LAB_DATA = {
   ],
 };
 
-const zoneColors = PREMIUM_PLANNER_LAB_DATA.zoneMap.zones.reduce((acc, zone) => {
+const zoneColors = LOCAL_ZONE_MAP.zones.reduce((acc, zone) => {
   acc[zone.id] = zone.color;
   return acc;
 }, {});
@@ -247,14 +254,14 @@ const zoneColors = PREMIUM_PLANNER_LAB_DATA.zoneMap.zones.reduce((acc, zone) => 
 // para colocar el nodo/badge en el CENTRO de la zona y para unir las paradas con
 // la línea de tragitto. Son coordenadas de layout (presentacional), no datos de
 // negocio. Pizzería vive en el centro de Q1.
-const MAP_ZONE_CENTERS = {
+const LOCAL_ZONE_CENTERS = {
   Q1: { x: 72, y: 36 },
   Q2: { x: 64, y: 70 },
   Q3: { x: 46, y: 36 },
   Q4: { x: 18, y: 36 },
   Q5: { x: 30, y: 80 },
 };
-const PIZZERIA_CENTER = MAP_ZONE_CENTERS.Q1;
+const PIZZERIA_CENTER = LOCAL_ZONE_CENTERS.Q1;
 
 const toneStyles = {
   ok: { accent: '#58E86B', bg: 'rgba(46, 210, 88, 0.10)', border: 'rgba(66, 232, 104, 0.38)' },
@@ -341,7 +348,7 @@ const adaptStrategicContract = (contract) => {
     mode: contract.mode || 'read_only',
     source: 'backend-readonly',
     bestProposal,
-    zoneMap: PREMIUM_PLANNER_LAB_DATA.zoneMap, // config estática presentacional
+    zoneMap: LOCAL_ZONE_MAP, // geografía estática real del local (no backend, no mock)
     opportunities,
     plannerNotes: notesFromContract.length ? notesFromContract : PREMIUM_PLANNER_LAB_DATA.plannerNotes,
     firstAvailable: fa,
@@ -860,7 +867,7 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
 
   // Solo paradas con centro de zona conocido → nodos colocables en el mapa.
   const placedStops = stops
-    .map((s) => ({ ...s, c: MAP_ZONE_CENTERS[s.zone] }))
+    .map((s) => ({ ...s, c: LOCAL_ZONE_CENTERS[s.zone] }))
     .filter((s) => s.c);
   // Puntos de la polilínea: Pizzería (centro Q1) → cada parada en orden. Solo
   // une coordenadas ya definidas; ningún cálculo de ruta/tiempo aquí.
