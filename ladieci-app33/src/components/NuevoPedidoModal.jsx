@@ -106,18 +106,22 @@ const NPFS_CSS = `
 .npfs .np-row{ display:grid; grid-template-columns:34px minmax(0,1fr) auto; align-items:center; gap:14px; border:1px solid rgba(208,184,145,0.16); border-radius:8px; margin-bottom:8px; padding:9px 14px; background:linear-gradient(90deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)), #15130f; }
 .npfs .np-index{ width:34px; height:34px; display:grid; place-items:center; border:1px solid rgba(208,184,145,0.24); border-radius:8px; color:#fff7e7; font-size:15px; font-weight:900; }
 .npfs .np-row-main{ min-width:0; display:flex; flex-direction:column; gap:5px; }
-.npfs .np-row-head{ display:flex; align-items:baseline; gap:12px; }
-.npfs .np-pname{ flex:1; min-width:0; overflow:hidden; color:#fff7ea; font-size:15px; font-weight:900; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; }
+.npfs .np-row-head{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; }
+.npfs .np-pname{ flex:0 1 auto; min-width:0; max-width:100%; overflow:hidden; color:#fff7ea; font-size:15px; font-weight:900; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; }
 /* P6: descrizione reale prodotto da MENU.sub (≠ item.sub variazioni). */
 .npfs .np-pdesc{ color:#a99f8b; font-size:12.5px; font-weight:600; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .npfs .np-price{ flex-shrink:0; color:#fff8ec; font-size:15px; font-weight:900; text-align:right; font-family:'DM Mono',monospace; }
 /* Blocco destro riga prodotto: prezzo + azioni, centrati verticalmente (il prezzo
    non resta più "appeso" in alto accanto al nome con la riga a 3 livelli). */
 .npfs .np-row-right{ display:flex; align-items:center; gap:14px; }
-/* Riga 2: nota cucina rossa + chip extra tan — vanno a capo, mai troncati. */
+/* Riga 2 compatta: descrizione + nota cucina rossa + chip extra, tutto IN LINEA.
+   Va a capo solo se non c'è spazio (flex-wrap), così la riga resta bassa. */
+.npfs .np-row-desc{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; }
 .npfs .np-row-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
 .npfs .np-note-red{ display:inline-flex; align-items:center; gap:5px; border-radius:6px; padding:2px 9px; font-size:12px; font-weight:800; color:#ff8f7a; background:rgba(232,52,28,0.12); border:1px solid rgba(232,52,28,0.42); }
-.npfs .np-extra-chip{ display:inline-flex; align-items:center; border-radius:6px; padding:2px 9px; font-size:12px; font-weight:800; color:#e9c98a; background:rgba(208,184,145,0.10); border:1px solid rgba(208,184,145,0.30); }
+.npfs .np-extra-chip{ display:inline-flex; align-items:center; gap:5px; border-radius:6px; padding:2px 4px 2px 9px; font-size:12px; font-weight:800; color:#e9c98a; background:rgba(208,184,145,0.10); border:1px solid rgba(208,184,145,0.30); }
+.npfs .np-extra-x{ display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; padding:0; border:none; border-radius:50%; background:transparent; color:#E8341C; font-size:13px; font-weight:900; line-height:1; cursor:pointer; }
+.npfs .np-extra-x:hover{ background:rgba(232,52,28,0.18); }
 .npfs .np-actions{ display:grid; grid-template-columns:repeat(5,auto); align-items:center; gap:8px; }
 .npfs .np-actions button, .npfs .np-actions .np-qty{ width:34px; height:32px; display:grid; place-items:center; border:1px solid rgba(208,184,145,0.20); border-radius:8px; color:#fff5e4; background:rgba(255,255,255,0.035); font-size:16px; font-weight:900; cursor:pointer; padding:0; }
 .npfs .np-actions .np-qty{ background:rgba(0,0,0,0.28); font-family:'DM Mono',monospace; cursor:default; }
@@ -1093,6 +1097,26 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   };
   const extrasLabel = (item) => formatExtrasLabel(item.sub);
 
+  // Rimuove UNA occorrenza di un extra direttamente dalla riga prodotto principale.
+  // Stessa logica di ItemPickerModal.removeExtra (−1 occorrenza di "+nome" + −prezzo
+  // dall'item.p per-unità), ma applicata all'item del parent via handleUpdate (_uid).
+  // NON cambia il formato di item.sub né il prezzo base.
+  const removeExtraFromItem = (item, ingName) => {
+    const ing = INGREDIENTI.find(g => g.n === ingName);
+    const parts = String(item.sub || "").split(",").map(s => s.trim()).filter(Boolean);
+    let rimosso = false;
+    const newParts = parts.filter(p => {
+      if (!rimosso && p === "+" + ingName) { rimosso = true; return false; }
+      return true;
+    });
+    if (!rimosso) return;
+    handleUpdate({
+      ...item,
+      p: ing ? Math.max(0, Math.round((item.p - ing.prezzo) * 100) / 100) : item.p,
+      sub: newParts.join(", ")
+    });
+  };
+
   // Stato delivery unificato — combina la proposta schedule-aware del driver
   // con il vincolo forno. Il bottone "Aplicar sugerencia" usa questo.
   const deliveryStatus = useMemo(() => {
@@ -1662,26 +1686,36 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   <div key={item._uid} className="np-row">
                     <span className="np-index np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">{idx + 1}</span>
                     <div className="np-row-main">
-                      <div className="np-row-head np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">
-                        <strong className="np-pname">{item.n}</strong>
-                      </div>
-                      {/* P6: descrizione reale dal MENU (MENU.sub = sottotitolo pizza,
-                          ≠ item.sub = variazioni/note). Sola lettura MENU, stesso mapping
-                          di ItemPickerModal.descrizioneDi. Custom items senza match → niente. */}
                       {(() => {
                         const menuDesc = (MENU.find(m => String(m.id) === String(item.id)) || {}).sub;
-                        return menuDesc ? <span className="np-pdesc">{menuDesc}</span> : null;
-                      })()}
-                      {(() => {
                         const { note, extras } = splitItemSub(item.sub);
-                        if (!note && extras.length === 0) return null;
                         return (
-                          <div className="np-row-meta" title={extrasLabel(item) || undefined}>
-                            {note && <span className="np-note-red">⚠ {note}</span>}
-                            {extras.map((ex, i) => (
-                              <span key={i} className="np-extra-chip">{ex.name}{ex.qty > 1 ? ` ×${ex.qty}` : ""}</span>
-                            ))}
-                          </div>
+                          <>
+                            {/* Riga 1: nome prodotto + chip extra IN LINEA accanto al nome. */}
+                            <div className="np-row-head" title={extrasLabel(item) || undefined}>
+                              <strong className="np-pname np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">{item.n}</strong>
+                              {extras.map((ex, i) => (
+                                <span key={i} className="np-extra-chip">
+                                  {ex.name}{ex.qty > 1 ? ` ×${ex.qty}` : ""}
+                                  <button
+                                    type="button"
+                                    className="np-extra-x"
+                                    title={`Quitar ${ex.name}`}
+                                    aria-label={`Quitar ${ex.name}`}
+                                    onClick={e => { e.stopPropagation(); removeExtraFromItem(item, ex.name); }}
+                                  >×</button>
+                                </span>
+                              ))}
+                            </div>
+                            {/* Riga 2: descrizione reale dal MENU (MENU.sub) + SOLO la nota
+                                cucina rossa. Gli extra stanno sulla riga 1. */}
+                            {(menuDesc || note) && (
+                              <div className="np-row-desc">
+                                {menuDesc && <span className="np-pdesc">{menuDesc}</span>}
+                                {note && <span className="np-note-red">⚠ {note}</span>}
+                              </div>
+                            )}
+                          </>
                         );
                       })()}
                     </div>
