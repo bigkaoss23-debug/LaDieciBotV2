@@ -28,10 +28,17 @@ const NPFS_CSS = `
 .npfs .np-title-row{ display:flex; align-items:center; gap:18px; min-width:0; flex-wrap:wrap; }
 .npfs .np-header h1{ margin:0; color:#fbf6eb; font-size:21px; font-weight:900; line-height:1.05; letter-spacing:0; }
 .npfs .np-kicker{ margin:0; color:#ffc93d; font-size:13px; font-weight:900; white-space:nowrap; }
+/* P2: selettore origen Teléfono/Barra (canal TEL/BANCO) + WA read-only. */
+.npfs .np-origen-wa{ display:inline-flex; align-items:center; gap:6px; color:#25D366; font-size:13px; font-weight:900; white-space:nowrap; }
+.npfs .np-origen-seg{ display:inline-flex; align-items:center; border:1px solid rgba(208,184,145,0.32); border-radius:999px; overflow:hidden; }
+.npfs .np-origen-opt{ appearance:none; border:0; background:transparent; color:#bcae93; font-size:12px; font-weight:800; padding:4px 12px; cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; gap:5px; }
+.npfs .np-origen-opt:not(:last-child){ border-right:1px solid rgba(208,184,145,0.22); }
+.npfs .np-origen-opt.is-active{ background:rgba(250,204,21,0.16); color:#ffd24a; }
 /* Badge stato tipo ordine (P1a) — SOLO display, legge tipoConsegna; nessun toggle. */
-.npfs .np-tipo-badge{ display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:5px 12px; font-size:13px; font-weight:900; letter-spacing:.3px; white-space:nowrap; }
-.npfs .np-tipo-badge.is-ritiro{ color:#ffd24a; background:rgba(250,204,21,0.14); border:1.5px solid rgba(250,204,21,0.55); }
-.npfs .np-tipo-badge.is-domicilio{ color:#7cc4ff; background:rgba(56,150,255,0.16); border:1.5px solid rgba(56,150,255,0.55); }
+/* P1a: stato statico (no pill/bottone) — solo testo colorato leggibile. */
+.npfs .np-tipo-badge{ display:inline-flex; align-items:center; gap:6px; padding:2px 2px; font-size:13px; font-weight:900; letter-spacing:.3px; white-space:nowrap; }
+.npfs .np-tipo-badge.is-ritiro{ color:#ffd24a; }
+.npfs .np-tipo-badge.is-domicilio{ color:#7cc4ff; }
 .npfs .np-close{ width:40px; height:40px; border:1px solid rgba(246,230,196,0.18); border-radius:10px; color:#fff8ed; background:rgba(255,255,255,0.03); font-size:24px; line-height:1; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
 .npfs .np-close:hover{ background:rgba(255,255,255,0.07); }
 
@@ -78,8 +85,9 @@ const NPFS_CSS = `
 .npfs .np-dcard strong{ color:#fff3dc; font-size:16px; font-weight:900; }
 .npfs .np-dcard input[type=time]{ background:transparent; border:none; outline:none; color:#fff3dc; font-family:'DM Mono',monospace; font-size:16px; font-weight:900; width:100%; padding:0; }
 .npfs .np-dcard.is-deliv input[type=time]{ color:#7ee2a0; }
-.npfs .np-recalc{ min-height:52px; border:1px solid rgba(208,184,145,0.18); border-radius:8px; padding:8px 12px; color:#fff8ee; background:rgba(255,255,255,0.02); font-size:14px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; }
-.npfs .np-recalc:hover{ background:rgba(255,255,255,0.05); }
+/* P7: CTA planner ben visibile (era quasi trasparente). Solo UI; wiring invariato. */
+.npfs .np-recalc{ min-height:52px; border:1.5px solid rgba(250,204,21,0.85); border-radius:8px; padding:8px 12px; color:#2a2300; background:linear-gradient(180deg,#FACC15,#E0B400); font-size:14px; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 2px 10px rgba(250,204,21,0.28); }
+.npfs .np-recalc:hover{ background:linear-gradient(180deg,#ffd838,#efc400); }
 
 /* Products head */
 .npfs .np-products-head{ display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 20px; flex-shrink:0; }
@@ -89,16 +97,7 @@ const NPFS_CSS = `
 .npfs .np-gold-btn{ min-height:38px; border:1px solid rgba(246,189,59,0.36); border-radius:8px; padding:0 16px; color:#111; background:linear-gradient(180deg,#ffd866,#f4b82f); font-weight:900; font-size:14px; cursor:pointer; flex-shrink:0; }
 .npfs .np-gold-btn:hover{ filter:brightness(1.05); }
 
-/* Quick-add (P2): chips di aggiunta rapida prodotti comuni. Percorso sicuro
-   MENU.find → handleAdd → total derivato; nessun prezzo/oggetto hardcoded. */
-.npfs .np-quickadd{ display:flex; align-items:center; gap:10px; padding:0 20px 6px; flex-shrink:0; }
-.npfs .np-qa-label{ flex-shrink:0; color:#bcae93; font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.5px; }
-/* Una sola riga compatta scrollabile: le chip non devono mai mangiare spazio verticale. */
-.npfs .np-qa-chips{ display:flex; gap:7px; flex-wrap:nowrap; overflow-x:auto; min-width:0; scrollbar-width:none; padding-bottom:2px; }
-.npfs .np-qa-chips::-webkit-scrollbar{ display:none; }
-.npfs .np-qa-chip{ display:inline-flex; align-items:center; gap:6px; flex-shrink:0; min-height:32px; border:1px solid rgba(208,184,145,0.28); border-radius:999px; padding:5px 11px; color:#fff3dc; background:rgba(255,255,255,0.03); font-size:13px; font-weight:800; cursor:pointer; white-space:nowrap; }
-.npfs .np-qa-chip:hover{ background:rgba(250,204,21,0.10); border-color:rgba(250,204,21,0.45); }
-.npfs .np-qa-chip .np-qa-price{ color:#cbb88f; font-size:11px; font-weight:900; font-family:'DM Mono',monospace; }
+/* (CSS quick-add rimossa con la barra Rápido.) */
 
 /* Products list */
 .npfs .np-products{ flex:1; min-height:0; overflow-y:auto; padding:0 20px 10px; -webkit-overflow-scrolling:touch; scrollbar-color:rgba(208,184,145,0.45) transparent; }
@@ -109,6 +108,8 @@ const NPFS_CSS = `
 .npfs .np-row-main{ min-width:0; display:flex; flex-direction:column; gap:5px; }
 .npfs .np-row-head{ display:flex; align-items:baseline; gap:12px; }
 .npfs .np-pname{ flex:1; min-width:0; overflow:hidden; color:#fff7ea; font-size:15px; font-weight:900; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; }
+/* P6: descrizione reale prodotto da MENU.sub (≠ item.sub variazioni). */
+.npfs .np-pdesc{ color:#a99f8b; font-size:12.5px; font-weight:600; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .npfs .np-price{ flex-shrink:0; color:#fff8ec; font-size:15px; font-weight:900; text-align:right; font-family:'DM Mono',monospace; }
 /* Riga 2: nota cucina rossa + chip extra tan — vanno a capo, mai troncati. */
 .npfs .np-row-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
@@ -149,11 +150,6 @@ const NPFS_CSS = `
   .npfs .np-customer-flags{ width:100%; flex-wrap:wrap; }
   .npfs .np-delivery-cards{ grid-template-columns:1fr 1fr; }
   .npfs .np-products-head{ padding:10px 14px; }
-  /* Quick-add mobile/tablet: scroll orizzontale per non spingere il footer. */
-  .npfs .np-quickadd{ padding:0 14px 6px; gap:8px; }
-  .npfs .np-qa-chips{ flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px; scrollbar-width:none; }
-  .npfs .np-qa-chips::-webkit-scrollbar{ display:none; }
-  .npfs .np-qa-chip{ flex-shrink:0; min-height:38px; }
   .npfs .np-products{ padding:0 14px 10px; }
   .npfs .np-row{ grid-template-columns:32px minmax(0,1fr); gap:10px; }
   .npfs .np-actions{ grid-column:1 / -1; justify-content:flex-end; }
@@ -197,13 +193,7 @@ const CLOSING_TIME_MIN = 23 * 60;
 const CLOSING_TIME_ERROR = "Hora inválida.";
 const CLOSING_TIME_OVERRIDE_MARKER = "FUERA_HORARIO_FORZADO";
 
-// Quick-add (P2): id dei prodotti comuni, risolti runtime via MENU.find
-// (constants.js). NIENTE prezzi/oggetti hardcoded — prezzo/nome/emoji vengono
-// sempre dal MENU. Lista corta curata: 6 pizze classiche + 2 bebidas comuni.
-//   Pizzas: 1 El Pelusa · 2 Zizou · 5 El Gaucho(Diavola) ·
-//           6 El Divino Codino(Prosciutto) · 7 La Pulga · 8 Il Tulipano Nero(4 Quesos)
-//   Bebidas: 26 Coca Cola 0,5L · 25 Agua Natural 0,5L
-const QUICK_ADD_IDS = [1, 2, 5, 6, 7, 8, 26, 25];
+// Quick-add (barra Rápido) rimossa dalla schermata principale (resta «Añadir producto» + picker).
 
 function horaToMinStrict(hora) {
   const m = String(hora || "").trim().match(/^(\d{1,2}):([0-5]\d)$/);
@@ -1212,7 +1202,22 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               <span className={`np-tipo-badge ${tipoConsegna === "DOMICILIO" ? "is-domicilio" : "is-ritiro"}`}>
                 {tipoConsegna === "DOMICILIO" ? "🛵 DOMICILIO" : "🏪 RITIRO"}
               </span>
-              <p className="np-kicker">☎ Origen: Teléfono</p>
+              {/* P2: origen — WA read-only; altrimenti selettore Teléfono/Barra
+                  legato a `canal` (TEL/BANCO), già salvato in createOrden. */}
+              {canal === "WA" ? (
+                <span className="np-origen-wa" title="Origen: WhatsApp (no editable)">💬 WhatsApp</span>
+              ) : (
+                <span className="np-origen-seg" role="group" aria-label="Origen del pedido">
+                  <button type="button"
+                    className={`np-origen-opt${canal !== "BANCO" ? " is-active" : ""}`}
+                    aria-pressed={canal !== "BANCO"}
+                    onClick={() => setCanal("TEL")}>☎ Teléfono</button>
+                  <button type="button"
+                    className={`np-origen-opt${canal === "BANCO" ? " is-active" : ""}`}
+                    aria-pressed={canal === "BANCO"}
+                    onClick={() => setCanal("BANCO")}>🍺 Barra</button>
+                </span>
+              )}
             </div>
             <button className="np-close" onClick={handleClose} aria-label="Cerrar">×</button>
           </header>
@@ -1353,7 +1358,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       <span>{pickupKitchenStatus.overloaded ? "⚠️" : "✅"}</span>
                       {pickupKitchenStatus.overloaded
                         ? <>Horno sobrecargado {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} · {pickupKitchenStatus.windowMinutes} min{pickupKitchenStatus.suggestedHora ? ` · sug. ${pickupKitchenStatus.suggestedHora}` : ""}</>
-                        : <>Horno OK {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} · {pickupKitchenStatus.windowMinutes} min</>}
+                        : <>Horno {pickupKitchenStatus.pizzas}/{pickupKitchenStatus.capacity} · {pickupKitchenStatus.windowMinutes} min</>}
                     </span>
                   )}
                   {showDeliveryOutOfServiceAlert && (
@@ -1591,14 +1596,18 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 )}
                 {plannerPreview && (
                   <>
-                    <span style={{
-                      color: plannerOk === false ? "#fca5a5" : "#86efac",
-                      background: plannerOk === false ? "rgba(239,68,68,0.10)" : "rgba(34,197,94,0.10)",
-                      border: `1px solid ${plannerOk === false ? "rgba(239,68,68,0.26)" : "rgba(34,197,94,0.26)"}`,
-                      borderRadius: 999, padding: "2px 8px",
-                    }}>
-                      {plannerOk === false ? "⚠ Bloqueado" : "✓ Planner OK"}
-                    </span>
+                    {/* P4(b): pill verde "Planner OK" rimossa (rumore happy-path).
+                        Resta solo l'indicatore di blocco; blocker/warning/hora/giro sotto invariati. */}
+                    {plannerOk === false && (
+                      <span style={{
+                        color: "#fca5a5",
+                        background: "rgba(239,68,68,0.10)",
+                        border: "1px solid rgba(239,68,68,0.26)",
+                        borderRadius: 999, padding: "2px 8px",
+                      }}>
+                        ⚠ Bloqueado
+                      </span>
+                    )}
                     {plannerBlockers.length > 0 && (
                       <span style={{ color: "#fca5a5" }}>
                         {plannerBlockers[0]?.message || String(plannerBlockers[0])}
@@ -1633,40 +1642,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               <button className="np-gold-btn" onClick={() => { setEditingItem(null); setPickerVisible(true); }}>⊕ Añadir producto</button>
             </div>
 
-            {/* ── Quick-add: prodotti comuni in un tap ─────────────────────
-                Percorso sicuro identico al picker: l'oggetto prodotto viene
-                da MENU.find (guard se non trovato) e passa a handleAdd, che
-                fonde/incrementa la quantità. Il totale si ricalcola da solo
-                (calcTotale). Nessun prezzo hardcoded, nessuna modifica a
-                handleAdd/extras/sub. Il bottone "Añadir producto" resta com'è.
-                NB: in MENU `sub` è il sottotitolo descrittivo della pizza
-                ("Diavola", "Jamón y Champiñones", "0,5L"), MA nel modello item
-                d'ordine `sub` = variazioni/extra ed è la condizione di merge di
-                handleAdd. Quindi passiamo `{ ...p, sub: "" }` — esattamente come
-                ItemPickerModal (increment) — così il quick-add fonde la quantità
-                e NON inietta il sottotitolo come variazione. */}
-            {(() => {
-              const quickItems = QUICK_ADD_IDS
-                .map(id => MENU.find(m => m.id === id))
-                .filter(Boolean);
-              if (quickItems.length === 0) return null;
-              return (
-                <div className="np-quickadd">
-                  <span className="np-qa-label">Rápido</span>
-                  <div className="np-qa-chips">
-                    {quickItems.map(p => (
-                      <button key={p.id} type="button" className="np-qa-chip"
-                        onClick={() => handleAdd({ ...p, sub: "" })}
-                        title={`Añadir ${p.n}${p.sub ? " · " + p.sub : ""}`}>
-                        <span aria-hidden="true">{p.e}</span>
-                        <span>{p.n}</span>
-                        <span className="np-qa-price">{p.p.toFixed(2).replace(".", ",")}€</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
+            {/* Quick-add (barra Rápido) rimossa: solo «Añadir producto» (sopra) + picker. */}
 
             {/* ── Lista items: unico scroll principale prodotti ───────── */}
             <div className="np-products">
@@ -1687,6 +1663,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         <strong className="np-pname">{item.n}</strong>
                         <strong className="np-price">{(item.p * item.q).toFixed(2)}€</strong>
                       </div>
+                      {/* P6: descrizione reale dal MENU (MENU.sub = sottotitolo pizza,
+                          ≠ item.sub = variazioni/note). Sola lettura MENU, stesso mapping
+                          di ItemPickerModal.descrizioneDi. Custom items senza match → niente. */}
+                      {(() => {
+                        const menuDesc = (MENU.find(m => String(m.id) === String(item.id)) || {}).sub;
+                        return menuDesc ? <span className="np-pdesc">{menuDesc}</span> : null;
+                      })()}
                       {(() => {
                         const { note, extras } = splitItemSub(item.sub);
                         if (!note && extras.length === 0) return null;
