@@ -1,11 +1,13 @@
 import { useState } from 'react';
 
 /*
- * PremiumPlannerPopup — LAB renderer ONLY (no engine).
+ * PremiumPlannerPopup — renderer read-only del contract strategic (no engine).
  *
- * Todo PREMIUM_PLANNER_LAB_DATA es OUTPUT YA CALCULADO por el futuro
- * planner/backend. El frontend NO calcula nada de esto: solo renderiza,
- * selecciona localmente una opportunity y hace console.debug/no-op.
+ * El popup se monta SOLO con un contract strategic válido (premium-planner-
+ * strategic-preview-v1). Si `data` no es un contract válido renderiza un
+ * empty-state seguro, NUNCA datos fabricados (la fixture mock fue eliminada).
+ * El frontend NO calcula nada: solo renderiza, selecciona localmente una
+ * opportunity y hace console.debug/no-op.
  *
  * Campos provistos por el motor (no derivados aquí):
  *   - status      compatible | ajuste | no_recomendado | lleno
@@ -26,8 +28,8 @@ import { useState } from 'react';
 
 // Geografia statica reale del locale; no ETA, no proposte, no mock operativo.
 // Solo identità zona (id ↔ quartiere reale) + color + label della mappa. È la
-// UNICA fonte di questa geografia: la usa sia il percorso reale (adapter
-// strategic) sia il fallback LAB. Non duplicare i valori altrove.
+// UNICA fonte di questa geografia: la usa il percorso reale (adapter
+// strategic). Non duplicare i valori altrove.
 const LOCAL_ZONE_MAP = {
   title: 'Esquema operativo por zonas',
   caption: 'Ruta estimada:',
@@ -41,209 +43,14 @@ const LOCAL_ZONE_MAP = {
   ],
 };
 
-const PREMIUM_PLANNER_LAB_DATA = {
-  contract: 'premium-planner-popup-lab-v2',
-  mode: 'static_lab',
-  source: 'mock',
-  bestProposal: {
-    id: 'best-direct-q1-1555',
-    type: 'directa',
-    label: 'Mejor propuesta',
-    entrega: '15:55',
-    salidaHorno: '15:48',
-    driverStatus: 'Driver disponible',
-    routeLabel: 'Directa · recomendada',
-    severity: 'ok',
-    ctaLabel: 'Seleccionar en vista previa',
-    // routeTimeline LAB (mock): mismo shape que el campo additivo del backend
-    // (route-timeline-v2). Solo datos de ejemplo ya "calculados"; el renderer no
-    // deriva nada. Permite ver la línea Pizzería → entrega → Regreso sin backend.
-    routeTimeline: {
-      version: 'route-timeline-v2',
-      proposalId: 'best-direct-q1-1555',
-      summary: { directEta: '15:55', giroEta: '15:55', returnEta: '16:03', tradeoffLabel: 'directa · sin desvío' },
-      risk: 'ok',
-      operatorMessage: 'Directa recomendada: sale del horno y entrega sin giro.',
-      timeline: [
-        { seq: 0, type: 'departure', zone: null, label: 'Pizzería', eta: '15:48', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
-        { seq: 1, type: 'delivery', zone: 'Q1', label: 'Pedido actual', eta: '15:55', promised: '15:55', slipLabel: null, status: 'ok', marginLabel: '+0 margen', isNewOrder: true, isAnchor: false, warning: null },
-        { seq: 2, type: 'return', zone: null, label: 'Regreso pizzería', eta: '16:03', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
-      ],
-    },
-  },
-  zoneMap: LOCAL_ZONE_MAP, // geografía real → única fuente LOCAL_ZONE_MAP (no duplicar)
-  // Cada fila de "Giros y huecos" es una OPORTUNIDAD sugerida por el planner,
-  // no un pedido real. Click = preview local (mapa + impacto), nunca confirma.
-  opportunities: [
-    {
-      id: 'opp-q2-q5-2100',
-      blocked: false,
-      kind: 'agregar',
-      giroId: 'giro-q5-2100',
-      channel: 'sur',
-      currentOrderZone: 'Q2',
-      currentOrderLabel: 'Pedido actual · Q2',
-      routeZones: ['Q2', 'Q5'],
-      mapPath: ['Pizzería', 'Q2', 'Q5'],
-      routeEtas: [
-        { zone: 'Q2', label: 'Pedido actual', eta: '20:50', isNew: true },
-        { zone: 'Q5', label: 'Las Marinas', eta: '21:00', promised: '21:00', slips: false },
-      ],
-      baseline: { directEta: '20:40', label: 'Directa sin giro' },
-      capacity: { pizzas: '3/6', routeMin: 22, limitMin: 30, state: 'ok' },
-      status: 'compatible',
-      severity: 'ok',
-      time: '21:00',
-      zoneLabel: 'Q5',
-      title: 'Agregar a giro Q5 21:00',
-      subtitle: 'Q2 entra a las 20:50 antes de Las Marinas',
-      chip: 'agregar',
-      actionLabel: '✓',
-      explanation: 'Inserta Q2 antes del Q5 sin volver a pizzería.',
-      warning: null,
-      routeTimeline: {
-        version: 'route-timeline-v2',
-        proposalId: 'opp-q2-q5-2100',
-        summary: { directEta: '20:40', giroEta: '21:00', returnEta: '21:10', tradeoffLabel: '+20 vs directa · 1 viaje ahorrado' },
-        risk: 'ok',
-        operatorMessage: 'Compatible: Q2 entra antes de Q5, sin retrasos.',
-        timeline: [
-          { seq: 0, type: 'departure', zone: null, label: 'Pizzería', eta: '20:42', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
-          { seq: 1, type: 'delivery', zone: 'Q2', label: 'Pedido actual', eta: '20:50', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: true, isAnchor: false, warning: null },
-          { seq: 2, type: 'delivery', zone: 'Q5', label: 'Las Marinas', eta: '21:00', promised: '21:00', slipLabel: null, status: 'ok', marginLabel: '+0 margen', isNewOrder: false, isAnchor: true, warning: null },
-          { seq: 3, type: 'return', zone: null, label: 'Regreso pizzería', eta: '21:10', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
-        ],
-      },
-    },
-    {
-      id: 'opp-q1-q5-2105',
-      blocked: false,
-      kind: 'agregar',
-      giroId: 'giro-q5-2100',
-      channel: 'sur',
-      currentOrderZone: 'Q1',
-      currentOrderLabel: 'Pedido actual · Q1',
-      routeZones: ['Q1', 'Q5'],
-      mapPath: ['Pizzería', 'Q1', 'Q5'],
-      routeEtas: [
-        { zone: 'Q1', label: 'Pedido actual', eta: '20:48', isNew: true },
-        { zone: 'Q5', label: 'Las Marinas', eta: '21:05', promised: '21:00', slips: true, slipLabel: '+5' },
-      ],
-      baseline: { directEta: '20:42', label: 'Directa sin giro' },
-      capacity: { pizzas: '4/6', routeMin: 26, limitMin: 30, state: 'tight' },
-      status: 'ajuste',
-      severity: 'warning',
-      time: '21:00',
-      zoneLabel: 'Q5',
-      title: 'Ajuste +5 · giro Q5',
-      subtitle: 'Insertar Q1 mueve Las Marinas a 21:05',
-      chip: 'ajuste +5',
-      actionLabel: '◷',
-      explanation: 'Q1 cabe en el giro, pero retrasa Q5 sobre lo prometido.',
-      warning: 'Q5 se mueve +5 min (prometido 21:00)',
-      routeTimeline: {
-        version: 'route-timeline-v2',
-        proposalId: 'opp-q1-q5-2105',
-        summary: { directEta: '20:42', giroEta: '21:05', returnEta: '21:15', tradeoffLabel: '+23 vs directa · 1 viaje ahorrado' },
-        risk: 'warning',
-        operatorMessage: 'Se puede, pero Q5 cede +5 min sobre lo prometido (prometido 21:00).',
-        timeline: [
-          { seq: 0, type: 'departure', zone: null, label: 'Pizzería', eta: '20:40', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
-          { seq: 1, type: 'delivery', zone: 'Q1', label: 'Pedido actual', eta: '20:48', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: true, isAnchor: false, warning: null },
-          { seq: 2, type: 'delivery', zone: 'Q5', label: 'Las Marinas', eta: '21:05', promised: '21:00', slipLabel: '+5', status: 'ajuste', marginLabel: '−5 vs prometido', isNewOrder: false, isAnchor: true, warning: 'Q5 se mueve +5 min' },
-          { seq: 3, type: 'return', zone: null, label: 'Regreso pizzería', eta: '21:15', promised: null, slipLabel: null, status: 'ok', marginLabel: null, isNewOrder: false, isAnchor: false, warning: null },
-        ],
-      },
-    },
-    {
-      id: 'opp-crear-q2-q5-2055',
-      blocked: false,
-      kind: 'crear',
-      giroId: null,
-      channel: 'sur',
-      currentOrderZone: 'Q2',
-      currentOrderLabel: 'Pedido actual · Q2',
-      routeZones: ['Q2', 'Q5'],
-      mapPath: ['Pizzería', 'Q2', 'Q5'],
-      routeEtas: [
-        { zone: 'Q2', label: 'Pedido actual', eta: '20:55', isNew: true },
-        { zone: 'Q5', label: 'Las Marinas', eta: '21:08', promised: null, slips: false },
-      ],
-      baseline: { directEta: '20:50', label: 'Directa sin giro' },
-      capacity: { pizzas: '2/6', routeMin: 20, limitMin: 30, state: 'ok' },
-      status: 'compatible',
-      severity: 'manual',
-      time: '20:55',
-      zoneLabel: 'Q2+Q5',
-      title: 'Crear giro Q2+Q5',
-      subtitle: 'No hay giro previo · nuevo giro manual sur',
-      chip: 'crear giro',
-      actionLabel: '↗',
-      explanation: 'Agrupa Q2 y Q5 en un giro nuevo por el canal sur.',
-      warning: null,
-    },
-    {
-      id: 'opp-q3-q5-2110',
-      blocked: true,
-      kind: 'agregar',
-      giroId: 'giro-q5-2100',
-      channel: 'cross',
-      currentOrderZone: 'Q3',
-      currentOrderLabel: 'Pedido actual · Q3',
-      routeZones: ['Q3', 'Q5'],
-      mapPath: ['Pizzería', 'Q3', 'Q5'],
-      routeEtas: [
-        { zone: 'Q3', label: 'Pedido actual', eta: '21:02', isNew: true },
-        { zone: 'Q5', label: 'Las Marinas', eta: '21:18', promised: '21:00', slips: true, slipLabel: '+18' },
-      ],
-      baseline: { directEta: '20:55', label: 'Directa sin giro' },
-      capacity: { pizzas: '4/6', routeMin: 31, limitMin: 30, state: 'tight' },
-      status: 'no_recomendado',
-      severity: 'blocked',
-      time: '21:10',
-      zoneLabel: 'Q3+Q5',
-      title: 'Q3+Q5 no recomendado',
-      subtitle: 'Zonas en direcciones distintas (oeste vs sur)',
-      chip: 'no recomendado',
-      actionLabel: '⚠',
-      explanation: 'Q3 va al oeste y Q5 al sur: alarga la ruta y enfría las pizzas.',
-      warning: 'Direcciones distintas · solo forzable con aviso',
-    },
-    {
-      id: 'opp-lleno-sur-2115',
-      blocked: true,
-      kind: 'agregar',
-      giroId: 'giro-sur-2115',
-      channel: 'sur',
-      currentOrderZone: 'Q1',
-      currentOrderLabel: 'Pedido actual · Q1',
-      routeZones: ['Q1', 'Q2', 'Q5'],
-      mapPath: ['Pizzería', 'Q1', 'Q2', 'Q5'],
-      routeEtas: [
-        { zone: 'Q1', label: 'Pedido actual', eta: '21:00', isNew: true },
-        { zone: 'Q2', label: 'Buenavista', eta: '21:08', promised: '21:05', slips: true, slipLabel: '+3' },
-        { zone: 'Q5', label: 'Las Marinas', eta: '21:20', promised: '21:15', slips: true, slipLabel: '+5' },
-      ],
-      baseline: { directEta: '20:58', label: 'Directa sin giro' },
-      capacity: { pizzas: '6/6', routeMin: 28, limitMin: 30, state: 'full' },
-      status: 'lleno',
-      severity: 'blocked',
-      time: '21:15',
-      zoneLabel: 'Q1+Q2+Q5',
-      title: 'Capacidad llena 6/6',
-      subtitle: 'El giro sur 21:15 ya va completo',
-      chip: 'capacidad llena',
-      actionLabel: '✕',
-      explanation: 'El giro sur ya lleva 6 pizzas: no admite el pedido Q1.',
-      warning: 'Capacidad llena 6/6 · no entra más',
-    },
-  ],
-  plannerNotes: [
-    'Las filas son oportunidades del planner, no pedidos confirmados.',
-    'Tocar una fila previsualiza el impacto en el mapa, no aplica nada.',
-    'Canal sur: Q1→Q2→Q5. Canal oeste: Q1→Q3→Q4. Cruzar canales no es recomendado.',
-  ],
-};
+// Notas genéricas del planner (copy UI presentacional, NO datos de negocio ni
+// ETAs). Fallback cuando el contract backend no trae warnings/blockers propios.
+// Antes vivían dentro de la fixture mock PREMIUM_PLANNER_LAB_DATA (eliminada).
+const PLANNER_NOTES_DEFAULT = [
+  'Las filas son oportunidades del planner, no pedidos confirmados.',
+  'Tocar una fila previsualiza el impacto en el mapa, no aplica nada.',
+  'Canal sur: Q1→Q2→Q5. Canal oeste: Q1→Q3→Q4. Cruzar canales no es recomendado.',
+];
 
 const zoneColors = LOCAL_ZONE_MAP.zones.reduce((acc, zone) => {
   acc[zone.id] = zone.color;
@@ -318,8 +125,8 @@ const adaptOpportunity = (opp) => ({
   actionLabel: opp.actionLabel || actionLabelFor(opp),
 });
 
-// Contract strategic → oggetto con la stessa shape di PREMIUM_PLANNER_LAB_DATA
-// (+ extra read-only). bestProposal SOLO da firstAvailable/bestProposal reali:
+// Contract strategic → oggetto-vista per il renderer (+ extra read-only).
+// bestProposal SOLO da firstAvailable/bestProposal reali:
 // niente salidaHorno/driverStatus inventati (non esistono nel contract).
 const adaptStrategicContract = (contract) => {
   const opportunities = (Array.isArray(contract.opportunities) ? contract.opportunities : []).map(adaptOpportunity);
@@ -350,7 +157,7 @@ const adaptStrategicContract = (contract) => {
     bestProposal,
     zoneMap: LOCAL_ZONE_MAP, // geografía estática real del local (no backend, no mock)
     opportunities,
-    plannerNotes: notesFromContract.length ? notesFromContract : PREMIUM_PLANNER_LAB_DATA.plannerNotes,
+    plannerNotes: notesFromContract.length ? notesFromContract : PLANNER_NOTES_DEFAULT,
     firstAvailable: fa,
     serviceLine: Array.isArray(contract.serviceLine) ? contract.serviceLine : [],
     warnings: Array.isArray(contract.warnings) ? contract.warnings : [],
@@ -375,11 +182,13 @@ const PremiumPlannerPopup = ({
   onCalcManualRoute = null,   // (selectedStops) => void  — el modal valida + llama backend
   onClearManualRoute = null,  // () => void
 }) => {
-  // Fuente de datos: contract backend read-only si válido, si no fixture mock LAB.
+  // Fuente de datos: SOLO el contract backend read-only si es válido. Sin él,
+  // view=null → empty-state seguro abajo. NO hay fallback a fixture mock (eliminada):
+  // el popup nunca renderiza ETAs fabricadas.
   const isStrategic = !!(data && data.contract === STRATEGIC_CONTRACT);
-  const view = isStrategic ? adaptStrategicContract(data) : PREMIUM_PLANNER_LAB_DATA;
-  const opportunities = Array.isArray(view.opportunities) ? view.opportunities : [];
-  const best = view.bestProposal || {};
+  const view = isStrategic ? adaptStrategicContract(data) : null;
+  const opportunities = Array.isArray(view?.opportunities) ? view.opportunities : [];
+  const best = view?.bestProposal || {};
   const [selectedOppId, setSelectedOppId] = useState(opportunities[0]?.id || null);
   // Sección avanzada (ruta sugerida manual + resumen): cerrada por defecto.
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -396,6 +205,31 @@ const PremiumPlannerPopup = ({
     // LAB: no API, no save, no confirm — solo log local (no-op).
     labLog('apply-best-local', { id: best.id, source: view.source });
   };
+
+  // Sin contract strategic válido → empty-state seguro. La fixture mock fue
+  // eliminada, así que aquí NO se renderiza ninguna propuesta inventada. En el
+  // flujo V1 el popup se monta solo con `strategicPreview` válido, por lo que
+  // este ramo es la red de seguridad ante data null / contract no reconocido.
+  if (!view) {
+    return (
+      <div className="ppp-overlay" onClick={onClose}>
+        <style>{PREMIUM_PLANNER_POPUP_CSS}</style>
+        <section className="ppp-shell" aria-label="Propuestas de entrega" onClick={e => e.stopPropagation()}>
+          <header className="ppp-header">
+            <div className="ppp-brand-mark" aria-hidden="true">
+              <span>✦</span>
+              <span>✦</span>
+              <span>✦</span>
+            </div>
+            <h2>Propuestas de entrega</h2>
+            <span className="ppp-lab-pill">No disponible</span>
+            <button type="button" className="ppp-close" onClick={onClose} aria-label="Cerrar propuestas">×</button>
+          </header>
+          <p className="ppp-lab-warn" role="status">⚠ Planner no disponible · usa la hora manual.</p>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="ppp-overlay" onClick={onClose}>
