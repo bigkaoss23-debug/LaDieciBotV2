@@ -521,6 +521,23 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           display: "flex", alignItems: "center", justifyContent: "center"
                         }}>{veces}</span>
                       )}
+                      {/* Controllo rimozione: toglie 1 unità dell'extra (removeExtra: -1 occorrenza
+                          + -prezzo). stopPropagation così NON scatta l'addExtra della card. qty=1 → sparisce. */}
+                      {veces > 0 && (
+                        <span
+                          role="button"
+                          aria-label={`Quitar ${ing.n}`}
+                          title={`Quitar ${ing.n}`}
+                          onClick={(e) => { e.stopPropagation(); removeExtra(extrasTarget._uid, ing.n); }}
+                          style={{
+                            position: "absolute", top: -8, left: -8,
+                            background: C.carbone, color: "#fff", border: `2px solid ${C.rosso}`,
+                            borderRadius: "50%", width: 22, height: 22, fontSize: 16, fontWeight: 900, lineHeight: 1,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            cursor: "pointer", zIndex: 2
+                          }}
+                        >−</span>
+                      )}
                       <span style={{ fontSize: 20, pointerEvents: "none" }}>{ing.e}</span>
                       <span style={{ color: C.bianco, fontSize: 13, fontWeight: 700, textAlign: "center", lineHeight: 1.2 }}>{ing.n}</span>
                     </button>

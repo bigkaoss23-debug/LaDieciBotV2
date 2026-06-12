@@ -111,6 +111,9 @@ const NPFS_CSS = `
 /* P6: descrizione reale prodotto da MENU.sub (≠ item.sub variazioni). */
 .npfs .np-pdesc{ color:#a99f8b; font-size:12.5px; font-weight:600; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .npfs .np-price{ flex-shrink:0; color:#fff8ec; font-size:15px; font-weight:900; text-align:right; font-family:'DM Mono',monospace; }
+/* Blocco destro riga prodotto: prezzo + azioni, centrati verticalmente (il prezzo
+   non resta più "appeso" in alto accanto al nome con la riga a 3 livelli). */
+.npfs .np-row-right{ display:flex; align-items:center; gap:14px; }
 /* Riga 2: nota cucina rossa + chip extra tan — vanno a capo, mai troncati. */
 .npfs .np-row-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
 .npfs .np-note-red{ display:inline-flex; align-items:center; gap:5px; border-radius:6px; padding:2px 9px; font-size:12px; font-weight:800; color:#ff8f7a; background:rgba(232,52,28,0.12); border:1px solid rgba(232,52,28,0.42); }
@@ -152,7 +155,7 @@ const NPFS_CSS = `
   .npfs .np-products-head{ padding:10px 14px; }
   .npfs .np-products{ padding:0 14px 10px; }
   .npfs .np-row{ grid-template-columns:32px minmax(0,1fr); gap:10px; }
-  .npfs .np-actions{ grid-column:1 / -1; justify-content:flex-end; }
+  .npfs .np-row-right{ grid-column:1 / -1; justify-content:flex-end; }
   /* Mobile (P3): tap target più comodo e 🗑 più staccato dal "+". */
   .npfs .np-actions button, .npfs .np-actions .np-qty{ width:44px; height:42px; }
   .npfs .np-actions .np-danger{ margin-left:16px; }
@@ -1661,7 +1664,6 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     <div className="np-row-main">
                       <div className="np-row-head np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">
                         <strong className="np-pname">{item.n}</strong>
-                        <strong className="np-price">{(item.p * item.q).toFixed(2)}€</strong>
                       </div>
                       {/* P6: descrizione reale dal MENU (MENU.sub = sottotitolo pizza,
                           ≠ item.sub = variazioni/note). Sola lettura MENU, stesso mapping
@@ -1683,12 +1685,15 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         );
                       })()}
                     </div>
-                    <div className="np-actions" aria-label={`Acciones ${item.n}`}>
-                      <button title="Editar ingredientes" onClick={e => { e.stopPropagation(); handleEditItem(item); }}>✎</button>
-                      <button title="Quitar una unidad" onClick={e => { e.stopPropagation(); adj(item._uid, -1); }}>−</button>
-                      <strong className="np-qty">{item.q}</strong>
-                      <button title="Añadir una unidad" onClick={e => { e.stopPropagation(); adj(item._uid, +1); }}>+</button>
-                      <button className="np-danger" title="Eliminar" onClick={e => { e.stopPropagation(); handleRemoveItem(item._uid); }}>🗑</button>
+                    <div className="np-row-right">
+                      <strong className="np-price">{(item.p * item.q).toFixed(2)}€</strong>
+                      <div className="np-actions" aria-label={`Acciones ${item.n}`}>
+                        <button title="Editar ingredientes" onClick={e => { e.stopPropagation(); handleEditItem(item); }}>✎</button>
+                        <button title="Quitar una unidad" onClick={e => { e.stopPropagation(); adj(item._uid, -1); }}>−</button>
+                        <strong className="np-qty">{item.q}</strong>
+                        <button title="Añadir una unidad" onClick={e => { e.stopPropagation(); adj(item._uid, +1); }}>+</button>
+                        <button className="np-danger" title="Eliminar" onClick={e => { e.stopPropagation(); handleRemoveItem(item._uid); }}>🗑</button>
+                      </div>
                     </div>
                   </div>
                 ))
