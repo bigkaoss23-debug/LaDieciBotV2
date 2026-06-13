@@ -1643,15 +1643,32 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         {plannerBlockers[0]?.message || String(plannerBlockers[0])}
                       </span>
                     )}
-                    {plannerOk !== false && (plannerRecommendation?.hora_proposta || plannerRecommendation?.suggested_hora) && (
-                      <span style={{ color: "#d1fae5" }}>
-                        → {plannerRecommendation.hora_proposta || plannerRecommendation.suggested_hora}
-                      </span>
-                    )}
+                    {plannerOk !== false && (plannerRecommendation?.hora_proposta || plannerRecommendation?.suggested_hora) && (() => {
+                      // P0 (PLANNER_APPLY_HORA_01): applica l'ora consigliata al draft.
+                      // Solo locale (setHoraFromOperator); nessun endpoint/DB/Confirmar.
+                      const horaProposta = plannerRecommendation.hora_proposta || plannerRecommendation.suggested_hora;
+                      return (
+                        <>
+                          <span style={{ color: "#d1fae5" }}>→ {horaProposta}</span>
+                          <button type="button" onClick={() => setHoraFromOperator(horaProposta)} style={{
+                            background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.45)",
+                            color: "#86efac", borderRadius: 999, padding: "1px 9px",
+                            fontSize: 11, fontWeight: 800, cursor: "pointer",
+                          }}>Usa esta hora</button>
+                        </>
+                      );
+                    })()}
                     {plannerOk !== false && plannerGiro?.slot_hora && (
-                      <span style={{ color: "#a5f3fc" }}>
-                        🔄 {plannerGiro.slot_hora}{plannerGiro.zona ? ` · ${plannerGiro.zona}` : ""}
-                      </span>
+                      <>
+                        <span style={{ color: "#a5f3fc" }}>
+                          🔄 {plannerGiro.slot_hora}{plannerGiro.zona ? ` · ${plannerGiro.zona}` : ""}
+                        </span>
+                        <button type="button" onClick={() => setHoraFromOperator(plannerGiro.slot_hora)} style={{
+                          background: "rgba(6,182,212,0.15)", border: "1px solid rgba(6,182,212,0.45)",
+                          color: "#a5f3fc", borderRadius: 999, padding: "1px 9px",
+                          fontSize: 11, fontWeight: 800, cursor: "pointer",
+                        }}>Usa giro compatible</button>
+                      </>
                     )}
                     {plannerWarnings.slice(0, 2).map((w, i) => (
                       <span key={i} style={{ color: "#fbbf24" }}>
