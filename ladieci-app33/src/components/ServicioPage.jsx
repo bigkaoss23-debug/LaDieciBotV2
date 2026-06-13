@@ -56,11 +56,27 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     try { return await run(); }
     finally { if (pendingPatches) pendingPatches.current.delete(id); }
   };
+  // Delete ottimistico con ROLLBACK: nasconde subito l'ordine, ma se `run` (il
+  // delete backend) fallisce ripristina l'ordine in lista e toglie il patch
+  // _deleted, poi rilancia. Evita il fantasma invisibile-per-sempre quando il
+  // backend NON ha davvero cancellato (root cause #001).
   const optimisticDelete = async (id, run) => {
+    let snapshot = null;
     if (pendingPatches) pendingPatches.current.set(id, { patch: { _deleted: true }, ts: Date.now() });
-    setOrdenes(prev => prev.filter(o => o.id !== id));
-    try { return await run(); }
-    finally { if (pendingPatches) pendingPatches.current.delete(id); }
+    setOrdenes(prev => {
+      snapshot = prev.find(o => o.id === id) || null;
+      return prev.filter(o => o.id !== id);
+    });
+    try {
+      return await run();
+    } catch (err) {
+      // Delete non confermato: smetti di nasconderlo e ripristina la riga locale.
+      if (pendingPatches) pendingPatches.current.delete(id);
+      if (snapshot) setOrdenes(prev => prev.some(o => o.id === id) ? prev : [snapshot, ...prev]);
+      throw err;
+    } finally {
+      if (pendingPatches) pendingPatches.current.delete(id);
+    }
   };
   const [tab,setTab] = useState("wa");
   const [loadingIds, setLoadingIds] = useState(new Set());
@@ -787,11 +803,15 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   };
 
   const eliminaOrdine = async (id) => {
-    notify("🗑 Pedido eliminado", C.rosso);
-    await optimisticDelete(id, async () => {
-      try { await api.eliminaOrdine(id); }
-      catch(err) { console.error("eliminaOrdine:", err); }
-    });
+    try {
+      // api.eliminaOrdine ora è STRICT (lancia se il backend non conferma).
+      // optimisticDelete ripristina la riga in caso di errore.
+      await optimisticDelete(id, () => api.eliminaOrdine(id));
+      notify("🗑 Pedido eliminado", C.rosso);
+    } catch (err) {
+      console.error("eliminaOrdine:", err);
+      notify("No se pudo eliminar el pedido. Recarga o inténtalo de nuevo.", C.rosso);
+    }
   };
 
   // Tab — WA (con sub-tab interni), Tel, Banco, Listos, Cocina

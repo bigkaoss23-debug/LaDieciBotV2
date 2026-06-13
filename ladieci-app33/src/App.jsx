@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Suoni from './sounds';
 import { C, G, ORDENES_INIT, WA_INIT, blockedTels } from './constants';
 import { sb, api, auth, SUPABASE_URL, SUPABASE_KEY } from './api';
+import { shouldHideDeleted, DELETE_PATCH_TTL_MS } from './utils/deleteReconcile';
 
 import Splash from './components/Splash';
 import Home from './components/Home';
@@ -202,10 +203,14 @@ export default function App() {
               !(o.client_req_id && dbReqIds.has(o.client_req_id))
             );
             const pp = pendingPatches.current;
+            const nowMs = Date.now();
             const merged = rOrdenes.ordenes
               .filter(o => {
                 const e = pp.get(o.id);
-                return !(e && e.patch && e.patch._deleted);
+                // Nascondi l'ordine solo se ha un patch _deleted ANCORA valido (TTL):
+                // un delete non confermato/scaduto non deve nasconderlo per sempre →
+                // la verità server riappare (riconciliazione).
+                return !shouldHideDeleted(e, nowMs, DELETE_PATCH_TTL_MS);
               })
               .map(o => {
                 const e = pp.get(o.id);

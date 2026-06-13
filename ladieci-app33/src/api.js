@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { calcTotale } from "./constants";
+import { isDeleteConfirmed } from "./utils/deleteReconcile";
 
 const PROXY_URL = "/api/proxy";
 const AUTH_URL = "/api/auth";
@@ -369,8 +370,18 @@ const api = {
   aggiornaRispostaBot: function(id, bot_risposta) {
     return proxyPost({ action:'aggiornaRispostaBot', id, bot_risposta });
   },
-  eliminaOrdine: function(id) {
-    return proxyPost({ action:'eliminaOrdine', id });
+  // STRICT: lancia se il backend NON conferma la cancellazione (HTTP non-ok,
+  // errore di rete, o body con error/ok:false). Così il chiamante può fare
+  // rollback della rimozione ottimistica invece di nascondere un ordine vivo.
+  eliminaOrdine: async function(id) {
+    const res = await proxyPost({ action:'eliminaOrdine', id });
+    if (!isDeleteConfirmed(res)) {
+      const err = new Error((res && res.error) || `HTTP ${res && res._status}`);
+      err.status = res && res._status;
+      err.response = res;
+      throw err;
+    }
+    return res;
   },
   eliminaConversazione: function(wa_id) {
     return proxyPost({ action:'eliminaConversazione', wa_id });
