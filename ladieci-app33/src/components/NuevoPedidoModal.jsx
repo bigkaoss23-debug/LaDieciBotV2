@@ -1190,6 +1190,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
   // ── Helper planner preview (display-only, mai decisione locale) ──────────
   const plannerRecommendation = plannerPreview?.recommendation || null;
+  // BUG A fix: il backend live (previewOrderPlanner) manda l'ora consigliata come
+  // `recommended_hora`; i contract precedenti usavano `hora_proposta`/`suggested_hora`.
+  // Derivato compatibile (display-only, nessun rename del contract backend) usato sia
+  // per la condizione di render che per il click del bottone "Usa esta hora".
+  const plannerSuggestedHora  = plannerRecommendation
+    ? (plannerRecommendation.hora_proposta || plannerRecommendation.suggested_hora || plannerRecommendation.recommended_hora || null)
+    : null;
   const plannerGeo            = plannerPreview?.geo || null;
   const plannerGiro           = plannerPreview?.giro || null;
   const plannerWarnings       = plannerPreview?.warnings || [];
@@ -1672,10 +1679,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         {plannerBlockers[0]?.message || String(plannerBlockers[0])}
                       </span>
                     )}
-                    {plannerOk !== false && (plannerRecommendation?.hora_proposta || plannerRecommendation?.suggested_hora) && (() => {
+                    {plannerOk !== false && plannerSuggestedHora && (() => {
                       // P0 (PLANNER_APPLY_HORA_01): applica l'ora consigliata al draft.
                       // Solo locale (setHoraFromOperator); nessun endpoint/DB/Confirmar.
-                      const horaProposta = plannerRecommendation.hora_proposta || plannerRecommendation.suggested_hora;
+                      // BUG A: include `recommended_hora` (contract backend live) via plannerSuggestedHora.
+                      const horaProposta = plannerSuggestedHora;
                       return (
                         <>
                           <span style={{ color: "#d1fae5" }}>→ {horaProposta}</span>
