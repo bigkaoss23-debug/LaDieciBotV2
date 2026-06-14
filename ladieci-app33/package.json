@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "prebuild": "node scripts/write-version.js",
+    "prebuild": "node scripts/guard-no-lab-markers.js && node scripts/write-version.js",
     "build": "react-scripts build"
   },
   "browserslist": {
