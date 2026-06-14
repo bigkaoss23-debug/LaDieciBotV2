@@ -444,6 +444,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // ── Confirm ──────────────────────────────────────────────────────────────
   const handleConfirm = async () => {
     if (submittingRef.current || !ok) return;
+    // Difesa in profondità (CONFIRMAR_GATING_01): anche se il bottone è disabled
+    // quando il planner blocca, blocchiamo qui pure il submit programmatico.
+    if (plannerBlocksConfirm) return;
     const horaMin = horaToMinStrict(hora);
     if (horaMin == null) {
       window.alert(CLOSING_TIME_ERROR);
@@ -1200,6 +1203,32 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const plannerAlternatives   = plannerPreview?.alternatives || [];
   const plannerAvailability   = plannerPreview?.availability_rows || [];
 
+  // ── Confirmar gating sul planner (CONFIRMAR_GATING_01) ──────────────────
+  // Il bottone Confirmar NON deve restare attivo quando il backend dichiara
+  // l'ordine non confermabile. Fonte autoritativa = planner preview:
+  //   recommendation.can_confirm_requested_hora === false  → BLOCCO HARD
+  // Copre too-early (RITIRO + DOMICILIO, reason "requested_hora_too_soon"),
+  // forno_out null e ogni hora non realizzabile.
+  // NB: il blocker "separate / no llega a la hora pedida" da SOLO NON blocca:
+  // nei casi B/C arriva con can_confirm_requested_hora=true perché esiste un
+  // giro compatibile → resta confermabile (l'operatore vede l'avviso e il
+  // chip "Usa giro compatible"). Bloccarlo sarebbe un falso-rosso.
+  // Se il planner non è ancora caricato/disponibile (plannerRecommendation
+  // null) NON blocchiamo: non si congela il form, si ricade su `ok` legacy.
+  const plannerBlocksConfirm = plannerRecommendation
+    ? (plannerRecommendation.can_confirm_requested_hora === false
+       || plannerBlockers.some(b => b?.code === "requested_hora_too_soon"))
+    : false;
+  // Motivo leggibile mostrato accanto a Confirmar quando bloccato.
+  const confirmBlockReason = plannerBlocksConfirm
+    ? (plannerBlockers[0]?.message
+       || (plannerRecommendation?.reason === "requested_hora_too_soon"
+            ? "Hora pedida muy pronta · usa la hora sugerida o cambia hora"
+            : "Hora no confirmable · revisa el planner"))
+    : "";
+  // Gate finale del bottone: requisiti base (ok) + non bloccato dal planner.
+  const canConfirmOrder = ok && !plannerBlocksConfirm;
+
   return (
     <>
       {/* ── Overlay + Sheet principale ─────────────────────────────────── */}
@@ -1793,6 +1822,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               {tipoConsegna === "DOMICILIO" && !zonaAssegnata && (
                 <small style={{ color: "#fbbf24" }}>⚠️ Zona no detectada</small>
               )}
+              {plannerBlocksConfirm && (
+                <small style={{ color: "#fca5a5", fontWeight: 800 }}>🚫 {confirmBlockReason}</small>
+              )}
             </div>
 
             {/* Descuento (componente esistente, non modificato) */}
@@ -1830,8 +1862,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               </>)}
             </div>
 
-            <button className="np-confirm" onClick={handleConfirm} disabled={!ok || submitting}
-              style={(!ok || submitting) ? undefined : { boxShadow: "0 6px 20px rgba(33,143,77,0.4)" }}>
+            <button className="np-confirm" onClick={handleConfirm} disabled={!canConfirmOrder || submitting}
+              style={(!canConfirmOrder || submitting) ? undefined : { boxShadow: "0 6px 20px rgba(33,143,77,0.4)" }}>
               {submitting ? "Confirmando…" : "✓ Confirmar pedido"}
             </button>
           </footer>
