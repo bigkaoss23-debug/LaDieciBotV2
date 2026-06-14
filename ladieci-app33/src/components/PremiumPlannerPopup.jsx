@@ -79,7 +79,6 @@ const toneStyles = {
   blocked: { accent: '#F87171', bg: 'rgba(248, 113, 113, 0.10)', border: 'rgba(248, 113, 113, 0.42)' },
 };
 
-const kindLabels = { agregar: 'Agregar a giro', crear: 'Crear giro' };
 const statusLabels = {
   compatible: 'compatible',
   ajuste: 'ajuste',
@@ -87,10 +86,6 @@ const statusLabels = {
   lleno: 'capacidad llena',
 };
 const channelLabels = { sur: 'canal sur', oeste: 'canal oeste', cross: 'cruzado' };
-
-// Render-only: muestra el badge YA CALCULADO por el planner (eta.slipLabel).
-// El frontend NO calcula el retraso ni compara eta/promised.
-const etaSlipBadge = (eta) => (eta.slips && eta.slipLabel ? ` (${eta.slipLabel})` : '');
 
 const labLog = (eventName, payload) => {
   console.debug('[PremiumPlannerPopup LAB]', eventName, payload);
@@ -166,6 +161,44 @@ const adaptStrategicContract = (contract) => {
   };
 };
 
+// ── UX-1: deriva 3 slot FISSI dalle opportunities[] + firstAvailable già
+// calcolati dal backend. Renderer-only: solo lookup/filtri, nessun calcolo
+// orario, nessun Date.now, nessuna aritmetica di tempo.
+const OPP_BLOCKED = (o) => !!(o && (o.blocked || o.status === 'no_recomendado' || o.status === 'lleno'));
+const OPTION_EMPTY_COPY = { directa: 'Sin directa', giro: 'Sin giro compatible', alt: 'Sin alternativa' };
+
+const buildThreeOptions = (view) => {
+  const opps = Array.isArray(view?.opportunities) ? view.opportunities : [];
+  const fa = view?.firstAvailable || null;
+  const best = view?.bestProposal || {};
+
+  // a) Directa / hora sugerida — da firstAvailable (fallback bestProposal).
+  const directa = (fa && (fa.eta || fa.status)) || best.entrega
+    ? {
+        slot: 'directa',
+        label: 'Directa',
+        time: (fa && fa.eta) || best.entrega || '—',
+        status: (fa && fa.status) || best.status || 'compatible',
+        routeTimeline: best.routeTimeline || null,
+        opp: null,
+      }
+    : null;
+
+  // b) Giro compatible — prima opp kind 'agregar' NON bloccata.
+  const giroOpp = opps.find((o) => o.kind === 'agregar' && !OPP_BLOCKED(o)) || null;
+  const giro = giroOpp
+    ? { slot: 'giro', label: 'Giro compatible', time: giroOpp.time, status: giroOpp.status, routeTimeline: giroOpp.routeTimeline || null, opp: giroOpp }
+    : null;
+
+  // c) Alternativa — prima opp NON bloccata distinta dalla scelta come giro.
+  const altOpp = opps.find((o) => o !== giroOpp && !OPP_BLOCKED(o)) || null;
+  const alternativa = altOpp
+    ? { slot: 'alt', label: 'Alternativa', time: altOpp.time, status: altOpp.status, routeTimeline: altOpp.routeTimeline || null, opp: altOpp }
+    : null;
+
+  return { directa, giro, alternativa };
+};
+
 const PremiumPlannerPopup = ({
   onClose,
   data = null,
@@ -187,24 +220,13 @@ const PremiumPlannerPopup = ({
   // el popup nunca renderiza ETAs fabricadas.
   const isStrategic = !!(data && data.contract === STRATEGIC_CONTRACT);
   const view = isStrategic ? adaptStrategicContract(data) : null;
-  const opportunities = Array.isArray(view?.opportunities) ? view.opportunities : [];
-  const best = view?.bestProposal || {};
-  const [selectedOppId, setSelectedOppId] = useState(opportunities[0]?.id || null);
-  // Sección avanzada (ruta sugerida manual + resumen): cerrada por defecto.
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  const selectedOpp =
-    opportunities.find(item => item.id === selectedOppId) || opportunities[0] || null;
-
-  const selectOpportunity = (opp) => {
-    setSelectedOppId(opp.id);
-    labLog('preview-only', { id: opp.id, kind: opp.kind, status: opp.status });
-  };
-
-  const applyBest = () => {
-    // LAB: no API, no save, no confirm — solo log local (no-op).
-    labLog('apply-best-local', { id: best.id, source: view.source });
-  };
+  // ── UX-1: 3 slot fissi derivati dai dati backend già calcolati ──
+  const three = buildThreeOptions(view);
+  const firstSlot = three.directa ? 'directa' : three.giro ? 'giro' : three.alternativa ? 'alt' : null;
+  const [selectedSlot, setSelectedSlot] = useState(firstSlot);
+  const [showServiceLine, setShowServiceLine] = useState(false);
+  const selectedOption = three[selectedSlot === 'alt' ? 'alternativa' : selectedSlot] || null;
+  const selectOption = (opt) => labLog('preview-only', { slot: opt.slot, status: opt.status });
 
   // Sin contract strategic válido → empty-state seguro. La fixture mock fue
   // eliminada, así que aquí NO se renderiza ninguna propuesta inventada. En el
@@ -256,48 +278,51 @@ const PremiumPlannerPopup = ({
           <p className="ppp-lab-warn" role="status">⚠ {labWarning}</p>
         )}
 
-        <div className="ppp-top-grid">
-          <section className="ppp-best-card" aria-label="Mejor propuesta">
-            <div className="ppp-best-label">
-              <span>✦</span>
-              <strong>{best.label || 'Mejor propuesta'}</strong>
-            </div>
-            <h3>Entrega {best.entrega || '—'}</h3>
-            {/* salidaHorno/driverStatus solo si la fuente los provee (mock).
-                El contract strategic NO los tiene → no se inventan. */}
-            {best.salidaHorno && <p className="ppp-horno">Salida horno {best.salidaHorno}</p>}
-            {best.driverStatus && <p className="ppp-driver"><span>▣</span> {best.driverStatus}</p>}
-            {best.status && <p className="ppp-type">Estado: {statusLabels[best.status] || best.status}</p>}
-            {best.routeLabel && <p className="ppp-type">{best.routeLabel}</p>}
+        {/* ── Header semplice: 3 opzioni fisse (Directa / Giro / Alternativa) ── */}
+        <section className="ppp-options3" aria-label="Opciones de entrega">
+          {['directa', 'giro', 'alt'].map((slot) => {
+            const opt = three[slot === 'alt' ? 'alternativa' : slot];
+            const isSel = selectedSlot === slot;
+            const tone = opt ? (toneStyles[opt.opp?.severity] || toneStyles.ok) : toneStyles.info;
+            return (
+              <button
+                key={slot}
+                type="button"
+                className={`ppp-opt3${opt ? '' : ' is-empty'}${isSel ? ' is-active' : ''}`}
+                style={opt ? { '--tone': tone.accent, '--toneBg': tone.bg, '--toneBorder': tone.border } : undefined}
+                disabled={!opt}
+                aria-pressed={isSel}
+                onClick={() => { if (opt) { setSelectedSlot(slot); selectOption(opt); } }}
+              >
+                <span className="ppp-opt3-label">{opt ? opt.label : OPTION_EMPTY_COPY[slot]}</span>
+                {opt && <strong className="ppp-opt3-time">{opt.time || '—'}</strong>}
+                {opt && opt.status && <small className="ppp-opt3-st">{statusLabels[opt.status] || opt.status}</small>}
+              </button>
+            );
+          })}
+        </section>
 
-            {selectedOpp && <OpportunityPreview opp={selectedOpp} />}
-
-            {/* no-op: applyBest no escribe / no llama API / no confirma. Por eso
-                la etiqueta deja claro que es solo vista previa, no una acción. */}
-            <button type="button" className="ppp-apply" onClick={applyBest}>
-              Seleccionar en vista previa
-            </button>
+        {/* ── Dettaglio espandibile (accordion inline) della opzione scelta.
+            RouteTimeline = renderer puro del campo additivo backend; MiniZoneMap
+            on-demand SOLO qui dentro (non più nel top). Nessun popup nuovo. ── */}
+        {selectedOption && (
+          <section className="ppp-detail" aria-label="Detalle de la opción">
+            <RouteTimeline routeTimeline={selectedOption.routeTimeline} />
+            {selectedOption.opp && <MiniZoneMap zoneMap={view.zoneMap} opp={selectedOption.opp} />}
+            {selectedOption.opp?.warning && <p className="ppp-preview-warn">⚠ {selectedOption.opp.warning}</p>}
           </section>
+        )}
 
-          <MiniZoneMap zoneMap={view.zoneMap} opp={selectedOpp} />
-        </div>
-
-        {/* Línea del giro (Pizzería → entregas → Regreso) — render-only del campo
-            additivo routeTimeline. Prioridad: la proposal seleccionada; si no, la
-            bestProposal. Si ninguna lo trae (mock o backend sin routeTimeline) el
-            componente devuelve null → fallback a la UI actual sin romper nada. */}
-        <RouteTimeline routeTimeline={(selectedOpp && selectedOpp.routeTimeline) || best.routeTimeline || null} />
-
-        {/* Sección "Avanzado": colapsable y CERRADA por defecto. Contiene la ruta
-            sugerida manual (interactiva, read-only: previewManualGiroRoute, NUNCA
-            createManualGiro) y el resumen. Fuera de la vista principal del operador. */}
-        {(onCalcManualRoute || view.source === 'backend-readonly') && (
-          <section className="ppp-advanced" aria-label="Avanzado">
+        {/* ── Línea de servicio (PLACEHOLDER UX-1): accordion semplice, solo se il
+            backend manda righe. Niente salida→entrega→regreso per giro finché il
+            contract serviceLine non lo espone (backend-first, fuori UX-1). ── */}
+        {Array.isArray(view.serviceLine) && view.serviceLine.length > 0 && (
+          <section className="ppp-serviceline" aria-label="Línea de servicio">
             <button
               type="button"
               className="ppp-adv-toggle"
-              onClick={() => setShowAdvanced(v => !v)}
-              aria-expanded={showAdvanced}
+              aria-expanded={showServiceLine}
+              onClick={() => setShowServiceLine(v => !v)}
               style={{
                 width: '100%', textAlign: 'left', cursor: 'pointer', marginTop: 10,
                 background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
@@ -305,144 +330,17 @@ const PremiumPlannerPopup = ({
                 padding: '10px 14px',
               }}
             >
-              {showAdvanced ? '▾' : '▸'} Avanzado
+              {showServiceLine ? '▾' : '▸'} Línea de servicio
             </button>
-
-            {showAdvanced && (
-              <>
-                {/* Ruta sugerida manual: modo interactivo (operador propone Q2→Q5…).
-                    Solo se renderiza si el contenedor pasa onCalcManualRoute. Recolector
-                    de clics + renderer de la routeTimeline read-only del backend. */}
-                {onCalcManualRoute && (
-                  <ManualRouteSection
-                    currentZone={manualCurrentZone}
-                    startTime={manualStartTime}
-                    preview={manualRoutePreview}
-                    loading={manualRouteLoading}
-                    warning={manualRouteWarning}
-                    onCalc={onCalcManualRoute}
-                    onClear={onClearManualRoute}
-                  />
-                )}
-
-                {view.source === 'backend-readonly' && (
-                  <BackendSummary view={view} />
-                )}
-              </>
+            {showServiceLine && (
+              <ul className="ppp-sl-list">
+                {view.serviceLine.map((e, i) => <li key={`sl-${i}`}>{serviceLineLabelOf(e)}</li>)}
+              </ul>
             )}
           </section>
         )}
-
-        <section className="ppp-quick-section">
-          <h3>Otras opciones rápidas</h3>
-          <div className="ppp-options">
-            {opportunities.map(opp => {
-              const tone = toneStyles[opp.severity] || toneStyles.info;
-              const isActive = selectedOpp && selectedOpp.id === opp.id;
-              return (
-                <button
-                  type="button"
-                  key={opp.id}
-                  className={`ppp-option-card${isActive ? ' is-active' : ''}`}
-                  style={{ '--tone': tone.accent, '--toneBg': tone.bg, '--toneBorder': tone.border }}
-                  onClick={() => selectOpportunity(opp)}
-                  aria-pressed={isActive}
-                >
-                  <span className="ppp-option-top">
-                    <strong>{opp.time}</strong>
-                    <i>{opp.actionLabel}</i>
-                  </span>
-                  <b>{opp.title}</b>
-                  <small>{opp.subtitle}</small>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="ppp-timeline-card">
-          <div className="ppp-card-title">
-            <h3><span>↻</span> Giros y huecos</h3>
-            <p><span>↻</span> Oportunidades sugeridas</p>
-          </div>
-          <div className="ppp-timeline" aria-label="Giros y huecos">
-            {opportunities.map(opp => {
-              const tone = toneStyles[opp.severity] || toneStyles.info;
-              const isActive = selectedOpp && selectedOpp.id === opp.id;
-              return (
-                <button
-                  type="button"
-                  key={opp.id}
-                  className={`ppp-timeline-row${isActive ? ' is-active' : ''}`}
-                  style={{ '--tone': tone.accent, '--toneBg': tone.bg, '--toneBorder': tone.border }}
-                  onClick={() => selectOpportunity(opp)}
-                  aria-pressed={isActive}
-                >
-                  <span className="ppp-row-time">{opp.time}</span>
-                  <span className="ppp-row-dot" />
-                  <span className="ppp-row-copy">
-                    <strong>{opp.title}</strong>
-                    <small>{opp.subtitle}</small>
-                  </span>
-                  <span className="ppp-row-chip">{opp.chip}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="ppp-notes" aria-label="Notas del planner">
-          <h3><span>♧</span> Notas del planner</h3>
-          <ul>
-            {view.plannerNotes.map(note => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-          {selectedOpp && (
-            <span className="ppp-selected">
-              Preview local: {kindLabels[selectedOpp.kind]} · {selectedOpp.zoneLabel} · {statusLabels[selectedOpp.status]}
-            </span>
-          )}
-        </section>
       </section>
     </div>
-  );
-};
-
-const OpportunityPreview = ({ opp }) => {
-  const tone = toneStyles[opp.severity] || toneStyles.info;
-  const propuesta = opp.routeEtas
-    .map(eta => `${eta.zone} ${eta.eta}${etaSlipBadge(eta)}`)
-    .join(' → ');
-
-  return (
-    <section
-      className="ppp-preview"
-      style={{ '--tone': tone.accent, '--toneBg': tone.bg, '--toneBorder': tone.border }}
-      aria-label="Preview de la oportunidad seleccionada"
-    >
-      <div className="ppp-preview-head">
-        <strong>{opp.kind === 'crear' ? 'Crear' : 'Agregar'}</strong>
-        <span className="ppp-preview-chip">{statusLabels[opp.status]}</span>
-      </div>
-      <dl className="ppp-preview-rows">
-        <div>
-          <dt>Directa</dt>
-          <dd>{opp.baseline.directEta}</dd>
-        </div>
-        <div>
-          <dt>En giro</dt>
-          <dd>{propuesta}</dd>
-        </div>
-        <div>
-          <dt>Capacidad</dt>
-          <dd>{opp.capacity.pizzas} · {opp.capacity.routeMin}/{opp.capacity.limitMin} min</dd>
-        </div>
-      </dl>
-      {opp.warning && (
-        <p className="ppp-preview-warn">⚠ {opp.warning}</p>
-      )}
-    </section>
   );
 };
 
@@ -532,143 +430,6 @@ const RouteTimeline = ({ routeTimeline, compact = false }) => {
   );
 };
 
-// ── ManualRouteSection — recolector de clics + renderer (NO motor) ────────────
-// El operador construye una SECUENCIA de paradas (pedido actual + anclas Q1–Q5
-// que añade clicando) y pulsa "Calcular ruta LAB". La sección SOLO arma
-// `selectedStops` (zone + label genérica, SIN PII, SIN promised inventado) y los
-// pasa al contenedor (onCalc), que valida (hora + zona) y llama al backend. La
-// respuesta `routeTimeline` (route-timeline-v2) se dibuja con el MISMO renderer
-// puro <RouteTimeline/>. REGLA renderer-only: aquí NO se calcula ETA/slip/risk/
-// capacity/status, NO hay Date.now, NI parsing HH:MM, NI aritmética de horas.
-const MANUAL_ROUTE_ZONES = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'];
-
-const ManualRouteSection = ({ currentZone, startTime, preview, loading, warning, onCalc, onClear }) => {
-  const [anchorZones, setAnchorZones] = useState([]);
-  // Zona actual en modo LAB: si el draft NO trae zona resuelta (evitamos forzar
-  // geo_cache), el operador puede ELEGIRLA a mano aquí solo para la preview LAB.
-  // Presentacional: es solo el `zone` del stop current_order, sin PII, sin geo.
-  const [labCurrentZone, setLabCurrentZone] = useState(null);
-  const effectiveCurrentZone = currentZone || labCurrentZone;
-
-  // Construye selectedStops: primero el pedido actual (si hay zona), luego las
-  // anclas en el ORDEN en que el operador las clicó (no se reordena nada).
-  const buildStops = () => {
-    const stops = [];
-    if (effectiveCurrentZone) stops.push({ type: 'current_order', zone: effectiveCurrentZone, label: 'Pedido actual' });
-    anchorZones.forEach((z) => stops.push({ type: 'anchor', zone: z, label: `${z} · ancla manual` }));
-    return stops;
-  };
-
-  const addZone = (z) => setAnchorZones((prev) => [...prev, z]);
-  const removeLast = () => setAnchorZones((prev) => prev.slice(0, -1));
-  const clearAll = () => {
-    setAnchorZones([]);
-    setLabCurrentZone(null);
-    if (onClear) onClear();
-  };
-  const calc = () => { if (onCalc) onCalc(buildStops()); };
-
-  const canCalc = !!effectiveCurrentZone && !!startTime && !loading;
-  const rt = preview && preview.routeTimeline ? preview.routeTimeline : null;
-  const blockers = preview && Array.isArray(preview.blockers) ? preview.blockers : [];
-  const pwarnings = preview && Array.isArray(preview.warnings) ? preview.warnings : [];
-
-  return (
-    <section className="ppp-mr" aria-label="Ruta sugerida">
-      <header className="ppp-mr-head">
-        <h3><span>🧭</span> Ruta sugerida</h3>
-        <span className="ppp-mr-pill">Vista previa</span>
-      </header>
-
-      {!effectiveCurrentZone && (
-        <p className="ppp-mr-warn">⚠ Zona del pedido actual sin resolver — añade dirección/zona, o elige una zona abajo.</p>
-      )}
-      {!startTime && (
-        <p className="ppp-mr-warn">⚠ Falta la hora (startTime) — elige hora antes de calcular.</p>
-      )}
-
-      <div className="ppp-mr-current">
-        <span className="ppp-mr-k">Pedido actual</span>
-        <strong>{effectiveCurrentZone || '—'}</strong>
-      </div>
-
-      {/* Selector LAB de zona actual: solo si el draft no trae zona resuelta. NO
-          escribe geo_cache; es presentacional para poder probar la ruta en LAB. */}
-      {!currentZone && (
-        <div className="ppp-mr-picker">
-          <span className="ppp-mr-k">Zona actual</span>
-          {MANUAL_ROUTE_ZONES.map((z) => (
-            <button
-              type="button"
-              key={`lab-${z}`}
-              className={`ppp-mr-chip${labCurrentZone === z ? ' is-on' : ''}`}
-              onClick={() => setLabCurrentZone(z)}
-              aria-pressed={labCurrentZone === z}
-              aria-label={`Zona actual ${z}`}
-            >
-              {z}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="ppp-mr-picker">
-        <span className="ppp-mr-k">Añadir parada</span>
-        {MANUAL_ROUTE_ZONES.map((z) => (
-          <button type="button" key={z} className="ppp-mr-chip" onClick={() => addZone(z)} aria-label={`Añadir parada ${z}`}>
-            {z}
-          </button>
-        ))}
-      </div>
-
-      <div className="ppp-mr-seq" aria-label="Secuencia de paradas">
-        <span className="ppp-mr-k">Secuencia</span>
-        <span className="ppp-mr-stop is-current">{effectiveCurrentZone || '—'} · actual</span>
-        {anchorZones.map((z, i) => (
-          <span key={`${z}-${i}`} className="ppp-mr-stop is-anchor">→ {z}</span>
-        ))}
-        {anchorZones.length === 0 && <em className="ppp-mr-empty">solo pedido actual</em>}
-      </div>
-
-      <div className="ppp-mr-actions">
-        <button type="button" className="ppp-mr-calc" onClick={calc} disabled={!canCalc}>
-          {loading ? 'Calculando…' : 'Calcular ruta'}
-        </button>
-        {anchorZones.length > 0 && (
-          <button type="button" className="ppp-mr-undo" onClick={removeLast}>Quitar última</button>
-        )}
-        <button type="button" className="ppp-mr-clear" onClick={clearAll}>Limpiar ruta</button>
-      </div>
-
-      {loading && (
-        <p className="ppp-mr-loading" role="status" aria-live="polite">⟳ Calculando…</p>
-      )}
-      {!loading && warning && (
-        <p className="ppp-mr-warn" role="status">⚠ {warning}</p>
-      )}
-
-      {preview && !loading && (
-        <div className="ppp-mr-result">
-          {blockers.length > 0 && (
-            <ul className="ppp-mr-blockers">
-              {blockers.map((b, i) => (<li key={`mb-${i}`}>✕ {msgOf(b)}</li>))}
-            </ul>
-          )}
-          {pwarnings.length > 0 && (
-            <ul className="ppp-mr-warns">
-              {pwarnings.map((w, i) => (<li key={`mw-${i}`}>⚠ {msgOf(w)}</li>))}
-            </ul>
-          )}
-          {/* Renderer puro de la línea backend; si no hay timeline → fallback safe. */}
-          {rt ? <RouteTimeline routeTimeline={rt} /> : (
-            <p className="ppp-mr-fallback">Sin línea de ruta calculable (revisa paradas/zonas).</p>
-          )}
-          {/* safety read-only/writes: dato interno, NO visible al operador. */}
-        </div>
-      )}
-    </section>
-  );
-};
 
 const MiniZoneMap = ({ zoneMap, opp }) => {
   const zonesById = zoneMap.zones.reduce((acc, zone) => {
@@ -777,7 +538,7 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
         ))}
       </div>
 
-      {opp && (
+      {opp && Array.isArray(opp.mapPath) && opp.mapPath.length > 0 && (
         <div className="ppp-map-foot">
           <p className={`ppp-map-path${isBlocked ? ' is-blocked' : ''}`}>
             {zoneMap.caption}{' '}
@@ -798,11 +559,8 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
   );
 };
 
-// BackendSummary — render-only del contract strategic. SOLO pass-through di campi
-// già calcolati dal backend (firstAvailable / serviceLine / warnings / blockers /
-// safety). Niente aritmetica, niente Date.now, niente derivazioni: solo lookup di
-// label presentazionale e lettura difensiva.
-const msgOf = (x) => (typeof x === 'string' ? x : (x && (x.message || x.label || x.text)) || '');
+// serviceLineLabelOf — label presentazionale di una riga serviceLine (lookup puro,
+// usato dal placeholder "Línea de servicio" UX-1). Niente calcolo, niente Date.now.
 const serviceLineLabelOf = (e) => {
   if (typeof e === 'string') return e;
   if (!e) return '';
@@ -810,58 +568,6 @@ const serviceLineLabelOf = (e) => {
   const zone = e.zone || e.zoneLabel || '';
   const label = e.label || e.title || '';
   return [when, zone, label].filter(Boolean).join(' · ');
-};
-
-const BackendSummary = ({ view }) => {
-  const fa = view.firstAvailable || null;
-  const serviceLine = Array.isArray(view.serviceLine) ? view.serviceLine : [];
-  const warnings = Array.isArray(view.warnings) ? view.warnings : [];
-  const blockers = Array.isArray(view.blockers) ? view.blockers : [];
-  const faStatus = fa && fa.status ? (statusLabels[fa.status] || fa.status) : null;
-
-  return (
-    <section className="ppp-backend-summary" aria-label="Resumen">
-      <header className="ppp-bs-head">
-        <span className="ppp-bs-badge">Vista previa</span>
-        {/* safety read-only/writes: dato interno, NO visible al operador. */}
-      </header>
-      {fa && (fa.eta || faStatus) && (
-        <p className="ppp-bs-first">
-          <strong>Primera disponible:</strong> {fa.eta || '—'}{faStatus ? ` · ${faStatus}` : ''}
-        </p>
-      )}
-      {serviceLine.length > 0 && (
-        <div className="ppp-bs-block">
-          <h4>Línea de servicio</h4>
-          <ul>
-            {serviceLine.map((e, i) => (
-              <li key={`sl-${i}`}>{serviceLineLabelOf(e)}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {warnings.length > 0 && (
-        <div className="ppp-bs-block ppp-bs-warn">
-          <h4>Avisos</h4>
-          <ul>
-            {warnings.map((w, i) => (
-              <li key={`w-${i}`}>⚠ {msgOf(w)}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {blockers.length > 0 && (
-        <div className="ppp-bs-block ppp-bs-err">
-          <h4>Bloqueos</h4>
-          <ul>
-            {blockers.map((b, i) => (
-              <li key={`b-${i}`}>✕ {msgOf(b)}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </section>
-  );
 };
 
 const PREMIUM_PLANNER_POPUP_CSS = `
@@ -1084,6 +790,87 @@ const PREMIUM_PLANNER_POPUP_CSS = `
   .ppp-notes{ padding:18px; }
   .ppp-notes h3{ margin-left:0; }
 }
+/* ── Adaptativo "computer/tablet" (≥768px): compacta la tipografía y las alturas
+   pensadas para touch para que el popup quepa en pantalla sin efecto "zoom".
+   Va al final → gana en los solapes con (max-width:900px). Debajo de 768px (móvil)
+   no aplica: la vista móvil queda intacta. Solo presentacional, sin lógica. */
+@media (min-width:768px){
+  .ppp-overlay{ padding:20px; }
+  .ppp-shell{ width:min(900px,100%); max-height:90vh; padding:22px; }
+  .ppp-header{ grid-template-columns:42px minmax(0,1fr) auto 40px; margin-bottom:16px; }
+  .ppp-header h2{ font-size:21px; }
+  .ppp-brand-mark{ width:38px; height:38px; }
+  .ppp-brand-mark span:nth-child(1){ font-size:26px; }
+  .ppp-brand-mark span:nth-child(2){ font-size:13px; }
+  .ppp-brand-mark span:nth-child(3){ font-size:12px; }
+  .ppp-close{ width:38px; height:38px; font-size:24px; }
+  .ppp-lab-warn,.ppp-lab-loading{ font-size:13px; padding:8px 12px; margin-bottom:12px; }
+
+  .ppp-top-grid{ grid-template-columns:0.95fr 1.15fr; gap:16px; }
+  .ppp-best-card{ min-height:0; padding:18px; }
+  .ppp-best-label{ font-size:15px; gap:9px; }
+  .ppp-best-label span{ font-size:19px; }
+  .ppp-best-card h3{ margin:10px 0 8px; font-size:26px; }
+  .ppp-horno,.ppp-type{ font-size:14px; margin-bottom:8px; }
+  .ppp-driver{ font-size:14px; margin-bottom:8px; gap:8px; }
+  .ppp-driver span{ font-size:14px; }
+  .ppp-apply{ min-height:46px; font-size:15px; }
+  .ppp-preview{ margin:12px 0; padding:12px 14px; }
+  .ppp-preview-head strong{ font-size:14px; }
+  .ppp-preview-rows dd{ font-size:14px; }
+
+  .ppp-map-card{ min-height:0; padding:14px 16px 12px; }
+  .ppp-map-card h3{ font-size:15px; }
+  /* La mappa NON si rimpicciolisce: le zone hanno coordinate a pixel fissi tarate
+     su 300px d'altezza (Q5 arriva a ~282px). Ridurla taglierebbe Q5/Q2 in basso. */
+  .ppp-map-path{ font-size:14px; }
+
+  .ppp-quick-section{ margin-top:18px; }
+  .ppp-quick-section h3{ font-size:16px; margin:0 0 12px 4px; }
+  .ppp-options{ grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; }
+  .ppp-option-card{ min-height:0; padding:12px; gap:7px; }
+  .ppp-option-top strong{ font-size:18px; }
+  .ppp-option-top i{ width:24px; height:24px; font-size:15px; }
+  .ppp-option-card b{ font-size:13.5px; }
+  .ppp-option-card small{ font-size:12px; }
+
+  .ppp-timeline-card{ margin-top:16px; padding:14px 16px 16px; }
+  .ppp-card-title h3{ font-size:16px; }
+  .ppp-card-title p{ font-size:13px; }
+  .ppp-timeline-row{ min-height:0; grid-template-columns:74px 30px minmax(0,1fr) 110px; gap:12px; padding:10px 16px; }
+  .ppp-timeline::before{ left:104px; top:28px; bottom:24px; }
+  .ppp-row-time{ font-size:15px; }
+  .ppp-row-copy strong{ font-size:14.5px; }
+  .ppp-row-copy small{ font-size:12.5px; margin-top:3px; }
+  .ppp-row-chip{ min-width:84px; padding:6px 10px; font-size:12.5px; }
+
+  .ppp-notes{ margin-top:16px; padding:16px 18px 16px 52px; }
+  .ppp-notes h3{ font-size:15px; margin:0 0 10px -36px; }
+  .ppp-notes h3 span{ width:26px; font-size:20px; }
+  .ppp-notes ul{ font-size:13px; line-height:1.55; }
+
+  .ppp-rt,.ppp-mr,.ppp-backend-summary{ margin-top:14px; padding:14px 16px; }
+  .ppp-rt-head h3,.ppp-mr-head h3{ font-size:15px; }
+  .ppp-rt-msg{ font-size:13.5px; }
+  .ppp-rt-summary dd{ font-size:14px; }
+  .ppp-rt-label{ font-size:14px; }
+  .ppp-rt-eta{ font-size:15px; }
+}
+
+/* ── UX-1: header 3 opzioni + dettaglio accordion + línea de servicio ── */
+.ppp-options3{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:18px; }
+.ppp-opt3{ display:flex; flex-direction:column; gap:4px; padding:14px; border-radius:12px;
+  background:var(--toneBg,rgba(255,255,255,0.03)); border:1px solid var(--toneBorder,rgba(255,255,255,0.10));
+  color:#F7F8FA; cursor:pointer; text-align:left; }
+.ppp-opt3.is-active{ box-shadow:0 0 0 2px var(--tone,#58E86B) inset; }
+.ppp-opt3.is-empty{ opacity:0.45; cursor:not-allowed; background:rgba(255,255,255,0.02); border-style:dashed; }
+.ppp-opt3-label{ font-size:12px; font-weight:800; letter-spacing:0.3px; }
+.ppp-opt3-time{ font-size:22px; font-weight:900; color:var(--tone,#F7F8FA); }
+.ppp-opt3-st{ font-size:11px; color:#9aa3ad; }
+.ppp-detail{ margin-bottom:18px; }
+.ppp-serviceline{ margin-top:6px; }
+.ppp-sl-list{ margin:8px 0 0; padding-left:18px; font-size:12px; color:#aeb6bf; }
+@media (max-width:680px){ .ppp-options3{ grid-template-columns:1fr; } }
 `;
 
 export default PremiumPlannerPopup;
