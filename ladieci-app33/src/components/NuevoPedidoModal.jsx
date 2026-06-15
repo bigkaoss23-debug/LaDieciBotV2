@@ -4,6 +4,7 @@ import { api, sb } from '../api';
 import { assegnaZonaDaKeyword, suggerisciOrario, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, risolviTempoAndata, tempoAndata, proposeForNewOrder, BUFFER_OPS_DRIVER_MIN } from '../zones';
 import ItemPickerModal from './ItemPickerModal';
 import { applyUiOffset } from '../utils/uiOffset';
+import { createLatestOnly, shouldGeocode, GEOCODE_DEBOUNCE_MS } from '../utils/nuevoPedidoGeocode';
 import DescuentoInput from './ui/DescuentoInput';
 import { getKitchenCapacityStatus } from '../core/kitchen/capacity';
 
@@ -170,6 +171,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [zonaLoading,    setZonaLoading]    = useState(false);
   const [zonaManuale,    setZonaManuale]    = useState(false); // true se l'operatore ha scelto a mano
   const geocodeTimer = useRef(null);
+  // HOTFIX P1A: guardia "last-wins" per resolveAddress (vedi utils/nuevoPedidoGeocode).
+  const latestGeocode = useRef(createLatestOnly());
 
   // ── Feedback slot forno (solo delivery) ──────────────────────────────────
   const [slotFeedback,   setSlotFeedback]   = useState(null);
@@ -498,13 +501,24 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // Server-side: cache → cliente → Google → Nominatim → Photon → keyword.
   // Backend cacha automaticamente, qui niente saveGeoCache da gestire.
   useEffect(() => {
-    if (tipoConsegna !== "DOMICILIO" || zonaManuale) return;
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
-    if (direccion.trim().length < 5) { setZonaInfo(null); setZonaLoading(false); return; }
+    // HOTFIX P1A: ogni run invalida un'eventuale resolveAddress ancora in volo
+    // (l'indirizzo è cambiato) → la risposta vecchia NON aggiornerà più lo stato.
+    const isCurrent = latestGeocode.current.begin();
+    if (!shouldGeocode({ tipoConsegna, direccion, zonaManuale })) {
+      // Indirizzo troppo corto in DOMICILIO non-manuale → azzera la zona.
+      // (RITIRO / zona manuale: si lascia zonaInfo com'è, come prima.)
+      if (tipoConsegna === "DOMICILIO" && !zonaManuale && direccion.trim().length < 5) {
+        setZonaInfo(null);
+        setZonaLoading(false);
+      }
+      return;
+    }
     setZonaLoading(true);
     geocodeTimer.current = setTimeout(async () => {
       try {
         const res = await api.resolveAddress(direccion, { tel: tel || null });
+        if (!isCurrent()) return; // indirizzo cambiato nel frattempo → ignora (last-wins)
         if (res && res.zona) {
           const zonaObj = ZONE_DELIVERY.find(z => z.id === res.zona);
           // Mappatura source → metodo per coerenza con UI esistente
@@ -533,6 +547,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           });
         }
       } catch (e) {
+        if (!isCurrent()) return;
         console.warn("[resolveAddress] failed:", e?.message || e);
         setZonaInfo({
           zona: null,
@@ -543,10 +558,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           error: "resolve_failed"
         });
       } finally {
-        setZonaLoading(false);
+        if (isCurrent()) setZonaLoading(false);
       }
-    }, 800);
-    return () => clearTimeout(geocodeTimer.current);
+    }, GEOCODE_DEBOUNCE_MS);
+    return () => { clearTimeout(geocodeTimer.current); latestGeocode.current.cancel(); };
   }, [direccion, tel, tipoConsegna, zonaManuale]); // eslint-disable-line
 
   // ── Helper: converte "HH:MM" in minuti dall'inizio della giornata ────────
@@ -693,7 +708,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       } finally {
         if (!cancelled) setBackendTimingLoading(false);
       }
-    }, 450);
+    }, GEOCODE_DEBOUNCE_MS); // HOTFIX P1A: debounce allineato a resolveAddress (~600ms)
     return () => { cancelled = true; clearTimeout(t); setBackendTimingLoading(false); };
   }, [visible, tipoConsegna, direccion, hora, zonaManuale]); // eslint-disable-line
 
