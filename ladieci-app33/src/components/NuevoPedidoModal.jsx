@@ -328,7 +328,15 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     onConfirm({
       id: genId(), client_req_id: reqIdRef.current, nombre: nombre.trim(), tel: telFinal,
       cliente_id: cidFinale || null,
-      canal: canal === "WA" ? "WA" : canal === "BANCO" ? "BANCO" : "MANUAL",
+      // HOTFIX prod-wa-orphan-visible (base 777ae55): il bottone "💬 WhatsApp"
+      // del modal manuale NON deve salvare canal="WA". Un ordine canal=WA creato
+      // a mano resta INVISIBILE — TabManual/Pedidos scarta i WA e TabWA disegna
+      // solo dalla tabella wa_msgs, che qui non esiste (caso #014 / "ordine #1").
+      // Lo salviamo come MANUAL così è sempre visibile in Pedidos; l'origine
+      // WhatsApp resta tracciata in wa_id (telefono) e mostrata come badge 💬 in
+      // OrdenCard. NON crea riga wa_msgs: resta un ordine MANUAL a tutti gli effetti.
+      canal: canal === "BANCO" ? "BANCO" : "MANUAL",
+      wa_id: canal === "WA" ? String(tel || "").replace(/\D/g, "") : "",
       items: items.map(i => ({ ...i })),
       nota: notaFinale, hora, ts: Date.now(), estado: "POR_CONFIRMAR",
       tipo_consegna: tipoConsegna,

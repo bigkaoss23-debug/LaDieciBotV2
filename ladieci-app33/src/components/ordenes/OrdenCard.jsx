@@ -3,6 +3,7 @@ import { C, tot, calcTotale, DELIVERY_FEE } from '../../constants';
 import Chip from '../ui/Chip';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
+import { isWaSinConversacion, isWaOrigen } from '../../utils/pedidosVisibility';
 
 const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, vipIds, loadingIds = new Set()}) => {
   const busy = loadingIds.has(o.id);
@@ -19,6 +20,9 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
   })();
 
   const estado = o.estado;
+  // HOTFIX prod-wa-orphan-visible: origine/stato WhatsApp visibile in Pedidos.
+  const waSinConv = isWaSinConversacion(o); // canal=WA orfano (nessuna conversazione)
+  const waOrigen  = isWaOrigen(o);          // ordine manuale creato dal bottone WhatsApp
   const isListo    = estado === ORDER_STATES.LISTO;
   const isRetirado = estado === ORDER_STATES.RETIRADO;
   const isCocina   = estado === ORDER_STATES.EN_COCINA;
@@ -125,6 +129,21 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
         const zona = ZONE_DELIVERY.find(z => z.id === o.zona);
         return zona ? <ZonaBadge zona={zona} size="sm" /> : null;
       })()}
+      {/* HOTFIX prod-wa-orphan-visible: badge origine WhatsApp / orfano senza conversazione */}
+      {waSinConv && (
+        <span style={{
+          background:"rgba(245,158,11,0.18)", color:"#FBBF24",
+          border:"1.5px solid rgba(245,158,11,0.55)",
+          borderRadius:20, padding:"3px 10px", fontSize:12, fontWeight:800, letterSpacing:.3
+        }}>💬 WA sin conversación</span>
+      )}
+      {waOrigen && (
+        <span style={{
+          background:"rgba(37,211,102,0.18)", color:"#4ADE80",
+          border:"1.5px solid rgba(37,211,102,0.5)",
+          borderRadius:20, padding:"3px 10px", fontSize:12, fontWeight:800, letterSpacing:.3
+        }}>💬 WhatsApp</span>
+      )}
       {s.badge}
       {o.ya_pagado && (
         <span style={{

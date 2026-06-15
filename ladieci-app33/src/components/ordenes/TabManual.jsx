@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { C } from '../../constants';
 import { isCompletedState, orderStateRank } from '../../core/orders';
+import { belongsToPedidos } from '../../utils/pedidosVisibility';
 import OrdenCard from './OrdenCard';
 
 const sortOrdenes = (list) => list.sort((a,b) => {
@@ -13,7 +14,10 @@ const sortOrdenes = (list) => list.sort((a,b) => {
 const TabManual = ({ordenes, onModifica, onElimina, onConfirm, onForzarEntrega, vipIds, loadingIds = new Set()}) => {
   const [showDone, setShowDone] = useState(false);
 
-  const all     = ordenes.filter(o=>o.canal==="MANUAL" || o.canal==="TEL" || !o.canal);
+  // HOTFIX prod-wa-orphan-visible: include anche gli ordini canal="WA" SENZA
+  // wa_id (orfani senza conversazione) come fallback, così non restano invisibili.
+  // Gli ordini WA CON wa_id restano nel flusso WhatsApp. Vedi utils/pedidosVisibility.
+  const all     = ordenes.filter(belongsToPedidos);
   const activos = sortOrdenes(all.filter(o=>!isCompletedState(o.estado)));
   const done    = sortOrdenes(all.filter(o=>isCompletedState(o.estado)));
 
