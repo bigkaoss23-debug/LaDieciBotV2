@@ -150,6 +150,12 @@ const adaptStrategicContract = (contract) => {
     mode: contract.mode || 'read_only',
     source: 'backend-readonly',
     bestProposal,
+    // opp grezza del candidato diretto: serve alla mappa (mapPath/routeZones/
+    // routeTimeline) quando si seleziona la proposal kind:'direct'.
+    bestProposalOpp: bp ? adaptOpportunity(bp) : null,
+    // proposals[]: set GIÀ ranked dal backend (premium-planner-proposal-
+    // selection-v1). Pass-through puro; il renderer filtra solo i primari.
+    proposals: Array.isArray(contract.proposals) ? contract.proposals : [],
     zoneMap: LOCAL_ZONE_MAP, // geografía estática real del local (no backend, no mock)
     opportunities,
     plannerNotes: notesFromContract.length ? notesFromContract : PLANNER_NOTES_DEFAULT,
@@ -161,42 +167,34 @@ const adaptStrategicContract = (contract) => {
   };
 };
 
-// ── UX-1: deriva 3 slot FISSI dalle opportunities[] + firstAvailable già
-// calcolati dal backend. Renderer-only: solo lookup/filtri, nessun calcolo
-// orario, nessun Date.now, nessuna aritmetica di tempo.
-const OPP_BLOCKED = (o) => !!(o && (o.blocked || o.status === 'no_recomendado' || o.status === 'lleno'));
-const OPTION_EMPTY_COPY = { directa: 'Sin directa', giro: 'Sin giro compatible', alt: 'Sin alternativa' };
+// ── UX-2: i 3 bottoni "Otras opciones rápidas" vengono dai proposals[] GIÀ
+// ranked dal backend (premium-planner-proposal-selection-v1). Renderer-only:
+// nessun calcolo, solo filtro/lookup. not_recommended NON entra come bottone
+// primario. Ogni proposal porta id (= opp.id) per risolvere l'opportunity
+// sorgente e disegnare la rotta sulla mappa.
+const PROPOSAL_ROLE_COPY = {
+  direct: 'Directa',
+  insertion: 'Giro compatible',
+  alternative: 'Alternativa',
+  not_recommended: 'No recomendado',
+};
 
-const buildThreeOptions = (view) => {
-  const opps = Array.isArray(view?.opportunities) ? view.opportunities : [];
-  const fa = view?.firstAvailable || null;
-  const best = view?.bestProposal || {};
+// I 3 slot primari = proposte non-bloccanti (escluso not_recommended), max 3.
+const primaryProposals = (proposals) =>
+  (Array.isArray(proposals) ? proposals : [])
+    .filter((p) => p && p.kind !== 'not_recommended')
+    .slice(0, 3);
 
-  // a) Directa / hora sugerida — da firstAvailable (fallback bestProposal).
-  const directa = (fa && (fa.eta || fa.status)) || best.entrega
-    ? {
-        slot: 'directa',
-        label: 'Directa',
-        time: (fa && fa.eta) || best.entrega || '—',
-        status: (fa && fa.status) || best.status || 'compatible',
-        routeTimeline: best.routeTimeline || null,
-        opp: null,
-      }
-    : null;
-
-  // b) Giro compatible — prima opp kind 'agregar' NON bloccata.
-  const giroOpp = opps.find((o) => o.kind === 'agregar' && !OPP_BLOCKED(o)) || null;
-  const giro = giroOpp
-    ? { slot: 'giro', label: 'Giro compatible', time: giroOpp.time, status: giroOpp.status, routeTimeline: giroOpp.routeTimeline || null, opp: giroOpp }
-    : null;
-
-  // c) Alternativa — prima opp NON bloccata distinta dalla scelta come giro.
-  const altOpp = opps.find((o) => o !== giroOpp && !OPP_BLOCKED(o)) || null;
-  const alternativa = altOpp
-    ? { slot: 'alt', label: 'Alternativa', time: altOpp.time, status: altOpp.status, routeTimeline: altOpp.routeTimeline || null, opp: altOpp }
-    : null;
-
-  return { directa, giro, alternativa };
+// Risolve l'opportunity sorgente di una proposal (per la mappa: mapPath/route).
+// insertion/alternative/not_recommended → match per id in opportunities[];
+// direct → l'opp grezza bestProposalOpp. Lookup puro, nessun calcolo.
+const resolveProposalOpp = (proposal, view) => {
+  if (!proposal || !view) return null;
+  const opps = Array.isArray(view.opportunities) ? view.opportunities : [];
+  const found = opps.find((o) => o && o.id === proposal.id);
+  if (found) return found;
+  if (proposal.kind === 'direct') return view.bestProposalOpp || null;
+  return null;
 };
 
 const PremiumPlannerPopup = ({
@@ -214,19 +212,25 @@ const PremiumPlannerPopup = ({
   manualRouteWarning = '',
   onCalcManualRoute = null,   // (selectedStops) => void  — el modal valida + llama backend
   onClearManualRoute = null,  // () => void
+  // onApplyHora(time): aplica la hora de la propuesta al draft del pedido. Si el
+  // contenedor NO lo pasa, el botón "Aplicar propuesta" no se renderiza (sin no-op).
+  onApplyHora = null,
 }) => {
   // Fuente de datos: SOLO el contract backend read-only si es válido. Sin él,
   // view=null → empty-state seguro abajo. NO hay fallback a fixture mock (eliminada):
   // el popup nunca renderiza ETAs fabricadas.
   const isStrategic = !!(data && data.contract === STRATEGIC_CONTRACT);
   const view = isStrategic ? adaptStrategicContract(data) : null;
-  // ── UX-1: 3 slot fissi derivati dai dati backend già calcolati ──
-  const three = buildThreeOptions(view);
-  const firstSlot = three.directa ? 'directa' : three.giro ? 'giro' : three.alternativa ? 'alt' : null;
-  const [selectedSlot, setSelectedSlot] = useState(firstSlot);
-  const [showServiceLine, setShowServiceLine] = useState(false);
-  const selectedOption = three[selectedSlot === 'alt' ? 'alternativa' : selectedSlot] || null;
-  const selectOption = (opt) => labLog('preview-only', { slot: opt.slot, status: opt.status });
+  // ── UX-2: 3 bottoni dai proposals[] ranked del backend ──
+  const proposals3 = primaryProposals(view?.proposals);
+  const bestForCard = view?.bestProposal || {};
+  const allProposals = Array.isArray(view?.proposals) ? view.proposals : [];
+  const firstId = (allProposals[0] && allProposals[0].id) || (proposals3[0] && proposals3[0].id) || null;
+  const [selectedId, setSelectedId] = useState(firstId);
+  const [openGiro, setOpenGiro] = useState(null); // riga "Giros y huecos" espansa
+  const selectedProposal = allProposals.find((p) => p.id === selectedId) || allProposals[0] || null;
+  const selectedOpp = resolveProposalOpp(selectedProposal, view) || (view ? view.bestProposalOpp : null);
+  const selectProposal = (p) => labLog('preview-only', { id: p.id, kind: p.kind, status: p.status });
 
   // Sin contract strategic válido → empty-state seguro. La fixture mock fue
   // eliminada, así que aquí NO se renderiza ninguna propuesta inventada. En el
@@ -278,65 +282,108 @@ const PremiumPlannerPopup = ({
           <p className="ppp-lab-warn" role="status">⚠ {labWarning}</p>
         )}
 
-        {/* ── Header semplice: 3 opzioni fisse (Directa / Giro / Alternativa) ── */}
-        <section className="ppp-options3" aria-label="Opciones de entrega">
-          {['directa', 'giro', 'alt'].map((slot) => {
-            const opt = three[slot === 'alt' ? 'alternativa' : slot];
-            const isSel = selectedSlot === slot;
-            const tone = opt ? (toneStyles[opt.opp?.severity] || toneStyles.ok) : toneStyles.info;
+        {/* ── TOP: Mejor propuesta (izq) + mapa de zonas con la ruta (der) ── */}
+        <div className="ppp-top-grid">
+          <section className="ppp-best-card" aria-label="Mejor propuesta">
+            <div className="ppp-best-label">
+              <span>✦</span>
+              <strong>{bestForCard.label || 'Mejor propuesta'}</strong>
+            </div>
+            <h3>Entrega {bestForCard.entrega || '—'}</h3>
+            {bestForCard.routeLabel && <p className="ppp-type">{bestForCard.routeLabel}</p>}
+            {bestForCard.status && <p className="ppp-type">{statusLabels[bestForCard.status] || bestForCard.status}</p>}
+            {/* Botón real SOLO si el contenedor pasa onApplyHora (aplica la hora al
+                draft). Sin ese prop no se renderiza → cero no-op fantasma. */}
+            {onApplyHora && bestForCard.entrega && (
+              <button type="button" className="ppp-apply" onClick={() => onApplyHora(bestForCard.entrega)}>
+                Aplicar propuesta
+              </button>
+            )}
+          </section>
+
+          {/* La mappa riflette la proposta selezionata (default: la diretta/best). */}
+          <MiniZoneMap zoneMap={view.zoneMap} opp={selectedOpp} />
+        </div>
+
+        {/* ── 3 bottoni (più piccoli): proposals[] ranked del backend. not_recommended
+            resta fuori dai primari; slot mancanti → grigio/disabled. ── */}
+        <section className="ppp-props" aria-label="Otras opciones rápidas">
+          {[0, 1, 2].map((i) => {
+            const p = proposals3[i];
+            const opp = p ? resolveProposalOpp(p, view) : null;
+            const tone = p ? (toneStyles[opp?.severity] || toneStyles.ok) : toneStyles.info;
+            const isSel = p && selectedId === p.id;
             return (
               <button
-                key={slot}
+                key={p ? p.id : `empty-${i}`}
                 type="button"
-                className={`ppp-opt3${opt ? '' : ' is-empty'}${isSel ? ' is-active' : ''}`}
-                style={opt ? { '--tone': tone.accent, '--toneBg': tone.bg, '--toneBorder': tone.border } : undefined}
-                disabled={!opt}
-                aria-pressed={isSel}
-                onClick={() => { if (opt) { setSelectedSlot(slot); selectOption(opt); } }}
+                className={`ppp-prop${p ? '' : ' is-empty'}${isSel ? ' is-active' : ''}`}
+                style={p ? { '--tone': tone.accent, '--toneBg': tone.bg, '--toneBorder': tone.border } : undefined}
+                disabled={!p}
+                aria-pressed={!!isSel}
+                onClick={() => { if (p) { setSelectedId(p.id); selectProposal(p); } }}
               >
-                <span className="ppp-opt3-label">{opt ? opt.label : OPTION_EMPTY_COPY[slot]}</span>
-                {opt && <strong className="ppp-opt3-time">{opt.time || '—'}</strong>}
-                {opt && opt.status && <small className="ppp-opt3-st">{statusLabels[opt.status] || opt.status}</small>}
+                <span className="ppp-prop-time">{p ? (p.timeLabel || '—') : '—'}</span>
+                <span className="ppp-prop-title">{p ? (p.label || PROPOSAL_ROLE_COPY[p.kind] || 'Opción') : 'Sin opción'}</span>
+                {p && p.status && <small className="ppp-prop-st">{statusLabels[p.status] || p.status}</small>}
+                {p && !p.status && p.zoneLabel && <small className="ppp-prop-st">{p.zoneLabel}</small>}
               </button>
             );
           })}
         </section>
 
-        {/* ── Dettaglio espandibile (accordion inline) della opzione scelta.
-            RouteTimeline = renderer puro del campo additivo backend; MiniZoneMap
-            on-demand SOLO qui dentro (non più nel top). Nessun popup nuovo. ── */}
-        {selectedOption && (
-          <section className="ppp-detail" aria-label="Detalle de la opción">
-            <RouteTimeline routeTimeline={selectedOption.routeTimeline} />
-            {selectedOption.opp && <MiniZoneMap zoneMap={view.zoneMap} opp={selectedOption.opp} />}
-            {selectedOption.opp?.warning && <p className="ppp-preview-warn">⚠ {selectedOption.opp.warning}</p>}
-          </section>
-        )}
+        {/* ── Giros y huecos: OTROS giros de la tarde (no el pedido actual, que vive
+            arriba en card+mapa). Cada giro = una fila horizontal (salida → entrega →
+            regreso); click → despliega la línea vertical para decidir si insertar.
+            Datos reales del backend (serviceLine v2). Sin otros giros → empty-state
+            (la sección NO desaparece). ── */}
+        <section className="ppp-timeline-card">
+          <div className="ppp-card-title">
+            <h3><span>↻</span> Giros y huecos</h3>
+          </div>
+          {!(Array.isArray(view.serviceLine) && view.serviceLine.length > 0) ? (
+            <p className="ppp-sl-empty">No hay otros giros esta tarde · entrega directa sugerida arriba.</p>
+          ) : (
+            <div className="ppp-sl-rows">
+              {view.serviceLine.map((e, i) => {
+                const key = e.id != null ? String(e.id) : `sl-${i}`;
+                const open = openGiro === key;
+                return (
+                  <div className={`ppp-sl-row${open ? ' is-open' : ''}`} key={key}>
+                    <button
+                      type="button"
+                      className="ppp-sl-head"
+                      aria-expanded={open}
+                      onClick={() => setOpenGiro(open ? null : key)}
+                    >
+                      <span className="ppp-sl-zone">{e.zone}</span>
+                      <span className="ppp-sl-leg"><i>Salida</i><b>{e.salida || '—'}</b></span>
+                      <span className="ppp-sl-arrow" aria-hidden="true">→</span>
+                      <span className="ppp-sl-leg"><i>Entrega</i><b>{e.entrega || e.promised || '—'}</b></span>
+                      <span className="ppp-sl-arrow" aria-hidden="true">→</span>
+                      <span className="ppp-sl-leg"><i>Regreso</i><b>{e.regreso || '—'}</b></span>
+                      {Number.isFinite(e.pizzas) && e.pizzas > 0 && <span className="ppp-sl-pz">{e.pizzas} pz</span>}
+                      <span className="ppp-sl-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+                    </button>
+                    {open && (
+                      <div className="ppp-sl-detail">
+                        <RouteTimeline routeTimeline={serviceLineTimeline(e)} compact />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
-        {/* ── Línea de servicio (PLACEHOLDER UX-1): accordion semplice, solo se il
-            backend manda righe. Niente salida→entrega→regreso per giro finché il
-            contract serviceLine non lo espone (backend-first, fuori UX-1). ── */}
-        {Array.isArray(view.serviceLine) && view.serviceLine.length > 0 && (
-          <section className="ppp-serviceline" aria-label="Línea de servicio">
-            <button
-              type="button"
-              className="ppp-adv-toggle"
-              aria-expanded={showServiceLine}
-              onClick={() => setShowServiceLine(v => !v)}
-              style={{
-                width: '100%', textAlign: 'left', cursor: 'pointer', marginTop: 10,
-                background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: 10, color: '#cfcfd4', fontWeight: 800, fontSize: 13,
-                padding: '10px 14px',
-              }}
-            >
-              {showServiceLine ? '▾' : '▸'} Línea de servicio
-            </button>
-            {showServiceLine && (
-              <ul className="ppp-sl-list">
-                {view.serviceLine.map((e, i) => <li key={`sl-${i}`}>{serviceLineLabelOf(e)}</li>)}
-              </ul>
-            )}
+        {/* ── Notas del planner ── */}
+        {Array.isArray(view.plannerNotes) && view.plannerNotes.length > 0 && (
+          <section className="ppp-notes" aria-label="Notas del planner">
+            <h3><span>♧</span> Notas del planner</h3>
+            <ul>
+              {view.plannerNotes.map((note) => <li key={note}>{note}</li>)}
+            </ul>
           </section>
         )}
       </section>
@@ -559,15 +606,17 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
   );
 };
 
-// serviceLineLabelOf — label presentazionale di una riga serviceLine (lookup puro,
-// usato dal placeholder "Línea de servicio" UX-1). Niente calcolo, niente Date.now.
-const serviceLineLabelOf = (e) => {
-  if (typeof e === 'string') return e;
-  if (!e) return '';
-  const when = e.hora || e.eta || e.time || '';
-  const zone = e.zone || e.zoneLabel || '';
-  const label = e.label || e.title || '';
-  return [when, zone, label].filter(Boolean).join(' · ');
+// serviceLineTimeline — costruisce un routeTimeline (shape route-timeline-v2) da
+// una riga serviceLine usando SOLO i tempi reali del backend (salida/entrega/
+// regreso). Nessun calcolo: mappa 3 timestamp → 3 nodi per il render verticale
+// (Salida pizzería → Entrega zona → Regreso) dentro la fila espansa.
+const serviceLineTimeline = (e) => {
+  if (!e || typeof e !== 'object') return null;
+  const nodes = [];
+  if (e.salida) nodes.push({ seq: 1, type: 'departure', zone: 'Q1', eta: e.salida, label: 'Salida pizzería' });
+  if (e.entrega || e.promised) nodes.push({ seq: 2, type: 'delivery', zone: e.zone, eta: e.entrega || e.promised, label: `Pedido ${e.zone}`, promised: e.promised || null });
+  if (e.regreso) nodes.push({ seq: 3, type: 'return', zone: 'Q1', eta: e.regreso, label: 'Regreso' });
+  return { timeline: nodes, summary: null, risk: 'ok', operatorMessage: null };
 };
 
 const PREMIUM_PLANNER_POPUP_CSS = `
@@ -857,20 +906,39 @@ const PREMIUM_PLANNER_POPUP_CSS = `
   .ppp-rt-eta{ font-size:15px; }
 }
 
-/* ── UX-1: header 3 opzioni + dettaglio accordion + línea de servicio ── */
-.ppp-options3{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:18px; }
-.ppp-opt3{ display:flex; flex-direction:column; gap:4px; padding:14px; border-radius:12px;
-  background:var(--toneBg,rgba(255,255,255,0.03)); border:1px solid var(--toneBorder,rgba(255,255,255,0.10));
-  color:#F7F8FA; cursor:pointer; text-align:left; }
-.ppp-opt3.is-active{ box-shadow:0 0 0 2px var(--tone,#58E86B) inset; }
-.ppp-opt3.is-empty{ opacity:0.45; cursor:not-allowed; background:rgba(255,255,255,0.02); border-style:dashed; }
-.ppp-opt3-label{ font-size:12px; font-weight:800; letter-spacing:0.3px; }
-.ppp-opt3-time{ font-size:22px; font-weight:900; color:var(--tone,#F7F8FA); }
-.ppp-opt3-st{ font-size:11px; color:#9aa3ad; }
+/* ── UX-2: dettaglio opzione + línea de servicio ── */
 .ppp-detail{ margin-bottom:18px; }
 .ppp-serviceline{ margin-top:6px; }
 .ppp-sl-list{ margin:8px 0 0; padding-left:18px; font-size:12px; color:#aeb6bf; }
-@media (max-width:680px){ .ppp-options3{ grid-template-columns:1fr; } }
+
+/* ── UX-2: "Giros y huecos" — righe espandibili (salida → entrega → regreso) ── */
+.ppp-sl-rows{ display:flex; flex-direction:column; gap:8px; }
+.ppp-sl-row{ border:1px solid rgba(83,112,131,0.40); border-radius:9px; background:rgba(5,14,20,0.46); overflow:hidden; }
+.ppp-sl-row.is-open{ border-color:rgba(88,239,117,0.42); }
+.ppp-sl-head{ width:100%; display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; padding:12px 16px; border:0; background:transparent; color:#EAF0F2; cursor:pointer; text-align:left; }
+.ppp-sl-zone{ min-width:34px; padding:3px 9px; border:1px solid rgba(120,140,152,0.45); border-radius:6px; color:#F1F6F7; font-size:14px; font-weight:820; }
+.ppp-sl-leg{ display:flex; flex-direction:column; line-height:1.1; }
+.ppp-sl-leg i{ font-style:normal; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#8E99A1; }
+.ppp-sl-leg b{ font-size:16px; font-weight:760; font-variant-numeric:tabular-nums; color:#EEF3F4; }
+.ppp-sl-arrow{ color:#58E86B; font-weight:800; }
+.ppp-sl-pz{ color:#9CA6AD; font-size:13px; font-weight:650; }
+.ppp-sl-caret{ margin-left:auto; color:#9CA6AD; font-size:14px; }
+.ppp-sl-detail{ padding:0 16px 14px; }
+.ppp-sl-detail .ppp-rt{ margin-top:6px; }
+.ppp-sl-empty{ margin:0; padding:14px 16px; border:1px dashed rgba(120,140,152,0.40); border-radius:9px; background:rgba(5,14,20,0.40); color:#9CA6AD; font-size:14px; font-weight:560; }
+
+/* ── UX-2: riga "Otras opciones rápidas" — 3 bottoni compatti (più piccoli) ── */
+.ppp-props{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
+.ppp-prop{ display:flex; flex-direction:column; gap:3px; padding:11px 13px; border-radius:10px;
+  background:var(--toneBg,rgba(255,255,255,0.03)); border:1px solid var(--toneBorder,rgba(255,255,255,0.12));
+  color:#EAF0F2; cursor:pointer; text-align:left; transition:transform .08s ease, box-shadow .12s ease; }
+.ppp-prop:hover:not(:disabled){ transform:translateY(-1px); }
+.ppp-prop.is-active{ box-shadow:0 0 0 2px var(--tone,#58E86B) inset; }
+.ppp-prop.is-empty{ opacity:0.42; cursor:default; filter:grayscale(0.6); background:rgba(255,255,255,0.02); border-style:dashed; }
+.ppp-prop-time{ font-size:18px; font-weight:820; font-variant-numeric:tabular-nums; color:var(--tone,#EAF0F2); }
+.ppp-prop-title{ font-size:13px; font-weight:760; color:#F1F5F6; }
+.ppp-prop-st{ font-size:11px; font-weight:600; color:#9CA6AD; }
+@media (max-width:680px){ .ppp-props{ grid-template-columns:1fr; } }
 `;
 
 export default PremiumPlannerPopup;

@@ -1896,6 +1896,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
             manualRouteWarning={manualRouteWarning}
             onCalcManualRoute={calcManualRoute}
             onClearManualRoute={clearManualRoute}
+            onApplyHora={(t) => { if (t) { setHoraFromOperator(t); closePlannerLab(); } }}
           />
         ) : (
           <PlannerStatusOverlay
