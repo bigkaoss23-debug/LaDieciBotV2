@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Suoni from './sounds';
 import { C, G, ORDENES_INIT, WA_INIT, blockedTels } from './constants';
 import { sb, api, auth, SUPABASE_URL, SUPABASE_KEY } from './api';
+import { shouldSafetyReload, isWsZombie } from './utils/realtimeFreshness';
 
 import Splash from './components/Splash';
 import Home from './components/Home';
@@ -170,13 +171,21 @@ export default function App() {
     } catch(e) { notify("❌ Error", C.rosso); }
   };
 
-  // ── Supabase Realtime + initial load (ZERO POLLING) ──
+  // ── Supabase Realtime + safety polling ──
+  // Realtime per l'aggiornamento immediato; safety poll SEMPRE attivo come rete
+  // anti-"Cocina stantia" se il socket diventa zombie (aperto ma muto).
   useEffect(()=>{
     let mounted = true;
+    // HOTFIX cocina-realtime-polling: marcatori di freschezza (closure-scope).
+    let lastLoadAt = 0;          // ultimo loadAll (qualsiasi origine)
+    let lastWsMsgAt = Date.now(); // ultimo messaggio ricevuto sul WebSocket
 
     // Initial load. Niente più skipLoadUntil: il backend è atomico.
-    const loadAll = async () => {
-      setSyncStatus("syncing");
+    // opts.silent=true → ricarica in background senza toccare syncStatus (no flicker UI).
+    const loadAll = async (opts = {}) => {
+      const silent = opts.silent === true;
+      lastLoadAt = Date.now();
+      if (!silent) setSyncStatus("syncing");
       try {
         const [rOrdenes, rWA, rConv] = await Promise.all([api.getOrdenes(), api.getWaMsgs(), sb.select("conv","stato_ordine=eq.confermata")]);
         loadSuggerimenti();
@@ -260,8 +269,8 @@ export default function App() {
           }
         }
         if (mounted && Array.isArray(rConv)) setConvConfermata(rConv);
-        setSyncStatus("ok");
-      } catch(e) { if (mounted) setSyncStatus("error"); }
+        if (!silent) setSyncStatus("ok");
+      } catch(e) { if (!silent && mounted) setSyncStatus("error"); }
     };
     loadAll();
 
@@ -276,6 +285,7 @@ export default function App() {
         ws = new WebSocket(wsUrl);
         ws.onopen = () => {
           wsConnected = true;
+          lastWsMsgAt = Date.now();
           // Join ordenes channel
           ws.send(JSON.stringify({topic:"realtime:public:ordenes",event:"phx_join",payload:{config:{broadcast:{self:false},postgres_changes:[{event:"*",schema:"public",table:"ordenes"}]}},ref:"1"}));
           // Join wa_msgs channel
@@ -290,6 +300,9 @@ export default function App() {
           }, 30000);
         };
         ws.onmessage = (evt) => {
+          // Qualsiasi messaggio (anche il phx_reply all'heartbeat) prova che il
+          // socket è VIVO. Lo registriamo per il watchdog anti-zombie.
+          lastWsMsgAt = Date.now();
           try {
             const msg = JSON.parse(evt.data);
             if (msg.event === "postgres_changes") {
@@ -312,14 +325,42 @@ export default function App() {
 
     connectRealtime();
 
-    // Fallback polling ogni 5s — attivo solo se WebSocket non è connesso
-    const fallbackPoll = setInterval(() => { if (mounted && !wsConnected) loadAll(); }, 5000);
+    // HOTFIX cocina-realtime-polling — rete anti "Cocina stantia".
+    // PRIMA: il poll girava SOLO se !wsConnected → un socket "zombie" (aperto ma
+    // muto, senza onclose) lasciava wsConnected=true e il polling spento, quindi
+    // le card EN_COCINA non comparivano finché non arrivava per caso un altro evento.
+    // ORA: safety poll SEMPRE attivo. Controlla ogni 5s e ricarica (in background,
+    // silent → nessun flicker) se i dati sono vecchi di oltre SAFETY_STALE_MS,
+    // a prescindere da wsConnected. Il realtime resta per l'aggiornamento immediato;
+    // quando consegna eventi, lastLoadAt è recente e il poll è un no-op.
+    const SAFETY_STALE_MS = 7000;
+    const safetyPoll = setInterval(() => {
+      if (!mounted) return;
+      if (shouldSafetyReload(Date.now(), lastLoadAt, SAFETY_STALE_MS)) {
+        try { console.debug("[cocina] safety-poll reload (stale " + Math.round((Date.now()-lastLoadAt)/1000) + "s)"); } catch(e) {}
+        loadAll({ silent: true });
+      }
+    }, 5000);
+
+    // Watchdog socket-zombie: un socket che crediamo connesso ma da cui non arriva
+    // PIÙ nulla (nemmeno le risposte agli heartbeat ogni 30s) è morto in silenzio.
+    // Se non riceviamo messaggi WS da oltre 35s, forziamo un reconnect: onclose →
+    // ricollega dopo 3s e ri-esegue loadAll, risanando la subscription realtime.
+    const WS_SILENCE_MS = 35000;
+    const wsWatchdog = setInterval(() => {
+      if (!mounted) return;
+      if (isWsZombie(Date.now(), lastWsMsgAt, wsConnected, WS_SILENCE_MS)) {
+        try { console.debug("[cocina] ws-watchdog: socket muto da >35s, reconnect"); } catch(e) {}
+        try { if (ws) ws.close(); } catch(e) {}
+      }
+    }, 10000);
 
     return () => {
       mounted = false;
       if (ws) ws.close();
       if (heartbeat) clearInterval(heartbeat);
-      clearInterval(fallbackPoll);
+      clearInterval(safetyPoll);
+      clearInterval(wsWatchdog);
     };
   },[]);
   return (
