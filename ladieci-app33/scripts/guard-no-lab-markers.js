@@ -17,7 +17,7 @@ const ALLOW_V1 = process.env.ALLOW_V1 === "1";
 
 // Marker univoci di V1 / Planner / Lab (NON presenti nel prod pulito 777ae55).
 const MARKERS = [
-  "ppp-opt3",
+  "ppp-prop",
   "ppp-detail",
   "Sin giro compatible",
   "Sin alternativa",

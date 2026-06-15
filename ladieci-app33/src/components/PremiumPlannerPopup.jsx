@@ -197,6 +197,20 @@ const resolveProposalOpp = (proposal, view) => {
   return null;
 };
 
+// rowKey di una riga serviceLine: DEVE combaciare col render delle righe e con il
+// lookup del legame proposta↔giro. Lookup puro, nessun calcolo.
+const slRowKey = (e, i) => (e && e.id != null ? String(e.id) : `sl-${i}`);
+
+// giroId trasportato da una proposta: diretto (proposal.giroId) o dalla sua opp
+// sorgente (opp.giroId). È la chiave REALE del backend per legare proposta↔giro;
+// se manca, la proposta non ha riga collegabile (nessun dato inventato qui).
+const proposalGiroId = (proposal, view) => {
+  if (!proposal) return null;
+  if (proposal.giroId != null) return String(proposal.giroId);
+  const opp = resolveProposalOpp(proposal, view);
+  return opp && opp.giroId != null ? String(opp.giroId) : null;
+};
+
 const PremiumPlannerPopup = ({
   onClose,
   data = null,
@@ -225,12 +239,66 @@ const PremiumPlannerPopup = ({
   const proposals3 = primaryProposals(view?.proposals);
   const bestForCard = view?.bestProposal || {};
   const allProposals = Array.isArray(view?.proposals) ? view.proposals : [];
-  const firstId = (allProposals[0] && allProposals[0].id) || (proposals3[0] && proposals3[0].id) || null;
+  const serviceLine = Array.isArray(view?.serviceLine) ? view.serviceLine : [];
+  // Default = prima proposta PRIMARIA (mai una not_recommended come selezione iniziale).
+  const firstId = (proposals3[0] && proposals3[0].id) || (allProposals[0] && allProposals[0].id) || null;
   const [selectedId, setSelectedId] = useState(firstId);
   const [openGiro, setOpenGiro] = useState(null); // riga "Giros y huecos" espansa
   const selectedProposal = allProposals.find((p) => p.id === selectedId) || allProposals[0] || null;
-  const selectedOpp = resolveProposalOpp(selectedProposal, view) || (view ? view.bestProposalOpp : null);
-  const selectProposal = (p) => labLog('preview-only', { id: p.id, kind: p.kind, status: p.status });
+
+  // ── Ponte proposta ↔ riga "Giros y huecos" (per giroId reale del backend) ──
+  // La proposta insertion porta il giroId del giro su cui inserisce; la riga
+  // serviceLine porta il suo id. Il link è giroId === row.id. Lookup puro.
+  const rowKeyForProposal = (p) => {
+    const gid = proposalGiroId(p, view);
+    if (gid == null) return null;
+    const idx = serviceLine.findIndex((e, i) => slRowKey(e, i) === gid);
+    return idx >= 0 ? slRowKey(serviceLine[idx], idx) : null;
+  };
+  const proposalForRowKey = (key) => {
+    if (key == null) return null;
+    return allProposals.find((p) => proposalGiroId(p, view) === key) || null;
+  };
+
+  // Clic su un box proposta: seleziona + apre/scrolla la riga giro collegata (se c'è).
+  const onSelectProposal = (p) => {
+    if (!p) return;
+    setSelectedId(p.id);
+    const rk = rowKeyForProposal(p);
+    setOpenGiro(rk); // apre la riga collegata, o null (collassa) se la proposta non ha giro
+    if (rk && typeof document !== 'undefined') {
+      const el = document.getElementById(`ppp-sl-${rk}`);
+      try { if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) {}
+    }
+    labLog('preview-only', { id: p.id, kind: p.kind, status: p.status });
+  };
+
+  // Clic su una riga giro: espande/chiude; se la riga è collegata a una proposta,
+  // sincronizza la selezione così che mappa + Aplicar la seguano.
+  const onToggleRow = (key) => {
+    const willOpen = openGiro !== key;
+    setOpenGiro(willOpen ? key : null);
+    if (willOpen) {
+      const p = proposalForRowKey(key);
+      if (p) setSelectedId(p.id);
+    }
+  };
+
+  // ── Mappa: riflette la SELEZIONE (proposta o riga giro), mai disaccoppiata. ──
+  // Se è aperta una riga giro che NON corrisponde a una proposta, la mappa mostra
+  // la rotta di QUELLA riga (sintetizzata dai soli timestamp/zona del backend).
+  const openRowEntry = openGiro != null ? (serviceLine.find((e, i) => slRowKey(e, i) === openGiro) || null) : null;
+  const openRowProposal = proposalForRowKey(openGiro);
+  const selectedOpp = (openRowEntry && !openRowProposal)
+    ? serviceLineOpp(openRowEntry, openGiro)
+    : (resolveProposalOpp(selectedProposal, view) || (view ? view.bestProposalOpp : null));
+
+  // ── Aplicar: applica la proposta SELEZIONATA; mai una no_recomendado/blocked.
+  // Se la selezione non è applicabile → fallback sicuro alla mejor/recommended. ──
+  const isApplicable = (p) => !!p && p.kind !== 'not_recommended' && p.status !== 'no_recomendado' && !p.blocked;
+  const applyProposal = isApplicable(selectedProposal) ? selectedProposal : null;
+  const applyTime = (applyProposal && applyProposal.timeLabel) || bestForCard.entrega || null;
+  const applyIsRecommended = !applyProposal || applyProposal.timeLabel === bestForCard.entrega;
 
   // Sin contract strategic válido → empty-state seguro. La fixture mock fue
   // eliminada, así que aquí NO se renderiza ninguna propuesta inventada. En el
@@ -294,9 +362,9 @@ const PremiumPlannerPopup = ({
             {bestForCard.status && <p className="ppp-type">{statusLabels[bestForCard.status] || bestForCard.status}</p>}
             {/* Botón real SOLO si el contenedor pasa onApplyHora (aplica la hora al
                 draft). Sin ese prop no se renderiza → cero no-op fantasma. */}
-            {onApplyHora && bestForCard.entrega && (
-              <button type="button" className="ppp-apply" onClick={() => onApplyHora(bestForCard.entrega)}>
-                Aplicar propuesta
+            {onApplyHora && applyTime && (
+              <button type="button" className="ppp-apply" onClick={() => onApplyHora(applyTime)}>
+                {applyIsRecommended ? 'Aplicar propuesta' : `Aplicar ${applyTime}`}
               </button>
             )}
           </section>
@@ -321,7 +389,7 @@ const PremiumPlannerPopup = ({
                 style={p ? { '--tone': tone.accent, '--toneBg': tone.bg, '--toneBorder': tone.border } : undefined}
                 disabled={!p}
                 aria-pressed={!!isSel}
-                onClick={() => { if (p) { setSelectedId(p.id); selectProposal(p); } }}
+                onClick={() => onSelectProposal(p)}
               >
                 <span className="ppp-prop-time">{p ? (p.timeLabel || '—') : '—'}</span>
                 <span className="ppp-prop-title">{p ? (p.label || PROPOSAL_ROLE_COPY[p.kind] || 'Opción') : 'Sin opción'}</span>
@@ -341,20 +409,22 @@ const PremiumPlannerPopup = ({
           <div className="ppp-card-title">
             <h3><span>↻</span> Giros y huecos</h3>
           </div>
-          {!(Array.isArray(view.serviceLine) && view.serviceLine.length > 0) ? (
+          {!(serviceLine.length > 0) ? (
             <p className="ppp-sl-empty">No hay otros giros esta tarde · entrega directa sugerida arriba.</p>
           ) : (
             <div className="ppp-sl-rows">
-              {view.serviceLine.map((e, i) => {
-                const key = e.id != null ? String(e.id) : `sl-${i}`;
+              {serviceLine.map((e, i) => {
+                const key = slRowKey(e, i);
                 const open = openGiro === key;
+                const linkedP = proposalForRowKey(key);
+                const rowActive = !!(linkedP && selectedId === linkedP.id);
                 return (
-                  <div className={`ppp-sl-row${open ? ' is-open' : ''}`} key={key}>
+                  <div className={`ppp-sl-row${open ? ' is-open' : ''}${rowActive ? ' is-active' : ''}`} id={`ppp-sl-${key}`} key={key}>
                     <button
                       type="button"
                       className="ppp-sl-head"
                       aria-expanded={open}
-                      onClick={() => setOpenGiro(open ? null : key)}
+                      onClick={() => onToggleRow(key)}
                     >
                       <span className="ppp-sl-zone">{e.zone}</span>
                       <span className="ppp-sl-leg"><i>Salida</i><b>{e.salida || '—'}</b></span>
@@ -617,6 +687,26 @@ const serviceLineTimeline = (e) => {
   if (e.entrega || e.promised) nodes.push({ seq: 2, type: 'delivery', zone: e.zone, eta: e.entrega || e.promised, label: `Pedido ${e.zone}`, promised: e.promised || null });
   if (e.regreso) nodes.push({ seq: 3, type: 'return', zone: 'Q1', eta: e.regreso, label: 'Regreso' });
   return { timeline: nodes, summary: null, risk: 'ok', operatorMessage: null };
+};
+
+// serviceLineOpp — opp PRESENTAZIONALE minima per far riflettere sulla mappa una
+// riga "Giros y huecos" che NON corrisponde a nessuna proposta. Usa SOLO la
+// timeline già derivata dai timestamp/zona del backend (serviceLineTimeline):
+// nessun ETA/stato/canale inventato, solo le zone reali per disegnare la rotta.
+const serviceLineOpp = (e, key) => {
+  const rt = serviceLineTimeline(e);
+  const zones = rt && Array.isArray(rt.timeline)
+    ? rt.timeline.filter((n) => n.type === 'delivery' && n.zone).map((n) => String(n.zone))
+    : [];
+  return {
+    id: `slopp-${key}`,
+    severity: 'ok',
+    blocked: false,
+    channel: null,
+    routeZones: zones,
+    mapPath: zones.length ? ['Q1', ...zones] : [],
+    routeTimeline: rt,
+  };
 };
 
 const PREMIUM_PLANNER_POPUP_CSS = `
@@ -915,6 +1005,7 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-sl-rows{ display:flex; flex-direction:column; gap:8px; }
 .ppp-sl-row{ border:1px solid rgba(83,112,131,0.40); border-radius:9px; background:rgba(5,14,20,0.46); overflow:hidden; }
 .ppp-sl-row.is-open{ border-color:rgba(88,239,117,0.42); }
+.ppp-sl-row.is-active{ border-color:rgba(38,220,235,0.55); box-shadow:0 0 0 1px rgba(38,220,235,0.30); }
 .ppp-sl-head{ width:100%; display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; padding:12px 16px; border:0; background:transparent; color:#EAF0F2; cursor:pointer; text-align:left; }
 .ppp-sl-zone{ min-width:34px; padding:3px 9px; border:1px solid rgba(120,140,152,0.45); border-radius:6px; color:#F1F6F7; font-size:14px; font-weight:820; }
 .ppp-sl-leg{ display:flex; flex-direction:column; line-height:1.1; }
