@@ -1,5 +1,5 @@
 // scripts/generate-functions-public-env.js
-// ENV_SPLIT_V1_17 — genera netlify/functions/_publicEnv.generated.js a build-time.
+// ENV_SPLIT_V1_17 — genera netlify/functions/_publicEnvGenerated.js a build-time.
 //
 // Problema (V1_07 → V1_16): sul sito git-linked V1 le Netlify Functions runtime
 // NON ricevono lo store env utente; arrivano solo poche var account-level. Le
@@ -24,7 +24,10 @@ const PROD_SITE_ID      = "02bd4c7a-a50b-4964-90da-8c1af1122932";
 const PROD_BACKEND_REF  = "ladiecibot-production";
 const PROD_SUPABASE_REF = "wnswassgfuuivmfwjxsf";
 
-const OUT = path.join(__dirname, '..', 'netlify', 'functions', '_publicEnv.generated.js');
+// Nome SENZA punti: Netlify valida i nomi delle function (solo alfanumerici,
+// trattino, underscore) su ogni .js nella functions dir — un punto nel nome fa
+// fallire il bundling ("Incorrect function names").
+const OUT = path.join(__dirname, '..', 'netlify', 'functions', '_publicEnvGenerated.js');
 
 const siteId     = (process.env.SITE_ID || "").trim();
 const ctx        = process.env.CONTEXT || "local";
@@ -72,7 +75,7 @@ if (SUPABASE_URL.includes(PROD_SUPABASE_REF)) {
 }
 
 const body =
-`// _publicEnv.generated.js — GENERATO da scripts/generate-functions-public-env.js (ENV_SPLIT_V1_17).
+`// _publicEnvGenerated.js — GENERATO da scripts/generate-functions-public-env.js (ENV_SPLIT_V1_17).
 // NON committare, NON modificare a mano. Rigenerato ad ogni build non-production.
 // Contiene SOLO config pubbliche (URL backend V1, URL Supabase staging, anon key).
 // Nessun segreto server (service_role / JWT / RAILWAY / WA / ANTHROPIC) deve mai finire qui.

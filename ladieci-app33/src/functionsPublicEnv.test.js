@@ -17,7 +17,7 @@ const {
 } = require('../netlify/functions/_env');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'generate-functions-public-env.js');
-const OUT    = path.join(__dirname, '..', 'netlify', 'functions', '_publicEnv.generated.js');
+const OUT    = path.join(__dirname, '..', 'netlify', 'functions', '_publicEnvGenerated.js');
 
 // env finte ma realistiche (non-segrete)
 const STG_BACKEND  = 'https://fearless-reverence-production-80bc.up.railway.app';
@@ -25,7 +25,7 @@ const STG_SUPA_URL = 'https://tdikhfeinufaahagmpjz.supabase.co';
 const STG_ANON     = 'sb_publishable_qMYSRpFm1TQ4S04nD8Bw3Q_7Fc92qaS';
 
 // ─── A) resolver con generated iniettato ─────────────────────────────────────
-describe('V1_17 resolver con _publicEnv.generated', () => {
+describe('V1_17 resolver con _publicEnvGenerated', () => {
   const generated = {
     BACKEND_API_URL: STG_BACKEND + '/api',
     SUPABASE_URL: STG_SUPA_URL,

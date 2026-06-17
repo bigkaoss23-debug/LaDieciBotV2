@@ -3,7 +3,7 @@
 //
 // Ordine di risoluzione:
 //   1) process.env (store Netlify / build env) — sorgente preferita.
-//   2) _publicEnv.generated.js (V1_17) — file pubblico materializzato a build-time
+//   2) _publicEnvGenerated.js (V1_17) — file pubblico materializzato a build-time
 //      dallo script generate-functions-public-env.js, usato SOLO in non-prod,
 //      perché sul sito git-linked V1 le functions non ricevono lo store env utente.
 //   3) fallback default PRODUCTION — permesso SOLO sul sito di produzione reale
@@ -35,7 +35,7 @@ function isStaging(env)  { return siteId(env) === STAGING_SITE_ID; }
 // file non esiste → {} (nessun throw). Il modulo è opzionale per definizione.
 function loadGenerated() {
   try {
-    return require('./_publicEnv.generated.js') || {};
+    return require('./_publicEnvGenerated.js') || {};
   } catch (e) {
     return {};
   }
