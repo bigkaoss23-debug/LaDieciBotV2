@@ -56,4 +56,27 @@ describe('ENV_SPLIT_V1_08 fail-closed config', () => {
     const pkg = read('../package.json');
     expect(pkg).toMatch(/guard-env-fail-closed\.js/);   // wired in prebuild
   });
+
+  // ── ENV_SPLIT_V1_12 — base URL backend (/status, /health) env-based ─────────
+  test('utils/backendBase.js: REACT_APP_BACKEND_API_URL + fallback gated dal build-guard', () => {
+    const s = read('./utils/backendBase.js');
+    expect(s).toMatch(/process\.env\.REACT_APP_BACKEND_API_URL/);
+    expect(s).toMatch(/guard-env-fail-closed/);          // dichiara il gating
+    // il default prod può vivere SOLO qui (resolver dedicato), non nei componenti
+    expect(s).toMatch(/ladiecibot-production\.up\.railway\.app/);
+  });
+
+  test('src/api.js e ServicioPage.jsx: NESSUN backend prod hardcoded (V1/staging safe)', () => {
+    expect(read('./api.js')).not.toMatch(/ladiecibot-production/);
+    expect(read('./components/ServicioPage.jsx')).not.toMatch(/ladiecibot-production/);
+    // usano il resolver env-based condiviso
+    expect(read('./api.js')).toMatch(/BACKEND_BASE_URL/);
+    expect(read('./components/ServicioPage.jsx')).toMatch(/BACKEND_BASE_URL/);
+  });
+
+  test('build-guard: fail-closed anche sul backend (REACT_APP_BACKEND_API_URL)', () => {
+    const g = read('../scripts/guard-env-fail-closed.js');
+    expect(g).toMatch(/REACT_APP_BACKEND_API_URL/);
+    expect(g).toMatch(/ladiecibot-production/);          // ref prod backend vietato in non-prod
+  });
 });

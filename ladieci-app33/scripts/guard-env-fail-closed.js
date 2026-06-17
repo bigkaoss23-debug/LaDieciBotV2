@@ -14,11 +14,14 @@
 const PROD_SITE_ID    = "02bd4c7a-a50b-4964-90da-8c1af1122932";
 const STAGING_SITE_ID = "a3ad035a-e73f-4da3-8873-6403e31f04b6";
 const PROD_REF        = "wnswassgfuuivmfwjxsf";
+const PROD_BACKEND_REF = "ladiecibot-production"; // ENV_SPLIT_V1_12
 
-const siteId = (process.env.SITE_ID || "").trim();
-const ctx    = process.env.CONTEXT || "local";
-const url    = (process.env.REACT_APP_SUPABASE_URL || "").trim();
-const key    = (process.env.REACT_APP_SUPABASE_ANON_KEY || "").trim();
+const siteId  = (process.env.SITE_ID || "").trim();
+const ctx     = process.env.CONTEXT || "local";
+const url     = (process.env.REACT_APP_SUPABASE_URL || "").trim();
+const key     = (process.env.REACT_APP_SUPABASE_ANON_KEY || "").trim();
+// ENV_SPLIT_V1_12 — anche la base URL del backend (/status, /health) è fail-closed.
+const backend = (process.env.REACT_APP_BACKEND_API_URL || "").trim();
 const isRealProd = siteId === PROD_SITE_ID;
 
 function fail(msg) {
@@ -35,13 +38,18 @@ if (isRealProd) {
 const missing = [];
 if (!url) missing.push("REACT_APP_SUPABASE_URL");
 if (!key) missing.push("REACT_APP_SUPABASE_ANON_KEY");
+if (!backend) missing.push("REACT_APP_BACKEND_API_URL");
 if (missing.length) {
   fail("build NON-production (SITE_ID='" + (siteId || "?") + "', CONTEXT='" + ctx +
     "') senza " + missing.join(", ") +
-    ". Impostare le env Supabase staging esplicite (fail-closed: niente default prod).");
+    ". Impostare le env staging esplicite (fail-closed: niente default prod).");
 }
 if (url.includes(PROD_REF)) {
   fail("build NON-production punta a Supabase PROD (" + PROD_REF +
+    "). Vietato in V1/staging.");
+}
+if (backend.includes(PROD_BACKEND_REF)) {
+  fail("build NON-production punta al backend PROD (" + PROD_BACKEND_REF +
     "). Vietato in V1/staging.");
 }
 

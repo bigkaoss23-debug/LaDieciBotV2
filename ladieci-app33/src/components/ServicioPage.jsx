@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { C, useWidth, blockedTels, MAX_PIZZE_ORA, LOGO_RED_SRC, genId, tot, calcTotale } from '../constants';
 import { sb, api, auth } from '../api';
+import { BACKEND_BASE_URL } from '../utils/backendBase';
 import { parseEstadoTerminalError } from '../utils/orderModifyError';
 import Suoni from '../sounds';
 import TabWA from './wa/TabWA';
@@ -151,7 +152,9 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   const failCountRef = useRef(0);
   const alertedRef = useRef(false);
 
-  const PING_URL = "https://ladiecibot-production.up.railway.app/health";
+  // Base URL env-based (BACKEND_BASE_URL) — niente hardcode prod: in V1/staging
+  // il watchdog pinga il backend staging, mai il backend di produzione.
+  const PING_URL = `${BACKEND_BASE_URL}/health`;
   const PING_INTERVAL = 30000;
 
   useEffect(() => {
