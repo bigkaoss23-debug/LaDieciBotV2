@@ -173,8 +173,8 @@ const adaptStrategicContract = (contract) => {
 // primario. Ogni proposal porta id (= opp.id) per risolvere l'opportunity
 // sorgente e disegnare la rotta sulla mappa.
 const PROPOSAL_ROLE_COPY = {
-  direct: 'Directa',
-  insertion: 'Giro compatible',
+  direct: 'Directo',
+  insertion: 'Añadir al giro',
   alternative: 'Alternativa',
   not_recommended: 'No recomendado',
 };
@@ -237,8 +237,22 @@ const PremiumPlannerPopup = ({
   const view = isStrategic ? adaptStrategicContract(data) : null;
   // ── UX-2: 3 bottoni dai proposals[] ranked del backend ──
   const proposals3 = primaryProposals(view?.proposals);
-  const bestForCard = view?.bestProposal || {};
   const allProposals = Array.isArray(view?.proposals) ? view.proposals : [];
+  // "Mejor propuesta" = la proposta RECOMMENDED scelta dal backend (rank 1),
+  // non più il diretto fisso: quando il diretto è in conflitto rider il backend
+  // promuove il giro compatibile come recommended → la card lo riflette. Render
+  // puro (nessun calcolo qui): legge i campi GIÀ decisi dal contract.
+  const recommendedProposal = allProposals.find((p) => p && p.recommended) || proposals3[0] || null;
+  const bestForCard = recommendedProposal
+    ? {
+        label: 'Mejor propuesta',
+        entrega: recommendedProposal.timeLabel || (view?.bestProposal && view.bestProposal.entrega) || null,
+        status: recommendedProposal.status || (view?.bestProposal && view.bestProposal.status) || null,
+        routeLabel: recommendedProposal.label
+          || PROPOSAL_ROLE_COPY[recommendedProposal.kind]
+          || (view?.bestProposal && view.bestProposal.routeLabel) || null,
+      }
+    : (view?.bestProposal || {});
   const serviceLine = Array.isArray(view?.serviceLine) ? view.serviceLine : [];
   // Default = prima proposta PRIMARIA (mai una not_recommended come selezione iniziale).
   const firstId = (proposals3[0] && proposals3[0].id) || (allProposals[0] && allProposals[0].id) || null;
