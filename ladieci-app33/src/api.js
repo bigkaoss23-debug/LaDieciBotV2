@@ -15,8 +15,12 @@ const PROXY_URL = "/api/proxy";
 const AUTH_URL = "/api/auth";
 
 // ═══ SUPABASE (anon key — public by design, RLS protegge i sensibili) ═══
-const SUPABASE_URL = "https://wnswassgfuuivmfwjxsf.supabase.co";
-const SUPABASE_KEY = "sb_publishable_esObmXoAcWH9z27Sj_-jtw_PO0VeL5O";
+// Env-based (build-time CRA, prefisso REACT_APP_): production NON imposta nulla →
+// usa i default prod. Netlify V1 staging imposta REACT_APP_SUPABASE_URL /
+// REACT_APP_SUPABASE_ANON_KEY = progetto staging, così il frontend V1 legge il DB
+// staging e non prod. Nessun segreto qui: la anon key è public by design.
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || "https://wnswassgfuuivmfwjxsf.supabase.co";
+const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || "sb_publishable_esObmXoAcWH9z27Sj_-jtw_PO0VeL5O";
 
 // Chiave di cache "edificio-level" — due clienti nello stesso condominio
 // condividono la stessa chiave (stesso edificio = stessa geocodifica).

@@ -6,9 +6,12 @@
 const crypto = require('crypto');
 
 const JWT_SECRET      = process.env.JWT_SECRET || "CHANGE_ME_IN_NETLIFY_ENV";
-const SUPABASE_URL    = "https://wnswassgfuuivmfwjxsf.supabase.co";
-// Try service key first, fall back to anon key (APP_PIN is publicly readable via RLS)
-const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || "sb_publishable_esObmXoAcWH9z27Sj_-jtw_PO0VeL5O";
+// Env-based: production NON imposta SUPABASE_URL → usa default prod. Netlify V1
+// staging imposta SUPABASE_URL = progetto staging così il PIN viene letto dal DB
+// staging (config), non da prod.
+const SUPABASE_URL    = process.env.SUPABASE_URL || "https://wnswassgfuuivmfwjxsf.supabase.co";
+// Try service key first, poi anon/publishable (APP_PIN è leggibile via RLS).
+const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || "sb_publishable_esObmXoAcWH9z27Sj_-jtw_PO0VeL5O";
 const MAX_ATTEMPTS    = 5;
 const BLOCK_MS        = 15 * 60 * 1000; // 15 minutes
 

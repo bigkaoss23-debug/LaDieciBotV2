@@ -5,7 +5,15 @@
 const crypto = require('crypto');
 
 const RAILWAY_API_KEY = process.env.RAILWAY_API_KEY;
-const RAILWAY_URL = "https://ladiecibot-production.up.railway.app/api";
+// Backend URL via env: production NON imposta BACKEND_API_URL → usa default prod
+// (nessun cambio di comportamento). Netlify V1 staging imposta BACKEND_API_URL =
+// URL del backend V1 (Railway V1) così il proxy V1 non colpisce il backend prod.
+const DEFAULT_BACKEND = "https://ladiecibot-production.up.railway.app/api";
+const RAILWAY_URL = (process.env.BACKEND_API_URL && process.env.BACKEND_API_URL.trim())
+  ? process.env.BACKEND_API_URL.trim().replace(/\/+$/, "")
+  : DEFAULT_BACKEND;
+// log safe: solo la MODALITÀ (default prod vs override), mai URL/segreti
+console.log("[api proxy] backend mode:", RAILWAY_URL === DEFAULT_BACKEND ? "default(prod)" : "env-override");
 // Base swithout the /api suffix — usato per le route REST esplicite del backend
 // (es. il Delivery Planner shadow preview, che vive fuori da /api?action=...).
 const RAILWAY_BASE = RAILWAY_URL.replace(/\/api$/, "");
