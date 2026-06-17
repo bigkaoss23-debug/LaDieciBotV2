@@ -1,0 +1,41 @@
+# netlify.toml (repo root) — ENV_SPLIT_V1_15
+# Config deterministica per il sito Netlify V1 STAGING (ladieci-v1-staging,
+# a3ad035a). L'app reale vive in ladieci-app33/; questo file dice a Netlify la
+# base directory così la pipeline git-linked trova l'app, esegue il build e
+# deploya le Netlify Functions (la UI non permetteva di impostare correttamente
+# la publish directory → pubblicava la root → 404).
+#
+# ⚠️ Presente SOLO sul branch V1 (backup/v1-env-split-backend-url-2026-06-17).
+# NON deve finire su main: la produzione vera builda da branch pulita.
+#
+# Con base impostata, command/publish/functions sono relativi alla base dir.
+# Speculare a ladieci-app33/netlify.toml (redirects inclusi qui per determinismo).
+
+[build]
+  base = "ladieci-app33"
+  command = "npm run build"
+  publish = "build"
+  functions = "netlify/functions"
+
+# ENV_SPLIT_V1_15 — autorizzazione V1 SCOPED AL BRANCH (non env Netlify shared).
+# Il sito V1 staging builda il backup branch come production branch → CONTEXT=production
+# → guard-no-lab-markers bloccherebbe (marker V1 in src). Questo ALLOW_V1 vive SOLO
+# in questo file, SOLO su questo branch: la produzione vera builda da main (senza
+# questo file e non git-linked), quindi NON può mai ereditarlo. Deterministico, zero UI.
+[build.environment]
+  ALLOW_V1 = "1"
+
+[[redirects]]
+  from = "/api/auth"
+  to = "/.netlify/functions/auth"
+  status = 200
+
+[[redirects]]
+  from = "/api/proxy"
+  to = "/.netlify/functions/api"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
