@@ -10,6 +10,10 @@ dist/
 # Build-time generated version metadata (regenerato a ogni `npm run build`)
 ladieci-app33/public/version.json
 
+# Build-time generated public env per le Netlify functions (ENV_SPLIT_V1_17).
+# Solo config pubbliche (URL + anon key), rigenerato dal prebuild. Mai committare.
+ladieci-app33/netlify/functions/_publicEnv.generated.js
+
 # Environment and secrets
 .env
 .env.*

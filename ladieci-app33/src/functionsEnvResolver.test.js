@@ -8,7 +8,7 @@ const {
 
 describe('resolveBackendUrl (api.js)', () => {
   test('staging + BACKEND_API_URL mancante → ERRORE (fail-closed)', () => {
-    const r = resolveBackendUrl({ SITE_ID: STAGING_SITE_ID });
+    const r = resolveBackendUrl({ SITE_ID: STAGING_SITE_ID }, {});
     expect(r.url).toBeUndefined();
     expect(r.error).toMatch(/fail-closed/i);
   });
@@ -27,26 +27,26 @@ describe('resolveBackendUrl (api.js)', () => {
   });
 
   test('SITE_ID sconosciuto + env mancante → ERRORE', () => {
-    const r = resolveBackendUrl({ SITE_ID: 'qualcosa-di-ignoto' });
+    const r = resolveBackendUrl({ SITE_ID: 'qualcosa-di-ignoto' }, {});
     expect(r.url).toBeUndefined();
     expect(r.error).toBeTruthy();
   });
 
   test('SITE_ID assente del tutto + env mancante → ERRORE', () => {
-    const r = resolveBackendUrl({});
+    const r = resolveBackendUrl({}, {});
     expect(r.error).toBeTruthy();
   });
 });
 
 describe('resolveSupabase (auth.js)', () => {
   test('staging senza SUPABASE_URL/KEY → ERRORE', () => {
-    const r = resolveSupabase({ SITE_ID: STAGING_SITE_ID });
+    const r = resolveSupabase({ SITE_ID: STAGING_SITE_ID }, {});
     expect(r.url).toBeUndefined();
     expect(r.error).toMatch(/SUPABASE_URL/);
   });
 
   test('staging con SUPABASE_URL ma SENZA key → ERRORE', () => {
-    const r = resolveSupabase({ SITE_ID: STAGING_SITE_ID, SUPABASE_URL: 'https://stg.supabase.co' });
+    const r = resolveSupabase({ SITE_ID: STAGING_SITE_ID, SUPABASE_URL: 'https://stg.supabase.co' }, {});
     expect(r.error).toMatch(/SUPABASE_ANON_KEY|SUPABASE_KEY/);
   });
 
