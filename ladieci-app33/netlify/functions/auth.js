@@ -4,14 +4,17 @@
 // Rate limiting: blocks an IP for 15 minutes after 5 failed attempts.
 
 const crypto = require('crypto');
+const { resolveSupabase } = require('./_env');
 
 const JWT_SECRET      = process.env.JWT_SECRET || "CHANGE_ME_IN_NETLIFY_ENV";
-// Env-based: production NON imposta SUPABASE_URL → usa default prod. Netlify V1
-// staging imposta SUPABASE_URL = progetto staging così il PIN viene letto dal DB
-// staging (config), non da prod.
-const SUPABASE_URL    = process.env.SUPABASE_URL || "https://wnswassgfuuivmfwjxsf.supabase.co";
-// Try service key first, poi anon/publishable (APP_PIN è leggibile via RLS).
-const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || "sb_publishable_esObmXoAcWH9z27Sj_-jtw_PO0VeL5O";
+// Supabase FAIL-CLOSED (ENV_SPLIT_V1_08): il fallback prod è permesso SOLO sul
+// sito di produzione reale (SITE_ID, dentro _env.js). In V1/staging/preview, se
+// SUPABASE_URL / *_KEY mancano → CONFIG_ERROR e 503: niente lettura del DB prod
+// (era il fail-open di V1_07 che leggeva config/segreti prod).
+const _sb = resolveSupabase();
+const SUPABASE_URL    = _sb.url || null;
+const SUPABASE_KEY    = _sb.key || null;   // service key se presente, altrimenti anon
+const CONFIG_ERROR    = _sb.error || null;
 const MAX_ATTEMPTS    = 5;
 const BLOCK_MS        = 15 * 60 * 1000; // 15 minutes
 
@@ -94,6 +97,10 @@ function createToken(role, expiresInHours = 10) {
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: corsHeaders() };
   if (event.httpMethod !== "POST") return respond(405, { error: "method not allowed" });
+
+  // FAIL-CLOSED: deploy non-production senza config Supabase esplicita → 503,
+  // mai leggere il DB prod.
+  if (CONFIG_ERROR) return respond(503, { error: "config error: " + CONFIG_ERROR });
 
   let body;
   try { body = JSON.parse(event.body); } catch(e) { return respond(400, { error: "invalid json" }); }

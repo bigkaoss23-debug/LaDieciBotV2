@@ -3,20 +3,23 @@
 // Secrets needed: RAILWAY_API_KEY, JWT_SECRET
 
 const crypto = require('crypto');
+const { resolveBackendUrl } = require('./_env');
 
 const RAILWAY_API_KEY = process.env.RAILWAY_API_KEY;
-// Backend URL via env: production NON imposta BACKEND_API_URL → usa default prod
-// (nessun cambio di comportamento). Netlify V1 staging imposta BACKEND_API_URL =
-// URL del backend V1 (Railway V1) così il proxy V1 non colpisce il backend prod.
-const DEFAULT_BACKEND = "https://ladiecibot-production.up.railway.app/api";
-const RAILWAY_URL = (process.env.BACKEND_API_URL && process.env.BACKEND_API_URL.trim())
-  ? process.env.BACKEND_API_URL.trim().replace(/\/+$/, "")
-  : DEFAULT_BACKEND;
-// log safe: solo la MODALITÀ (default prod vs override), mai URL/segreti
-console.log("[api proxy] backend mode:", RAILWAY_URL === DEFAULT_BACKEND ? "default(prod)" : "env-override");
-// Base swithout the /api suffix — usato per le route REST esplicite del backend
+// Backend URL FAIL-CLOSED (ENV_SPLIT_V1_08): il default prod è permesso SOLO sul
+// sito di produzione reale (riconosciuto da SITE_ID, dentro _env.js). In
+// V1/staging/deploy-preview, se BACKEND_API_URL manca → CONFIG_ERROR e la function
+// risponde 503: niente fallback prod silenzioso (causa del fail-open in V1_07).
+const _backend = resolveBackendUrl();
+const RAILWAY_URL = _backend.url || null;
+const CONFIG_ERROR = _backend.error || null;
+// log safe: solo la MODALITÀ, mai URL/segreti
+console.log("[api proxy] backend mode:",
+  CONFIG_ERROR ? "FAIL-CLOSED(no-prod-fallback)"
+              : (_backend.prodFallback ? "prod-fallback(real-prod)" : "env-override"));
+// Base senza il suffisso /api — usato per le route REST esplicite del backend
 // (es. il Delivery Planner shadow preview, che vive fuori da /api?action=...).
-const RAILWAY_BASE = RAILWAY_URL.replace(/\/api$/, "");
+const RAILWAY_BASE = RAILWAY_URL ? RAILWAY_URL.replace(/\/api$/, "") : null;
 const JWT_SECRET = process.env.JWT_SECRET || "CHANGE_ME_IN_NETLIFY_ENV";
 
 // Actions allowed for repartidor role (read-only + mark delivered)
@@ -33,6 +36,11 @@ const PUBLIC_ACTIONS = [];
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: corsHeaders() };
+  }
+
+  // FAIL-CLOSED: deploy non-production senza BACKEND_API_URL → 503, mai prod.
+  if (CONFIG_ERROR) {
+    return respond(503, { error: "config error: " + CONFIG_ERROR });
   }
 
   // Verify JWT

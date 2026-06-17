@@ -15,10 +15,13 @@ const PROXY_URL = "/api/proxy";
 const AUTH_URL = "/api/auth";
 
 // ═══ SUPABASE (anon key — public by design, RLS protegge i sensibili) ═══
-// Env-based (build-time CRA, prefisso REACT_APP_): production NON imposta nulla →
-// usa i default prod. Netlify V1 staging imposta REACT_APP_SUPABASE_URL /
-// REACT_APP_SUPABASE_ANON_KEY = progetto staging, così il frontend V1 legge il DB
-// staging e non prod. Nessun segreto qui: la anon key è public by design.
+// Env-based (build-time CRA, prefisso REACT_APP_). FAIL-CLOSED (ENV_SPLIT_V1_08):
+// il default prod sotto NON è più silenzioso — il build-guard
+// scripts/guard-env-fail-closed.js (in prebuild) FA FALLIRE ogni build
+// NON-production (SITE_ID ≠ prod) che non imposti REACT_APP_SUPABASE_URL /
+// REACT_APP_SUPABASE_ANON_KEY espliciti. Quindi questi default vengono inlineati
+// SOLO nel build production reale; un bundle V1/staging senza env non compila.
+// Nessun segreto qui: la anon key è public by design.
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || "https://wnswassgfuuivmfwjxsf.supabase.co";
 const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || "sb_publishable_esObmXoAcWH9z27Sj_-jtw_PO0VeL5O";
 
