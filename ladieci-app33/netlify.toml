@@ -3,6 +3,30 @@
   publish = "build"
   functions = "netlify/functions"
 
+# ENV_SPLIT_V1_15 — config V1 staging SCOPED AL BRANCH (solo backup/v1-...).
+# Netlify usa QUESTO file come config attiva quando base=ladieci-app33 (il root
+# netlify.toml serve solo per la base — verificato con `netlify build --dry`).
+#
+# ALLOW_V1: il sito V1 builda il backup branch come production branch →
+# CONTEXT=production → guard-no-lab-markers bloccherebbe (marker V1 in src).
+#
+# Le 6 var sotto sono NON-SEGRETE (URL pubblici + publishable anon key, che
+# finiscono comunque nel bundle browser): le mettiamo qui perché lo store env
+# del sito V1 non viene iniettato nel build git-linked (le var risultano assenti
+# al build → guard-env-fail-closed → exit 2). Qui sono deterministiche.
+# I SEGRETI veri (JWT_SECRET, RAILWAY_API_KEY) restano nello store, NON qui.
+#
+# ⚠️ SOLO su questo branch. La produzione vera builda da main (senza questo file)
+# e non è git-linked → non può ereditare nulla di tutto questo. NON portare su main.
+[build.environment]
+  ALLOW_V1 = "1"
+  REACT_APP_SUPABASE_URL = "https://tdikhfeinufaahagmpjz.supabase.co"
+  REACT_APP_SUPABASE_ANON_KEY = "sb_publishable_qMYSRpFm1TQ4S04nD8Bw3Q_7Fc92qaS"
+  REACT_APP_BACKEND_API_URL = "https://fearless-reverence-production-80bc.up.railway.app"
+  BACKEND_API_URL = "https://fearless-reverence-production-80bc.up.railway.app/api"
+  SUPABASE_URL = "https://tdikhfeinufaahagmpjz.supabase.co"
+  SUPABASE_ANON_KEY = "sb_publishable_qMYSRpFm1TQ4S04nD8Bw3Q_7Fc92qaS"
+
 [[redirects]]
   from = "/api/auth"
   to = "/.netlify/functions/auth"
