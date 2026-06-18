@@ -243,9 +243,19 @@ const PremiumPlannerPopup = ({
   // promuove il giro compatibile come recommended → la card lo riflette. Render
   // puro (nessun calcolo qui): legge i campi GIÀ decisi dal contract.
   const recommendedProposal = allProposals.find((p) => p && p.recommended) || proposals3[0] || null;
+  // FIX_36: la card NON deve dire "Mejor propuesta" (verde, consigliata) quando la
+  // proposta in cima è INSICURA (status no_recomendado o conflitto rider): per
+  // l'operatore sarebbe fuorviante. In quel caso → copy prudente + stile d'avviso.
+  // Con status compatible/ajuste resta "Mejor propuesta" verde come prima.
+  const bestUnsafe = !!(
+    recommendedProposal
+      ? (recommendedProposal.status === 'no_recomendado' || recommendedProposal.riderConflict === true)
+      : (view?.bestProposal && (view.bestProposal.status === 'no_recomendado' || view.bestProposal.riderConflict === true))
+  );
   const bestForCard = recommendedProposal
     ? {
-        label: 'Mejor propuesta',
+        label: bestUnsafe ? 'Sin propuesta recomendable' : 'Mejor propuesta',
+        unsafe: bestUnsafe,
         entrega: recommendedProposal.timeLabel || (view?.bestProposal && view.bestProposal.entrega) || null,
         status: recommendedProposal.status || (view?.bestProposal && view.bestProposal.status) || null,
         routeLabel: recommendedProposal.label
@@ -366,14 +376,15 @@ const PremiumPlannerPopup = ({
 
         {/* ── TOP: Mejor propuesta (izq) + mapa de zonas con la ruta (der) ── */}
         <div className="ppp-top-grid">
-          <section className="ppp-best-card" aria-label="Mejor propuesta">
+          <section className={'ppp-best-card' + (bestForCard.unsafe ? ' is-unsafe' : '')} aria-label={bestForCard.label || 'Mejor propuesta'}>
             <div className="ppp-best-label">
-              <span>✦</span>
+              <span>{bestForCard.unsafe ? '⚠' : '✦'}</span>
               <strong>{bestForCard.label || 'Mejor propuesta'}</strong>
             </div>
             <h3>Entrega {bestForCard.entrega || '—'}</h3>
             {bestForCard.routeLabel && <p className="ppp-type">{bestForCard.routeLabel}</p>}
             {bestForCard.status && <p className="ppp-type">{statusLabels[bestForCard.status] || bestForCard.status}</p>}
+            {bestForCard.unsafe && <p className="ppp-warn-note">El rider ya está ocupado. Revisar antes de confirmar.</p>}
             {/* Botón real SOLO si el contenedor pasa onApplyHora (aplica la hora al
                 draft). Sin ese prop no se renderiza → cero no-op fantasma. */}
             {onApplyHora && applyTime && (
@@ -822,6 +833,11 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-best-card{ min-height:410px; display:flex; flex-direction:column; padding:28px; border-color:rgba(57,207,94,0.38); }
 .ppp-best-label{ display:flex; align-items:center; gap:12px; color:#58EF75; font-size:23px; font-weight:700; }
 .ppp-best-label span{ font-size:28px; text-shadow:0 0 16px rgba(88,239,117,0.55); }
+/* FIX_36: proposta in cima insicura (no_recomendado / conflitto rider) → avviso ambra, NON verde "consigliata" */
+.ppp-best-card.is-unsafe{ border-color:rgba(245,158,11,0.55); }
+.ppp-best-card.is-unsafe .ppp-best-label{ color:#F59E0B; }
+.ppp-best-card.is-unsafe .ppp-best-label span{ text-shadow:0 0 16px rgba(245,158,11,0.5); }
+.ppp-warn-note{ margin:8px 0 0; color:#F59E0B; font-size:16px; font-weight:600; }
 .ppp-best-card h3{ margin:24px 0 12px; color:#F1F3F4; font-size:40px; line-height:1.05; font-weight:850; letter-spacing:0; text-shadow:0 3px 16px rgba(0,0,0,0.32); }
 .ppp-horno{ margin:0 0 14px; color:#AEB8C0; font-size:20px; font-weight:450; }
 .ppp-driver{ display:flex; align-items:center; gap:12px; margin:0 0 12px; color:#58EF75; font-size:20px; font-weight:650; }
