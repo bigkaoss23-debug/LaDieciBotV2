@@ -323,6 +323,11 @@ const PremiumPlannerPopup = ({
   const applyProposal = isApplicable(selectedProposal) ? selectedProposal : null;
   const applyTime = (applyProposal && applyProposal.timeLabel) || bestForCard.entrega || null;
   const applyIsRecommended = !applyProposal || applyProposal.timeLabel === bestForCard.entrega;
+  // FIX_38: cuando NO hay propuesta aplicable (selección no_recomendado/blocked) el
+  // botón cae a la hora de la card; si esa card es la insegura (rider ocupado), el
+  // botón no debe seguir verde "Aplicar propuesta". Copy/estilo prudente coherente
+  // con FIX_36 (misma señal `bestForCard.unsafe`). NO cambia la lógica de aplicar.
+  const applyUnsafe = !applyProposal && !!bestForCard.unsafe;
 
   // Sin contract strategic válido → empty-state seguro. La fixture mock fue
   // eliminada, así que aquí NO se renderiza ninguna propuesta inventada. En el
@@ -388,8 +393,15 @@ const PremiumPlannerPopup = ({
             {/* Botón real SOLO si el contenedor pasa onApplyHora (aplica la hora al
                 draft). Sin ese prop no se renderiza → cero no-op fantasma. */}
             {onApplyHora && applyTime && (
-              <button type="button" className="ppp-apply" onClick={() => onApplyHora(applyTime)}>
-                {applyIsRecommended ? 'Aplicar propuesta' : `Aplicar ${applyTime}`}
+              <button
+                type="button"
+                className={'ppp-apply' + (applyUnsafe ? ' is-warning' : '')}
+                title={applyUnsafe ? 'Esta propuesta no es recomendable' : undefined}
+                onClick={() => onApplyHora(applyTime)}
+              >
+                {applyUnsafe
+                  ? 'Revisar antes de aplicar'
+                  : (applyIsRecommended ? 'Aplicar propuesta' : `Aplicar ${applyTime}`)}
               </button>
             )}
           </section>
@@ -845,6 +857,8 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-type{ margin:0 0 6px; color:#B7BCC2; font-size:18px; font-weight:450; }
 .ppp-apply{ width:100%; min-height:62px; margin-top:auto; border:1px solid rgba(88,239,117,0.35); border-radius:7px; color:#FFFFFF; background:linear-gradient(100deg,#18A84E,#22C45E); box-shadow:0 16px 32px rgba(19,167,79,0.28), inset 0 1px 0 rgba(255,255,255,0.10); font-size:22px; font-weight:700; cursor:pointer; }
 .ppp-apply:hover{ filter:brightness(1.05); }
+/* FIX_38: botón aplicar inseguro (sin propuesta recomendable) → ámbar, NO verde success */
+.ppp-apply.is-warning{ border-color:rgba(245,158,11,0.55); background:linear-gradient(100deg,#B45309,#D97706); box-shadow:0 16px 32px rgba(217,119,6,0.28), inset 0 1px 0 rgba(255,255,255,0.10); }
 .ppp-preview{ margin:16px 0 18px; padding:14px 16px; border:1px solid var(--toneBorder); border-radius:9px; background:linear-gradient(150deg,var(--toneBg),rgba(6,16,22,0.55)); }
 .ppp-preview-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
 .ppp-preview-head strong{ color:var(--tone); font-size:16px; font-weight:780; letter-spacing:0.3px; text-transform:uppercase; }
