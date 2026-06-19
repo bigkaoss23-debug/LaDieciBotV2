@@ -1210,6 +1210,49 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const plannerAlternatives   = plannerPreview?.alternatives || [];
   const plannerAvailability   = plannerPreview?.availability_rows || [];
 
+  // ── FIX_40: dedup warning ──────────────────────────────────────────────
+  // Lo stesso messaggio (es. "Hora pedida muy pronta · mínimo 17:14" o
+  // "Duración estimada (haversine): …") arrivava 3-4 volte: blocco driver
+  // (backendTiming.driver), bullets timing (backendTiming.warnings), blocker e
+  // warning del planner (plannerPreview). Sono superfici distinte ma con testi
+  // sovrapposti. Deduplichiamo per messaggio in ordine di rendering (la prima
+  // superficie vince, le successive saltano i duplicati), SENZA toccare
+  // logica/planner/backend: filtri puri di rendering. Il gate "🚫" accanto a
+  // Confirmar resta a parte (è la ragione del blocco, non un avviso ripetuto).
+  const wMsg = (w) => (w && w.message) || String(w);
+  // 1ª superficie: messaggio del blocco driver (mostrato solo se conflitto + ora toccata).
+  const driverWarnMsg = (backendTiming?.driver?.has_conflict && horaTouchedByOperator)
+    ? (backendTiming.driver.message || "Driver ocupado")
+    : null;
+  // 2ª superficie: bullets timing, deduplicati e senza il messaggio del driver.
+  const timingWarnings = useMemo(() => {
+    const seen = new Set(driverWarnMsg ? [driverWarnMsg] : []);
+    return (backendTiming?.warnings || [])
+      .filter((w) => w && w.code !== "driver_conflict")
+      .filter((w) => { const m = wMsg(w); if (seen.has(m)) return false; seen.add(m); return true; });
+  }, [backendTiming, driverWarnMsg]);
+  // Insieme dei messaggi già mostrati PRIMA dell'hint planner (driver + timing).
+  const shownBeforePlanner = useMemo(() => {
+    const s = new Set(timingWarnings.map(wMsg));
+    if (driverWarnMsg) s.add(driverWarnMsg);
+    return s;
+  }, [timingWarnings, driverWarnMsg]);
+  // 3ª superficie: blocker del planner — testo da mostrare solo se non già detto sopra.
+  const plannerBlockerMsg = plannerBlockers.length > 0
+    ? (plannerBlockers[0]?.message || String(plannerBlockers[0]))
+    : null;
+  const showPlannerBlockerMsg = !!plannerBlockerMsg && !shownBeforePlanner.has(plannerBlockerMsg);
+  // 4ª superficie: warnings del planner, deduplicati ed esclusi i già mostrati.
+  const plannerWarningsDedup = useMemo(() => {
+    const seen = new Set(shownBeforePlanner);
+    if (plannerBlockerMsg) seen.add(plannerBlockerMsg);
+    return plannerWarnings.filter((w) => {
+      const m = wMsg(w);
+      if (seen.has(m)) return false;
+      seen.add(m); return true;
+    });
+  }, [plannerWarnings, shownBeforePlanner, plannerBlockerMsg]);
+
   // ── Confirmar gating sul planner (CONFIRMAR_GATING_01) ──────────────────
   // Il bottone Confirmar NON deve restare attivo quando il backend dichiara
   // l'ordine non confermabile. Fonte autoritativa = planner preview:
@@ -1403,8 +1446,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 </div>
               )}
 
-              {tipoConsegna === "DOMICILIO" && (backendTiming?.warnings || [])
-                .filter(w => w.code !== "driver_conflict")
+              {tipoConsegna === "DOMICILIO" && timingWarnings
                 .map((w, i) => (
                   <div key={i} style={{ color: "#fbbf24", fontSize: 10, fontWeight: 700 }}>• {w.message}</div>
                 ))}
@@ -1674,9 +1716,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         ⚠ Bloqueado
                       </span>
                     )}
-                    {plannerBlockers.length > 0 && (
+                    {showPlannerBlockerMsg && (
                       <span style={{ color: "#fca5a5" }}>
-                        {plannerBlockers[0]?.message || String(plannerBlockers[0])}
+                        {plannerBlockerMsg}
                       </span>
                     )}
                     {plannerOk !== false && plannerSuggestedHora && (() => {
@@ -1707,7 +1749,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         }}>Usa giro compatible</button>
                       </>
                     )}
-                    {plannerWarnings.slice(0, 2).map((w, i) => (
+                    {plannerWarningsDedup.slice(0, 2).map((w, i) => (
                       <span key={i} style={{ color: "#fbbf24" }}>
                         · {w?.message || String(w)}
                       </span>
