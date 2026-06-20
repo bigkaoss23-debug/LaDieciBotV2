@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 
 /*
  * PremiumPlannerPopup — renderer read-only del contract strategic (no engine).
@@ -281,12 +281,12 @@ const PremiumPlannerPopup = ({
         kind: 'opportunity',
         isOpportunity: true,
         hasRealRoute: true,
-        label: `Encajar ${ng.zone}`,
+        // copy OPERATIVA: el chip dice "Usar giro Q5" (acción clara), la card dice
+        // "Giro compatible Q5" (anchorZone). Sin `oportunidad` ni `Encajar` técnico.
+        label: `Usar giro ${ng.zone}`,
+        anchorZone: ng.zone,
         zoneLabel: realInsertionProposal.zoneLabel || ng.zone,
         status: 'oportunidad',
-        warning: (realInsertionProposal.routeTimeline && realInsertionProposal.routeTimeline.operatorMessage)
-          || (Array.isArray(realInsertionProposal.warnings) && realInsertionProposal.warnings[0])
-          || realInsertionProposal.reason || null,
         recommended: false,
       };
     }
@@ -297,7 +297,8 @@ const PremiumPlannerPopup = ({
       kind: 'opportunity',
       isOpportunity: true,
       hasRealRoute: false,
-      label: `Encajar ${ng.zone}`,
+      label: `Usar giro ${ng.zone}`,
+      anchorZone: ng.zone,
       timeLabel: ng.hora,
       zoneLabel: ng.zone,
       giroId: ng.anchorOrderId || null, // link alla riga serviceLine del giro
@@ -366,9 +367,9 @@ const PremiumPlannerPopup = ({
   const bestForCard = cardProposal
     ? {
         label: cardIsOpportunity
-          // task 54: el label del ancla ("Encajar Q5") va en cardProposal.label; el
-          // zoneLabel ("Q2 → Q5 (sur)") es la ruta y se muestra como routeLabel.
-          ? (cardProposal.label || `Encajar ${cardProposal.zoneLabel || ''}`.trim())
+          // card title operativo: "Giro compatible Q5" (anchorZone). El chip lleva la
+          // acción "Usar giro Q5"; la ruta ("Q2 → Q5") va como routeLabel.
+          ? `Giro compatible ${cardProposal.anchorZone || cardProposal.zoneLabel || ''}`.trim()
           : (bestUnsafe ? 'Sin propuesta recomendable' : 'Mejor propuesta'),
         unsafe: bestUnsafe,
         opportunity: cardIsOpportunity,
@@ -376,7 +377,7 @@ const PremiumPlannerPopup = ({
         status: cardIsOpportunity ? 'oportunidad' : (cardProposal.status || (view?.bestProposal && view.bestProposal.status) || null),
         routeLabel: cardIsOpportunity
           ? (cardProposal.hasRealRoute
-              ? (cardProposal.zoneLabel || 'Encajar en el próximo giro')   // task 54: ruta real (ej. "Q2 → Q5 (sur)")
+              ? `Ruta ${cardProposal.zoneLabel || ''}`.trim()   // ej. "Ruta Q2 → Q5 (sur)"
               : 'Próximo giro · revisar en Giros y huecos')
           : (cardProposal.label || PROPOSAL_ROLE_COPY[cardProposal.kind] || (view?.bestProposal && view.bestProposal.routeLabel) || null),
       }
@@ -491,36 +492,26 @@ const PremiumPlannerPopup = ({
 
         {/* ── TOP: Mejor propuesta (izq) + mapa de zonas con la ruta (der) ── */}
         <div className="ppp-top-grid">
-          <section className={'ppp-best-card' + (bestForCard.unsafe ? ' is-unsafe' : '')} aria-label={bestForCard.label || 'Mejor propuesta'}>
+          <section
+            className={'ppp-best-card' + (bestForCard.opportunity ? ' is-opportunity' : (bestForCard.unsafe ? ' is-unsafe' : ''))}
+            aria-label={bestForCard.label || 'Mejor propuesta'}
+          >
             <div className="ppp-best-label">
-              <span>{bestForCard.unsafe ? '⚠' : '✦'}</span>
+              <span>{bestForCard.opportunity ? '✓' : (bestForCard.unsafe ? '⚠' : '✦')}</span>
               <strong>{bestForCard.label || 'Mejor propuesta'}</strong>
             </div>
-            <h3>Entrega {bestForCard.entrega || '—'}</h3>
+            {/* Para un giro compatible la hora grande es la del cliente (Q2): "Entrega
+                cliente 18:54". Para el resto, "Entrega HH:MM" como siempre. */}
+            <h3>{bestForCard.opportunity ? 'Entrega cliente ' : 'Entrega '}{bestForCard.entrega || '—'}</h3>
             {bestForCard.routeLabel && <p className="ppp-type">{bestForCard.routeLabel}</p>}
-            {bestForCard.status && <p className="ppp-type">{statusLabels[bestForCard.status] || bestForCard.status}</p>}
+            {/* status técnico ("oportunidad") NO se muestra para el giro compatible. */}
+            {bestForCard.status && !bestForCard.opportunity && <p className="ppp-type">{statusLabels[bestForCard.status] || bestForCard.status}</p>}
             {bestForCard.unsafe && !bestForCard.opportunity && <p className="ppp-warn-note">El rider ya está ocupado. Revisar antes de confirmar.</p>}
-            {bestForCard.opportunity && (
-              <div className="ppp-warn-note">
-                {/* copy OPERATIVA: lo que el operador necesita decidir es si el cliente
-                    acepta la nueva hora de entrega; el slip en minutos queda como
-                    detalle secundario (no como alarma genérica de planner). timeLabel
-                    = entrega del nuevo pedido en el giro (dato backend, no inventado). */}
-                {(cardProposal && cardProposal.hasRealRoute) ? (
-                  <>
-                    <p style={{ margin: 0 }}>
-                      Confirmar con cliente: entrega pasaría a {cardProposal.timeLabel || bestForCard.entrega || '—'}
-                    </p>
-                    {cardProposal.warning && (
-                      <p className="ppp-warn-detail" style={{ margin: '3px 0 0', opacity: 0.65, fontSize: 11, fontWeight: 600 }}>
-                        {cardProposal.warning}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <p style={{ margin: 0 }}>Oportunidad: encajar con el próximo giro. Revisar antes de aplicar.</p>
-                )}
-              </div>
+            {/* card SECA para giro compatible: título + entrega cliente + ruta + botón.
+                El impacto del ancla (Q5 +6) NO se repite aquí — vive en "Giros y
+                huecos" donde se ve el giro. Caso degenerado sin ruta real → único hint. */}
+            {bestForCard.opportunity && !(cardProposal && cardProposal.hasRealRoute) && (
+              <p className="ppp-warn-note ppp-warn-soft">Próximo giro · revisar en Giros y huecos.</p>
             )}
             {/* Botón real SOLO si el contenedor pasa onApplyHora (aplica la hora al
                 draft). Sin ese prop no se renderiza → cero no-op fantasma. */}
@@ -528,12 +519,14 @@ const PremiumPlannerPopup = ({
               <button
                 type="button"
                 className={'ppp-apply' + (applyUnsafe ? ' is-warning' : '')}
-                title={applyUnsafe ? 'Esta propuesta no es recomendable' : undefined}
+                title={applyUnsafe ? 'Confirma el giro: pequeño impacto en el giro existente' : undefined}
                 onClick={() => onApplyHora(applyTime)}
               >
-                {applyUnsafe
-                  ? 'Revisar antes de aplicar'
-                  : (applyIsRecommended ? 'Aplicar propuesta' : `Aplicar ${applyTime}`)}
+                {bestForCard.opportunity
+                  ? 'Confirmar giro compatible'
+                  : (applyUnsafe
+                      ? 'Revisar antes de aplicar'
+                      : (applyIsRecommended ? 'Aplicar propuesta' : `Aplicar ${applyTime}`))}
               </button>
             )}
           </section>
@@ -569,8 +562,10 @@ const PremiumPlannerPopup = ({
               >
                 <span className="ppp-prop-time">{p ? (p.timeLabel || '—') : '—'}</span>
                 <span className="ppp-prop-title">{p ? (p.label || PROPOSAL_ROLE_COPY[p.kind] || 'Opción') : 'Sin opción'}</span>
-                {p && p.status && <small className="ppp-prop-st">{statusLabels[p.status] || p.status}</small>}
-                {p && !p.status && p.zoneLabel && <small className="ppp-prop-st">{p.zoneLabel}</small>}
+                {/* el chip "Usar giro Q5" NO muestra el status técnico `oportunidad`:
+                    en su lugar la ruta (zoneLabel). El resto mantiene su status. */}
+                {p && !p.isOpportunity && p.status && <small className="ppp-prop-st">{statusLabels[p.status] || p.status}</small>}
+                {p && (p.isOpportunity || !p.status) && p.zoneLabel && <small className="ppp-prop-st">{p.zoneLabel}</small>}
               </button>
             );
           })}
@@ -603,6 +598,11 @@ const PremiumPlannerPopup = ({
                 // título claro: si es la preview con el nuevo pedido, dilo; si es la
                 // línea del giro existente, "Giro actual".
                 const rowDetailTitle = rowIsPreview ? 'Vista previa con el nuevo pedido' : 'Giro actual';
+                // task: cuando "Encajar …" está seleccionado, la fila compacta deja de
+                // mostrar el giro VIEJO (salida/entrega/regreso del ancla) y muestra la
+                // PREVIEW útil con el nuevo pedido dentro: Salida → cada entrega (la del
+                // pedido nuevo destacada como "Hora cliente", verde) → Regreso.
+                const legs = rowIsPreview ? previewLegsFromTimeline(rowDetailTimeline) : null;
                 return (
                   <div className={`ppp-sl-row${open ? ' is-open' : ''}${rowActive ? ' is-active' : ''}`} id={`ppp-sl-${key}`} key={key}>
                     <button
@@ -611,18 +611,45 @@ const PremiumPlannerPopup = ({
                       aria-expanded={open}
                       onClick={() => onToggleRow(key)}
                     >
-                      <span className="ppp-sl-zone">{e.zone}</span>
-                      <span className="ppp-sl-leg"><i>Salida</i><b>{e.salida || '—'}</b></span>
-                      <span className="ppp-sl-arrow" aria-hidden="true">→</span>
-                      <span className="ppp-sl-leg"><i>Entrega</i><b>{e.entrega || e.promised || '—'}</b></span>
-                      <span className="ppp-sl-arrow" aria-hidden="true">→</span>
-                      <span className="ppp-sl-leg"><i>Regreso</i><b>{e.regreso || '—'}</b></span>
-                      {Number.isFinite(e.pizzas) && e.pizzas > 0 && <span className="ppp-sl-pz">{e.pizzas} pz</span>}
-                      <span className="ppp-sl-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+                      {legs ? (
+                        <>
+                          <span className="ppp-sl-zone">{(legs.deliveries.map((d) => d.zone).join(' + ')) || e.zone}</span>
+                          <span className="ppp-sl-leg"><i>Salida</i><b>{legs.salida || '—'}</b></span>
+                          {legs.deliveries.map((d, di) => (
+                            <Fragment key={`${key}-leg-${di}`}>
+                              <span className="ppp-sl-arrow" aria-hidden="true">→</span>
+                              <span className={`ppp-sl-leg${d.isNew ? ' is-client' : ''}`}>
+                                {/* pedido nuevo = chip verde "Cliente HH:MM" (la hora a
+                                    proponer). Ancla = "Entrega Q5"; si se mueve, slip
+                                    pequeño ámbar "(+6)", no alarma roja. */}
+                                <i>{d.isNew ? 'Cliente' : `Entrega ${d.zone}`}</i>
+                                <b>
+                                  {d.eta || '—'}
+                                  {!d.isNew && d.slip && <em className="ppp-sl-slip">+{d.slip}</em>}
+                                </b>
+                              </span>
+                            </Fragment>
+                          ))}
+                          <span className="ppp-sl-arrow" aria-hidden="true">→</span>
+                          <span className="ppp-sl-leg"><i>Regreso</i><b>{legs.regreso || '—'}</b></span>
+                          <span className="ppp-sl-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="ppp-sl-zone">{e.zone}</span>
+                          <span className="ppp-sl-leg"><i>Salida</i><b>{e.salida || '—'}</b></span>
+                          <span className="ppp-sl-arrow" aria-hidden="true">→</span>
+                          <span className="ppp-sl-leg"><i>Entrega</i><b>{e.entrega || e.promised || '—'}</b></span>
+                          <span className="ppp-sl-arrow" aria-hidden="true">→</span>
+                          <span className="ppp-sl-leg"><i>Regreso</i><b>{e.regreso || '—'}</b></span>
+                          {Number.isFinite(e.pizzas) && e.pizzas > 0 && <span className="ppp-sl-pz">{e.pizzas} pz</span>}
+                          <span className="ppp-sl-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+                        </>
+                      )}
                     </button>
                     {open && (
                       <div className="ppp-sl-detail">
-                        <RouteTimeline routeTimeline={rowDetailTimeline} compact title={rowDetailTitle} />
+                        <RouteTimeline routeTimeline={rowDetailTimeline} compact title={rowDetailTitle} clientAcceptance={rowIsPreview} />
                       </div>
                     )}
                   </div>
@@ -663,7 +690,7 @@ const RT_RISK_LABELS = {
 };
 const RT_NODE_TYPE_LABELS = { departure: 'Salida', delivery: 'Entrega', return: 'Regreso' };
 
-const RouteTimeline = ({ routeTimeline, compact = false, title = 'Línea del giro' }) => {
+const RouteTimeline = ({ routeTimeline, compact = false, title = 'Línea del giro', clientAcceptance = false }) => {
   // Fallback seguro: sin routeTimeline o sin timeline[] → no render (UI actual intacta).
   if (!routeTimeline || !Array.isArray(routeTimeline.timeline) || routeTimeline.timeline.length === 0) {
     return null;
@@ -672,20 +699,34 @@ const RouteTimeline = ({ routeTimeline, compact = false, title = 'Línea del gir
   const nodes = [...routeTimeline.timeline].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
   const summary = routeTimeline.summary || null;
   const risk = routeTimeline.risk || null;
-  const riskLabel = risk ? (RT_RISK_LABELS[risk] || risk) : null;
+  // `No recomendado` como badge rojo SOLO para peligro operativo real (rompe el
+  // ancla, retrasa un pedido confirmado, rider no disponible, capacidad). Cuando
+  // estamos previsualizando encajar el nuevo pedido en un giro (clientAcceptance),
+  // un `no_recomendado` significa solo "el cliente debe aceptar la nueva hora":
+  // lo traducimos a un aviso ámbar operativo, no a una alarma roja confusa.
+  const softNoRec = clientAcceptance && risk === 'no_recomendado';
+  const riskLabel = softNoRec ? 'Confirmar con cliente' : (risk ? (RT_RISK_LABELS[risk] || risk) : null);
+  const riskCls = softNoRec ? 'rt-warning' : `rt-${risk}`;
+  // En preview de encaje (clientAcceptance): NO mostramos el operatorMessage crudo
+  // del backend ("Q2 se mueve +99 min · Q5 se mueve +6 min"), ni el summary
+  // (Entrega giro / Regreso), ni un aviso redundante "Confirmar antes de aplicar":
+  // el badge `Confirmar con cliente` (arriba) + el impacto Q5 en la fila compacta ya
+  // lo dicen. Queda solo: título + badge + timeline limpia. Fuera de preview, intacto.
+  const showSummary = !clientAcceptance && summary
+    && (summary.directEta || summary.giroEta || summary.returnEta || summary.tradeoffLabel);
 
   return (
     <section className={`ppp-rt${compact ? ' is-compact' : ''}`} aria-label={title}>
       <header className="ppp-rt-head">
         <h3><span>🛵</span> {title}</h3>
-        {riskLabel && <span className={`ppp-rt-risk rt-${risk}`}>{riskLabel}</span>}
+        {riskLabel && <span className={`ppp-rt-risk ${riskCls}`}>{riskLabel}</span>}
       </header>
 
-      {routeTimeline.operatorMessage && (
+      {!clientAcceptance && routeTimeline.operatorMessage && (
         <p className="ppp-rt-msg">{routeTimeline.operatorMessage}</p>
       )}
 
-      {summary && (summary.directEta || summary.giroEta || summary.returnEta || summary.tradeoffLabel) && (
+      {showSummary && (
         <dl className="ppp-rt-summary">
           {summary.directEta && (<div><dt>Directa</dt><dd>{summary.directEta}</dd></div>)}
           {summary.giroEta && (<div><dt>Entrega giro</dt><dd>{summary.giroEta}</dd></div>)}
@@ -696,7 +737,11 @@ const RouteTimeline = ({ routeTimeline, compact = false, title = 'Línea del gir
 
       <ol className="ppp-rt-line">
         {nodes.map((node, i) => {
-          const typeLabel = RT_NODE_TYPE_LABELS[node.type] || node.type || '';
+          // subtítulo humano de la parada: el pedido nuevo = "Entrega cliente";
+          // el pedido del giro (ancla) = "Entrega giro"; resto = Salida/Regreso.
+          const typeLabel = node.type === 'delivery'
+            ? (node.isNewOrder ? 'Entrega cliente' : (node.isAnchor ? 'Entrega giro' : 'Entrega'))
+            : (RT_NODE_TYPE_LABELS[node.type] || node.type || '');
           const status = node.status || null;
           const cls = [
             'ppp-rt-node',
@@ -713,16 +758,16 @@ const RouteTimeline = ({ routeTimeline, compact = false, title = 'Línea del gir
                   <strong className="ppp-rt-label">{node.label || typeLabel}</strong>
                   {node.eta && <span className="ppp-rt-eta">{node.eta}</span>}
                 </div>
+                {/* meta DEPURADA para el operador: solo tipo de parada + zona. Se
+                    quitan badges/labels técnicos (`nuevo`, `en giro`, `prometido`,
+                    slip `-118 vs prometido`, `+0 margen`) y el warning crudo en
+                    minutos: son ruido de debug o duplican lo que ya dice la fila
+                    compacta + el aviso humano de la card. El pedido nuevo se sigue
+                    distinguiendo por el color del nodo (.is-new). */}
                 <div className="ppp-rt-meta">
                   <span className="ppp-rt-kind">{typeLabel}</span>
                   {node.zone && <span className="ppp-rt-zone">{node.zone}</span>}
-                  {node.isNewOrder && <span className="ppp-rt-badge bd-new">nuevo</span>}
-                  {node.isAnchor && <span className="ppp-rt-badge bd-anchor">en giro</span>}
-                  {node.promised && <span className="ppp-rt-prom">prometido {node.promised}</span>}
-                  {node.slipLabel && <span className="ppp-rt-slip">{node.slipLabel}</span>}
-                  {node.marginLabel && <span className="ppp-rt-margin">{node.marginLabel}</span>}
                 </div>
-                {node.warning && <p className="ppp-rt-warn">⚠ {node.warning}</p>}
               </div>
             </li>
           );
@@ -865,6 +910,37 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
 // una riga serviceLine usando SOLO i tempi reali del backend (salida/entrega/
 // regreso). Nessun calcolo: mappa 3 timestamp → 3 nodi per il render verticale
 // (Salida pizzería → Entrega zona → Regreso) dentro la fila espansa.
+// previewLegsFromTimeline — extrae de un routeTimeline (la inserción del nuevo
+// pedido en el giro) las patas que la FILA COMPACTA "Giros y huecos" necesita para
+// mostrar la vista previa real: salida del giro, cada entrega (marcando la del
+// pedido nuevo = `clientEta`, "Hora cliente") y regreso. Solo lee etas YA
+// calculados por el backend; no calcula tiempos. Render-only.
+// posSlip — slip "positivo" YA calculado por el backend (`+6`), o null. Solo lee el
+// slipLabel del nodo; no calcula minutos. `+0`/negativos/ausente → null (no aviso).
+const posSlip = (node) => {
+  const raw = node && node.slipLabel != null ? String(node.slipLabel).trim() : '';
+  return /^\+[1-9]/.test(raw) ? raw.replace('+', '') : null;
+};
+
+const previewLegsFromTimeline = (rt) => {
+  const nodes = (rt && Array.isArray(rt.timeline)) ? [...rt.timeline].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)) : [];
+  const dep = nodes.find((n) => n.type === 'departure') || null;
+  const ret = nodes.find((n) => n.type === 'return') || null;
+  const deliveries = nodes
+    .filter((n) => n.type === 'delivery' && n.zone)
+    // slip SOLO para el ancla (pedido existente que se mueve); el nuevo pedido no
+    // muestra slip — su hora absoluta es "Cliente HH:MM".
+    .map((n) => ({ zone: String(n.zone), eta: n.eta || null, isNew: !!n.isNewOrder, slip: (!n.isNewOrder ? posSlip(n) : null) }));
+  const newDel = deliveries.find((d) => d.isNew) || null;
+  return {
+    salida: dep ? (dep.eta || null) : null,
+    regreso: ret ? (ret.eta || null) : null,
+    deliveries,
+    clientEta: newDel ? newDel.eta : null,
+    clientZone: newDel ? newDel.zone : null,
+  };
+};
+
 const serviceLineTimeline = (e) => {
   if (!e || typeof e !== 'object') return null;
   const nodes = [];
@@ -998,6 +1074,12 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-best-card.is-unsafe .ppp-best-label{ color:#F59E0B; }
 .ppp-best-card.is-unsafe .ppp-best-label span{ text-shadow:0 0 16px rgba(245,158,11,0.5); }
 .ppp-warn-note{ margin:8px 0 0; color:#F59E0B; font-size:16px; font-weight:600; }
+/* giro compatible: card en verde (no rojo) — solo necesita confirmación de hora */
+.ppp-best-card.is-opportunity{ border-color:rgba(57,207,94,0.42); }
+.ppp-best-card.is-opportunity .ppp-best-label{ color:#58EF75; }
+.ppp-best-card.is-opportunity .ppp-best-label span{ text-shadow:0 0 16px rgba(88,239,117,0.55); }
+/* aviso pequeño y humano (Q5 +6 / confirmar) — no alarma grande */
+.ppp-warn-note.ppp-warn-soft{ font-size:13px; font-weight:560; color:#F0C45C; }
 .ppp-best-card h3{ margin:24px 0 12px; color:#F1F3F4; font-size:40px; line-height:1.05; font-weight:850; letter-spacing:0; text-shadow:0 3px 16px rgba(0,0,0,0.32); }
 .ppp-horno{ margin:0 0 14px; color:#AEB8C0; font-size:20px; font-weight:450; }
 .ppp-driver{ display:flex; align-items:center; gap:12px; margin:0 0 12px; color:#58EF75; font-size:20px; font-weight:650; }
@@ -1203,6 +1285,13 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-sl-leg{ display:flex; flex-direction:column; line-height:1.1; }
 .ppp-sl-leg i{ font-style:normal; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#8E99A1; }
 .ppp-sl-leg b{ font-size:16px; font-weight:760; font-variant-numeric:tabular-nums; color:#EEF3F4; }
+/* "Hora cliente" — la hora que el operador debe proponer al cliente, destacada en
+   verde dentro de la fila compacta de la preview "Encajar …". */
+.ppp-sl-leg.is-client{ padding:3px 10px; border:1px solid rgba(88,232,104,0.55); border-radius:8px; background:rgba(46,210,88,0.12); }
+.ppp-sl-leg.is-client i{ color:#58E86B; }
+.ppp-sl-leg.is-client b{ color:#9DF5B0; font-size:17px; }
+/* slip del ancla en la fila compacta: chip ámbar pequeño pero visible, no alarma roja */
+.ppp-sl-slip{ display:inline-block; margin-left:6px; padding:1px 7px; border:1px solid rgba(240,196,92,0.55); border-radius:6px; background:rgba(240,196,92,0.14); font-style:normal; font-size:13px; font-weight:800; color:#F0C45C; vertical-align:1px; }
 .ppp-sl-arrow{ color:#58E86B; font-weight:800; }
 .ppp-sl-pz{ color:#9CA6AD; font-size:13px; font-weight:650; }
 .ppp-sl-caret{ margin-left:auto; color:#9CA6AD; font-size:14px; }

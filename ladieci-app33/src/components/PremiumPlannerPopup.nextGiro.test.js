@@ -52,15 +52,15 @@ test('senza nextGiroOpportunity → solo il diretto, nessun chip Encajar', () =>
   expect(titles.some((t) => /Encajar/.test(t || ''))).toBe(false);
 });
 
-test('con nextGiroOpportunity → chip 2 = Encajar Q5 22:00 oportunidad, direct resta 1º', () => {
+test('con nextGiroOpportunity → chip 2 = Usar giro Q5 22:00 (sin `oportunidad`), direct resta 1º', () => {
   mount({ nextGiroOpportunity: NEXT_GIRO });
   expect(titleAt(0)).toBe('Crear giro Q2');     // diretto primo, invariato
-  expect(titleAt(1)).toBe('Encajar Q5');        // opportunity secondo
+  expect(titleAt(1)).toBe('Usar giro Q5');      // chip operativo (no `Encajar`)
   expect(timeAt(1)).toBe('22:00');
-  expect(stAt(1)).toBe('oportunidad');
+  expect(stAt(1)).not.toBe('oportunidad');      // no status técnico en el chip
 });
 
-test('click chip opportunity → card Entrega 22:00 + bottone prudente (no verde)', () => {
+test('click chip opportunity → card Entrega cliente 22:00 + bottone prudente (no verde)', () => {
   const applied = [];
   mount({ nextGiroOpportunity: NEXT_GIRO, onApplyHora: (t) => applied.push(t) });
   // stato iniziale: card = diretto 20:25
@@ -68,10 +68,11 @@ test('click chip opportunity → card Entrega 22:00 + bottone prudente (no verde
   expect(cardLabel()).toBe('Mejor propuesta');
   // selezione chip opportunity → card cambia
   click(propBtns()[1]);
-  expect(cardEntrega()).toBe('Entrega 22:00');
-  expect(cardLabel()).toBe('Encajar Q5');
-  // bottone prudente (review), NON "Aplicar propuesta" verde
-  expect(applyBtn().textContent).toBe('Revisar antes de aplicar');
+  expect(cardEntrega()).toBe('Entrega cliente 22:00');
+  expect(cardLabel()).toBe('Giro compatible Q5');
+  // bottone ámbar "Confirmar giro compatible" (no verde "Aplicar")
+  expect(applyBtn().textContent).toBe('Confirmar giro compatible');
+  expect(applyBtn().className).toMatch(/is-warning/);
   // il click sul chip NON ha applicato nulla
   expect(applied.length).toBe(0);
 });
@@ -111,25 +112,26 @@ const mountReal = (extra = {}) => act(() => { root.render(React.createElement(Pr
 test('task54: chip Encajar usa la propuesta REAL (entrega 21:52, no 23:50 del ancla)', () => {
   mountReal({ nextGiroOpportunity: { ...NEXT_GIRO, hora: '23:50' } });
   expect(titleAt(0)).toBe('Crear giro Q2');
-  expect(titleAt(1)).toBe('Encajar Q5');
+  expect(titleAt(1)).toBe('Usar giro Q5');
   expect(timeAt(1)).toBe('21:52');        // entrega del nuevo pedido en el giro (real), no 23:50
-  expect(stAt(1)).toBe('oportunidad');
+  expect(stAt(1)).toBe('Q2 → Q5 (sur)');  // ruta en vez del status técnico `oportunidad`
   // la propuesta not_recommended NO se duplica como 3er chip primario
   const titles = propBtns().map((_, i) => titleAt(i));
-  expect(titles.filter((t) => t === 'Encajar Q5').length).toBe(1);
+  expect(titles.filter((t) => t === 'Usar giro Q5').length).toBe(1);
 });
 
 test('task54: click chip → card real (21:52, ruta Q2→Q5), warning real, timeline combinada', () => {
   const applied = [];
   mountReal({ nextGiroOpportunity: { ...NEXT_GIRO, hora: '23:50' }, onApplyHora: (t) => applied.push(t) });
   click(propBtns()[1]);
-  expect(cardEntrega()).toBe('Entrega 21:52');
-  expect(cardLabel()).toBe('Encajar Q5');
+  expect(cardEntrega()).toBe('Entrega cliente 21:52');
+  expect(cardLabel()).toBe('Giro compatible Q5');
   // route label = ruta real del backend
   const types = [...container.querySelectorAll('.ppp-best-card .ppp-type')].map((e) => e.textContent);
   expect(types.some((t) => /Q2\s*→\s*Q5/.test(t || ''))).toBe(true);
-  // warning real calculado (no copy genérico)
-  expect(container.querySelector('.ppp-warn-note')?.textContent || '').toMatch(/\+7 min/);
+  // card SECA: sin warning de slip/aceptación en la card superior (el impacto vive
+  // en "Giros y huecos"). No reaparecen minutos crudos.
+  expect(container.querySelector('.ppp-best-card .ppp-warn-note')).toBeNull();
   // single-timeline: NO hay bloque "Línea del giro" separado; el detalle combinado
   // (Q5 22:04) vive DENTRO de "Giros y huecos" (.ppp-sl-detail de la fila activa).
   expect(container.querySelector('.ppp-opp-timeline')).toBeNull();
@@ -137,8 +139,8 @@ test('task54: click chip → card real (21:52, ruta Q2→Q5), warning real, time
   expect(detail).toBeTruthy();
   expect(detail.textContent).toMatch(/22:04/);
   expect(detail.textContent).toMatch(/Q5/);
-  // botón prudente, sin aplicar nada al click del chip
-  expect(applyBtn().textContent).toBe('Revisar antes de aplicar');
+  // botón "Confirmar giro compatible"; sin aplicar nada al click del chip
+  expect(applyBtn().textContent).toBe('Confirmar giro compatible');
   expect(applied.length).toBe(0);
 });
 
@@ -146,8 +148,8 @@ test('task54: click chip → card real (21:52, ruta Q2→Q5), warning real, time
 test('fix1: initialFocusOpportunity=true → popup arranca en Encajar Q5 (no en best)', () => {
   mountReal({ nextGiroOpportunity: { ...NEXT_GIRO, hora: '23:50' }, initialFocusOpportunity: true });
   // sin ningún click: la card grande ya muestra la oportunidad
-  expect(cardLabel()).toBe('Encajar Q5');
-  expect(cardEntrega()).toBe('Entrega 21:52');
+  expect(cardLabel()).toBe('Giro compatible Q5');
+  expect(cardEntrega()).toBe('Entrega cliente 21:52');
   // chip oportunidad marcado como activo
   expect(propBtns()[1].getAttribute('aria-pressed')).toBe('true');
   // detalle combinado YA visible dentro de "Giros y huecos", sin bloque separado
@@ -199,20 +201,29 @@ test('single-timeline: cambio chip actualiza el detalle dentro de Giros y huecos
 });
 
 // ── clarity: copy operacional + etiquetas claras ───────────────────────────────
-test('clarity: warning operacional (confirmar nueva hora con cliente), slip secundario', () => {
+test('clarity: card SECA — hora cliente grande, sin ningún warning en la card', () => {
   mountReal({ nextGiroOpportunity: { ...NEXT_GIRO, hora: '23:50' }, initialFocusOpportunity: true });
-  const warn = container.querySelector('.ppp-warn-note').textContent;
-  expect(warn).toMatch(/Confirmar con cliente/);
-  expect(warn).toMatch(/21:52/);     // nueva hora de entrega del nuevo pedido (dato backend)
-  expect(warn).toMatch(/\+7 min/);   // slip como detalle secundario, no alarma principal
+  // la hora del cliente vive grande en la card
+  expect(cardEntrega()).toMatch(/21:52/);
+  // card seca: ni "Atención: Q5 llegaría…" ni "Solo si el cliente acepta" en la card
+  expect(container.querySelector('.ppp-best-card .ppp-warn-note')).toBeNull();
+  expect(container.querySelector('.ppp-best-card').textContent).not.toMatch(/Atención/);
 });
 
-test('clarity: detalle preview etiquetado como preview; summary "Entrega giro" (no "En giro")', () => {
+test('clarity: detalle preview SIN summary ni "Confirmar antes de aplicar"; badge "Confirmar con cliente"', () => {
   mountReal({ nextGiroOpportunity: { ...NEXT_GIRO, hora: '23:50' }, initialFocusOpportunity: true });
   const detail = container.querySelector('.ppp-timeline-card .ppp-sl-detail');
   expect(detail.textContent).toMatch(/Vista previa con el nuevo pedido/);
-  const summary = detail.querySelector('.ppp-rt-summary');
-  expect(summary).toBeTruthy();
-  expect(summary.textContent).toMatch(/Entrega giro/);
-  expect(summary.textContent).not.toMatch(/En giro/);
+  // badge prudente presente (aquí risk='warning' → "Con ajuste"); nunca "No recomendado"
+  expect(detail.querySelector('.ppp-rt-risk')).toBeTruthy();
+  expect(detail.textContent).not.toMatch(/No recomendado/);
+  // frase redundante "Confirmar antes de aplicar" eliminada del detalle
+  expect(detail.textContent).not.toMatch(/Confirmar antes de aplicar/);
+  // summary (Entrega giro / Regreso) suprimido en preview → no duplica la fila compacta
+  expect(detail.querySelector('.ppp-rt-summary')).toBeNull();
+  // operatorMessage crudo del backend NO se muestra en preview
+  expect(detail.textContent).not.toMatch(/se mueve/);
+  // subtítulos humanos de las paradas
+  expect(detail.textContent).toMatch(/Entrega cliente/);
+  expect(detail.textContent).toMatch(/Entrega giro/);
 });

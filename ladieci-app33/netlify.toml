@@ -20,6 +20,10 @@
 # e non è git-linked → non può ereditare nulla di tutto questo. NON portare su main.
 [build.environment]
   ALLOW_V1 = "1"
+  # No publicar source maps en staging: el .map conservaría los literales de
+  # fallback prod (URLs públicas, no secretos) de los `process.env.X || "prod"`.
+  # Con sourcemaps off el artefacto desplegado queda 100% sin refs prod.
+  GENERATE_SOURCEMAP = "false"
   REACT_APP_SUPABASE_URL = "https://tdikhfeinufaahagmpjz.supabase.co"
   REACT_APP_SUPABASE_ANON_KEY = "sb_publishable_qMYSRpFm1TQ4S04nD8Bw3Q_7Fc92qaS"
   REACT_APP_BACKEND_API_URL = "https://fearless-reverence-production-80bc.up.railway.app"
