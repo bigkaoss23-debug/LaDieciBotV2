@@ -130,11 +130,13 @@ test('task54: click chip → card real (21:52, ruta Q2→Q5), warning real, time
   expect(types.some((t) => /Q2\s*→\s*Q5/.test(t || ''))).toBe(true);
   // warning real calculado (no copy genérico)
   expect(container.querySelector('.ppp-warn-note')?.textContent || '').toMatch(/\+7 min/);
-  // timeline combinada presente con la parada Q5 22:04
-  const oppTl = container.querySelector('.ppp-opp-timeline');
-  expect(oppTl).toBeTruthy();
-  expect(oppTl.textContent).toMatch(/22:04/);
-  expect(oppTl.textContent).toMatch(/Q5/);
+  // single-timeline: NO hay bloque "Línea del giro" separado; el detalle combinado
+  // (Q5 22:04) vive DENTRO de "Giros y huecos" (.ppp-sl-detail de la fila activa).
+  expect(container.querySelector('.ppp-opp-timeline')).toBeNull();
+  const detail = container.querySelector('.ppp-timeline-card .ppp-sl-detail');
+  expect(detail).toBeTruthy();
+  expect(detail.textContent).toMatch(/22:04/);
+  expect(detail.textContent).toMatch(/Q5/);
   // botón prudente, sin aplicar nada al click del chip
   expect(applyBtn().textContent).toBe('Revisar antes de aplicar');
   expect(applied.length).toBe(0);
@@ -148,19 +150,50 @@ test('fix1: initialFocusOpportunity=true → popup arranca en Encajar Q5 (no en 
   expect(cardEntrega()).toBe('Entrega 21:52');
   // chip oportunidad marcado como activo
   expect(propBtns()[1].getAttribute('aria-pressed')).toBe('true');
-  // timeline combinada visible de entrada
-  expect(container.querySelector('.ppp-opp-timeline')).toBeTruthy();
+  // detalle combinado YA visible dentro de "Giros y huecos", sin bloque separado
+  expect(container.querySelector('.ppp-opp-timeline')).toBeNull();
+  const detail = container.querySelector('.ppp-timeline-card .ppp-sl-detail');
+  expect(detail).toBeTruthy();
+  expect(detail.textContent).toMatch(/22:04/);
 });
 
 test('fix1: sin focus (Ver propuestas normal) → popup arranca en la best/direct', () => {
   mountReal({ nextGiroOpportunity: { ...NEXT_GIRO, hora: '23:50' } }); // initialFocusOpportunity por defecto false
   expect(cardLabel()).toBe('Mejor propuesta');
   expect(cardEntrega()).toBe('Entrega 21:45');
-  // sin timeline de oportunidad hasta que se seleccione el chip
+  // sin foco: ninguna fila expandida (sin detalle) hasta seleccionar
   expect(container.querySelector('.ppp-opp-timeline')).toBeNull();
+  expect(container.querySelector('.ppp-timeline-card .ppp-sl-detail')).toBeNull();
 });
 
 test('fix1: focus pero sin oportunidad real → fallback a best (sin crash)', () => {
   mount({ initialFocusOpportunity: true }); // data() sin opportunities ni nextGiro
   expect(cardLabel()).toBe('Mejor propuesta');
+});
+
+// ── single-timeline UI fix: una sola línea (Giros y huecos), chips estables ─────
+test('single-timeline: sin "Línea del giro" separada; 3 chips ANTES de Giros y huecos', () => {
+  mountReal({ nextGiroOpportunity: { ...NEXT_GIRO, hora: '23:50' }, initialFocusOpportunity: true });
+  // no hay segunda timeline encima de los chips
+  expect(container.querySelector('.ppp-opp-timeline')).toBeNull();
+  const props = container.querySelector('.ppp-props');
+  const gyh = container.querySelector('.ppp-timeline-card');
+  expect(props).toBeTruthy();
+  expect(gyh).toBeTruthy();
+  // los chips van ANTES de "Giros y huecos" en el DOM
+  expect(props.compareDocumentPosition(gyh) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(propBtns().length).toBe(3);
+});
+
+test('single-timeline: cambio chip actualiza el detalle dentro de Giros y huecos', () => {
+  mountReal({ nextGiroOpportunity: { ...NEXT_GIRO, hora: '23:50' }, initialFocusOpportunity: true });
+  // arranca en Encajar Q5 → detalle Q2→Q5 (22:04) dentro de Giros y huecos
+  expect(container.querySelector('.ppp-timeline-card .ppp-sl-detail').textContent).toMatch(/22:04/);
+  // selecciono el directo → sin giro ligado → fila colapsa (sin detalle), card=best
+  click(propBtns()[0]);
+  expect(cardLabel()).toBe('Mejor propuesta');
+  expect(container.querySelector('.ppp-timeline-card .ppp-sl-detail')).toBeNull();
+  // vuelvo a Encajar Q5 → detalle Q2→Q5 reaparece dentro de Giros y huecos
+  click(propBtns()[1]);
+  expect(container.querySelector('.ppp-timeline-card .ppp-sl-detail').textContent).toMatch(/22:04/);
 });

@@ -336,7 +336,18 @@ const PremiumPlannerPopup = ({
     ? syntheticNextGiro.id
     : firstId;
   const [selectedId, setSelectedId] = useState(initialSelectedId);
-  const [openGiro, setOpenGiro] = useState(null); // riga "Giros y huecos" espansa
+  // Resuelve la fila "Giros y huecos" (key serviceLine) a partir del giroId del backend.
+  const giroIdToRowKey = (gid) => {
+    if (gid == null) return null;
+    const idx = serviceLine.findIndex((e, i) => slRowKey(e, i) === String(gid));
+    return idx >= 0 ? slRowKey(serviceLine[idx], idx) : null;
+  };
+  // single-timeline: la fila del giro ligado a la proposta seleccionada arranca YA
+  // expandida → el detalle de la route vive DENTRO de "Giros y huecos" (no en un
+  // bloque "Línea del giro" separado encima de los chips).
+  const initialSelProp = allProposals.find((p) => p.id === initialSelectedId) || null;
+  const initialOpenGiro = initialSelProp ? giroIdToRowKey(proposalGiroId(initialSelProp, view)) : null;
+  const [openGiro, setOpenGiro] = useState(initialOpenGiro);
   const selectedProposal = allProposals.find((p) => p.id === selectedId) || allProposals[0] || null;
 
   // ── Card grande: di default mostra la RECOMMENDED (comportamento storico invariato).
@@ -374,12 +385,7 @@ const PremiumPlannerPopup = ({
   // ── Ponte proposta ↔ riga "Giros y huecos" (per giroId reale del backend) ──
   // La proposta insertion porta il giroId del giro su cui inserisce; la riga
   // serviceLine porta il suo id. Il link è giroId === row.id. Lookup puro.
-  const rowKeyForProposal = (p) => {
-    const gid = proposalGiroId(p, view);
-    if (gid == null) return null;
-    const idx = serviceLine.findIndex((e, i) => slRowKey(e, i) === gid);
-    return idx >= 0 ? slRowKey(serviceLine[idx], idx) : null;
-  };
+  const rowKeyForProposal = (p) => giroIdToRowKey(proposalGiroId(p, view));
   const proposalForRowKey = (key) => {
     if (key == null) return null;
     return allProposals.find((p) => proposalGiroId(p, view) === key) || null;
@@ -389,11 +395,11 @@ const PremiumPlannerPopup = ({
   const onSelectProposal = (p) => {
     if (!p) return;
     setSelectedId(p.id);
-    // task 54: per la chip opportunity con ruta REAL la timeline combinada
-    // (Pizzería→Q2→Q5) se muestra bajo el mapa; NO abrimos la fila del giro
-    // existente (mostraría solo el giro viejo, sin el nuevo pedido). Resto igual.
-    const rk = (p.isOpportunity && p.hasRealRoute) ? null : rowKeyForProposal(p);
-    setOpenGiro(rk); // apre la riga collegata, o null (collassa) se la proposta non ha giro
+    // single-timeline: abre la fila del giro ligado (incluida la oportunidad, que
+    // ahora muestra su route combinada DENTRO de esa fila). Sin giro ligado (p.ej.
+    // direct "crear") → null (colapsa): su route ya vive en card+mapa.
+    const rk = rowKeyForProposal(p);
+    setOpenGiro(rk);
     if (rk && typeof document !== 'undefined') {
       const el = document.getElementById(`ppp-sl-${rk}`);
       try { if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) {}
@@ -523,16 +529,10 @@ const PremiumPlannerPopup = ({
           <MiniZoneMap zoneMap={view.zoneMap} opp={selectedOpp} />
         </div>
 
-        {/* task 54: PREVIEW REAL de la inserción — cuando el chip oportunidad está
-            enganchado a la propuesta real del backend, mostramos su routeTimeline
-            combinada (Pizzería → Q2 → Q5 → regreso) reusando RouteTimeline. Datos
-            YA calculados por el backend; render-only. */}
-        {cardIsOpportunity && selectedProposal && selectedProposal.hasRealRoute
-          && selectedOpp && selectedOpp.routeTimeline && (
-          <section className="ppp-opp-timeline" aria-label="Preview de la inserción en el giro">
-            <RouteTimeline routeTimeline={selectedOpp.routeTimeline} />
-          </section>
-        )}
+        {/* single-timeline (task UI fix): NO hay bloque "Línea del giro" separado
+            encima de los chips. El detalle de la route seleccionada vive DENTRO de
+            "Giros y huecos" (acordeón de la fila del giro ligado). Los 3 chips quedan
+            siempre estables justo bajo card+mapa. */}
 
         {/* ── 3 bottoni (più piccoli): proposals[] ranked del backend. not_recommended
             resta fuori dai primari; slot mancanti → grigio/disabled. ── */}
@@ -581,6 +581,13 @@ const PremiumPlannerPopup = ({
                 const open = openGiro === key;
                 const linkedP = proposalForRowKey(key);
                 const rowActive = !!(linkedP && selectedId === linkedP.id);
+                // single-timeline: si esta fila es la del giro ligado a la proposta
+                // SELECCIONADA y esa proposta trae una route combinada (Encajar Q5 →
+                // Pizzería→Q2→Q5), el detalle muestra ESA route real; si no, la línea
+                // propia del giro existente. Datos backend, render-only.
+                const rowDetailTimeline = (rowActive && selectedOpp && selectedOpp.routeTimeline)
+                  ? selectedOpp.routeTimeline
+                  : serviceLineTimeline(e);
                 return (
                   <div className={`ppp-sl-row${open ? ' is-open' : ''}${rowActive ? ' is-active' : ''}`} id={`ppp-sl-${key}`} key={key}>
                     <button
@@ -600,7 +607,7 @@ const PremiumPlannerPopup = ({
                     </button>
                     {open && (
                       <div className="ppp-sl-detail">
-                        <RouteTimeline routeTimeline={serviceLineTimeline(e)} compact />
+                        <RouteTimeline routeTimeline={rowDetailTimeline} compact />
                       </div>
                     )}
                   </div>
