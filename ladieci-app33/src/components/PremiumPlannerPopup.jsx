@@ -383,6 +383,29 @@ const PremiumPlannerPopup = ({
       }
     : (view?.bestProposal || {});
 
+  // ── PLANNER_COCINA_FREEZE_15_MIN: stato cucina del giro su cui insiste la card.
+  // Solo lettura dei campi backend (serviceLine entry del giro → fallback opp).
+  // Niente orari inventati: se i campi mancano → null (nessun chip, fallback muto).
+  const cardCocina = (() => {
+    if (!cardProposal) return null;
+    const gid = proposalGiroId(cardProposal, view);
+    let src = (gid != null)
+      ? (serviceLine.find((e) => e && String(e.id) === String(gid)) || null)
+      : null;
+    if (!src || src.cocinaState == null) {
+      const opp = resolveProposalOpp(cardProposal, view) || (view ? view.bestProposalOpp : null);
+      if (opp && opp.cocinaState != null) src = opp;
+    }
+    if (!src || src.cocinaState == null) return null;
+    const mins = Number.isFinite(Number(src.minutesToSalida)) ? Number(src.minutesToSalida) : null;
+    return {
+      frozen: src.cocinaFrozen === true,
+      // human label, mai field-name/JSON raw:
+      label: src.cocinaFrozen === true ? 'Cocina congelada · salida no cambia' : 'Cocina estable',
+      minutes: (mins != null && mins >= 0) ? mins : null,
+    };
+  })();
+
   // ── Ponte proposta ↔ riga "Giros y huecos" (per giroId reale del backend) ──
   // La proposta insertion porta il giroId del giro su cui inserisce; la riga
   // serviceLine porta il suo id. Il link è giroId === row.id. Lookup puro.
@@ -504,6 +527,13 @@ const PremiumPlannerPopup = ({
                 cliente 18:54". Para el resto, "Entrega HH:MM" como siempre. */}
             <h3>{bestForCard.opportunity ? 'Entrega cliente ' : 'Entrega '}{bestForCard.entrega || '—'}</h3>
             {bestForCard.routeLabel && <p className="ppp-type">{bestForCard.routeLabel}</p>}
+            {cardCocina && (
+              <p className={'ppp-cocina-chip' + (cardCocina.frozen ? ' is-frozen' : ' is-stable')}>
+                <span>{cardCocina.frozen ? '❄' : '✓'}</span>
+                {cardCocina.label}
+                {cardCocina.minutes != null && <span className="ppp-cocina-min">{` · ${cardCocina.minutes} min`}</span>}
+              </p>
+            )}
             {/* status técnico ("oportunidad") NO se muestra para el giro compatible. */}
             {bestForCard.status && !bestForCard.opportunity && <p className="ppp-type">{statusLabels[bestForCard.status] || bestForCard.status}</p>}
             {bestForCard.unsafe && !bestForCard.opportunity && <p className="ppp-warn-note">El rider ya está ocupado. Revisar antes de confirmar.</p>}
@@ -1085,6 +1115,13 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-driver{ display:flex; align-items:center; gap:12px; margin:0 0 12px; color:#58EF75; font-size:20px; font-weight:650; }
 .ppp-driver span{ color:#58EF75; font-size:19px; }
 .ppp-type{ margin:0 0 6px; color:#B7BCC2; font-size:18px; font-weight:450; }
+/* PLANNER_COCINA_FREEZE_15_MIN: chip compatto stato cucina. Ámbar = protezione
+   cucina (NON errore); verde = cucina flessibile. minutos in forma umana. */
+.ppp-cocina-chip{ display:inline-flex; align-items:center; gap:6px; margin:2px 0 8px; padding:4px 11px; border-radius:999px; font-size:13px; font-weight:700; letter-spacing:0.1px; }
+.ppp-cocina-chip span{ font-size:13px; line-height:1; }
+.ppp-cocina-chip .ppp-cocina-min{ font-weight:560; opacity:0.85; }
+.ppp-cocina-chip.is-frozen{ color:#F8C16B; background:rgba(240,178,48,0.09); border:1px solid rgba(240,178,48,0.40); }
+.ppp-cocina-chip.is-stable{ color:#86F59A; background:rgba(46,210,88,0.09); border:1px solid rgba(66,232,104,0.34); }
 .ppp-apply{ width:100%; min-height:62px; margin-top:auto; border:1px solid rgba(88,239,117,0.35); border-radius:7px; color:#FFFFFF; background:linear-gradient(100deg,#18A84E,#22C45E); box-shadow:0 16px 32px rgba(19,167,79,0.28), inset 0 1px 0 rgba(255,255,255,0.10); font-size:22px; font-weight:700; cursor:pointer; }
 .ppp-apply:hover{ filter:brightness(1.05); }
 /* FIX_38: botón aplicar inseguro (sin propuesta recomendable) → ámbar, NO verde success */
