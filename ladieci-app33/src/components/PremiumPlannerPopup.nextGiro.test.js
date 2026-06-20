@@ -197,3 +197,22 @@ test('single-timeline: cambio chip actualiza el detalle dentro de Giros y huecos
   click(propBtns()[1]);
   expect(container.querySelector('.ppp-timeline-card .ppp-sl-detail').textContent).toMatch(/22:04/);
 });
+
+// ── clarity: copy operacional + etiquetas claras ───────────────────────────────
+test('clarity: warning operacional (confirmar nueva hora con cliente), slip secundario', () => {
+  mountReal({ nextGiroOpportunity: { ...NEXT_GIRO, hora: '23:50' }, initialFocusOpportunity: true });
+  const warn = container.querySelector('.ppp-warn-note').textContent;
+  expect(warn).toMatch(/Confirmar con cliente/);
+  expect(warn).toMatch(/21:52/);     // nueva hora de entrega del nuevo pedido (dato backend)
+  expect(warn).toMatch(/\+7 min/);   // slip como detalle secundario, no alarma principal
+});
+
+test('clarity: detalle preview etiquetado como preview; summary "Entrega giro" (no "En giro")', () => {
+  mountReal({ nextGiroOpportunity: { ...NEXT_GIRO, hora: '23:50' }, initialFocusOpportunity: true });
+  const detail = container.querySelector('.ppp-timeline-card .ppp-sl-detail');
+  expect(detail.textContent).toMatch(/Vista previa con el nuevo pedido/);
+  const summary = detail.querySelector('.ppp-rt-summary');
+  expect(summary).toBeTruthy();
+  expect(summary.textContent).toMatch(/Entrega giro/);
+  expect(summary.textContent).not.toMatch(/En giro/);
+});

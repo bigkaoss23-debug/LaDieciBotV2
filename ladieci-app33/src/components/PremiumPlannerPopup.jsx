@@ -501,13 +501,26 @@ const PremiumPlannerPopup = ({
             {bestForCard.status && <p className="ppp-type">{statusLabels[bestForCard.status] || bestForCard.status}</p>}
             {bestForCard.unsafe && !bestForCard.opportunity && <p className="ppp-warn-note">El rider ya está ocupado. Revisar antes de confirmar.</p>}
             {bestForCard.opportunity && (
-              <p className="ppp-warn-note">
-                {/* task 54: warning REAL calculado por el backend (ej. "Q2 cede +7
-                    min…"); si no hay ruta real, copy prudente genérico. */}
-                {(cardProposal && cardProposal.hasRealRoute && cardProposal.warning)
-                  ? cardProposal.warning
-                  : 'Oportunidad: encajar con el próximo giro. Revisar antes de aplicar.'}
-              </p>
+              <div className="ppp-warn-note">
+                {/* copy OPERATIVA: lo que el operador necesita decidir es si el cliente
+                    acepta la nueva hora de entrega; el slip en minutos queda como
+                    detalle secundario (no como alarma genérica de planner). timeLabel
+                    = entrega del nuevo pedido en el giro (dato backend, no inventado). */}
+                {(cardProposal && cardProposal.hasRealRoute) ? (
+                  <>
+                    <p style={{ margin: 0 }}>
+                      Confirmar con cliente: entrega pasaría a {cardProposal.timeLabel || bestForCard.entrega || '—'}
+                    </p>
+                    {cardProposal.warning && (
+                      <p className="ppp-warn-detail" style={{ margin: '3px 0 0', opacity: 0.65, fontSize: 11, fontWeight: 600 }}>
+                        {cardProposal.warning}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p style={{ margin: 0 }}>Oportunidad: encajar con el próximo giro. Revisar antes de aplicar.</p>
+                )}
+              </div>
             )}
             {/* Botón real SOLO si el contenedor pasa onApplyHora (aplica la hora al
                 draft). Sin ese prop no se renderiza → cero no-op fantasma. */}
@@ -585,9 +598,11 @@ const PremiumPlannerPopup = ({
                 // SELECCIONADA y esa proposta trae una route combinada (Encajar Q5 →
                 // Pizzería→Q2→Q5), el detalle muestra ESA route real; si no, la línea
                 // propia del giro existente. Datos backend, render-only.
-                const rowDetailTimeline = (rowActive && selectedOpp && selectedOpp.routeTimeline)
-                  ? selectedOpp.routeTimeline
-                  : serviceLineTimeline(e);
+                const rowIsPreview = !!(rowActive && selectedOpp && selectedOpp.routeTimeline);
+                const rowDetailTimeline = rowIsPreview ? selectedOpp.routeTimeline : serviceLineTimeline(e);
+                // título claro: si es la preview con el nuevo pedido, dilo; si es la
+                // línea del giro existente, "Giro actual".
+                const rowDetailTitle = rowIsPreview ? 'Vista previa con el nuevo pedido' : 'Giro actual';
                 return (
                   <div className={`ppp-sl-row${open ? ' is-open' : ''}${rowActive ? ' is-active' : ''}`} id={`ppp-sl-${key}`} key={key}>
                     <button
@@ -607,7 +622,7 @@ const PremiumPlannerPopup = ({
                     </button>
                     {open && (
                       <div className="ppp-sl-detail">
-                        <RouteTimeline routeTimeline={rowDetailTimeline} compact />
+                        <RouteTimeline routeTimeline={rowDetailTimeline} compact title={rowDetailTitle} />
                       </div>
                     )}
                   </div>
@@ -648,7 +663,7 @@ const RT_RISK_LABELS = {
 };
 const RT_NODE_TYPE_LABELS = { departure: 'Salida', delivery: 'Entrega', return: 'Regreso' };
 
-const RouteTimeline = ({ routeTimeline, compact = false }) => {
+const RouteTimeline = ({ routeTimeline, compact = false, title = 'Línea del giro' }) => {
   // Fallback seguro: sin routeTimeline o sin timeline[] → no render (UI actual intacta).
   if (!routeTimeline || !Array.isArray(routeTimeline.timeline) || routeTimeline.timeline.length === 0) {
     return null;
@@ -660,9 +675,9 @@ const RouteTimeline = ({ routeTimeline, compact = false }) => {
   const riskLabel = risk ? (RT_RISK_LABELS[risk] || risk) : null;
 
   return (
-    <section className={`ppp-rt${compact ? ' is-compact' : ''}`} aria-label="Línea del giro">
+    <section className={`ppp-rt${compact ? ' is-compact' : ''}`} aria-label={title}>
       <header className="ppp-rt-head">
-        <h3><span>🛵</span> Línea del giro</h3>
+        <h3><span>🛵</span> {title}</h3>
         {riskLabel && <span className={`ppp-rt-risk rt-${risk}`}>{riskLabel}</span>}
       </header>
 
@@ -673,7 +688,7 @@ const RouteTimeline = ({ routeTimeline, compact = false }) => {
       {summary && (summary.directEta || summary.giroEta || summary.returnEta || summary.tradeoffLabel) && (
         <dl className="ppp-rt-summary">
           {summary.directEta && (<div><dt>Directa</dt><dd>{summary.directEta}</dd></div>)}
-          {summary.giroEta && (<div><dt>En giro</dt><dd>{summary.giroEta}</dd></div>)}
+          {summary.giroEta && (<div><dt>Entrega giro</dt><dd>{summary.giroEta}</dd></div>)}
           {summary.returnEta && (<div><dt>Regreso</dt><dd>{summary.returnEta}</dd></div>)}
           {summary.tradeoffLabel && (<div><dt>Balance</dt><dd>{summary.tradeoffLabel}</dd></div>)}
         </dl>
