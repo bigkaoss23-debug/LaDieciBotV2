@@ -321,6 +321,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [clienteAbitual,  setClienteAbitual]  = useState(null);
   const [showNotaGen,     setShowNotaGen]     = useState(false);
   const [showPlannerLabPopup, setShowPlannerLabPopup] = useState(false);
+  // FIX 1 (init selection): cuando el operador abre el planner desde la fila
+  // "Próximo giro / Encajar Q5" (no desde el botón genérico "Ver propuestas"), el
+  // popup debe arrancar YA seleccionado en el chip oportunidad, no en la best.
+  const [plannerFocusOpportunity, setPlannerFocusOpportunity] = useState(false);
   // Planner propuestas → strategic preview backend (read-only). Si valorizza SOLO
   // al click. null + showPlannerLabPopup = estado loading/error (NUNCA mock): el
   // popup de propuestas se monta solo con un contract válido.
@@ -893,7 +897,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // creato/modificato. REGOLA V1: niente mock/LAB nel flusso operatore. Se manca
   // hora o il backend non risponde con un contract valido → stato di ERRORE sicuro
   // (mai dati finti). Il popup proposte si monta solo con strategicPreview valido.
-  const openPlannerLab = async () => {
+  const openPlannerLab = async (opts = {}) => {
+    // opts.focusOpportunity: true si se abrió desde la fila "Próximo giro". Nota:
+    // si el caller pasa el evento React (onClick directo), focusOpportunity es
+    // undefined → false (botón genérico abre en la best, sin regresión).
+    setPlannerFocusOpportunity(!!(opts && opts.focusOpportunity === true));
     setShowPlannerLabPopup(true);
     // Ogni apertura invalida le risposte in volo precedenti (anti-stale).
     const reqId = ++strategicReqIdRef.current;
@@ -948,6 +956,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     strategicReqIdRef.current++;
     setStrategicLoading(false);
     setStrategicError("");
+    setPlannerFocusOpportunity(false); // FIX 1: no conservar el foco al cerrar
     // Invalida también la ruta manual en vuelo y limpia su preview/warning.
     manualReqIdRef.current++;
     setManualRouteLoading(false);
@@ -1199,6 +1208,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     : null;
   const plannerGeo            = plannerPreview?.geo || null;
   const plannerGiro           = plannerPreview?.giro || null;
+  // Hint logistico secondario: primo giro futuro operativo utile (anche distante).
+  // Solo informativo: il click apre il planner, non applica nulla. (task 44C)
+  const plannerNextGiro       = plannerPreview?.nextGiroOpportunity || null;
   const plannerWarnings       = plannerPreview?.warnings || [];
   const plannerBlockers       = plannerPreview?.blockers || [];
   // ok:false è un contract VALIDO (errore deciso dal backend), non un guasto.
@@ -1220,6 +1232,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // logica/planner/backend: filtri puri di rendering. Il gate "🚫" accanto a
   // Confirmar resta a parte (è la ragione del blocco, non un avviso ripetuto).
   const wMsg = (w) => (w && w.message) || String(w);
+  // task 48B: el warning técnico de geocode (haversine / "Google no disponible" /
+  // "Duración estimada") NO va en ninguna fila inferior — su semántica vive en el
+  // badge fuente del bloque Dirección. Se filtra en origen (timing + planner) para
+  // que tampoco entre en el dedup ni en shownBeforePlanner.
+  const TECH_GEO_WARN_RE = /haversine|google no disponible|duraci.n estimada|geo[_ ]?source/i;
   // 1ª superficie: messaggio del blocco driver (mostrato solo se conflitto + ora toccata).
   const driverWarnMsg = (backendTiming?.driver?.has_conflict && horaTouchedByOperator)
     ? (backendTiming.driver.message || "Driver ocupado")
@@ -1229,6 +1246,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     const seen = new Set(driverWarnMsg ? [driverWarnMsg] : []);
     return (backendTiming?.warnings || [])
       .filter((w) => w && w.code !== "driver_conflict")
+      .filter((w) => !TECH_GEO_WARN_RE.test(wMsg(w)))
       .filter((w) => { const m = wMsg(w); if (seen.has(m)) return false; seen.add(m); return true; });
   }, [backendTiming, driverWarnMsg]);
   // Insieme dei messaggi già mostrati PRIMA dell'hint planner (driver + timing).
@@ -1252,6 +1270,20 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       seen.add(m); return true;
     });
   }, [plannerWarnings, shownBeforePlanner, plannerBlockerMsg]);
+  // task 48-C/48B: warning técnico de geocode también filtrado en la fila de hints
+  // del planner (la regex TECH_GEO_WARN_RE se define arriba, junto a timingWarnings).
+  const plannerWarningsVisible = useMemo(
+    () => plannerWarningsDedup.filter((w) => !TECH_GEO_WARN_RE.test(wMsg(w))),
+    [plannerWarningsDedup]
+  );
+  // task 48-B: "Usa esta hora" solo si la hora sugerida DIFIERE de la activa (si
+  // coincide es ruido duplicado de la card Entrega estimada).
+  const showUsaEstaHora = plannerOk !== false && !!plannerSuggestedHora && plannerSuggestedHora !== hora;
+  // ¿hay algo real que mostrar en la fila inferior? Si no, no pintamos la barra
+  // (evita el borde vacío tras mover el hint al bloque Dirección).
+  const hasInlineHint = plannerPreviewLoading
+    || !!plannerPreviewError
+    || (!!plannerPreview && (plannerOk === false || showPlannerBlockerMsg || showUsaEstaHora || !!plannerGiro?.slot_hora || plannerWarningsVisible.length > 0));
 
   // ── Confirmar gating sul planner (CONFIRMAR_GATING_01) ──────────────────
   // Il bottone Confirmar NON deve restare attivo quando il backend dichiara
@@ -1432,6 +1464,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   onParaAhora={aplicarParaAhora}
                   paraAhoraLoading={paraAhoraLoading}
                   ritiroInmediato={ritiroInmediato}
+                  nextGiroOpportunity={tipoConsegna === "DOMICILIO" ? plannerNextGiro : null}
                 />
               </div>
 
@@ -1689,7 +1722,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
             </div>
 
             {/* ── Inline planner hint (consejero read-only, auto-fetched) ─── */}
-            {(plannerPreviewLoading || plannerPreview || plannerPreviewError) && (
+            {hasInlineHint && (
               <div style={{
                 padding: "5px 24px",
                 display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
@@ -1721,10 +1754,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         {plannerBlockerMsg}
                       </span>
                     )}
-                    {plannerOk !== false && plannerSuggestedHora && (() => {
+                    {showUsaEstaHora && (() => {
                       // P0 (PLANNER_APPLY_HORA_01): applica l'ora consigliata al draft.
                       // Solo locale (setHoraFromOperator); nessun endpoint/DB/Confirmar.
-                      // BUG A: include `recommended_hora` (contract backend live) via plannerSuggestedHora.
+                      // task 48-B: solo se differisce dall'ora attiva (no duplicato card).
                       const horaProposta = plannerSuggestedHora;
                       return (
                         <>
@@ -1749,7 +1782,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         }}>Usa giro compatible</button>
                       </>
                     )}
-                    {plannerWarningsDedup.slice(0, 2).map((w, i) => (
+                    {/* task 48-C: warning tecnico geocode filtrato (la semantica vive
+                        nel badge fonte del bloque Dirección). next-giro spostato lì. */}
+                    {plannerWarningsVisible.slice(0, 2).map((w, i) => (
                       <span key={i} style={{ color: "#fbbf24" }}>
                         · {w?.message || String(w)}
                       </span>
@@ -1939,6 +1974,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
             onCalcManualRoute={calcManualRoute}
             onClearManualRoute={clearManualRoute}
             onApplyHora={(t) => { if (t) { setHoraFromOperator(t); closePlannerLab(); } }}
+            nextGiroOpportunity={plannerNextGiro}
+            initialFocusOpportunity={plannerFocusOpportunity}
           />
         ) : (
           <PlannerStatusOverlay

@@ -84,6 +84,7 @@ const statusLabels = {
   ajuste: 'ajuste',
   no_recomendado: 'no recomendado',
   lleno: 'capacidad llena',
+  oportunidad: 'oportunidad',
 };
 const channelLabels = { sur: 'canal sur', oeste: 'canal oeste', cross: 'cruzado' };
 
@@ -229,6 +230,14 @@ const PremiumPlannerPopup = ({
   // onApplyHora(time): aplica la hora de la propuesta al draft del pedido. Si el
   // contenedor NO lo pasa, el botón "Aplicar propuesta" no se renderiza (sin no-op).
   onApplyHora = null,
+  // nextGiroOpportunity (task 47): hint "Próximo giro" da previewOrderPlanner. Si
+  // se provee, se inyecta como SEGUNDA opción/chip ámbar "oportunidad" (no aplica
+  // automáticamente, botón prudente). null → comportamiento idéntico al anterior.
+  nextGiroOpportunity = null,
+  // FIX 1 (init selection): si true y existe el chip oportunidad, el popup arranca
+  // seleccionado en "Encajar …" (no en la best). Se usa al abrir desde la fila
+  // "Próximo giro" de Nuevo Pedido. false → comportamiento normal (best/recommended).
+  initialFocusOpportunity = false,
 }) => {
   // Fuente de datos: SOLO el contract backend read-only si es válido. Sin él,
   // view=null → empty-state seguro abajo. NO hay fallback a fixture mock (eliminada):
@@ -236,8 +245,79 @@ const PremiumPlannerPopup = ({
   const isStrategic = !!(data && data.contract === STRATEGIC_CONTRACT);
   const view = isStrategic ? adaptStrategicContract(data) : null;
   // ── UX-2: 3 bottoni dai proposals[] ranked del backend ──
-  const proposals3 = primaryProposals(view?.proposals);
-  const allProposals = Array.isArray(view?.proposals) ? view.proposals : [];
+  // Synthetic "Próximo giro" (task 47): se il container passa nextGiroOpportunity
+  // (da previewOrderPlanner) e nessuna proposta reale copre già quel giro futuro,
+  // lo inseriamo come SECONDA opzione (chip ámbar "oportunidad"). NON è applicabile
+  // come il diretto: il bottone resta prudente (review), nessun verde ingannevole.
+  const baseProposals = Array.isArray(view?.proposals) ? view.proposals : [];
+  // task 54: el chip "Encajar Q5" debe ser una PREVIEW REAL. El backend YA calcula
+  // la inserción del pedido en ese giro y la expone en proposals[] (kind
+  // not_recommended, mismo ancla) CON timeLabel/zoneLabel/routeTimeline reales —
+  // solo queda oculta porque va clasificada como no recomendada. Aquí buscamos esa
+  // propuesta real por el ancla del hint (giroId === anchorOrderId) y la usamos como
+  // chip oportunidad: así mapa/timeline/warning/entrega salen del backend, no de un
+  // sintético. Lookup puro (proposalGiroId resuelve por opportunity).
+  const realInsertionProposal = (() => {
+    const ng = nextGiroOpportunity;
+    if (!ng || ng.anchorOrderId == null) return null;
+    return baseProposals.find((p) => p && proposalGiroId(p, view) === String(ng.anchorOrderId)) || null;
+  })();
+  const syntheticNextGiro = (() => {
+    const ng = nextGiroOpportunity;
+    if (!ng || !ng.zone || !ng.hora) return null;
+    // dedup: se una proposta PRIMARIA reale copre già la stessa hora+zona, non duplichiamo.
+    const dup = baseProposals.some((p) =>
+      p && p.kind !== 'not_recommended' && p.timeLabel === ng.hora &&
+      String(p.zoneLabel || '').toUpperCase().includes(String(ng.zone).toUpperCase()));
+    if (dup) return null;
+    if (realInsertionProposal) {
+      // PREVIEW REAL: chip enganchada a la propuesta de inserción del backend.
+      // Conserva id (→ resolveProposalOpp encuentra la opportunity con mapPath/
+      // routeTimeline → mapa Pizzería→Q2→Q5), timeLabel (entrega del nuevo pedido
+      // en el giro), zoneLabel y routeTimeline reales. Solo reetiquetamos como
+      // oportunidad y exponemos el warning calculado.
+      return {
+        ...realInsertionProposal,
+        kind: 'opportunity',
+        isOpportunity: true,
+        hasRealRoute: true,
+        label: `Encajar ${ng.zone}`,
+        zoneLabel: realInsertionProposal.zoneLabel || ng.zone,
+        status: 'oportunidad',
+        warning: (realInsertionProposal.routeTimeline && realInsertionProposal.routeTimeline.operatorMessage)
+          || (Array.isArray(realInsertionProposal.warnings) && realInsertionProposal.warnings[0])
+          || realInsertionProposal.reason || null,
+        recommended: false,
+      };
+    }
+    // Fallback (sin propuesta real de inserción): chip ligera como en task 47, sin
+    // ruta. Click sigue abriendo el planner; el operador revisa en Giros y huecos.
+    return {
+      id: `next-giro-${ng.anchorOrderId || ng.zone}`,
+      kind: 'opportunity',
+      isOpportunity: true,
+      hasRealRoute: false,
+      label: `Encajar ${ng.zone}`,
+      timeLabel: ng.hora,
+      zoneLabel: ng.zone,
+      giroId: ng.anchorOrderId || null, // link alla riga serviceLine del giro
+      status: 'oportunidad',
+      recommended: false,
+    };
+  })();
+  // Augmented: [primo primario (direct), synthetic, ...resto primari, ...not_rec].
+  const allProposals = (() => {
+    if (!syntheticNextGiro) return baseProposals;
+    // task 54: si la chip encarna una propuesta REAL (mismo id), la quitamos de la
+    // base para no duplicarla — la chip ya la representa con su ruta real.
+    const base = syntheticNextGiro.hasRealRoute
+      ? baseProposals.filter((p) => p && p.id !== syntheticNextGiro.id)
+      : baseProposals;
+    const primaries = base.filter((p) => p && p.kind !== 'not_recommended');
+    const notRec = base.filter((p) => p && p.kind === 'not_recommended');
+    return [...primaries.slice(0, 1), syntheticNextGiro, ...primaries.slice(1), ...notRec];
+  })();
+  const proposals3 = primaryProposals(allProposals);
   // "Mejor propuesta" = la proposta RECOMMENDED scelta dal backend (rank 1),
   // non più il diretto fisso: quando il diretto è in conflitto rider il backend
   // promuove il giro compatibile come recommended → la card lo riflette. Render
@@ -247,28 +327,49 @@ const PremiumPlannerPopup = ({
   // proposta in cima è INSICURA (status no_recomendado o conflitto rider): per
   // l'operatore sarebbe fuorviante. In quel caso → copy prudente + stile d'avviso.
   // Con status compatible/ajuste resta "Mejor propuesta" verde come prima.
-  const bestUnsafe = !!(
-    recommendedProposal
-      ? (recommendedProposal.status === 'no_recomendado' || recommendedProposal.riderConflict === true)
-      : (view?.bestProposal && (view.bestProposal.status === 'no_recomendado' || view.bestProposal.riderConflict === true))
-  );
-  const bestForCard = recommendedProposal
-    ? {
-        label: bestUnsafe ? 'Sin propuesta recomendable' : 'Mejor propuesta',
-        unsafe: bestUnsafe,
-        entrega: recommendedProposal.timeLabel || (view?.bestProposal && view.bestProposal.entrega) || null,
-        status: recommendedProposal.status || (view?.bestProposal && view.bestProposal.status) || null,
-        routeLabel: recommendedProposal.label
-          || PROPOSAL_ROLE_COPY[recommendedProposal.kind]
-          || (view?.bestProposal && view.bestProposal.routeLabel) || null,
-      }
-    : (view?.bestProposal || {});
   const serviceLine = Array.isArray(view?.serviceLine) ? view.serviceLine : [];
   // Default = prima proposta PRIMARIA (mai una not_recommended come selezione iniziale).
   const firstId = (proposals3[0] && proposals3[0].id) || (allProposals[0] && allProposals[0].id) || null;
-  const [selectedId, setSelectedId] = useState(firstId);
+  // FIX 1: si se abrió enfocando la oportunidad y el chip existe, arrancamos
+  // seleccionados en él; si no existe (ya no hay proposal), fallback a la best.
+  const initialSelectedId = (initialFocusOpportunity && syntheticNextGiro)
+    ? syntheticNextGiro.id
+    : firstId;
+  const [selectedId, setSelectedId] = useState(initialSelectedId);
   const [openGiro, setOpenGiro] = useState(null); // riga "Giros y huecos" espansa
   const selectedProposal = allProposals.find((p) => p.id === selectedId) || allProposals[0] || null;
+
+  // ── Card grande: di default mostra la RECOMMENDED (comportamento storico invariato).
+  // Eccezione (task 47): se è selezionato il chip OPPORTUNITY sintetico, la card mostra
+  // quell'opportunità (Entrega 22:00 · Encajar Q5 · oportunidad). Le proposte reali
+  // (direct/insertion/no_recomendado) NON cambiano la card → fallback Aplicar invariato.
+  const cardProposal = (selectedProposal && selectedProposal.isOpportunity)
+    ? selectedProposal
+    : recommendedProposal;
+  const cardIsOpportunity = !!(cardProposal && cardProposal.isOpportunity);
+  const bestUnsafe = cardIsOpportunity || !!(
+    cardProposal
+      ? (cardProposal.status === 'no_recomendado' || cardProposal.riderConflict === true)
+      : (view?.bestProposal && (view.bestProposal.status === 'no_recomendado' || view.bestProposal.riderConflict === true))
+  );
+  const bestForCard = cardProposal
+    ? {
+        label: cardIsOpportunity
+          // task 54: el label del ancla ("Encajar Q5") va en cardProposal.label; el
+          // zoneLabel ("Q2 → Q5 (sur)") es la ruta y se muestra como routeLabel.
+          ? (cardProposal.label || `Encajar ${cardProposal.zoneLabel || ''}`.trim())
+          : (bestUnsafe ? 'Sin propuesta recomendable' : 'Mejor propuesta'),
+        unsafe: bestUnsafe,
+        opportunity: cardIsOpportunity,
+        entrega: cardProposal.timeLabel || (view?.bestProposal && view.bestProposal.entrega) || null,
+        status: cardIsOpportunity ? 'oportunidad' : (cardProposal.status || (view?.bestProposal && view.bestProposal.status) || null),
+        routeLabel: cardIsOpportunity
+          ? (cardProposal.hasRealRoute
+              ? (cardProposal.zoneLabel || 'Encajar en el próximo giro')   // task 54: ruta real (ej. "Q2 → Q5 (sur)")
+              : 'Próximo giro · revisar en Giros y huecos')
+          : (cardProposal.label || PROPOSAL_ROLE_COPY[cardProposal.kind] || (view?.bestProposal && view.bestProposal.routeLabel) || null),
+      }
+    : (view?.bestProposal || {});
 
   // ── Ponte proposta ↔ riga "Giros y huecos" (per giroId reale del backend) ──
   // La proposta insertion porta il giroId del giro su cui inserisce; la riga
@@ -288,7 +389,10 @@ const PremiumPlannerPopup = ({
   const onSelectProposal = (p) => {
     if (!p) return;
     setSelectedId(p.id);
-    const rk = rowKeyForProposal(p);
+    // task 54: per la chip opportunity con ruta REAL la timeline combinada
+    // (Pizzería→Q2→Q5) se muestra bajo el mapa; NO abrimos la fila del giro
+    // existente (mostraría solo el giro viejo, sin el nuevo pedido). Resto igual.
+    const rk = (p.isOpportunity && p.hasRealRoute) ? null : rowKeyForProposal(p);
     setOpenGiro(rk); // apre la riga collegata, o null (collassa) se la proposta non ha giro
     if (rk && typeof document !== 'undefined') {
       const el = document.getElementById(`ppp-sl-${rk}`);
@@ -319,7 +423,7 @@ const PremiumPlannerPopup = ({
 
   // ── Aplicar: applica la proposta SELEZIONATA; mai una no_recomendado/blocked.
   // Se la selezione non è applicabile → fallback sicuro alla mejor/recommended. ──
-  const isApplicable = (p) => !!p && p.kind !== 'not_recommended' && p.status !== 'no_recomendado' && !p.blocked;
+  const isApplicable = (p) => !!p && !p.isOpportunity && p.kind !== 'not_recommended' && p.status !== 'no_recomendado' && !p.blocked;
   const applyProposal = isApplicable(selectedProposal) ? selectedProposal : null;
   const applyTime = (applyProposal && applyProposal.timeLabel) || bestForCard.entrega || null;
   const applyIsRecommended = !applyProposal || applyProposal.timeLabel === bestForCard.entrega;
@@ -389,7 +493,16 @@ const PremiumPlannerPopup = ({
             <h3>Entrega {bestForCard.entrega || '—'}</h3>
             {bestForCard.routeLabel && <p className="ppp-type">{bestForCard.routeLabel}</p>}
             {bestForCard.status && <p className="ppp-type">{statusLabels[bestForCard.status] || bestForCard.status}</p>}
-            {bestForCard.unsafe && <p className="ppp-warn-note">El rider ya está ocupado. Revisar antes de confirmar.</p>}
+            {bestForCard.unsafe && !bestForCard.opportunity && <p className="ppp-warn-note">El rider ya está ocupado. Revisar antes de confirmar.</p>}
+            {bestForCard.opportunity && (
+              <p className="ppp-warn-note">
+                {/* task 54: warning REAL calculado por el backend (ej. "Q2 cede +7
+                    min…"); si no hay ruta real, copy prudente genérico. */}
+                {(cardProposal && cardProposal.hasRealRoute && cardProposal.warning)
+                  ? cardProposal.warning
+                  : 'Oportunidad: encajar con el próximo giro. Revisar antes de aplicar.'}
+              </p>
+            )}
             {/* Botón real SOLO si el contenedor pasa onApplyHora (aplica la hora al
                 draft). Sin ese prop no se renderiza → cero no-op fantasma. */}
             {onApplyHora && applyTime && (
@@ -410,13 +523,26 @@ const PremiumPlannerPopup = ({
           <MiniZoneMap zoneMap={view.zoneMap} opp={selectedOpp} />
         </div>
 
+        {/* task 54: PREVIEW REAL de la inserción — cuando el chip oportunidad está
+            enganchado a la propuesta real del backend, mostramos su routeTimeline
+            combinada (Pizzería → Q2 → Q5 → regreso) reusando RouteTimeline. Datos
+            YA calculados por el backend; render-only. */}
+        {cardIsOpportunity && selectedProposal && selectedProposal.hasRealRoute
+          && selectedOpp && selectedOpp.routeTimeline && (
+          <section className="ppp-opp-timeline" aria-label="Preview de la inserción en el giro">
+            <RouteTimeline routeTimeline={selectedOpp.routeTimeline} />
+          </section>
+        )}
+
         {/* ── 3 bottoni (più piccoli): proposals[] ranked del backend. not_recommended
             resta fuori dai primari; slot mancanti → grigio/disabled. ── */}
         <section className="ppp-props" aria-label="Otras opciones rápidas">
           {[0, 1, 2].map((i) => {
             const p = proposals3[i];
             const opp = p ? resolveProposalOpp(p, view) : null;
-            const tone = p ? (toneStyles[opp?.severity] || toneStyles.ok) : toneStyles.info;
+            const tone = p
+              ? (p.isOpportunity ? toneStyles.warning : (toneStyles[opp?.severity] || toneStyles.ok))
+              : toneStyles.info;
             const isSel = p && selectedId === p.id;
             return (
               <button

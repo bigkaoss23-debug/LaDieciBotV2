@@ -4,6 +4,20 @@ const routeUrlFor = direccion => (
   `https://www.google.com/maps/dir/${encodeURIComponent(PIZZERIA_ADDRESS)}/${encodeURIComponent(`${direccion.trim()}, Roquetas de Mar`)}`
 );
 
+// Semántica del badge fuente/fiabilidad del geocode (task 48-D). Copy breve,
+// color por confianza: google→verde alta, cache→verde neutro, nominatim/photon→
+// ámbar "Estimado", haversine→ámbar fuerte "Baja precisión". google-from-* tiene
+// 'google' → verde (es derivado de Google). null si no hay fuente.
+const SOURCE_META = (raw) => {
+  const s = String(raw == null ? "" : raw).toLowerCase().trim();
+  if (!s) return null;
+  if (s.includes("google")) return { key: "google", label: "Google", color: "#58E86B", bg: "rgba(46,210,88,0.12)", border: "rgba(66,232,104,0.40)" };
+  if (s.includes("cache")) return { key: "cache", label: "Cache", color: "#9FE8B0", bg: "rgba(46,210,88,0.08)", border: "rgba(66,232,104,0.30)" };
+  if (s.includes("haversine")) return { key: "lowprec", label: "Baja precisión", color: "#F59E0B", bg: "rgba(245,158,11,0.14)", border: "rgba(245,158,11,0.50)" };
+  if (s.includes("nominatim") || s.includes("photon")) return { key: "estimated", label: "Estimado", color: "#F0C45C", bg: "rgba(240,178,48,0.10)", border: "rgba(240,178,48,0.42)" };
+  return { key: "estimated", label: s, color: "#F0C45C", bg: "rgba(240,178,48,0.10)", border: "rgba(240,178,48,0.42)" };
+};
+
 const DireccionInlinePanel = ({
   tipoConsegna,
   direccion,
@@ -28,6 +42,7 @@ const DireccionInlinePanel = ({
   onParaAhora,
   paraAhoraLoading,
   ritiroInmediato,
+  nextGiroOpportunity,
 }) => {
   const isDomicilio = tipoConsegna === "DOMICILIO";
   const trimmedDireccion = direccion.trim();
@@ -154,9 +169,17 @@ const DireccionInlinePanel = ({
           {(backendTiming?.durata_andata_min != null || zonaInfo?.durataAndataMin != null) && (
             <span>↻ {backendTiming?.durata_andata_min ?? zonaInfo?.durataAndataMin} min</span>
           )}
-          {(backendTiming?.geo_source || zonaInfo?.metodo) && (
-            <span>📡 {backendTiming?.geo_source || zonaInfo?.metodo}</span>
-          )}
+          {(() => {
+            const meta = SOURCE_META(backendTiming?.geo_source || zonaInfo?.metodo);
+            if (!meta) return null;
+            return (
+              <span
+                className={`delivery-source-badge is-${meta.key}`}
+                title={`Fuente geocode: ${backendTiming?.geo_source || zonaInfo?.metodo}`}
+                style={{ color: meta.color, background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: 999, padding: "0 8px", fontWeight: 800 }}
+              >📡 {meta.label}</span>
+            );
+          })()}
           {backendTimingLoading && !backendTiming && <span>Calculando…</span>}
         </div>
       )}
@@ -221,9 +244,35 @@ const DireccionInlinePanel = ({
             read-only (orari suggeriti, ETA per fermata, ruta manual). Se il backend
             non risponde → stato di errore sicuro, MAI mock (gestito nel modal). */}
         {isDomicilio && onOpenPlannerLab && (
-          <button type="button" className="np-recalc" onClick={onOpenPlannerLab}>◎ Ver propuestas</button>
+          <button type="button" className="np-recalc" onClick={() => onOpenPlannerLab()}>◎ Ver propuestas</button>
         )}
       </div>
+
+      {/* ── Próximo giro: hint logístico dentro el bloque Dirección (task 48-A).
+          Ámbar, legible. Click → abre Propuestas (onOpenPlannerLab). NO aplica nada,
+          NO confirma, NO cambia la hora. */}
+      {isDomicilio && nextGiroOpportunity && onOpenPlannerLab && (
+        <div
+          className="delivery-next-giro-hint"
+          role="button"
+          tabIndex={0}
+          onClick={() => onOpenPlannerLab({ focusOpportunity: true })}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenPlannerLab({ focusOpportunity: true }); } }}
+          title="Ver propuestas de entrega"
+          style={{
+            marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+            background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.42)",
+            borderRadius: 10, padding: "8px 12px", cursor: "pointer",
+          }}
+        >
+          <span style={{ color: "#fbbf24", fontWeight: 800, fontSize: 13 }}>
+            💡 {nextGiroOpportunity.label || `Próximo giro ${nextGiroOpportunity.zone} ${nextGiroOpportunity.hora}`}
+          </span>
+          {/* task 48B: sin texto "Ver propuestas" (el botón grande ya existe en esta
+              card). Toda la fila es clicable → abre Propuestas. Chevron como afford. */}
+          <span aria-hidden="true" style={{ marginLeft: "auto", color: "#fbbf24", fontWeight: 900, fontSize: 16, lineHeight: 1 }}>›</span>
+        </div>
+      )}
     </section>
   );
 };
