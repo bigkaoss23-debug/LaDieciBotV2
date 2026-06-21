@@ -663,7 +663,9 @@ const PremiumPlannerPopup = ({
                                 <i>{d.isNew ? 'Cliente' : `Entrega ${d.zone}`}</i>
                                 <b>
                                   {d.eta || '—'}
-                                  {!d.isNew && d.slip && <em className="ppp-sl-slip">+{d.slip}</em>}
+                                  {!d.isNew && d.delay && (
+                                    <em className={`ppp-sl-slip band-${d.delay.band}`}>{d.delay.label}</em>
+                                  )}
                                 </b>
                               </span>
                             </Fragment>
@@ -781,6 +783,12 @@ const RouteTimeline = ({ routeTimeline, compact = false, title = 'Línea del gir
             ? (node.isNewOrder ? 'Entrega cliente' : (node.isAnchor ? 'Entrega giro' : 'Entrega'))
             : (RT_NODE_TYPE_LABELS[node.type] || node.type || '');
           const status = node.status || null;
+          // Chip de retraso por parada (semáforo) SOLO para anclas (pedido ya
+          // confirmado que se mueve). El nuevo pedido muestra su hora propuesta, no
+          // un retraso. Lee el slip YA calculado por el backend; null → sin chip.
+          const delay = (node.type === 'delivery' && !node.isNewOrder)
+            ? delayChipFromSlip(node.slipLabel)
+            : null;
           const cls = [
             'ppp-rt-node',
             `rt-type-${node.type || 'x'}`,
@@ -805,6 +813,7 @@ const RouteTimeline = ({ routeTimeline, compact = false, title = 'Línea del gir
                 <div className="ppp-rt-meta">
                   <span className="ppp-rt-kind">{typeLabel}</span>
                   {node.zone && <span className="ppp-rt-zone">{node.zone}</span>}
+                  {delay && <span className={`ppp-rt-delay band-${delay.band}`}>{delay.label}</span>}
                 </div>
               </div>
             </li>
@@ -953,11 +962,20 @@ const MiniZoneMap = ({ zoneMap, opp }) => {
 // mostrar la vista previa real: salida del giro, cada entrega (marcando la del
 // pedido nuevo = `clientEta`, "Hora cliente") y regreso. Solo lee etas YA
 // calculados por el backend; no calcula tiempos. Render-only.
-// posSlip — slip "positivo" YA calculado por el backend (`+6`), o null. Solo lee el
-// slipLabel del nodo; no calcula minutos. `+0`/negativos/ausente → null (no aviso).
-const posSlip = (node) => {
-  const raw = node && node.slipLabel != null ? String(node.slipLabel).trim() : '';
-  return /^\+[1-9]/.test(raw) ? raw.replace('+', '') : null;
+// Chip de retraso por parada — semáforo presentacional sobre el slip YA CALCULADO
+// por el backend (`slipLabel` = "+N", solo positivo). NO calcula tiempos: solo lee
+// el número y lo bucketiza en banda de color, con las MISMAS franjas operativas que
+// el backend (clientDelayBand): 0–5 verde, 6–10 amarillo, >10 rojo (revisar, NO
+// bloquea). Retraso 0 / ausente → null (sin chip, sin ruido). Copy humano "+N min";
+// para >10, "revisar +N min" (el operador debe mirarlo, no es un bloqueo).
+const delayChipFromSlip = (slipLabel) => {
+  const raw = slipLabel != null ? String(slipLabel).trim() : '';
+  const m = raw.match(/^\+(\d+)$/);
+  if (!m) return null;
+  const min = parseInt(m[1], 10);
+  if (!Number.isFinite(min) || min <= 0) return null;
+  const band = min <= 5 ? 'verde' : (min <= 10 ? 'amarillo' : 'rojo');
+  return { min, band, label: band === 'rojo' ? `revisar +${min} min` : `+${min} min` };
 };
 
 const previewLegsFromTimeline = (rt) => {
@@ -966,9 +984,10 @@ const previewLegsFromTimeline = (rt) => {
   const ret = nodes.find((n) => n.type === 'return') || null;
   const deliveries = nodes
     .filter((n) => n.type === 'delivery' && n.zone)
-    // slip SOLO para el ancla (pedido existente que se mueve); el nuevo pedido no
-    // muestra slip — su hora absoluta es "Cliente HH:MM".
-    .map((n) => ({ zone: String(n.zone), eta: n.eta || null, isNew: !!n.isNewOrder, slip: (!n.isNewOrder ? posSlip(n) : null) }));
+    // delay SOLO para el ancla (pedido ya confirmado que se mueve); el nuevo pedido
+    // no muestra retraso — su hora absoluta es "Cliente HH:MM" (hora a proponer).
+    // `delay` = chip semáforo {min,band,label} desde el slip backend (o null).
+    .map((n) => ({ zone: String(n.zone), eta: n.eta || null, isNew: !!n.isNewOrder, delay: (!n.isNewOrder ? delayChipFromSlip(n.slipLabel) : null) }));
   const newDel = deliveries.find((d) => d.isNew) || null;
   return {
     salida: dep ? (dep.eta || null) : null,
@@ -1331,8 +1350,18 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-sl-leg.is-client{ padding:3px 10px; border:1px solid rgba(88,232,104,0.55); border-radius:8px; background:rgba(46,210,88,0.12); }
 .ppp-sl-leg.is-client i{ color:#58E86B; }
 .ppp-sl-leg.is-client b{ color:#9DF5B0; font-size:17px; }
-/* slip del ancla en la fila compacta: chip ámbar pequeño pero visible, no alarma roja */
+/* retraso por parada (ancla) en la fila compacta: chip semáforo pequeño y legible.
+   Banda = retraso YA calculado por el backend (0–5 verde, 6–10 ámbar, >10 rojo·revisar).
+   Rojo NO bloquea: solo marca que el operador debe mirarlo. */
 .ppp-sl-slip{ display:inline-block; margin-left:6px; padding:1px 7px; border:1px solid rgba(240,196,92,0.55); border-radius:6px; background:rgba(240,196,92,0.14); font-style:normal; font-size:13px; font-weight:800; color:#F0C45C; vertical-align:1px; }
+.ppp-sl-slip.band-verde{ border-color:rgba(66,232,104,0.45); background:rgba(46,210,88,0.12); color:#86F59A; }
+.ppp-sl-slip.band-amarillo{ border-color:rgba(240,196,92,0.55); background:rgba(240,196,92,0.14); color:#F0C45C; }
+.ppp-sl-slip.band-rojo{ border-color:rgba(248,113,113,0.55); background:rgba(248,113,113,0.16); color:#F8A0A0; }
+/* mismo chip semáforo dentro del detalle expandido (RouteTimeline), junto a la zona */
+.ppp-rt-delay{ border-radius:6px; padding:2px 8px; font-size:13px; font-weight:800; font-variant-numeric:tabular-nums; }
+.ppp-rt-delay.band-verde{ color:#86F59A; border:1px solid rgba(66,232,104,0.45); background:rgba(46,210,88,0.12); }
+.ppp-rt-delay.band-amarillo{ color:#F0C45C; border:1px solid rgba(240,196,92,0.55); background:rgba(240,196,92,0.14); }
+.ppp-rt-delay.band-rojo{ color:#F8A0A0; border:1px solid rgba(248,113,113,0.55); background:rgba(248,113,113,0.16); }
 .ppp-sl-arrow{ color:#58E86B; font-weight:800; }
 .ppp-sl-pz{ color:#9CA6AD; font-size:13px; font-weight:650; }
 .ppp-sl-caret{ margin-left:auto; color:#9CA6AD; font-size:14px; }
