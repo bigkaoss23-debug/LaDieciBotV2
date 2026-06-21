@@ -1,9 +1,9 @@
-// PLANNER_COCINA_FREEZE_15_MIN — chip stato cucina nella card del popup planner.
-//   El backend expone en serviceLine/opportunity: cocinaFrozen, cocinaState,
-//   minutesToSalida (+ warning cocina_frozen_under_15). La card muestra un chip
-//   compacto: "Cocina congelada · salida no cambia" (ámbar, protección, no error)
-//   o "Cocina estable" (verde). minutos en forma humana ("12 min"), nunca field
-//   raw. Campos ausentes → sin chip, sin crash, sin estado inventado.
+// PLANNER_COCINA_FREEZE_15_MIN — el chip de estado cocina fue RETIRADO de la UI del
+//   operador. El backend sigue enviando cocinaFrozen/cocinaState/minutesToSalida +
+//   warning cocina_frozen_under_15 (contract intacto), pero la card NO debe pintar
+//   ni "Cocina estable" ni "Cocina congelada · salida no cambia" ni los minutos, y
+//   el warning de cocina NO debe aparecer en "Notas del planner". El resto del popup
+//   (chips de propuesta, una sola timeline) queda intacto.
 //   CI=true npx react-scripts test --watchAll=false --testPathPattern=PremiumPlannerPopup.cocinaChip
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -29,6 +29,7 @@ const RT = {
 };
 
 // `cocina` = campos additivos backend sobre la fila serviceLine del giro #005.
+// El backend los SIGUE enviando; la UI ya no los pinta.
 const dataWith = (cocina) => ({
   contract: CONTRACT, mode: 'read_only',
   firstAvailable: { zone: 'Q2', eta: '18:54', status: 'compatible' },
@@ -41,7 +42,11 @@ const dataWith = (cocina) => ({
     { id: 'cand-agregar-q2-q5-#005', kind: 'insertion', label: 'Encajar Q5', timeLabel: '18:54', zoneLabel: 'Q2 → Q5 (sur)', status: 'compatible', rank: 1, recommended: true, routeTimeline: RT },
   ],
   serviceLine: [{ id: '#005', zone: 'Q5', salida: '18:47', entrega: '19:00', regreso: '19:13', pizzas: 1, ...cocina }],
-  warnings: [], blockers: [], safety: { readOnly: true, writes: false },
+  // el backend agrega el warning cocina_frozen_under_15 cuando un giro está congelado.
+  warnings: cocina && cocina.cocinaFrozen
+    ? [{ code: 'cocina_frozen_under_15', message: 'Cocina congelada en un giro (<15 min a salida): la salida no se modifica' }]
+    : [],
+  blockers: [], safety: { readOnly: true, writes: false },
 });
 const NEXT_GIRO = { kind: 'future_giro', zone: 'Q5', hora: '19:00', anchorOrderId: '#005', label: 'Próximo giro Q5 19:00', cta: 'Ver propuestas', status: 'info', source: 'operational_anchor' };
 
@@ -55,70 +60,56 @@ const mount = (cocina) => act(() => {
     nextGiroOpportunity: { ...NEXT_GIRO }, initialFocusOpportunity: true,
   }));
 });
-const chip = () => container.querySelector('.ppp-best-card .ppp-cocina-chip');
-const cardText = () => container.querySelector('.ppp-best-card')?.textContent || '';
+const popupText = () => container.textContent || '';
 
 const FROZEN = { cocinaFrozen: true, cocinaState: 'congelada', minutesToSalida: 12 };
 const STABLE = { cocinaFrozen: false, cocinaState: 'estable', minutesToSalida: 27 };
 
-// 1: cocinaFrozen=true → chip ámbar "Cocina congelada · salida no cambia".
-test('frozen: chip "Cocina congelada · salida no cambia" en ámbar', () => {
+// 1: cocina congelada → NO se renderiza el chip ni texto "Cocina congelada".
+test('frozen: no se renderiza el chip cocina (.ppp-cocina-chip ausente)', () => {
   mount(FROZEN);
-  const c = chip();
-  expect(c).toBeTruthy();
-  expect(c.className).toMatch(/is-frozen/);
-  expect(c.textContent).toMatch(/Cocina congelada/);
-  expect(c.textContent).toMatch(/salida no cambia/);
+  expect(container.querySelector('.ppp-cocina-chip')).toBeNull();
+  expect(popupText()).not.toMatch(/Cocina congelada/);
+  expect(popupText()).not.toMatch(/salida no cambia/);
 });
 
-// 2: minutesToSalida=12 → forma humana "12 min", nunca el field raw.
-test('frozen: minutos en forma humana "12 min", sin field raw ni JSON', () => {
-  mount(FROZEN);
-  const c = chip();
-  expect(c.textContent).toMatch(/12 min/);
-  expect(c.textContent).not.toMatch(/minutesToSalida/);
-  expect(c.textContent).not.toMatch(/cocina_frozen_under_15/);
-  expect(c.textContent).not.toMatch(/cocinaFrozen/);
-});
-
-// 3: cocinaFrozen=false / estable → chip verde "Cocina estable" + "27 min".
-test('stable: chip verde "Cocina estable" con "27 min"', () => {
+// 2: cocina estable → NO aparece "Cocina estable" ni los minutos del chip.
+test('stable: no aparece "Cocina estable" ni "27 min" del chip', () => {
   mount(STABLE);
-  const c = chip();
-  expect(c).toBeTruthy();
-  expect(c.className).toMatch(/is-stable/);
-  expect(c.textContent).toMatch(/Cocina estable/);
-  expect(c.textContent).toMatch(/27 min/);
-  expect(c.textContent).not.toMatch(/congelada/);
+  expect(container.querySelector('.ppp-cocina-chip')).toBeNull();
+  expect(popupText()).not.toMatch(/Cocina estable/);
 });
 
-// 4: campos cucina ausentes → sin chip, sin crash, sin estado inventado.
+// 3: el warning de cocina NO entra en "Notas del planner".
+test('warning cocina_frozen_under_15 no aparece en notas del planner', () => {
+  mount(FROZEN);
+  const notes = container.querySelector('.ppp-notes');
+  const notesText = notes ? notes.textContent : '';
+  expect(notesText).not.toMatch(/Cocina congelada/);
+  expect(notesText).not.toMatch(/la salida no se modifica/);
+});
+
+// 4: campos cucina ausentes → sigue sin chip, sin crash.
 test('sin campos cocina: no se renderiza chip ni se inventa estado', () => {
   mount(undefined);
-  expect(chip()).toBeNull();
-  expect(cardText()).not.toMatch(/Cocina (congelada|estable)/);
+  expect(container.querySelector('.ppp-cocina-chip')).toBeNull();
+  expect(popupText()).not.toMatch(/Cocina (congelada|estable)/);
 });
 
-// 5: el chip cocina NO reintroduce labels de debug en la card.
+// 5: el resto del popup sigue intacto — chips de propuesta presentes, una sola timeline.
+test('resto intacto: chips de propuesta presentes y una sola .ppp-timeline-card', () => {
+  mount(FROZEN);
+  expect(container.querySelector('.ppp-props')).toBeTruthy();
+  expect(container.querySelectorAll('.ppp-timeline-card').length).toBeLessThanOrEqual(1);
+});
+
+// 6: no reintroduce labels de debug en la card.
 test('no reintroduce debug labels (nuevo/prometido/No recomendado/se mueve/oportunidad)', () => {
   mount(FROZEN);
-  const t = cardText();
+  const t = container.querySelector('.ppp-best-card')?.textContent || '';
   expect(t).not.toMatch(/\bnuevo\b/i);
   expect(t).not.toMatch(/prometido/i);
   expect(t).not.toMatch(/No recomendado/i);
   expect(t).not.toMatch(/se mueve/i);
   expect(t).not.toMatch(/oportunidad/i);
-});
-
-// 6: el chip vive DENTRO de la card, encima de "Giros y huecos" (props presentes).
-test('chip dentro de la card; los chips de propuesta siguen presentes', () => {
-  mount(FROZEN);
-  expect(container.querySelector('.ppp-best-card .ppp-cocina-chip')).toBeTruthy();
-  expect(container.querySelector('.ppp-props')).toBeTruthy();
-});
-
-// 7: una sola timeline (el chip no duplica la línea del giro).
-test('no duplica timeline: una sola .ppp-timeline-card', () => {
-  mount(FROZEN);
-  expect(container.querySelectorAll('.ppp-timeline-card').length).toBeLessThanOrEqual(1);
 });

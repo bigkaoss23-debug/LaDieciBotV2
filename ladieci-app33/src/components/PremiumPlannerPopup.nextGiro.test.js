@@ -1,8 +1,11 @@
-// NEXT_GIRO (task 47) — il chip sintetico "Encajar Q5" da nextGiroOpportunity.
-//   - con prop → 2º chip ámbar "Encajar Q5" 22:00 oportunidad (direct resta 1º)
-//   - senza prop → comportamento invariato
-//   - click chip opportunity → card mostra Entrega 22:00 + bottone prudente
-//   - non applica automaticamente; nessuna scrittura
+// NEXT_GIRO — chip "Usar giro X" desde nextGiroOpportunity.
+//   ALIGN_NEXT_GIRO_WITH_STRATEGIC (regla nueva): el chip SOLO aparece si una
+//   proposal/opportunity REAL del estratégico lo respalda (routeTimeline + ruta +
+//   giroId). Sin respaldo real → NO se muestra chip confirmable (antes, task 47, se
+//   mostraba un chip ligero sin ruta → incoherente "chip Q2 / mapa Pizzería→Q1").
+//   - con respaldo real (dataReal, not_recommended #001) → chip "Usar giro Q5" con
+//     entrega/ruta/timeline reales; click → card real, sin aplicar nada;
+//   - sin respaldo real (data, opportunities:[]) → sin chip; card queda en la best.
 //   CI=true npx react-scripts test --watchAll=false --testPathPattern=PremiumPlannerPopup.nextGiro
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -52,28 +55,26 @@ test('senza nextGiroOpportunity → solo il diretto, nessun chip Encajar', () =>
   expect(titles.some((t) => /Encajar/.test(t || ''))).toBe(false);
 });
 
-test('con nextGiroOpportunity → chip 2 = Usar giro Q5 22:00 (sin `oportunidad`), direct resta 1º', () => {
+// ALIGN_NEXT_GIRO_WITH_STRATEGIC: el hint nextGiroOpportunity (#001) NO tiene una
+// proposal/opportunity REAL de inserción que lo respalde en data() (opportunities:[]),
+// así que ya NO se promueve a un chip confirmable "Usar giro Q5". Antes (task 47) se
+// mostraba un chip ligero sin ruta → incoherente. Regla nueva: solo propuestas reales.
+test('con nextGiroOpportunity SIN respaldo real → NO aparece chip "Usar giro" (regla align)', () => {
   mount({ nextGiroOpportunity: NEXT_GIRO });
-  expect(titleAt(0)).toBe('Crear giro Q2');     // diretto primo, invariato
-  expect(titleAt(1)).toBe('Usar giro Q5');      // chip operativo (no `Encajar`)
-  expect(timeAt(1)).toBe('22:00');
-  expect(stAt(1)).not.toBe('oportunidad');      // no status técnico en el chip
+  expect(titleAt(0)).toBe('Crear giro Q2');     // el directo real sigue siendo el 1º
+  const titles = propBtns().map((_, i) => titleAt(i));
+  expect(titles.some((t) => /Usar giro/.test(t || ''))).toBe(false);
+  expect(titles.some((t) => /Encajar/.test(t || ''))).toBe(false);
 });
 
-test('click chip opportunity → card Entrega cliente 22:00 + bottone prudente (no verde)', () => {
+test('sin respaldo real: la card queda en la best/direct, sin "Giro compatible" confirmable', () => {
   const applied = [];
   mount({ nextGiroOpportunity: NEXT_GIRO, onApplyHora: (t) => applied.push(t) });
-  // stato iniziale: card = diretto 20:25
+  // sin chip oportunidad → la card grande queda en la best/direct
   expect(cardEntrega()).toBe('Entrega 20:25');
   expect(cardLabel()).toBe('Mejor propuesta');
-  // selezione chip opportunity → card cambia
-  click(propBtns()[1]);
-  expect(cardEntrega()).toBe('Entrega cliente 22:00');
-  expect(cardLabel()).toBe('Giro compatible Q5');
-  // bottone ámbar "Confirmar giro compatible" (no verde "Aplicar")
-  expect(applyBtn().textContent).toBe('Confirmar giro compatible');
-  expect(applyBtn().className).toMatch(/is-warning/);
-  // il click sul chip NON ha applicato nulla
+  // no se ofrece "Confirmar giro compatible" sin una propuesta real
+  expect(applyBtn().textContent).not.toMatch(/Confirmar giro compatible/);
   expect(applied.length).toBe(0);
 });
 
