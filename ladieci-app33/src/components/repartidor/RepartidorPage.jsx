@@ -31,6 +31,18 @@ const subtractMinutes = (hora, min) => {
   return `${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot % 60).padStart(2,"0")}`;
 };
 
+// SHARED-GIRO VISIBILITY (solo display): minuti per ordinare gli stop di un giro
+// condiviso col MIGLIOR dato già disponibile, senza inventare: entrega_estimada →
+// hora → null (fallback all'ordine d'ingresso array). null-aware (oraToMin usa 9999).
+const _hm = (t) => { if (!t) return null; const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+const giroStopSortMin = (o) => {
+  const e = _hm(o?.entrega_estimada);
+  if (e != null) return e;
+  const h = _hm(o?.hora);
+  if (h != null) return h;
+  return null;
+};
+
 // ─── Card singola ─────────────────────────────────────────────────────────
 const EntregaCard = ({ orden, onSalgo, onEntregado, loading }) => {
   const [pendingPago, setPendingPago] = useState(null); // null | orden.id
@@ -390,10 +402,49 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
     o.tipo_consegna === "DOMICILIO" && o.estado === ORDER_STATES.RETIRADO
   );
 
-  // Raggruppa per zona, ogni gruppo ordinato per hora
+  // ─── SHARED-GIRO VISIBILITY (solo display) ──────────────────────────────
+  // Ordini attivi che condividono lo stesso manual_giro_id (≥2 presenti) vengono
+  // mostrati come UN blocco giro condiviso (rotta Q1 → Q2 → Q5), così il rider
+  // vede che sono lo stesso giro. Gli altri seguono il raggruppamento per zona
+  // legacy INVARIATO. Nessun fetch extra, nessun cambio di stati/bottoni/handler.
+  const giroMembersById = {};
+  for (const o of entregas) {
+    const gid = o.manual_giro_id;
+    if (!gid) continue;
+    (giroMembersById[gid] = giroMembersById[gid] || []).push(o);
+  }
+  const sharedOrderIds = new Set();
+  const sharedGiros = Object.keys(giroMembersById)
+    .filter(gid => giroMembersById[gid].length >= 2)
+    .map(gid => {
+      const membersList = giroMembersById[gid];
+      // stop ordinati entrega_estimada → hora → ordine array (stabile).
+      const ordini = membersList.slice().sort((a, b) => {
+        const ma = giroStopSortMin(a), mb = giroStopSortMin(b);
+        if (ma != null && mb != null && ma !== mb) return ma - mb;
+        if (ma != null && mb == null) return -1;
+        if (ma == null && mb != null) return 1;
+        return membersList.indexOf(a) - membersList.indexOf(b);
+      });
+      for (const o of ordini) sharedOrderIds.add(o.id);
+      const zones = Array.from(new Set(ordini.map(o => o.zona).filter(Boolean)));
+      // salida del giro: la prima salida_driver_estimada disponibile (no invenzione).
+      const salida = ordini.map(o => o.salida_driver_estimada).find(Boolean) || null;
+      return { id: gid, ordini, zones, route: zones.join(" → "), salida };
+    })
+    // giri più urgenti prima (min stop time), coerente con l'ordinamento zone.
+    .sort((a, b) => {
+      const ma = Math.min(...a.ordini.map(o => giroStopSortMin(o) ?? 9999));
+      const mb = Math.min(...b.ordini.map(o => giroStopSortMin(o) ?? 9999));
+      return ma - mb;
+    });
+
+  // Raggruppa per zona, ogni gruppo ordinato per hora (ESCLUSI gli ordini già in
+  // un blocco giro condiviso, per non duplicarli).
   const perZona = {};
   const senzaZona = [];
   for (const o of entregas) {
+    if (sharedOrderIds.has(o.id)) continue;
     if (o.zona) {
       if (!perZona[o.zona]) perZona[o.zona] = [];
       perZona[o.zona].push(o);
@@ -593,6 +644,46 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
           </div>
         ) : (
           <>
+            {/* ─── Blocchi GIRO CONDIVISO (manual_giro_id, ≥2 stop) ───────────
+                Solo display: ogni ordine resta una EntregaCard con i suoi bottoni
+                order-level invariati. Header con rotta zone + salida unica. */}
+            {sharedGiros.map(g => (
+              <div key={g.id} style={{
+                marginBottom: 20,
+                border: "2px solid #F59E0B",
+                borderRadius: 16,
+                overflow: "hidden",
+                boxShadow: "0 2px 12px rgba(245,158,11,0.25)",
+                background: "#FFFBEB",
+              }}>
+                {/* Header giro condiviso */}
+                <div style={{ padding: "10px 14px", display: "flex", alignItems: "center",
+                  gap: 8, flexWrap: "wrap", borderBottom: "1px solid rgba(245,158,11,0.4)" }}>
+                  <span style={{ fontSize: 15, fontWeight: 900, color: "#92400E" }}>
+                    🔗 Giro combinado{g.route ? ` · ${g.route}` : ""}
+                  </span>
+                  <span style={{ background: "#F59E0B", color: "#1c1300", borderRadius: 20,
+                    padding: "2px 10px", fontSize: 11, fontWeight: 900 }}>Giro compartido</span>
+                  {g.salida && (
+                    <span style={{ background: "rgba(245,158,11,0.18)", color: "#92400E",
+                      border: "1px solid rgba(245,158,11,0.5)", borderRadius: 8, padding: "2px 9px",
+                      fontSize: 12, fontWeight: 800, fontFamily: "'DM Mono',monospace" }}
+                      title="Salida del repartidor (giro)">🛵 Salida {g.salida}</span>
+                  )}
+                  <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: "#B45309" }}>
+                    {g.ordini.length} parada{g.ordini.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                {/* Stop del giro — ognuno con la propria card/azione invariata */}
+                <div style={{ padding: "10px 10px 4px" }}>
+                  {g.ordini.map(o => (
+                    <EntregaCard key={o.id} orden={o}
+                      onSalgo={handleSalgo} onEntregado={handleEntregado} loading={loading} />
+                  ))}
+                </div>
+              </div>
+            ))}
+
             {/* Blocchi per zona */}
             {zoneCoinvolte.map(zona => (
               <div key={zona.id} style={{ marginBottom: 20 }}>
