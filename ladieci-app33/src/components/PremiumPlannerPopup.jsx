@@ -218,6 +218,15 @@ const proposalGiroId = (proposal, view) => {
   return opp && opp.giroId != null ? String(opp.giroId) : null;
 };
 
+// RIDER_SAVING_MIN (informativo, mai bloccante): copy del chip "Ahorra N min rider".
+// Legge SOLO riderSavingMin del backend (combinedDurationMin/separateDurationMin NON
+// si mostrano). null/undefined o <=0 → niente chip (no invenzione, no crash).
+const formatRiderSavingChip = (proposal) => {
+  const n = proposal && Number(proposal.riderSavingMin);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return `🛵 Ahorra ${n} min rider`;
+};
+
 const PremiumPlannerPopup = ({
   onClose,
   data = null,
@@ -540,6 +549,12 @@ const PremiumPlannerPopup = ({
                 cliente 18:54". Para el resto, "Entrega HH:MM" como siempre. */}
             <h3>{bestForCard.opportunity ? 'Entrega cliente ' : 'Entrega '}{bestForCard.entrega || '—'}</h3>
             {bestForCard.routeLabel && <p className="ppp-type">{bestForCard.routeLabel}</p>}
+            {/* RIDER_SAVING_MIN: chip informativo "Ahorra N min rider" bajo la ruta.
+                Solo si el backend manda riderSavingMin>0; nunca bloquea ni cambia
+                status. combinedDurationMin/separateDurationMin NO se muestran. */}
+            {formatRiderSavingChip(cardProposal) && (
+              <p className="ppp-rider-saving">{formatRiderSavingChip(cardProposal)}</p>
+            )}
             {/* Chip de estado cocina RETIRADO de la UI del operador (ruido en esta
                 fase). Backend sigue enviando los campos; no se pintan aquí. */}
             {/* status técnico ("oportunidad") NO se muestra para el giro compatible. */}
@@ -1142,6 +1157,7 @@ const PREMIUM_PLANNER_POPUP_CSS = `
 .ppp-driver{ display:flex; align-items:center; gap:12px; margin:0 0 12px; color:#58EF75; font-size:20px; font-weight:650; }
 .ppp-driver span{ color:#58EF75; font-size:19px; }
 .ppp-type{ margin:0 0 6px; color:#B7BCC2; font-size:18px; font-weight:450; }
+.ppp-rider-saving{ display:inline-block; margin:2px 0 6px; padding:3px 10px; border-radius:999px; background:rgba(34,197,94,0.14); border:1px solid rgba(34,197,94,0.4); color:#58EF75; font-size:13px; font-weight:700; }
 /* PLANNER_COCINA_FREEZE_15_MIN: chip de estado cocina RETIRADO de la UI operador
    (sus estilos .ppp-cocina-chip se eliminaron con él). El contract backend queda
    intacto; si vuelve a mostrarse, restaurar aquí. */
