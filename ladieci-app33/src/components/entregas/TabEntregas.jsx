@@ -63,6 +63,21 @@ const formatGiroLabel = (giro) => {
   return m ? "G" + m[1] : "G?";
 };
 
+// SHARED-GIRO VISIBILITY: ordina gli stop di un giro condiviso col MIGLIOR dato
+// già disponibile, senza inventare nulla: entrega_estimada (consegna stimata
+// backend) → hora cliente → null (fallback all'ordine d'ingresso array). Nessun
+// nuovo calcolo di rotta lato frontend.
+const giroStopSortMin = (o) => {
+  const e = _tm(o?.entrega_estimada);
+  if (e != null) return e;
+  const h = _tm(o?.hora);
+  if (h != null) return h;
+  return null;
+};
+
+// Sequenza zone del giro come rotta leggibile: ["Q1","Q2","Q5"] → "Q1 → Q2 → Q5".
+const formatGiroRoute = (orderedZones = []) => orderedZones.filter(Boolean).join(" → ");
+
 const warningStyle = (level = "soft") => ({
   display: "inline-flex",
   alignItems: "center",
@@ -499,6 +514,9 @@ const ManualGiroBlock = ({
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro
 }) => {
   const giroLabel = formatGiroLabel(giro);
+  // SHARED-GIRO VISIBILITY: rotta leggibile + flag "combinado" (≥2 zone distinte).
+  const giroRoute = formatGiroRoute(zones);
+  const isCombined = zones.length >= 2;
   const AMBER = "#fbbf24";
   return (
     <div style={{
@@ -517,7 +535,7 @@ const ManualGiroBlock = ({
           background: AMBER, color: "#1c1300", borderRadius: 8,
           padding: "3px 10px", fontSize: 13, fontWeight: 900, flexShrink: 0
         }}>
-          🔗 Giro manual {giroLabel}
+          🔗 Giro {isCombined ? "combinado " : ""}{giroLabel}
         </span>
         {hora && (
           <span style={{
@@ -526,16 +544,23 @@ const ManualGiroBlock = ({
             fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 900
           }} title="Orario operativo del giro (salida driver)">🕐 {hora}</span>
         )}
-        {/* Zone incluse */}
-        <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap" }}>
-          {zones.map(zid => {
+        {/* Zone incluse — in SEQUENZA di rotta (Q1 → Q2 → Q5) per leggere il giro
+            condiviso come una sola rotta. Le zone arrivano già ordinate (stop sort). */}
+        <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}
+          title={giroRoute ? `Ruta del giro: ${giroRoute}` : undefined}>
+          {zones.map((zid, i) => {
             const z = ZONE_DELIVERY.find(zz => zz.id === zid);
             const col = z?.colore || "#888";
             return (
-              <span key={zid} style={{
-                background: `${col}33`, border: `1.5px solid ${col}99`, color: "#fff",
-                borderRadius: 7, padding: "2px 8px", fontSize: 11, fontWeight: 800
-              }}>{zid}</span>
+              <span key={zid} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                {i > 0 && (
+                  <span style={{ color: AMBER, fontSize: 12, fontWeight: 900 }} aria-hidden>→</span>
+                )}
+                <span style={{
+                  background: `${col}33`, border: `1.5px solid ${col}99`, color: "#fff",
+                  borderRadius: 7, padding: "2px 8px", fontSize: 11, fontWeight: 800
+                }}>{zid}</span>
+              </span>
             );
           })}
           {ordini.some(o => !o.zona) && (
@@ -968,7 +993,17 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     }
   }
   const manualGiroBlocks = Object.keys(manualMembersByGiro).map(gid => {
-    const ordini = manualMembersByGiro[gid].slice().sort((a, b) => toMin(a.hora) - toMin(b.hora));
+    // SHARED-GIRO VISIBILITY: stop ordinati per entrega_estimada → hora → ordine
+    // array (stabile). Le zone in sequenza derivano da questo ordine (Set preserva
+    // l'inserimento) → label rotta "Q1 → Q2 → Q5".
+    const members = manualMembersByGiro[gid];
+    const ordini = members.slice().sort((a, b) => {
+      const ma = giroStopSortMin(a), mb = giroStopSortMin(b);
+      if (ma != null && mb != null && ma !== mb) return ma - mb;
+      if (ma != null && mb == null) return -1;
+      if (ma == null && mb != null) return 1;
+      return members.indexOf(a) - members.indexOf(b);
+    });
     const giroMeta = giroMetaById[gid] || manualGiroByOrderId[ordini[0].id] || { id: gid, seq: null };
     const zones = Array.from(new Set(ordini.map(o => o.zona).filter(Boolean)));
     const hora = giroOperationalHora(giroMeta, ordini);
