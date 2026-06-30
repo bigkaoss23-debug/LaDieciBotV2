@@ -380,6 +380,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [backendTiming,    setBackendTiming]    = useState(null);
   const [backendTimingLoading, setBackendTimingLoading] = useState(false);
   const [horaTouchedByOperator, setHoraTouchedByOperator] = useState(false);
+  // Opzione A (DELIVERY-MANUAL-GIRO-01): intent del giro condiviso elegido en el
+  // planner ("Confirmar giro compatible"). Se persiste con el pedido como
+  // pending_giro_intent y el backend lo engancha al pasar a EN_COCINA. Se INVALIDA
+  // si el operador cambia la hora a mano (la propuesta deja de ser válida).
+  const [appliedGiroIntent, setAppliedGiroIntent] = useState(null);
   // ── Planner preview (contract "nuevo-pedido-planner-preview-v1") ──────────
   // Fonte unica backend per disponibilità/lead-time/giri. Il frontend MOSTRA il
   // contract, non lo ricalcola. Se il backend non risponde (es. action non
@@ -438,6 +443,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setBackendTiming(null); setBackendTimingLoading(false);
     horaCustom.current = false;
     setHoraTouchedByOperator(false);
+    setAppliedGiroIntent(null);
     setRitiroInmediato(false);
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
     submittingRef.current = false;
@@ -566,6 +572,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       metodo_pago: yaPagedo ? metodoPago : "",
       descuento_tipo:  descuentoImporte > 0 ? descuentoTipo  : null,
       descuento_valor: descuentoImporte > 0 ? descuentoValor : null,
+      // Opzione A: intent del giro condiviso (o null en flujo legacy). El backend
+      // (creaOrdine) lo sanitiza y lo persiste como pending_giro_intent; se consume
+      // al pasar a EN_COCINA. Sin proposal giro → null → comportamiento idéntico.
+      pending_giro_intent: appliedGiroIntent || null,
     });
     // saveGeoCache rimosso — il backend resolver salva automaticamente in cache
     // quando geocoda con successo (Google/Nominatim/Photon). Una sola fonte di scrittura.
@@ -695,6 +705,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     horaCustom.current = true;
     setHoraTouchedByOperator(true);
     setHora(nextHora);
+    // Opzione A: cualquier cambio de hora invalida el intent del giro (la propuesta
+    // compatible deja de ser válida). El apply del planner lo vuelve a fijar JUSTO
+    // después de llamar a esta función (last-write-wins).
+    setAppliedGiroIntent(null);
   };
 
   // "Para ahora" (solo RITIRO): chiede al backend il primo ritiro fattibile
@@ -1973,7 +1987,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
             manualRouteWarning={manualRouteWarning}
             onCalcManualRoute={calcManualRoute}
             onClearManualRoute={clearManualRoute}
-            onApplyHora={(t) => { if (t) { setHoraFromOperator(t); closePlannerLab(); } }}
+            onApplyHora={(t, giroIntent) => { if (t) { setHoraFromOperator(t); if (giroIntent) setAppliedGiroIntent(giroIntent); closePlannerLab(); } }}
             nextGiroOpportunity={plannerNextGiro}
             initialFocusOpportunity={plannerFocusOpportunity}
           />

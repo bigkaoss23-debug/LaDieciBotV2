@@ -485,6 +485,22 @@ const PremiumPlannerPopup = ({
   // con FIX_36 (misma señal `bestForCard.unsafe`). NO cambia la lógica de aplicar.
   const applyUnsafe = !applyProposal && !!bestForCard.unsafe;
 
+  // ── Opzione A (DELIVERY-MANUAL-GIRO-01): intent del giro condiviso ──────────
+  // Solo cuando la card es un GIRO COMPATIBLE con ruta real ("Confirmar giro
+  // compatible") y existe un giroId del backend. Es el dato MÍNIMO que el modal
+  // persistirá en el pedido (pending_giro_intent) para que, al pasar a EN_COCINA,
+  // el backend lo enganche al giro. NO se inventa ruta: giroId/anchorOrderId vienen
+  // del contract; salidaRef es opcional (lo decide el writer). null → flujo legacy.
+  const appliedGiroIntent = (() => {
+    if (!bestForCard.opportunity || !(cardProposal && cardProposal.hasRealRoute)) return null;
+    const giroId = proposalGiroId(cardProposal, view);
+    if (!giroId) return null;
+    const anchorOrderId = (nextGiroOpportunity && nextGiroOpportunity.anchorOrderId != null)
+      ? String(nextGiroOpportunity.anchorOrderId)
+      : giroId;
+    return { giroId, anchorOrderId, salidaRef: null, entregaRef: bestForCard.entrega || null };
+  })();
+
   // Sin contract strategic válido → empty-state seguro. La fixture mock fue
   // eliminada, así que aquí NO se renderiza ninguna propuesta inventada. En el
   // flujo V1 el popup se monta solo con `strategicPreview` válido, por lo que
@@ -573,7 +589,7 @@ const PremiumPlannerPopup = ({
                 type="button"
                 className={'ppp-apply' + (applyUnsafe ? ' is-warning' : '')}
                 title={applyUnsafe ? 'Confirma el giro: pequeño impacto en el giro existente' : undefined}
-                onClick={() => onApplyHora(applyTime)}
+                onClick={() => onApplyHora(applyTime, appliedGiroIntent)}
               >
                 {bestForCard.opportunity
                   ? 'Confirmar giro compatible'
