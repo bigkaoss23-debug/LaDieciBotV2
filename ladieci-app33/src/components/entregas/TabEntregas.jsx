@@ -130,7 +130,13 @@ const buildManualGiroWarnings = (orders, manualGiroByOrderId = {}) => {
 const ZonaOrderRow = ({
   o, zona, onSendRepartidor, loadingId, driverStato, onForzaSalida, onForzaEntregado,
   manualGiro, manualGiroWarnings = [], isManualGiroSelected = false,
-  onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro
+  onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro,
+  // DISPLAY-ONLY (Patch B): true cuando la fila se renderiza DENTRO de un
+  // ManualGiroBlock ya agrupado. La cabecera del bloque ya muestra giro/ruta/
+  // disolver/avisos → se ocultan los duplicados por fila (badge "giro manual · gN",
+  // botones × y disolver, y los manualGiroWarnings). Fuera del bloque (ZonaBlock
+  // legacy) queda en false → comportamiento idéntico.
+  insideGiroBlock = false
 }) => {
   const isLoading   = loadingId === o.id;
   const isListo     = o.estado === ORDER_STATES.LISTO;
@@ -191,7 +197,7 @@ const ZonaOrderRow = ({
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{o.nombre}</span>
           <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>{o.id}</span>
-          {manualGiro && (
+          {!insideGiroBlock && manualGiro && (
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 5,
               background: "rgba(251,191,36,0.14)",
@@ -222,7 +228,7 @@ const ZonaOrderRow = ({
               >disolver</button>
             </span>
           )}
-          {manualGiroWarnings.map(w => (
+          {!insideGiroBlock && manualGiroWarnings.map(w => (
             <span key={`${manualGiro?.id || o.id}-${w.key}`} style={warningStyle(w.level)}>
               {w.label}
             </span>
@@ -282,7 +288,13 @@ const ZonaOrderRow = ({
             Sorgente: campi driver backend separati da forno_out (cucina).
             forno_out NON è la salida driver: qui mostriamo la partenza/consegna
             stimata reale del rider e l'eventuale retraso. */}
-        {o.conflicto_driver && o.salida_driver_estimada && (
+        {/* DISPLAY-ONLY (Patch D): el aviso legacy "Repartidor tarde" usa campos
+            driver POR-ORDEN (conflicto_driver / salida_driver_estimada /
+            retraso_estimado_min) calculados como si Q2 y Q5 fueran giros
+            SEPARADOS. Dentro de un manual_giro_id compartido (insideGiroBlock)
+            es incoherente con la ruta combinada del giro → se oculta. Fuera del
+            giro combinado (ZonaBlock legacy) queda visible igual que antes. */}
+        {!insideGiroBlock && o.conflicto_driver && o.salida_driver_estimada && (
           <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 4,
@@ -571,7 +583,13 @@ const ManualGiroBlock = ({
           )}
         </span>
         <span style={{ flex: 1 }} />
-        {warnings.map(w => (
+        {/* DISPLAY-ONLY (Patch B): avisos redundantes con la cabecera del giro
+            combinado (la secuencia de ruta Q2 → Q5 + el chip "sin zona" ya los
+            expresan) se ocultan: "Zonas diferentes" (zones), "Ya en giro"
+            (already) y "Sin zona" (no-zona). Se mantienen los OPERATIVOS:
+            "Cocina + en camino" (state-gap), "Horarios >15/25 min" (hora),
+            "Sin direccion" (no-dir). */}
+        {warnings.filter(w => !["zones", "already", "no-zona"].includes(w.key)).map(w => (
           <span key={w.key} style={warningStyle(w.level)}>{w.label}</span>
         ))}
         <span style={{
@@ -601,7 +619,8 @@ const ManualGiroBlock = ({
             isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
             onToggleManualGiro={onToggleManualGiro}
             onRemoveFromManualGiro={onRemoveFromManualGiro}
-            onDissolveManualGiro={onDissolveManualGiro} />
+            onDissolveManualGiro={onDissolveManualGiro}
+            insideGiroBlock />
         ))}
       </div>
     </div>

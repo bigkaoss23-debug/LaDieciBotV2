@@ -141,5 +141,77 @@ ck("7. sort fallback entrega_estimada → hora → ordine array", () => {
   assert.equal(route, "Q1 → Q2 → Q4");
 });
 
+// ── Patch B: display-only cleanup dentro il blocco Giro combinado ───────────
+// Replica 1:1 le condizioni di render introdotte in TabEntregas.jsx:
+//   - ZonaOrderRow: con insideGiroBlock=true nasconde il badge "giro manual · gN"
+//     (+ × + disolver) e i manualGiroWarnings per riga; con false → invariato.
+//   - ManualGiroBlock header: filtra i warning ridondanti (zones/already/no-zona),
+//     tiene gli operativi (state-gap/hora/no-dir).
+const showRowGiroBadge = (insideGiroBlock, manualGiro) => !insideGiroBlock && !!manualGiro;
+const showRowGiroWarnings = (insideGiroBlock, warnings = []) => (insideGiroBlock ? [] : warnings);
+const headerWarnings = (warnings = []) => warnings.filter(w => !["zones", "already", "no-zona"].includes(w.key));
+
+const giroMeta = { id: GIRO, seq: 7 };
+const allWarnings = [
+  { key: "zones", label: "Zonas diferentes", level: "soft" },
+  { key: "already", label: "Ya en giro", level: "soft" },
+  { key: "no-zona", label: "Sin zona", level: "soft" },
+  { key: "state-gap", label: "Cocina + en camino", level: "strong" },
+  { key: "hora", label: "Horarios >15 min", level: "soft" },
+  { key: "no-dir", label: "Sin direccion", level: "soft" },
+];
+
+// 8) dentro il blocco giro: NIENTE badge "giro manual · gN" per riga.
+ck("8. insideGiroBlock=true → badge giro per riga nascosto", () => {
+  assert.equal(showRowGiroBadge(true, giroMeta), false);
+});
+
+// 9) dentro il blocco giro: NIENTE manualGiroWarnings per riga (no 'Zonas diferentes' per riga).
+ck("9. insideGiroBlock=true → warnings per riga soppressi", () => {
+  assert.deepEqual(showRowGiroWarnings(true, allWarnings), []);
+});
+
+// 10) legacy ZonaBlock (insideGiroBlock=false): badge + warnings INVARIATI.
+ck("10. insideGiroBlock=false (legacy) → badge + warnings invariati", () => {
+  assert.equal(showRowGiroBadge(false, giroMeta), true);
+  assert.deepEqual(showRowGiroWarnings(false, allWarnings), allWarnings);
+});
+
+// 11) header giro: filtra ridondanti (zones/already/no-zona), tiene operativi.
+ck("11. header → solo warning operativi (state-gap/hora/no-dir)", () => {
+  const hw = headerWarnings(allWarnings).map(w => w.key);
+  assert.deepEqual(hw, ["state-gap", "hora", "no-dir"]);
+  assert.ok(!hw.includes("zones") && !hw.includes("already") && !hw.includes("no-zona"));
+});
+
+// 12) header combinado resta leggibile: route + flag combinado + conteggio.
+ck("12. header combinado: route 'Q1 → Q2 → Q5', combinado, 3 pedidos", () => {
+  const { route, isCombined, ordini } = buildGiroView(giroMembers);
+  assert.equal(route, "Q1 → Q2 → Q5");
+  assert.equal(isCombined, true);
+  assert.equal(ordini.length, 3);
+});
+
+// ── Patch D: warning rider legacy nascosto dentro il blocco Giro combinado ──
+// Replica 1:1 la condizione di render in TabEntregas.jsx: il blocco
+// "⚠ Repartidor tarde" (campi driver per-ordine) si mostra solo se
+// !insideGiroBlock && conflicto_driver && salida_driver_estimada.
+const showRiderWarning = (insideGiroBlock, o) =>
+  !insideGiroBlock && !!o.conflicto_driver && !!o.salida_driver_estimada;
+
+const oLate = { id: "#Q5", conflicto_driver: true, salida_driver_estimada: "23:43", retraso_estimado_min: 26 };
+const oOk = { id: "#Q2", conflicto_driver: false, salida_driver_estimada: "23:08", retraso_estimado_min: 0 };
+
+// 13) dentro Giro combinado: warning rider legacy NASCOSTO anche con conflicto_driver=true.
+ck("13. insideGiroBlock=true + conflicto_driver → 'Repartidor tarde' nascosto", () => {
+  assert.equal(showRiderWarning(true, oLate), false);
+});
+
+// 14) fuori dal giro combinato: warning rider legacy INVARIATO (visibile se conflicto).
+ck("14. insideGiroBlock=false (legacy) → warning rider invariato", () => {
+  assert.equal(showRiderWarning(false, oLate), true);   // conflicto → visibile
+  assert.equal(showRiderWarning(false, oOk), false);    // no conflicto → niente
+});
+
 console.log(`\n═══ RESULT: ${pass} passed, ${fail} failed ═══`);
 process.exit(fail > 0 ? 1 : 0);
