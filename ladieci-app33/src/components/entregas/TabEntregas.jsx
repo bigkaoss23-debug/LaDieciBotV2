@@ -30,7 +30,8 @@ const ordSalida = (o) => calcHoraForno(o, ZONE_DELIVERY.find(z => z.id === o?.zo
 // Priorità: hora_ref scelto dall'operatore → altrimenti la prima salida
 // (min forno_out) tra i membri → altrimenti la prima hora cliente.
 const giroOperationalHora = (giroMeta, ordini) => {
-  if (giroMeta?.hora_ref) return giroMeta.hora_ref;
+  if (giroMeta?.hora_ref) return giroMeta.hora_ref;       // operatore (override)
+  if (giroMeta?.salida_ref) return giroMeta.salida_ref;   // proxy backend-owned (ManualGiroSalidaRefProxy)
   const sal = (ordini || []).map(ordSalida).filter(Boolean).map(_tm).filter(m => m != null);
   if (sal.length) return _th(Math.min(...sal));
   const hs = (ordini || []).map(o => _tm(o.hora)).filter(m => m != null);
@@ -256,8 +257,10 @@ const ZonaOrderRow = ({
                 </span>
               );
             }
-            const hF = manualGiro.hora_ref || (zona ? calcHoraForno(o, zona) : null);
-            const hEntrega = manualGiro.entrega_ref || o.hora;
+            // ⏱ salida horno del giro: hora_ref (operatore) > salida_ref (proxy) > forno per-ordine.
+            const hF = manualGiro.hora_ref || manualGiro.salida_ref || (zona ? calcHoraForno(o, zona) : null);
+            // 🛵 consegna: SEMPRE la hora cliente del singolo stop (no entrega_ref unico del giro).
+            const hEntrega = o.hora;
             const showClienteRef = o.hora && o.hora !== hEntrega;
             if (!hF && !hEntrega) return null;
             return (

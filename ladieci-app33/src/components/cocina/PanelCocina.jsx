@@ -11,7 +11,8 @@ import {
   formatManualGiroLabel,
   getManualGiroForOrder,
   manualGiroBadgeStyle,
-  manualGiroSortAnchorMs
+  manualGiroSortAnchorMs,
+  resolveGiroReadyBy
 } from './manualGiroCocina';
 
 const subtractMinutes = (hora, min) => {
@@ -82,9 +83,11 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       // Sorgente unica: o.forno_out (backend cascade-aware). Fallback legacy per ordini pre-migration.
       const horaFornoBase = o.forno_out
         || (isDelivery && zonaObj && o.hora ? subtractMinutes(o.hora, tempoAndata(o, zonaObj)) : (o.hora || null));
-      // Giro manuale: hora_ref è l'orario operativo UNICO del giro → comanda su forno_out.
-      const horaForno = (manualGiro && manualGiro.hora_ref)
-        ? manualGiro.hora_ref
+      // Giro manuale: orario operativo UNICO backend-owned. Precedenza (decisione A)
+      // hora_ref (operatore) > salida_ref (proxy). null → fallback forno_out per-ordine.
+      const giroReadyBy = resolveGiroReadyBy(manualGiro);
+      const horaForno = giroReadyBy
+        ? giroReadyBy
         // Snooze visivo per-card: solo DOMICILIO usa l'offset
         : (isDelivery ? applyUiOffset(horaFornoBase, o.ui_offset_min) : horaFornoBase);
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;

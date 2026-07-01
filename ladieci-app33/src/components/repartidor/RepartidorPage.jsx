@@ -284,6 +284,7 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
   const [ordLocal,     setOrdLocal]     = useState([]);
   const [audioAttivato, setAudioAttivato] = useState(false);
   const [apertoConsegnati, setApertoConsegnati] = useState(false);
+  const [manualGiros, setManualGiros] = useState([]);
   const prevIdsRef = useRef(null);
 
   // ─── PIN gate per Repartidor ───────────────────────────────────────────
@@ -323,6 +324,22 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
   };
 
   useEffect(() => { setOrdLocal(ordenes); }, [ordenes]);
+
+  // ManualGiroSalidaRefProxy — poll leggero (10s) dei giros manuali backend-owned
+  // per leggere salida_ref/hora_ref. Guardrail D: nessun realtime nuovo, fallback
+  // legacy se il fetch fallisce (nessun crash), nessuna logica giro nel frontend.
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const res = await api.getManualGiros();
+        if (mounted && Array.isArray(res)) setManualGiros(res);
+      } catch (e) { /* fallback legacy per-ordine: nessun crash */ }
+    };
+    load();
+    const poll = setInterval(load, 10000);
+    return () => { mounted = false; clearInterval(poll); };
+  }, []);
 
   // Rileva nuovi ordini e suona
   useEffect(() => {
@@ -406,7 +423,13 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
   // Ordini attivi che condividono lo stesso manual_giro_id (≥2 presenti) vengono
   // mostrati come UN blocco giro condiviso (rotta Q1 → Q2 → Q5), così il rider
   // vede che sono lo stesso giro. Gli altri seguono il raggruppamento per zona
-  // legacy INVARIATO. Nessun fetch extra, nessun cambio di stati/bottoni/handler.
+  // legacy INVARIATO. Nessun cambio di stati/bottoni/handler.
+  // ManualGiroSalidaRefProxy: giroMetaById dal poll leggero getManualGiros → salida
+  // unica backend-owned (hora_ref/salida_ref); fallback legacy se manca.
+  const giroMetaById = {};
+  for (const g of manualGiros) {
+    if (g && g.id && !g.dissolved_at) giroMetaById[g.id] = g;
+  }
   const giroMembersById = {};
   for (const o of entregas) {
     const gid = o.manual_giro_id;
@@ -428,8 +451,12 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
       });
       for (const o of ordini) sharedOrderIds.add(o.id);
       const zones = Array.from(new Set(ordini.map(o => o.zona).filter(Boolean)));
-      // salida del giro: la prima salida_driver_estimada disponibile (no invenzione).
-      const salida = ordini.map(o => o.salida_driver_estimada).find(Boolean) || null;
+      // salida unica del giro (ManualGiroSalidaRefProxy): hora_ref (operatore) >
+      // salida_ref (proxy backend-owned) > legacy prima salida_driver_estimada.
+      // Nessuna invenzione: se manca tutto → null.
+      const meta = giroMetaById[gid];
+      const salida = (meta && (meta.hora_ref || meta.salida_ref))
+        || ordini.map(o => o.salida_driver_estimada).find(Boolean) || null;
       return { id: gid, ordini, zones, route: zones.join(" → "), salida };
     })
     // giri più urgenti prima (min stop time), coerente con l'ordinamento zone.

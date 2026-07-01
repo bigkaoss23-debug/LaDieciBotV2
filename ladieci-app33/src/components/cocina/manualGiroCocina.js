@@ -21,6 +21,16 @@ export const getManualGiroForOrder = (order, giroMetaById = {}) => {
   return giroMetaById[gid] || { id: gid, seq: null, order_ids: [] };
 };
 
+// ManualGiroSalidaRefProxy — orario operativo UNICO del giro (⏱ ready-by), con la
+// precedenza approvata (decisione A):
+//   hora_ref (operatore)  >  salida_ref (proxy backend-owned)
+// Ritorna "HH:MM" o null. null = NESSUN piano giro backend-owned ancora: il
+// chiamante può fare fallback al forno_out per-ordine, ma NON deve trattare il
+// giro come se avesse un piano proxy valido (nessuna matematica giro nel frontend).
+// La UI non calcola mai questo tempo: legge solo il backend.
+export const resolveGiroReadyBy = (giro) =>
+  (giro && (giro.hora_ref || giro.salida_ref)) || null;
+
 // Orario consegna comune (🛵) di un ordine che appartiene a un manual giro.
 // Fallback in ordine di priorità:
 //   1) giro.entrega_ref (target consegna scelto/derivato dall'operatore)

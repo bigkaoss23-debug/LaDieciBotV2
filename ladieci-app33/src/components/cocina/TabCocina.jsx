@@ -13,7 +13,7 @@ import {
   getManualGiroForOrder,
   manualGiroBadgeStyle,
   manualGiroSortAnchorMs,
-  resolveHoraEntregaGiro
+  resolveGiroReadyBy
 } from './manualGiroCocina';
 
 // hora = orario consegna cliente → horaForno = hora − tempoAndata(ordine)
@@ -164,22 +164,24 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
       // Sorgente unica: o.forno_out (backend cascade-aware). Fallback legacy per ordini pre-migration.
       const horaFornoBase = o.forno_out
         || (isDelivery && zonaObj && o.hora ? subtractMinutes(o.hora, tempoAndata(o, zonaObj)) : (o.hora || null));
-      // Giro manuale: hora_ref è l'orario operativo UNICO del giro (scelto dall'operatore)
-      // → comanda su forno_out per allineare tutti i membri allo stesso timer.
-      const horaForno = (manualGiro && manualGiro.hora_ref)
-        ? manualGiro.hora_ref
+      // Giro manuale: orario operativo UNICO backend-owned. Precedenza (decisione A)
+      // hora_ref (operatore) > salida_ref (proxy). null → nessun piano giro valido →
+      // fallback al forno_out per-ordine (NON si finge un piano nel frontend).
+      const giroReadyBy = resolveGiroReadyBy(manualGiro);
+      const horaForno = giroReadyBy
+        ? giroReadyBy
         // Snooze visivo per-card: solo DOMICILIO usa l'offset (PICKUP è priorità reale)
         : (isDelivery ? applyUiOffset(horaFornoBase, o.ui_offset_min) : horaFornoBase);
       // nPizze = solo pizze (no bevande, no dolci)
       const nPizze = items.reduce((s,it) => s + (parseInt(it.q)||1), 0);
       // Il timer usa horaForno come deadline (non hora)
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;
-      // Orario consegna (🛵): per un giro manuale è il target comune del giro
-      // (entrega_ref → anchor.hora → max ora membri → o.hora); altrimenti l'ora cliente.
-      // Usa la lista completa `ordenes` (non activosBase) per non sottostimare il max.
+      // Orario consegna (🛵): SEMPRE la hora cliente del singolo stop (promessa reale).
+      // NIENTE entrega_ref unico del giro: in una rotta multi-stop i tempi di consegna
+      // sono diversi per stop (il tempo unico falsava #001 23:30 mostrato 23:24). Gli
+      // ETA per-stop veri arriveranno da route_plan in Option B.
       const isManualGiro = !!(manualGiro && manualGiro.id);
-      const horaEntregaGiro = isManualGiro ? resolveHoraEntregaGiro(o, manualGiro, ordenes) : null;
-      const horaEntrega = isManualGiro ? horaEntregaGiro : o.hora;
+      const horaEntrega = o.hora;
       // Warning non bloccante: la pizza esce dal forno DOPO l'ora cliente (solo delivery)
       const fornoMs = orarioToMs(horaForno);
       const horaMs = orarioToMs(o.hora);
@@ -279,7 +281,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                               boxShadow:"0 2px 8px rgba(194,65,12,.4)"}}>
                               <span style={{fontSize:14}}>🛵</span>
                               <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
-                                {o.isManualGiro ? `GIRO ${o.horaEntrega}` : o.horaEntrega}
+                                {o.horaEntrega}
                               </span>
                             </div>
                           </div>
