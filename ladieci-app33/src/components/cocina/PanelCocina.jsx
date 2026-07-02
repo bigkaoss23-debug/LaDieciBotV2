@@ -10,7 +10,7 @@ import {
   buildManualGiroMetaById,
   formatManualGiroLabel,
   getManualGiroForOrder,
-  manualGiroBadgeStyle,
+  manualGiroAccentColor,
   manualGiroSortAnchorMs,
   resolveGiroReadyBy
 } from './manualGiroCocina';
@@ -238,19 +238,31 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
               const zonaColore = isDelivery
                 ? (ZONE_DELIVERY.find(z => z.id === o.zona)?.colore || "#F97316")
                 : null;
+              // COCINA_MANUAL_GIRO_VISUAL_GROUPING — accent condiviso per membri stesso giro.
+              const giroAccent = o.manualGiro ? manualGiroAccentColor(o.manualGiro) : null;
               return (
                 <div key={o.id} style={{
                   background:"#fff",
                   borderRadius:16,
-                  border: isDelivery ? `4px solid ${zonaColore}` : `2px solid ${fc.border}`,
+                  border: giroAccent ? `4px solid ${giroAccent}` : (isDelivery ? `4px solid ${zonaColore}` : `2px solid ${fc.border}`),
                   display:"flex",flexDirection:"column",overflow:"hidden",
-                  boxShadow: isDelivery
-                    ? `0 0 0 4px ${zonaColore}88, 0 6px 24px ${zonaColore}55`
-                    : isUrgent
-                      ? `0 0 0 3px ${fc.border}44, 0 4px 20px ${fc.border}33`
-                      : "0 2px 10px rgba(0,0,0,0.12)",
+                  boxShadow: giroAccent
+                    ? `0 0 0 4px ${giroAccent}88, 0 6px 24px ${giroAccent}55`
+                    : isDelivery
+                      ? `0 0 0 4px ${zonaColore}88, 0 6px 24px ${zonaColore}55`
+                      : isUrgent
+                        ? `0 0 0 3px ${fc.border}44, 0 4px 20px ${fc.border}33`
+                        : "0 2px 10px rgba(0,0,0,0.12)",
                   position:"relative"
                 }}>
+                  {o.manualGiro && (
+                    <div style={{background:giroAccent,color:"#fff",textAlign:"center",
+                      padding:"4px 8px",fontSize:12,fontWeight:900,letterSpacing:.6,
+                      textTransform:"uppercase",display:"flex",alignItems:"center",
+                      justifyContent:"center",gap:6}}>
+                      🔗 GIRO MANUAL · {formatManualGiroLabel(o.manualGiro)}
+                    </div>
+                  )}
                   {/* Header colorato per fase — tema chiaro (full-screen pizzeria) */}
                   <div style={{background:fc.bgLight, padding:"12px 16px",
                     display:"flex",justifyContent:"space-between",alignItems:"flex-start",
@@ -259,11 +271,11 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                       <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:20,lineHeight:1}}>{o.id}</div>
                       <div style={{color:fc.textLight,opacity:0.85,fontWeight:700,fontSize:14,marginTop:3,
                         whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {o.nombre}</div>
-                      {o.manualGiro && (
-                        <div style={{marginTop:6}}>
-                          <span style={manualGiroBadgeStyle(true)}>
-                            giro manual · {formatManualGiroLabel(o.manualGiro)}
-                          </span>
+                      {o.manualGiro && isDelivery && (
+                        <div style={{marginTop:6,display:"inline-flex",alignItems:"center",gap:5}} title="Zona (secondaria; il giro è la fascia in alto)">
+                          <span style={{width:10,height:10,borderRadius:"50%",flexShrink:0,
+                            background:zonaColore,border:"1.5px solid rgba(0,0,0,0.15)"}}></span>
+                          <span style={{color:fc.textLight,opacity:0.85,fontWeight:800,fontSize:11,letterSpacing:.3}}>{o.zona}</span>
                         </div>
                       )}
                       {(o.horaForno || o.hora) && (

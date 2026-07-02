@@ -7,6 +7,31 @@ export const formatManualGiroLabel = (giro) => {
   return m ? "G" + m[1] : "G?";
 };
 
+// COCINA_MANUAL_GIRO_VISUAL_GROUPING (Option 1) — stable accent color per giro so
+// that all cards sharing a manual_giro_id read as ONE cluster in Cocina. PURE &
+// DETERMINISTIC: keyed by giro.seq (backend-assigned, integer, stable per service
+// day → identical for every member). Fallback to a char-code hash of giro.id when
+// seq is missing (fetch race). NEVER pure red — red is reserved for aggiunta/urgent.
+export const MANUAL_GIRO_ACCENT_PALETTE = [
+  "#F59E0B", // amber
+  "#06B6D4", // cyan
+  "#8B5CF6", // violet
+  "#22C55E", // green
+  "#EC4899", // pink
+  "#3B82F6", // blue
+];
+
+export const manualGiroAccentColor = (giro) => {
+  const P = MANUAL_GIRO_ACCENT_PALETTE;
+  if (!giro) return P[0];
+  const seq = Number(giro.seq);
+  if (Number.isFinite(seq) && seq >= 1) return P[(Math.floor(seq) - 1) % P.length];
+  const id = String(giro.id || "");
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i)) % P.length;
+  return P[h];
+};
+
 export const buildManualGiroMetaById = (manualGiros = []) => {
   const out = {};
   for (const giro of manualGiros || []) {

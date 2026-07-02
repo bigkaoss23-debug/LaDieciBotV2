@@ -11,7 +11,7 @@ import {
   buildManualGiroMetaById,
   formatManualGiroLabel,
   getManualGiroForOrder,
-  manualGiroBadgeStyle,
+  manualGiroAccentColor,
   manualGiroSortAnchorMs,
   resolveGiroReadyBy
 } from './manualGiroCocina';
@@ -226,20 +226,33 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
             const oTel = String(o.tel||o.wa_id||"").replace("+","");
             const hasAggiunta = telConAggiunta.has(oTel);
             const zonaColore = o.isDelivery ? (o.zonaObj?.colore || "#F97316") : null;
+            // COCINA_MANUAL_GIRO_VISUAL_GROUPING — accent condiviso per membri dello
+            // stesso manual_giro_id (border/halo/stripe); zona demota a dot.
+            const giroAccent = o.manualGiro ? manualGiroAccentColor(o.manualGiro) : null;
             return (
               <div key={o.id} style={{background:"#fff",borderRadius:16,
-                border: hasAggiunta ? `3px solid #E8341C` : (o.isDelivery ? `4px solid ${zonaColore}` : `2px solid ${fc.border}`),
+                border: hasAggiunta ? `3px solid #E8341C` : (giroAccent ? `4px solid ${giroAccent}` : (o.isDelivery ? `4px solid ${zonaColore}` : `2px solid ${fc.border}`)),
                 display:"flex",flexDirection:"column",overflow:"hidden",
                 boxShadow: hasAggiunta
                   ? `0 0 0 3px #E8341C44, 0 4px 20px #E8341C33`
-                  : o.isDelivery
-                    ? `0 0 0 4px ${zonaColore}88, 0 6px 24px ${zonaColore}55`
-                    : isUrgent?`0 0 0 3px ${fc.border}44,0 4px 20px ${fc.border}33`:`0 2px 10px rgba(0,0,0,0.15)`}}>
+                  : giroAccent
+                    ? `0 0 0 4px ${giroAccent}88, 0 6px 24px ${giroAccent}55`
+                    : o.isDelivery
+                      ? `0 0 0 4px ${zonaColore}88, 0 6px 24px ${zonaColore}55`
+                      : isUrgent?`0 0 0 3px ${fc.border}44,0 4px 20px ${fc.border}33`:`0 2px 10px rgba(0,0,0,0.15)`}}>
               {hasAggiunta && (
                 <div style={{background:"#E8341C",color:"#fff",textAlign:"center",
                   padding:"5px",fontSize:13,fontWeight:900,letterSpacing:.5,
                   animation:"livePulse 1s infinite"}}>
                   ⚠️ AGGIUNTA IN ATTESA ⚠️
+                </div>
+              )}
+              {o.manualGiro && (
+                <div style={{background:giroAccent,color:"#fff",textAlign:"center",
+                  padding:"4px 8px",fontSize:12,fontWeight:900,letterSpacing:.6,
+                  textTransform:"uppercase",display:"flex",alignItems:"center",
+                  justifyContent:"center",gap:6}}>
+                  🔗 GIRO MANUAL · {formatManualGiroLabel(o.manualGiro)}
                 </div>
               )}
                 <div style={{background:fc.bg,padding:"12px 16px",
@@ -248,11 +261,11 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                   <div>
                     <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:"#fff",fontSize:20,lineHeight:1}}>{o.id}</div>
                     <div style={{color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:14,marginTop:3}}>👤 {o.nombre}</div>
-                    {o.manualGiro && (
-                      <div style={{marginTop:6}}>
-                        <span style={manualGiroBadgeStyle(false)}>
-                          giro manual · {formatManualGiroLabel(o.manualGiro)}
-                        </span>
+                    {o.manualGiro && o.isDelivery && (
+                      <div style={{marginTop:6,display:"inline-flex",alignItems:"center",gap:5}} title="Zona (secondaria; il giro è indicato dalla fascia in alto)">
+                        <span style={{width:10,height:10,borderRadius:"50%",flexShrink:0,
+                          background:zonaColore,border:"1.5px solid rgba(255,255,255,0.75)"}}></span>
+                        <span style={{color:"rgba(255,255,255,0.9)",fontWeight:800,fontSize:11,letterSpacing:.3}}>{o.zona}</span>
                       </div>
                     )}
                     {/* Orario forno (sopra) + consegna (sotto) — 2 bottoni distinti */}
