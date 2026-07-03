@@ -892,6 +892,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           hora: hora || null,
           zona_manuale: tipoConsegna === "DOMICILIO" ? zonaManuale : false,
           zona: (tipoConsegna === "DOMICILIO" && zonaManuale) ? (zonaInfo?.zona?.id || null) : null,
+          // WARNING_LAYER_BACKEND_CONTRACT B2a — el operador ya confirmó un giro
+          // compatible en el planner popup. El backend SIEMPRE re-valida este id
+          // (nunca lo tomamos como cierto acá); solo lo reenviamos tal cual.
+          // NO enviamos salidaRef/entregaRef: no forman parte del contrato driver.
+          intended_giro_id: appliedGiroIntent?.giroId || undefined,
         });
         if (!cancelled) setBackendTiming(res || null);
       } catch (e) {
@@ -904,7 +909,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       }
     }, 450);
     return () => { cancelled = true; clearTimeout(t); setBackendTimingLoading(false); };
-  }, [visible, tipoConsegna, direccion, hora, zonaManuale]); // eslint-disable-line
+    // appliedGiroIntent?.giroId (no el objeto completo) para no re-disparar el
+    // fetch en cada render — solo cuando el id realmente cambia.
+  }, [visible, tipoConsegna, direccion, hora, zonaManuale, appliedGiroIntent?.giroId]); // eslint-disable-line
 
   // ── Planner propuestas — apertura ESPLICITA (mai automatica), SOLO dati reali ──
   // startTime = `hora` GIÀ scelta nel draft (no Date.now). Read-only: nessun ordine
@@ -1146,6 +1153,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     });
   };
 
+  // WARNING_LAYER_BACKEND_CONTRACT B2a — gate unico: i nuovi campi (block_confirm,
+  // warning_class, overridden_by_giro, ...) si usano SOLO quando il backend dichiara
+  // esplicitamente contract_version=2. Altrimenti fallback legacy byte-identico
+  // (nessuna lettura parziale dei nuovi campi).
+  const isDriverContractV2 = backendTiming?.driver?.contract_version === 2;
+
   // Stato delivery unificato — combina la proposta schedule-aware del driver
   // con il vincolo forno. Il bottone "Aplicar sugerencia" usa questo.
   const deliveryStatus = useMemo(() => {
@@ -1162,7 +1175,14 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         ? (backendTiming.hora_proposta || hora)
         : (firstAvailableH || backendTiming.hora_proposta || hora);
       const suggestedH = firstAvailableH || null;
-      const blockedByBackend = !!backendTiming.driver?.has_conflict;
+      // WARNING_LAYER_BACKEND_CONTRACT B2a: con contract v2 il backend dice
+      // esplicitamente se bloccare (block_confirm) — incluso il caso
+      // OVERRIDDEN_BY_GIRO (non blocca) senza che il frontend decida da solo
+      // in base a appliedGiroIntent/manual_giro_id/salida_ref. Senza v2,
+      // fallback legacy identico a prima (has_conflict).
+      const blockedByBackend = isDriverContractV2
+        ? !!backendTiming.driver?.block_confirm
+        : !!backendTiming.driver?.has_conflict;
       return {
         isBlocked: horaTouchedByOperator && blockedByBackend,
         selectedH,
@@ -1188,7 +1208,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     if (limits.length === 0) return { isBlocked: false, selectedH: hora, sugeridoH: null, outOfServiceWindow: false };
     const sugMin = Math.ceil(Math.max(...limits) / 5) * 5;
     return { isBlocked: horaMin < sugMin, selectedH: hora, sugeridoH: toH(sugMin), outOfServiceWindow: false };
-  }, [slotFeedback, hora, backendTiming, backendTimingLoading, tipoConsegna, horaTouchedByOperator]);
+  }, [slotFeedback, hora, backendTiming, backendTimingLoading, tipoConsegna, horaTouchedByOperator, isDriverContractV2]);
 
   const pickupKitchenStatus = useMemo(() => {
     if (tipoConsegna === "DOMICILIO" || !hora) return null;
@@ -1251,10 +1271,43 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // badge fuente del bloque Dirección. Se filtra en origen (timing + planner) para
   // que tampoco entre en el dedup ni en shownBeforePlanner.
   const TECH_GEO_WARN_RE = /haversine|google no disponible|duraci.n estimada|geo[_ ]?source/i;
+
+  // WARNING_LAYER_BACKEND_CONTRACT B2a — 1ª superficie: blocco driver.
+  // Con contract v2 il backend classifica esplicitamente il warning
+  // (warning_class/copy_key); il frontend MOSTRA quella classificazione,
+  // non decide da solo in base a appliedGiroIntent/manual_giro_id/salida_ref.
+  // Senza v2 → fallback legacy byte-identico (solo has_conflict/message).
+  const driverWarningView = useMemo(() => {
+    const driver = backendTiming?.driver;
+    const NONE_VIEW = { warningClass: "NONE", tone: null, text: null };
+    if (!driver || !horaTouchedByOperator) return NONE_VIEW;
+
+    if (!isDriverContractV2) {
+      if (!driver.has_conflict) return NONE_VIEW;
+      return { warningClass: "REAL_BLOCKER", tone: "urgent", text: driver.message || "Driver ocupado" };
+    }
+
+    switch (driver.warning_class) {
+      case "REAL_BLOCKER":
+        return { warningClass: "REAL_BLOCKER", tone: "urgent", text: driver.message || "Driver ocupado" };
+      case "RIDER_POSITION_BLOCKER":
+        return { warningClass: "RIDER_POSITION_BLOCKER", tone: "urgent", text: driver.message || "Rider ocupado" };
+      case "ADVISORY_GIRO_AVAILABLE": {
+        const base = driver.message || "Driver ocupado";
+        const giroSuffix = driver.compatible_giro_label ? ` · compatible con ${driver.compatible_giro_label}` : "";
+        return { warningClass: "ADVISORY_GIRO_AVAILABLE", tone: "urgent", text: `${base}${giroSuffix}` };
+      }
+      case "OVERRIDDEN_BY_GIRO": {
+        const giroLabel = driver.compatible_giro_label || "giro compatible";
+        return { warningClass: "OVERRIDDEN_BY_GIRO", tone: "info", text: `Resuelto por ${giroLabel} (no se aplica solo)` };
+      }
+      case "NONE":
+      default:
+        return NONE_VIEW;
+    }
+  }, [backendTiming, horaTouchedByOperator, isDriverContractV2]);
   // 1ª superficie: messaggio del blocco driver (mostrato solo se conflitto + ora toccata).
-  const driverWarnMsg = (backendTiming?.driver?.has_conflict && horaTouchedByOperator)
-    ? (backendTiming.driver.message || "Driver ocupado")
-    : null;
+  const driverWarnMsg = driverWarningView.text;
   // 2ª superficie: bullets timing, deduplicati e senza il messaggio del driver.
   const timingWarnings = useMemo(() => {
     const seen = new Set(driverWarnMsg ? [driverWarnMsg] : []);
@@ -1482,10 +1535,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 />
               </div>
 
-              {tipoConsegna === "DOMICILIO" && (backendTiming?.driver?.has_conflict && horaTouchedByOperator) && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#fca5a5", fontSize: 11, fontWeight: 700 }}>
-                  <span>⚠️ {backendTiming.driver.message || "Driver ocupado"}</span>
-                  {backendTiming.suggested_hora && (
+              {tipoConsegna === "DOMICILIO" && driverWarningView.warningClass !== "NONE" && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700,
+                  color: driverWarningView.tone === "info" ? "#86efac" : "#fca5a5",
+                }}>
+                  <span>{driverWarningView.tone === "info" ? "✅" : "⚠️"} {driverWarningView.text}</span>
+                  {driverWarningView.tone !== "info" && backendTiming.suggested_hora && (
                     <span style={{ color: "rgba(255,255,255,0.7)" }}>
                       · sugerido {backendTiming.suggested_hora} (no se aplica solo)
                     </span>
