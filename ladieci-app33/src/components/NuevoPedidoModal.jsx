@@ -1083,16 +1083,18 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   useEffect(() => {
     if (!visible || tipoConsegna !== "DOMICILIO" || !backendTiming) return;
     if (horaTouchedByOperator) return;
-    let firstAvailable = backendTiming.suggested_hora || backendTiming.hora_proposta || null;
-    // A1 (NUEVO_PEDIDO_DEFAULT_HORA): el DEFAULT no debe caer por debajo del
-    // earliest factible del planner (recommended_hora = now + cocción + andata).
-    // hora_proposta = hora_richiesta (now crudo al abrir) → sin este clamp el
-    // default arrancaría demasiado pronto y dispararía "muy pronto" a vacío.
+    // A2 (DOMICILIO_DEFAULT_PIZZA_READY): el DEFAULT DOMICILIO es la "primera
+    // pizza disponible" = recommended_hora del planner (now + cocción + andata),
+    // NO la cascada rider (backendTiming.suggested_hora). suggested_hora sigue
+    // existiendo SOLO como warning/propuesta (bloque driver + "sugerido …"),
+    // nunca como default: si el rider está ocupado (p.ej. otro giro activo) el
+    // operador ve el aviso, pero el default muestra el tiempo de horno factible,
+    // no el retraso post-cascada.
+    // Precedencia: recommended_hora (pizza-ready) → hora_proposta (fallback si el
+    // planner aún no respondió). Preserva A1: recommended_hora ya es >= mínimo
+    // cocina, así que el default nunca queda por debajo del earliest factible.
     const recDom = plannerPreview?.recommendation?.recommended_hora || null;
-    const recMin = hhmmToMin(recDom);
-    if (recMin != null && (hhmmToMin(firstAvailable) == null || hhmmToMin(firstAvailable) < recMin)) {
-      firstAvailable = recDom;
-    }
+    let firstAvailable = recDom || backendTiming.hora_proposta || null;
     if (!firstAvailable || firstAvailable === hora) return;
     horaCustom.current = false;
     setForzaHora(false);
