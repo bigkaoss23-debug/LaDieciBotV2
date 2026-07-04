@@ -13,6 +13,20 @@ import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
 import { getKitchenCapacityStatus } from '../core/kitchen/capacity';
 
+// A1 (NUEVO_PEDIDO_DEFAULT_HORA): parser puro "HH:MM" → minuti, SOLO per
+// confrontare la hora attiva con l'earliest fattibile fornito dal backend.
+// NON è timing math (nessun calcolo di durata/forno/slot): solo un confronto
+// per decidere se agganciare il default a un valore già calcolato dal backend.
+const hhmmToMin = (t) => {
+  if (!t || typeof t !== "string") return null;
+  const m = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+  return h * 60 + min;
+};
+
 // ──────────────────────────────────────────────────────────────────────────
 // Foglio di stile scoped (.npfs) — "visual foundation" allineata al mockup
 // __mockups__/NuevoPedidoModalCompactMockup.css. Palette calda oro/avana,
@@ -1069,11 +1083,40 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   useEffect(() => {
     if (!visible || tipoConsegna !== "DOMICILIO" || !backendTiming) return;
     if (horaTouchedByOperator) return;
-    const firstAvailable = backendTiming.suggested_hora || backendTiming.hora_proposta || null;
+    let firstAvailable = backendTiming.suggested_hora || backendTiming.hora_proposta || null;
+    // A1 (NUEVO_PEDIDO_DEFAULT_HORA): el DEFAULT no debe caer por debajo del
+    // earliest factible del planner (recommended_hora = now + cocción + andata).
+    // hora_proposta = hora_richiesta (now crudo al abrir) → sin este clamp el
+    // default arrancaría demasiado pronto y dispararía "muy pronto" a vacío.
+    const recDom = plannerPreview?.recommendation?.recommended_hora || null;
+    const recMin = hhmmToMin(recDom);
+    if (recMin != null && (hhmmToMin(firstAvailable) == null || hhmmToMin(firstAvailable) < recMin)) {
+      firstAvailable = recDom;
+    }
     if (!firstAvailable || firstAvailable === hora) return;
     horaCustom.current = false;
     setForzaHora(false);
     setHora(firstAvailable);
+  }, [visible, tipoConsegna, backendTiming, plannerPreview, horaTouchedByOperator, hora]);
+
+  // A1 (NUEVO_PEDIDO_DEFAULT_HORA): RITIRO — aggancia il DEFAULT (ora NON toccata
+  // dall'operatore) all'earliest fattibile (backendTiming.earliest_hora = now +
+  // cocción), così un modal RITIRO appena aperto non parte sotto il minimo cucina
+  // (che generava il warning "muy pronto" a vuoto). DOMICILIO è gestito
+  // dall'effetto qui sopra (clamp a recommended_hora). Usa setHora (NON
+  // setHoraFromOperator) → horaTouchedByOperator resta false: è un default di
+  // sistema, non una scelta operatore. Idempotente: scatta solo se la hora
+  // attuale è vuota o STRETTAMENTE sotto l'earliest. Se l'operatore tocca l'ora,
+  // non interviene più (il warning torna legittimo).
+  useEffect(() => {
+    if (!visible || horaTouchedByOperator || tipoConsegna === "DOMICILIO") return;
+    const minEarliest = hhmmToMin(backendTiming?.earliest_hora || null);
+    if (minEarliest == null) return;
+    const curMin = hhmmToMin(hora);
+    if (curMin == null || curMin < minEarliest) {
+      horaCustom.current = false;
+      setHora(backendTiming.earliest_hora);
+    }
   }, [visible, tipoConsegna, backendTiming, horaTouchedByOperator, hora]);
 
   // Prefill quando il modal si apre
@@ -1322,11 +1365,21 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     if (driverWarnMsg) s.add(driverWarnMsg);
     return s;
   }, [timingWarnings, driverWarnMsg]);
+  // A1 (NUEVO_PEDIDO_DEFAULT_HORA): "requested_hora_too_soon" NON deve comparire
+  // come errore su un DEFAULT di sistema (hora non toccata dall'operatore): è il
+  // caso del modal appena aperto, che l'effetto snap qui sopra aggancia comunque
+  // all'earliest. Sopprimiamo SOLO la superficie testuale "muy pronto" quando la
+  // hora è un default (!horaTouchedByOperator); NON tocchiamo il gate di conferma
+  // (plannerBlocksConfirm resta invariato → sicurezza preservata). Se l'operatore
+  // TOCCA una hora troppo presto, horaTouchedByOperator=true → il warning riappare.
+  const isRequestedTooEarly = plannerRecommendation?.reason === "requested_hora_too_soon"
+    || plannerBlockers.some((b) => b?.code === "requested_hora_too_soon");
+  const suppressTooEarly = isRequestedTooEarly && !horaTouchedByOperator;
   // 3ª superficie: blocker del planner — testo da mostrare solo se non già detto sopra.
   const plannerBlockerMsg = plannerBlockers.length > 0
     ? (plannerBlockers[0]?.message || String(plannerBlockers[0]))
     : null;
-  const showPlannerBlockerMsg = !!plannerBlockerMsg && !shownBeforePlanner.has(plannerBlockerMsg);
+  const showPlannerBlockerMsg = !!plannerBlockerMsg && !shownBeforePlanner.has(plannerBlockerMsg) && !suppressTooEarly;
   // 4ª superficie: warnings del planner, deduplicati ed esclusi i già mostrati.
   const plannerWarningsDedup = useMemo(() => {
     const seen = new Set(shownBeforePlanner);
@@ -1977,7 +2030,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               {tipoConsegna === "DOMICILIO" && !zonaAssegnata && (
                 <small style={{ color: "#fbbf24" }}>⚠️ Zona no detectada</small>
               )}
-              {plannerBlocksConfirm && (
+              {plannerBlocksConfirm && !suppressTooEarly && (
                 <small style={{ color: "#fca5a5", fontWeight: 800 }}>🚫 {confirmBlockReason}</small>
               )}
             </div>
