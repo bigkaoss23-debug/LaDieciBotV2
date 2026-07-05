@@ -1353,6 +1353,30 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   }, [backendTiming, horaTouchedByOperator, isDriverContractV2]);
   // 1ª superficie: messaggio del blocco driver (mostrato solo se conflitto + ora toccata).
   const driverWarnMsg = driverWarningView.text;
+
+  // ── B2C: chip "Próximo giro" → "Giro … confirmado" (BACKEND-GATED) ─────────
+  // Dopo che l'operatore applica un giro dal planner (appliedGiroIntent) che
+  // corrisponde all'opportunità "Próximo giro" mostrata (plannerNextGiro), il chip
+  // ámbar diventa verde SOLO se il backend B1C conferma esplicitamente l'override:
+  // contract_version=2 + warning_class OVERRIDDEN_BY_GIRO + block_confirm=false.
+  // NON è un verde frontend-only: senza la conferma del backend (REAL_BLOCKER,
+  // ADVISORY_GIRO_AVAILABLE, RIDER_POSITION_BLOCKER, contract v1/mancante, o
+  // block_confirm=true) il chip resta ámbar. Il match id è stabile su anchorOrderId
+  // (con fallback giroId===anchorOrderId per l'intent di un anchor singolo).
+  const giroConfirmed = useMemo(() => {
+    if (!appliedGiroIntent || !plannerNextGiro) return false;
+    const ngAnchor = plannerNextGiro.anchorOrderId != null ? String(plannerNextGiro.anchorOrderId) : null;
+    if (ngAnchor == null) return false;
+    const intentAnchor = appliedGiroIntent.anchorOrderId != null ? String(appliedGiroIntent.anchorOrderId) : null;
+    const intentGiro = appliedGiroIntent.giroId != null ? String(appliedGiroIntent.giroId) : null;
+    const idMatch = intentAnchor === ngAnchor || intentGiro === ngAnchor;
+    if (!idMatch) return false;
+    const driver = backendTiming?.driver;
+    return !!driver
+      && driver.contract_version === 2
+      && driver.warning_class === "OVERRIDDEN_BY_GIRO"
+      && driver.block_confirm === false;
+  }, [appliedGiroIntent, plannerNextGiro, backendTiming]);
   // 2ª superficie: bullets timing, deduplicati e senza il messaggio del driver.
   const timingWarnings = useMemo(() => {
     const seen = new Set(driverWarnMsg ? [driverWarnMsg] : []);
@@ -1587,6 +1611,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   paraAhoraLoading={paraAhoraLoading}
                   ritiroInmediato={ritiroInmediato}
                   nextGiroOpportunity={tipoConsegna === "DOMICILIO" ? plannerNextGiro : null}
+                  giroConfirmed={tipoConsegna === "DOMICILIO" ? giroConfirmed : false}
                 />
               </div>
 

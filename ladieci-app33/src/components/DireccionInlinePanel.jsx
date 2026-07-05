@@ -43,6 +43,10 @@ const DireccionInlinePanel = ({
   paraAhoraLoading,
   ritiroInmediato,
   nextGiroOpportunity,
+  // B2C: solo true quando il backend B1C conferma OVERRIDDEN_BY_GIRO per il giro
+  // applicato che corrisponde a questa opportunità. Backend-gated (calcolato nel
+  // contenitore); qui SOLO render. Default false → comportamento ámbar invariato.
+  giroConfirmed = false,
 }) => {
   const isDomicilio = tipoConsegna === "DOMICILIO";
   const trimmedDireccion = direccion.trim();
@@ -249,11 +253,14 @@ const DireccionInlinePanel = ({
       </div>
 
       {/* ── Próximo giro: hint logístico dentro el bloque Dirección (task 48-A).
-          Ámbar, legible. Click → abre Propuestas (onOpenPlannerLab). NO aplica nada,
-          NO confirma, NO cambia la hora. */}
+          Ámbar por defecto (hint, click → abre Propuestas, NO aplica/cambia hora).
+          B2C: cuando el backend B1C confirma el override del giro aplicado
+          (giroConfirmed, backend-gated en el contenedor), pasa a VERDE
+          "Giro … confirmado". La fila sigue clicable (re-abre Propuestas); el
+          driverWarningView NO se toca aquí. */}
       {isDomicilio && nextGiroOpportunity && onOpenPlannerLab && (
         <div
-          className="delivery-next-giro-hint"
+          className={"delivery-next-giro-hint" + (giroConfirmed ? " is-confirmed" : "")}
           role="button"
           tabIndex={0}
           onClick={() => onOpenPlannerLab({ focusOpportunity: true })}
@@ -261,16 +268,19 @@ const DireccionInlinePanel = ({
           title="Ver propuestas de entrega"
           style={{
             marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-            background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.42)",
+            background: giroConfirmed ? "rgba(34,197,94,0.12)" : "rgba(245,158,11,0.12)",
+            border: giroConfirmed ? "1px solid rgba(34,197,94,0.45)" : "1px solid rgba(245,158,11,0.42)",
             borderRadius: 10, padding: "8px 12px", cursor: "pointer",
           }}
         >
-          <span style={{ color: "#fbbf24", fontWeight: 800, fontSize: 13 }}>
-            💡 {nextGiroOpportunity.label || `Próximo giro ${nextGiroOpportunity.zone} ${nextGiroOpportunity.hora}`}
+          <span style={{ color: giroConfirmed ? "#86efac" : "#fbbf24", fontWeight: 800, fontSize: 13 }}>
+            {giroConfirmed
+              ? `✅ Giro ${nextGiroOpportunity.zone} ${nextGiroOpportunity.hora} confirmado`
+              : `💡 ${nextGiroOpportunity.label || `Próximo giro ${nextGiroOpportunity.zone} ${nextGiroOpportunity.hora}`}`}
           </span>
           {/* task 48B: sin texto "Ver propuestas" (el botón grande ya existe en esta
               card). Toda la fila es clicable → abre Propuestas. Chevron como afford. */}
-          <span aria-hidden="true" style={{ marginLeft: "auto", color: "#fbbf24", fontWeight: 900, fontSize: 16, lineHeight: 1 }}>›</span>
+          <span aria-hidden="true" style={{ marginLeft: "auto", color: giroConfirmed ? "#86efac" : "#fbbf24", fontWeight: 900, fontSize: 16, lineHeight: 1 }}>›</span>
         </div>
       )}
     </section>
