@@ -257,9 +257,13 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                 }}>
                   {o.manualGiro && (
                     <div style={{background:giroAccent,color:"#fff",textAlign:"center",
-                      padding:"4px 8px",fontSize:12,fontWeight:900,letterSpacing:.6,
+                      padding:"5px 8px",fontSize:13,fontWeight:900,letterSpacing:.7,
                       textTransform:"uppercase",display:"flex",alignItems:"center",
-                      justifyContent:"center",gap:6}}>
+                      justifyContent:"center",gap:6,
+                      /* COCINA_DELIVERY_CARD_HEADER_READABILITY: label alto contrasto —
+                         bianco pieno + ombra scura per leggibilità sopra accenti chiari
+                         della palette giro (amber/green/cyan). No opacity/grigio attenuato. */
+                      textShadow:"0 1px 2px rgba(0,0,0,0.55)"}}>
                       🚚 DELIVERY · {formatManualGiroLabel(o.manualGiro)}
                     </div>
                   )}
@@ -268,10 +272,15 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                     display:"flex",justifyContent:"space-between",alignItems:"flex-start",
                     borderBottom:`1px solid ${fc.border}55`}}>
                     <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
-                      {/* COCINA_DELIVERY_CARD_COMPACT_UI: número/cliente más grandes para respirar. */}
-                      <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:23,lineHeight:1}}>{o.id}</div>
-                      <div style={{color:fc.textLight,opacity:0.85,fontWeight:700,fontSize:15,marginTop:4,
-                        whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {o.nombre}</div>
+                      {/* COCINA_DELIVERY_CARD_HEADER_READABILITY: número + cliente en la
+                          MISMA fila (baseline compartida) → recupera una línea vertical.
+                          El número domina (23px, mono, 900); el cliente es secundario
+                          (14px, peso 600) y se trunca con ellipsis sin ir a capo. */}
+                      <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
+                        <span style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:23,lineHeight:1,flexShrink:0}}>{o.id}</span>
+                        <span style={{color:fc.textLight,opacity:0.8,fontWeight:600,fontSize:14,lineHeight:1,
+                          whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>👤 {o.nombre}</span>
+                      </div>
                       {/* COCINA_DELIVERY_CARD_COMPACT_UI: chip zona (Q2/Q5) RETIRADO de Cocina
                           (routing no útil; el giro se ve por la fascia + borde). Zona intacta
                           en Entregas/Repartidor/Nuevo Pedido. */}
@@ -353,19 +362,19 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                               background:"#f0f0f0",borderRadius:9,padding:"4px 10px"}}>
                               <span style={{background:"#111",color:"#fff",
                                 borderRadius:7,padding:compact?"3px 11px":"5px 14px",fontFamily:"'DM Mono',monospace",
-                                fontWeight:900,fontSize:compact?18:24,lineHeight:1}}>×{it.q}</span>
+                                fontWeight:900,fontSize:compact?19:26,lineHeight:1}}>×{it.q}</span>
                               <span style={{color:"#222",fontSize:compact?13:15,fontWeight:800,letterSpacing:.3}}>{nomeBreve}</span>
                             </div>
                           </div>
                           {/* 2. Nome completo — grande */}
                           {nomeCompleto && (
-                            <div style={{color:"#111",fontSize:compact?15:22,fontWeight:900,lineHeight:1.2,
+                            <div style={{color:"#111",fontSize:compact?16:24,fontWeight:900,lineHeight:1.2,
                               marginBottom:4,letterSpacing:-.3}}>
                               {nomeCompleto}
                             </div>
                           )}
                           {!nomeCompleto && (
-                            <div style={{color:"#111",fontSize:compact?15:22,fontWeight:900,lineHeight:1.2,marginBottom:4}}>
+                            <div style={{color:"#111",fontSize:compact?16:24,fontWeight:900,lineHeight:1.2,marginBottom:4}}>
                               {nomeBreve}
                             </div>
                           )}

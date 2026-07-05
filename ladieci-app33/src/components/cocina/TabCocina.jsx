@@ -249,20 +249,29 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
               )}
               {o.manualGiro && (
                 <div style={{background:giroAccent,color:"#fff",textAlign:"center",
-                  padding:"4px 8px",fontSize:12,fontWeight:900,letterSpacing:.6,
+                  padding:"5px 8px",fontSize:13,fontWeight:900,letterSpacing:.7,
                   textTransform:"uppercase",display:"flex",alignItems:"center",
-                  justifyContent:"center",gap:6}}>
+                  justifyContent:"center",gap:6,
+                  /* COCINA_DELIVERY_CARD_HEADER_READABILITY: label alto contrasto —
+                     bianco pieno + ombra scura per leggibilità sopra accenti chiari
+                     della palette giro (amber/green/cyan). No opacity/grigio attenuato. */
+                  textShadow:"0 1px 2px rgba(0,0,0,0.55)"}}>
                   🚚 DELIVERY · {formatManualGiroLabel(o.manualGiro)}
                 </div>
               )}
                 <div style={{background:fc.bg,padding:"12px 16px",
                   display:"flex",justifyContent:"space-between",alignItems:"flex-start",
                   borderBottom:`1px solid ${fc.border}55`}}>
-                  <div>
-                    {/* COCINA_DELIVERY_CARD_COMPACT_UI: número/cliente más grandes para
-                        respirar (espacio recuperado al quitar zona + hora scooter). */}
-                    <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:"#fff",fontSize:23,lineHeight:1}}>{o.id}</div>
-                    <div style={{color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:15,marginTop:4}}>👤 {o.nombre}</div>
+                  <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
+                    {/* COCINA_DELIVERY_CARD_HEADER_READABILITY: número + cliente en la
+                        MISMA fila (baseline compartida) → recupera una línea vertical.
+                        El número domina (23px, mono, 900); el cliente es secundario
+                        (14px, peso 600) y se trunca con ellipsis sin ir a capo. */}
+                    <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
+                      <span style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:"#fff",fontSize:23,lineHeight:1,flexShrink:0}}>{o.id}</span>
+                      <span style={{color:"rgba(255,255,255,.8)",fontWeight:600,fontSize:14,lineHeight:1,
+                        whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>👤 {o.nombre}</span>
+                    </div>
                     {/* COCINA_DELIVERY_CARD_COMPACT_UI: chip zona (Q2/Q5) RETIRADO de Cocina
                         (routing no útil en cocina; el giro se ve por la fascia + borde).
                         Zona sigue intacta en Entregas/Repartidor/Nuevo Pedido. */}
@@ -344,13 +353,13 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                             background:"#f0f0f0",borderRadius:9,padding:"4px 10px"}}>
                             <span style={{background:"#111",color:"#fff",
                               borderRadius:7,padding:compact?"3px 11px":"5px 14px",fontFamily:"'DM Mono',monospace",
-                              fontWeight:900,fontSize:compact?18:24,lineHeight:1}}>×{it.q}</span>
+                              fontWeight:900,fontSize:compact?19:26,lineHeight:1}}>×{it.q}</span>
                             <span style={{color:"#222",fontSize:compact?13:15,fontWeight:800,letterSpacing:.3}}>{it.n}</span>
                           </div>
                         </div>
                         {/* Nome italiano — grande e marcato */}
                         {(nomeSub || (!varSub && !nomeIng)) && (
-                          <div style={{color:"#111",fontSize:compact?17:24,fontWeight:900,lineHeight:1.2,marginBottom:5,letterSpacing:-.3,
+                          <div style={{color:"#111",fontSize:compact?18:26,fontWeight:900,lineHeight:1.2,marginBottom:5,letterSpacing:-.3,
                             textShadow:"0 1px 0 rgba(255,255,255,0.5)"}}>
                             {(nomeSub || it.n)}{sizeInfo}
                           </div>
