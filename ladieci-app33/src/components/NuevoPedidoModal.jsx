@@ -1615,7 +1615,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 />
               </div>
 
-              {tipoConsegna === "DOMICILIO" && driverWarningView.warningClass !== "NONE" && (
+              {/* B2C dedup: cuando el chip verde "Giro … confirmado" ya representa el
+                  override (giroConfirmed = OVERRIDDEN_BY_GIRO + block_confirm=false +
+                  id-match, backend-gated), NO repetimos el aviso "Resuelto por Giro …"
+                  aquí — sería un doblón. Cualquier otro caso (REAL_BLOCKER, ADVISORY,
+                  RIDER_POSITION_BLOCKER, block_confirm=true, o giroConfirmed=false) sigue
+                  mostrando driverWarningView como siempre. */}
+              {tipoConsegna === "DOMICILIO" && driverWarningView.warningClass !== "NONE" && !giroConfirmed && (
                 <div style={{
                   display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700,
                   color: driverWarningView.tone === "info" ? "#86efac" : "#fca5a5",

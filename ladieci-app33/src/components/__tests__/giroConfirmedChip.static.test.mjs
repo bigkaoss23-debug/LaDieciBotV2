@@ -93,6 +93,41 @@ check("6. block_confirm=true → NON confirmed",
 check("7. plannerNextGiro senza anchorOrderId → NON confirmed",
   deriveGiroConfirmed(INTENT_ANCHOR, { zone: "Q5", hora: "22:11" }, DRV()) === false);
 
+// ── B2C dedup: soppressione del doblón "Resuelto por Giro …" ─────────────────
+// Replica 1:1 del gate di render del blocco driverWarningView in NuevoPedidoModal:
+//   render se DOMICILIO && warningClass !== "NONE" && !giroConfirmed
+// (giroConfirmed è già backend-gated: OVERRIDDEN_BY_GIRO + block_confirm=false +
+// id-match + contract v2). Qui verifichiamo la MATRICE di visibilità.
+function driverNoticeShown(warningClass, giroConfirmed, tipo = "DOMICILIO") {
+  return tipo === "DOMICILIO" && warningClass !== "NONE" && !giroConfirmed;
+}
+
+console.log("\n── B2C dedup: driver notice visibility ──");
+// 1. OVERRIDDEN + block_confirm=false + giroConfirmed=true → notice NON mostrato
+check("1. OVERRIDDEN_BY_GIRO + giroConfirmed=true → notice NASCOSTO (no doblón)",
+  driverNoticeShown("OVERRIDDEN_BY_GIRO", true) === false);
+// 2. OVERRIDDEN + giroConfirmed=false → notice ancora mostrato (fallback sicuro)
+check("2. OVERRIDDEN_BY_GIRO + giroConfirmed=false → notice mostrato (fallback)",
+  driverNoticeShown("OVERRIDDEN_BY_GIRO", false) === true);
+// 3. REAL_BLOCKER → mostrato (giroConfirmed sempre false per questo caso)
+check("3. REAL_BLOCKER → notice mostrato",
+  driverNoticeShown("REAL_BLOCKER", false) === true);
+// 4. ADVISORY_GIRO_AVAILABLE → mostrato
+check("4. ADVISORY_GIRO_AVAILABLE → notice mostrato",
+  driverNoticeShown("ADVISORY_GIRO_AVAILABLE", false) === true);
+// 5. RIDER_POSITION_BLOCKER → mostrato
+check("5. RIDER_POSITION_BLOCKER → notice mostrato",
+  driverNoticeShown("RIDER_POSITION_BLOCKER", false) === true);
+// 6. block_confirm=true → giroConfirmed è false → notice mostrato (mai nascosto)
+//    (l'unico modo per nascondere è giroConfirmed=true, che richiede block_confirm=false)
+check("6a. block_confirm=true ⇒ giroConfirmed=false (derivazione)",
+  deriveGiroConfirmed(INTENT_ANCHOR, NG, DRV({ block_confirm: true })) === false);
+check("6b. block_confirm=true ⇒ notice mostrato (non nascosto)",
+  driverNoticeShown("OVERRIDDEN_BY_GIRO", deriveGiroConfirmed(INTENT_ANCHOR, NG, DRV({ block_confirm: true }))) === true);
+// 7. NONE → nessun notice a prescindere (coerenza)
+check("7. warningClass=NONE → notice non mostrato (indipendente da giroConfirmed)",
+  driverNoticeShown("NONE", false) === false);
+
 // ── Asserzioni sul SORGENTE (anti-regressione a verde frontend-only) ─────────
 console.log("\n── source guards ──");
 // il gating backend deve esistere letteralmente nel modal
@@ -111,8 +146,10 @@ check("panel: label verde 'confirmado' gated su giroConfirmed",
 check("src: A2 default pizza-ready intatto (recommended_hora)", /recommended_hora/.test(modalSrc));
 check("src: A1 too-soon suppression intatta (suppressTooEarly / horaTouchedByOperator)",
   /horaTouchedByOperator/.test(modalSrc));
-// driverWarningView non nascosto dal chip
-check("src: driverWarningView ancora renderizzato (non nascosto)", /driverWarningView\.warningClass\s*!==\s*["']NONE["']/.test(modalSrc));
+// driverWarningView renderizzato, ma dedup-gated su !giroConfirmed
+check("src: driverWarningView render gate presente (warningClass !== NONE)", /driverWarningView\.warningClass\s*!==\s*["']NONE["']/.test(modalSrc));
+check("src: dedup B2C — render gate include !giroConfirmed",
+  /driverWarningView\.warningClass\s*!==\s*["']NONE["'][\s\S]{0,40}!giroConfirmed/.test(modalSrc));
 
 console.log(`\n═══ RESULT: ${pass} passed, ${fail} failed ═══\n`);
 assert.strictEqual(fail, 0, `${fail} assertion(s) failed`);
