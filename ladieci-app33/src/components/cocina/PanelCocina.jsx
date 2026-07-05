@@ -260,7 +260,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                       padding:"4px 8px",fontSize:12,fontWeight:900,letterSpacing:.6,
                       textTransform:"uppercase",display:"flex",alignItems:"center",
                       justifyContent:"center",gap:6}}>
-                      🔗 GIRO MANUAL · {formatManualGiroLabel(o.manualGiro)}
+                      🚚 DELIVERY · {formatManualGiroLabel(o.manualGiro)}
                     </div>
                   )}
                   {/* Header colorato per fase — tema chiaro (full-screen pizzeria) */}
@@ -268,16 +268,13 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                     display:"flex",justifyContent:"space-between",alignItems:"flex-start",
                     borderBottom:`1px solid ${fc.border}55`}}>
                     <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
-                      <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:20,lineHeight:1}}>{o.id}</div>
-                      <div style={{color:fc.textLight,opacity:0.85,fontWeight:700,fontSize:14,marginTop:3,
+                      {/* COCINA_DELIVERY_CARD_COMPACT_UI: número/cliente más grandes para respirar. */}
+                      <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:23,lineHeight:1}}>{o.id}</div>
+                      <div style={{color:fc.textLight,opacity:0.85,fontWeight:700,fontSize:15,marginTop:4,
                         whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {o.nombre}</div>
-                      {o.manualGiro && isDelivery && (
-                        <div style={{marginTop:6,display:"inline-flex",alignItems:"center",gap:5}} title="Zona (secondaria; il giro è la fascia in alto)">
-                          <span style={{width:10,height:10,borderRadius:"50%",flexShrink:0,
-                            background:zonaColore,border:"1.5px solid rgba(0,0,0,0.15)"}}></span>
-                          <span style={{color:fc.textLight,opacity:0.85,fontWeight:800,fontSize:11,letterSpacing:.3}}>{o.zona}</span>
-                        </div>
-                      )}
+                      {/* COCINA_DELIVERY_CARD_COMPACT_UI: chip zona (Q2/Q5) RETIRADO de Cocina
+                          (routing no útil; el giro se ve por la fascia + borde). Zona intacta
+                          en Entregas/Repartidor/Nuevo Pedido. */}
                       {(o.horaForno || o.hora) && (
                         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:5,marginTop:5}}>
                           <div style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
@@ -295,17 +292,9 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                               <SnoozeButton orden={o} onUpdate={handleOffsetChange} />
                             )}
                           </div>
-                          {o.isDelivery && o.hora && (
-                            <div style={{display:"inline-flex",alignItems:"center",gap:6,
-                              background:"#C2410C",border:"1.5px solid rgba(194,65,12,0.85)",
-                              borderRadius:20,padding:"4px 10px",
-                              boxShadow:"0 2px 8px rgba(194,65,12,.4)"}}>
-                              <span style={{fontSize:14}}>🛵</span>
-                              <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
-                                {o.hora}
-                              </span>
-                            </div>
-                          )}
+                          {/* COCINA_DELIVERY_CARD_COMPACT_UI: fila hora scooter (🛵) RETIRADA
+                              de Cocina — timing de reparto no necesario aquí. Sigue en
+                              Entregas/Repartidor. */}
                         </div>
                       )}
                     </div>

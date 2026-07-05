@@ -74,19 +74,20 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   ck(`6. ${name}: usa manualGiroAccentColor(o.manualGiro) per l'accent giro`, () => {
     assert.ok(/manualGiroAccentColor\(o\.manualGiro\)/.test(src));
     assert.ok(/giroAccent \? `4px solid \$\{giroAccent\}`/.test(src)); // border membri giro
-    assert.ok(/GIRO MANUAL/.test(src)); // top stripe
+    // COCINA_DELIVERY_CARD_COMPACT_UI: la fascia in alto ora dice "DELIVERY" (no "GIRO MANUAL").
+    assert.ok(/DELIVERY ·/.test(src)); // top stripe (compact)
+    assert.ok(!/GIRO MANUAL/.test(src)); // etichetta vecchia rimossa
   });
-  ck(`7. ${name}: path non-giro mantiene ancora zonaColore`, () => {
+  ck(`7. ${name}: path non-giro mantiene ancora zonaColore (border/halo)`, () => {
     assert.ok(/4px solid \$\{zonaColore\}/.test(src));
   });
-  ck(`8. ${name}: semantiche ⏱/🛵 intatte (resolveGiroReadyBy + horaEntrega o.hora)`, () => {
+  ck(`8. ${name}: oven ready-by (resolveGiroReadyBy) intatto — hora clave cocina`, () => {
     assert.ok(/resolveGiroReadyBy\(manualGiro\)/.test(src));
   });
+  ck(`9. ${name}: fila hora scooter (🛵) NON renderizzata in Cocina (compact)`, () => {
+    assert.ok(!/>🛵</.test(src)); // render rimosso (i commenti col simbolo non contano)
+  });
 }
-
-ck("9. TabCocina 🛵 resta o.hora (const horaEntrega = o.hora)", () => {
-  assert.ok(/const horaEntrega = o\.hora;/.test(tab));
-});
 
 console.log(`\n═══ RESULT: ${pass} passed, ${fail} failed ═══`);
 process.exit(fail > 0 ? 1 : 0);

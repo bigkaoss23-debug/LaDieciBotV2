@@ -252,23 +252,21 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                   padding:"4px 8px",fontSize:12,fontWeight:900,letterSpacing:.6,
                   textTransform:"uppercase",display:"flex",alignItems:"center",
                   justifyContent:"center",gap:6}}>
-                  🔗 GIRO MANUAL · {formatManualGiroLabel(o.manualGiro)}
+                  🚚 DELIVERY · {formatManualGiroLabel(o.manualGiro)}
                 </div>
               )}
                 <div style={{background:fc.bg,padding:"12px 16px",
                   display:"flex",justifyContent:"space-between",alignItems:"flex-start",
                   borderBottom:`1px solid ${fc.border}55`}}>
                   <div>
-                    <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:"#fff",fontSize:20,lineHeight:1}}>{o.id}</div>
-                    <div style={{color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:14,marginTop:3}}>👤 {o.nombre}</div>
-                    {o.manualGiro && o.isDelivery && (
-                      <div style={{marginTop:6,display:"inline-flex",alignItems:"center",gap:5}} title="Zona (secondaria; il giro è indicato dalla fascia in alto)">
-                        <span style={{width:10,height:10,borderRadius:"50%",flexShrink:0,
-                          background:zonaColore,border:"1.5px solid rgba(255,255,255,0.75)"}}></span>
-                        <span style={{color:"rgba(255,255,255,0.9)",fontWeight:800,fontSize:11,letterSpacing:.3}}>{o.zona}</span>
-                      </div>
-                    )}
-                    {/* Orario forno (sopra) + consegna (sotto) — 2 bottoni distinti */}
+                    {/* COCINA_DELIVERY_CARD_COMPACT_UI: número/cliente más grandes para
+                        respirar (espacio recuperado al quitar zona + hora scooter). */}
+                    <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:"#fff",fontSize:23,lineHeight:1}}>{o.id}</div>
+                    <div style={{color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:15,marginTop:4}}>👤 {o.nombre}</div>
+                    {/* COCINA_DELIVERY_CARD_COMPACT_UI: chip zona (Q2/Q5) RETIRADO de Cocina
+                        (routing no útil en cocina; el giro se ve por la fascia + borde).
+                        Zona sigue intacta en Entregas/Repartidor/Nuevo Pedido. */}
+                    {/* Orario forno (uscita) — la hora clave para la cocina */}
                     {(o.horaForno || o.hora) && (
                       <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:5,marginTop:5}}>
                         <div style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
@@ -286,19 +284,9 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                             <SnoozeButton orden={o} onUpdate={handleOffsetChange} />
                           )}
                         </div>
-                        {o.isDelivery && o.horaEntrega && (
-                          <div style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                            <div style={{display:"inline-flex",alignItems:"center",gap:6,
-                              background:"#C2410C",border:"1.5px solid rgba(194,65,12,0.85)",
-                              borderRadius:20,padding:"4px 10px",
-                              boxShadow:"0 2px 8px rgba(194,65,12,.4)"}}>
-                              <span style={{fontSize:14}}>🛵</span>
-                              <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
-                                {o.horaEntrega}
-                              </span>
-                            </div>
-                          </div>
-                        )}
+                        {/* COCINA_DELIVERY_CARD_COMPACT_UI: fila hora scooter (🛵 entrega)
+                            RETIRADA de Cocina — la cocina no necesita el timing de reparto.
+                            La hora de entrega sigue en Entregas/Repartidor. */}
                       </div>
                     )}
                   </div>
