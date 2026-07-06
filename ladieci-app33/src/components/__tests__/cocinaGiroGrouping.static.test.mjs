@@ -74,8 +74,9 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   ck(`6. ${name}: usa manualGiroAccentColor(o.manualGiro) per l'accent giro`, () => {
     assert.ok(/manualGiroAccentColor\(o\.manualGiro\)/.test(src));
     assert.ok(/giroAccent \? `4px solid \$\{giroAccent\}`/.test(src)); // border membri giro
-    // COCINA_DELIVERY_CARD_COMPACT_UI: la fascia in alto ora dice "DELIVERY" (no "GIRO MANUAL").
-    assert.ok(/DELIVERY ·/.test(src)); // top stripe (compact)
+    // COCINA_DELIVERY_VISUAL_CONTRACT: la fascia in alto dice "DELIVERY" unificata
+    // (suffisso `· G{seq}` condizionato al giro manuale); nessuna label legacy.
+    assert.ok(/🚚 DELIVERY\{o\.manualGiro \?/.test(src)); // top stripe (unified)
     assert.ok(!/GIRO MANUAL/.test(src)); // etichetta vecchia rimossa
   });
   ck(`7. ${name}: path non-giro mantiene ancora zonaColore (border/halo)`, () => {

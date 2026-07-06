@@ -37,25 +37,25 @@ const ck = (label, fn) => {
 console.log("\n══ COCINA DELIVERY CARD — HEADER READABILITY (static) ══");
 
 for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
-  // 1. fascia "DELIVERY ·" ancora renderizzata
-  ck(`${name}: fascia "DELIVERY ·" presente`, () => {
-    assert.ok(/🚚 DELIVERY · \{formatManualGiroLabel\(o\.manualGiro\)\}/.test(src));
+  // 1. fascia "DELIVERY" unificata ancora renderizzata (suffisso `· G{seq}` solo giro)
+  ck(`${name}: fascia "DELIVERY" (unificada) presente`, () => {
+    assert.ok(/🚚 DELIVERY\{o\.manualGiro \? ` · \$\{formatManualGiroLabel\(o\.manualGiro\)\}` : ""\}/.test(src));
   });
   // 2. "GIRO MANUAL" assente
   ck(`${name}: "GIRO MANUAL" assente`, () => {
     assert.ok(!/GIRO MANUAL/.test(src));
   });
-  // 3. label giro ALTO CONTRASTO: bianco pieno + textShadow scuro nella stessa fascia
-  ck(`${name}: label giro alto contrasto (#fff + textShadow scuro)`, () => {
+  // 3. label ALTO CONTRASTO: bianco pieno + textShadow scuro rinforzato nella fascia
+  ck(`${name}: label alto contrasto (#fff + textShadow scuro rinforzato)`, () => {
     assert.ok(
-      /background:giroAccent,color:"#fff"[\s\S]*?textShadow:"0 1px 2px rgba\(0,0,0,0\.55\)"[\s\S]*?🚚 DELIVERY ·/.test(src),
-      "banner deve avere color #fff + textShadow scuro prima del testo DELIVERY"
+      /background:giroAccent \|\| zonaColore,color:"#fff"[\s\S]*?textShadow:"0 1px 3px rgba\(0,0,0,0\.6\)"[\s\S]*?🚚 DELIVERY/.test(src),
+      "banner deve avere color #fff + textShadow scuro rinforzato prima del testo DELIVERY"
     );
   });
-  // 3b. niente label giro attenuata/grigia (no opacity sul testo della fascia)
-  ck(`${name}: label giro senza opacity attenuata`, () => {
+  // 3b. niente label attenuata/grigia (no opacity sul testo della fascia)
+  ck(`${name}: label senza opacity attenuata`, () => {
     assert.ok(
-      !/background:giroAccent,color:"#fff"[^>]*opacity:/.test(src),
+      !/background:giroAccent \|\| zonaColore,color:"#fff"[^>]*opacity:/.test(src),
       "la fascia DELIVERY non deve usare opacity sul testo"
     );
   });

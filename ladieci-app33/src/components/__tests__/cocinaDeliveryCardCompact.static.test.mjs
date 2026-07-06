@@ -36,9 +36,9 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   ck(`${name}: no renderiza "GIRO MANUAL"`, () => {
     assert.ok(!/GIRO MANUAL/.test(src));
   });
-  // 2. renderizza la fascia "DELIVERY" (con id giro)
-  ck(`${name}: renderiza fascia "DELIVERY ·"`, () => {
-    assert.ok(/🚚 DELIVERY · \{formatManualGiroLabel\(o\.manualGiro\)\}/.test(src));
+  // 2. renderizza la fascia "DELIVERY" unificata (suffisso `· G{seq}` solo per giro)
+  ck(`${name}: renderiza fascia "DELIVERY" (unificada)`, () => {
+    assert.ok(/🚚 DELIVERY\{o\.manualGiro \? ` · \$\{formatManualGiroLabel\(o\.manualGiro\)\}` : ""\}/.test(src));
   });
   // 3. niente fila hora scooter renderizzata (il render era <span ...>🛵</span>)
   ck(`${name}: no renderiza bloque hora scooter (>🛵<)`, () => {

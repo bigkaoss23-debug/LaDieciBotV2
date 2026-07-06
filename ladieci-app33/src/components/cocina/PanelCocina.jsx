@@ -255,16 +255,19 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                         : "0 2px 10px rgba(0,0,0,0.12)",
                   position:"relative"
                 }}>
-                  {o.manualGiro && (
-                    <div style={{background:giroAccent,color:"#fff",textAlign:"center",
+                  {isDelivery && (
+                    /* COCINA_DELIVERY_VISUAL_CONTRACT: fascia DELIVERY unica per OGNI
+                       delivery in Cocina. Differenza singolo vs giro manuale = SOLO
+                       accent (zona vs giro) + suffisso `· G{seq}`. LOCO/RITIRO non la
+                       ricevono. No zona Q*, no scooter, nessuna label legacy. */
+                    <div style={{background:giroAccent || zonaColore,color:"#fff",textAlign:"center",
                       padding:"5px 8px",fontSize:13,fontWeight:900,letterSpacing:.7,
                       textTransform:"uppercase",display:"flex",alignItems:"center",
                       justifyContent:"center",gap:6,
-                      /* COCINA_DELIVERY_CARD_HEADER_READABILITY: label alto contrasto —
-                         bianco pieno + ombra scura per leggibilità sopra accenti chiari
-                         della palette giro (amber/green/cyan). No opacity/grigio attenuato. */
-                      textShadow:"0 1px 2px rgba(0,0,0,0.55)"}}>
-                      🚚 DELIVERY · {formatManualGiroLabel(o.manualGiro)}
+                      /* label alto contrasto — bianco pieno + ombra scura più marcata per
+                         leggibilità sopra accenti chiari (amber/green/cyan/zona). */
+                      textShadow:"0 1px 3px rgba(0,0,0,0.6)"}}>
+                      🚚 DELIVERY{o.manualGiro ? ` · ${formatManualGiroLabel(o.manualGiro)}` : ""}
                     </div>
                   )}
                   {/* Header colorato per fase — tema chiaro (full-screen pizzeria) */}
