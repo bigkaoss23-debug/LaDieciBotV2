@@ -784,6 +784,31 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     o.tipo_consegna === "DOMICILIO" && o.estado === ORDER_STATES.RETIRADO
   );
 
+  // ── Rider return ETA (MVP) ────────────────────────────────────────────────
+  // Fonte unica: DRIVER_STATO.rientro_stimato (ISO), calcolato dal backend in
+  // chiudiGiro. È non-null SOLO dopo la chiusura del giro → distingue "in giro"
+  // da "sta tornando". Finestra attiva = fino a ETA + 5 min di grazia.
+  // Nessun GPS, nessuna posizione reale: tutto "estimado". Non usa updated_at.
+  const RIDER_RETURN_GRACE_MIN = 5;
+  const riderReturnEtaMs = driverStato?.rientro_stimato ? Date.parse(driverStato.rientro_stimato) : NaN;
+  const riderReturnActive = Number.isFinite(riderReturnEtaMs)
+    && Date.now() <= riderReturnEtaMs + RIDER_RETURN_GRACE_MIN * 60000;
+  const riderReturnBeforeEta = Number.isFinite(riderReturnEtaMs) && Date.now() <= riderReturnEtaMs;
+  const riderReturnQuedanMin = Number.isFinite(riderReturnEtaMs)
+    ? Math.max(0, Math.ceil((riderReturnEtaMs - Date.now()) / 60000)) : 0;
+  const riderReturnEtaHHMM = Number.isFinite(riderReturnEtaMs)
+    ? new Date(riderReturnEtaMs).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" })
+    : "";
+  // Ordini del giro appena chiuso, consegnati DOPO la partenza del rider (stessa
+  // euristica del backend in chiudiGiro): restano visibili durante il ritorno.
+  const riderPartitoMs = driverStato?.partito_alle ? Date.parse(driverStato.partito_alle) : NaN;
+  const returningOrders = (riderReturnActive && Number.isFinite(riderPartitoMs))
+    ? consegnati.filter(o => o.hora_entrega != null && Number(o.hora_entrega) >= riderPartitoMs)
+    : [];
+  const returningIds = new Set(returningOrders.map(o => o.id));
+  // Esclude i returning dal riepilogo collassato per evitare duplicati.
+  const consegnatiCollapsed = consegnati.filter(o => !returningIds.has(o.id));
+
   const toMin = (t) => { if (!t) return 9999; const [h,m] = t.split(":").map(Number); return h*60+m; };
   const toHora = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
   const activeManualGiroIds = new Set(entregas.filter(isManualGiroSelectableOrder).map(o => o.id));
@@ -1111,13 +1136,73 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     setLoadingId(null);
   };
 
-  const totalNoche = consegnati.reduce((sum, o) => {
+  // Riepilogo "esta noche": esclude gli ordini attualmente nella sezione "Rider volviendo".
+  const totalNoche = consegnatiCollapsed.reduce((sum, o) => {
     if (Number(o.totale) > 0) return sum + Number(o.totale);
     const its = (Array.isArray(o.items) ? o.items : []).filter(i => i.n !== "Entrega a domicilio");
     return sum + calcTotale(its, o.tipo_consegna || "DOMICILIO");
   }, 0);
 
-  const ResumenEntregados = consegnati.length > 0 ? (
+  // ── Sezione "Rider volviendo": banner globale + card del giro in ritorno ──
+  // Renderizzata sia nel ramo vuoto (giro chiuso → nessuna entrega attiva) sia
+  // in quello principale, così l'operatore la vede sempre durante il ritorno.
+  const RiderReturnSection = riderReturnActive ? (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{
+        background: "rgba(249,115,22,0.10)",
+        border: "1.5px solid rgba(249,115,22,0.45)",
+        borderRadius: 12, padding: "10px 14px",
+        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap"
+      }}>
+        <span style={{ fontSize: 18, lineHeight: 1 }}>🛵</span>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 170 }}>
+          <span style={{ color: "#fdba74", fontWeight: 900, fontSize: 13.5 }}>
+            {riderReturnBeforeEta ? "Rider volviendo" : "Rider debería estar llegando"}
+          </span>
+          <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 11.5, fontWeight: 600 }}>
+            ETA pizzería {riderReturnEtaHHMM}{riderReturnBeforeEta ? ` · quedan ${riderReturnQuedanMin} min` : ""} · estimado
+          </span>
+        </div>
+      </div>
+      {returningOrders.length > 0 && (
+        <div style={{
+          marginTop: 8,
+          border: "1px solid rgba(249,115,22,0.28)",
+          borderRadius: 10, overflow: "hidden"
+        }}>
+          <div style={{
+            background: "rgba(249,115,22,0.08)",
+            padding: "6px 12px", fontSize: 11.5, fontWeight: 800, color: "#fdba74"
+          }}>
+            🛵 Rider volviendo · {returningOrders.length}
+          </div>
+          <div style={{ padding: "4px 12px" }}>
+            {returningOrders.map((o, i) => {
+              const its = (Array.isArray(o.items) ? o.items : []).filter(it => it.n !== "Entrega a domicilio");
+              const totNum = (Number(o.totale) > 0) ? Number(o.totale) : calcTotale(its, o.tipo_consegna || "DOMICILIO");
+              return (
+                <div key={o.id} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "7px 0", gap: 8,
+                  borderBottom: i < returningOrders.length - 1 ? "1px solid rgba(255,255,255,0.07)" : "none",
+                  fontSize: 13, color: "rgba(255,255,255,0.82)"
+                }}>
+                  <span style={{ fontWeight: 700 }}>
+                    {o.id} · {o.nombre}{o.zona ? ` · ${o.zona}` : ""}
+                  </span>
+                  <span style={{ color: "#4ade80", fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>
+                    {totNum.toFixed(2)}€
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const ResumenEntregados = consegnatiCollapsed.length > 0 ? (
     <div style={{ marginTop: 16 }}>
       <button onClick={() => setApertoConsegnati(v => !v)} style={{
         width: "100%", background: "#16A34A", border: "none",
@@ -1126,7 +1211,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <span style={{ color: "#fff", fontWeight: 900, fontSize: 15 }}>
-          ✓ Entregados esta noche · {consegnati.length}
+          ✓ Entregados esta noche · {consegnatiCollapsed.length}
         </span>
         <span style={{ color: "rgba(255,255,255,0.85)", fontWeight: 900, fontSize: 14, fontFamily: "'DM Mono',monospace" }}>
           {totalNoche.toFixed(2)}€ {apertoConsegnati ? "▲" : "▼"}
@@ -1134,7 +1219,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       </button>
       {apertoConsegnati && (
         <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: "0 0 12px 12px", padding: "8px 14px" }}>
-          {consegnati.map((o, i) => {
+          {consegnatiCollapsed.map((o, i) => {
             const its = (Array.isArray(o.items) ? o.items : []).filter(it => it.n !== "Entrega a domicilio");
             const totNum = (Number(o.totale) > 0) ? Number(o.totale) : calcTotale(its, o.tipo_consegna || "DOMICILIO");
             const tot = totNum.toFixed(2);
@@ -1142,7 +1227,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
               <div key={o.id} style={{
                 display: "flex", justifyContent: "space-between",
                 padding: "8px 0",
-                borderBottom: i < consegnati.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
+                borderBottom: i < consegnatiCollapsed.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
                 fontSize: 14, color: "rgba(255,255,255,0.8)"
               }}>
                 <span style={{ fontWeight: 700 }}>{o.id} · {o.nombre}</span>
@@ -1157,6 +1242,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
 
   if (entregas.length === 0) return (
     <div>
+      {RiderReturnSection}
       <div style={{ textAlign: "center", padding: "60px 24px", color: "rgba(255,255,255,0.2)" }}>
         <div style={{ fontSize: 48, marginBottom: 12, opacity: .35 }}>🛵</div>
         <div style={{ fontSize: 15, fontWeight: 600 }}>Sin entregas a domicilio</div>
@@ -1172,6 +1258,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   return (
     <div>
       <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}`}</style>
+
+      {RiderReturnSection}
 
       {/* Giro manual persistente (P1C.1): selezione locale, mutazioni via api.createManualGiro. */}
       {selectedManualGiroOrderIds.length > 0 && (
