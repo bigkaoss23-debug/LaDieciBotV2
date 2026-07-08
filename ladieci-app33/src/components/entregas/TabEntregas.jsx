@@ -750,6 +750,13 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const [selectedManualGiroOrderIds, setSelectedManualGiroOrderIds] = useState([]);
   const [pendingManualGiroAction, setPendingManualGiroAction] = useState(false);
   const [giroModalOpen, setGiroModalOpen] = useState(false);
+  // Ticker UI-only (no network): fa avanzare il countdown del rientro rider
+  // mentre l'operatore resta sulla pagina. 15s basta (display in minuti).
+  const [riderNowMs, setRiderNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = setInterval(() => setRiderNowMs(Date.now()), 15000);
+    return () => clearInterval(tick);
+  }, []);
 
   // Legge DRIVER_STATO da Supabase ogni 15s
   useEffect(() => {
@@ -791,7 +798,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   // Nessun GPS, nessuna posizione reale: tutto "estimado". Non usa updated_at.
   // Nessun import planner/scheduling: usa durata_andata_min o tempoAndata (zones).
   const RIDER_RETURN_GRACE_MIN = 5;
-  const nowMs = Date.now();
+  // nowMs deriva dal ticker UI (riderNowMs): countdown/elapsed avanzano senza refresh.
+  const nowMs = riderNowMs;
   // Minuti di ritorno per un ordine: durata_andata_min affidabile, else zone helper.
   const riderReturnMinFor = (o) => {
     const d = Number(o?.durata_andata_min);
