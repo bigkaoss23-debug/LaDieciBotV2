@@ -751,27 +751,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const [pendingManualGiroAction, setPendingManualGiroAction] = useState(false);
   const [giroModalOpen, setGiroModalOpen] = useState(false);
 
-  // ── DIAGNOSTIC (temporaneo): pannello debug Rider Return ETA ────────────────
-  // Attivo solo con ?debugRider=1 nell'URL o localStorage.debugRider==="1".
-  // Sola lettura di localStorage per un flag di debug: NON persiste stato app.
-  const debugRider = (() => {
-    if (typeof window === "undefined") return false;
-    try {
-      if (window.location.search.includes("debugRider=1")) return true;
-      return localStorage.getItem("debugRider") === "1";
-    } catch (e) { return false; }
-  })();
-  const [debugVersionCommit, setDebugVersionCommit] = useState("(cargando…)");
-  useEffect(() => {
-    if (!debugRider) return;
-    let mounted = true;
-    fetch("/version.json", { cache: "no-store" })
-      .then(r => r.json())
-      .then(j => { if (mounted) setDebugVersionCommit(j?.commit || "(sin commit)"); })
-      .catch(() => { if (mounted) setDebugVersionCommit("(fetch error)"); });
-    return () => { mounted = false; };
-  }, [debugRider]);
-
   // Legge DRIVER_STATO da Supabase ogni 15s
   useEffect(() => {
     let mounted = true;
@@ -1222,77 +1201,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
 
   // ── Sezione "Rider volviendo": banner globale + card del giro in ritorno ──
   // Renderizzata sia nel ramo vuoto (giro chiuso → nessuna entrega attiva) sia
-  // ── DIAGNOSTIC panel (temporaneo, gated su debugRider) ─────────────────────
-  const RiderDebugPanel = debugRider ? (() => {
-    const dbgLatest = ordenes
-      .filter(o => o.tipo_consegna === "DOMICILIO" && o.estado === ORDER_STATES.RETIRADO)
-      .slice()
-      .sort((a, b) => (Number(b?.hora_entrega) || 0) - (Number(a?.hora_entrega) || 0))[0] || null;
-    let dbgRows = null;
-    if (dbgLatest) {
-      const he = Number(dbgLatest.hora_entrega);
-      const returnMin = riderReturnMinFor(dbgLatest);
-      const etaMs = riderEtaMsFor(dbgLatest);
-      const graceUntilMs = Number.isFinite(etaMs) ? etaMs + RIDER_RETURN_GRACE_MIN * 60000 : NaN;
-      const isDomicilio = dbgLatest.tipo_consegna === "DOMICILIO";
-      const isRetirado = dbgLatest.estado === ORDER_STATES.RETIRADO;
-      const hasValidHoraEntrega = Number.isFinite(he);
-      const hasValidReturnMin = Number.isFinite(returnMin) && returnMin > 0;
-      const inReturnWindow = Number.isFinite(etaMs) && nowMs <= graceUntilMs;
-      const riderLeftAgainExcluded = riderLeftAgain && Number.isFinite(riderPartitoMs) && Number.isFinite(he) && riderPartitoMs > he;
-      const includedInReturningOrders = returningIds.has(dbgLatest.id);
-      const gates = [];
-      if (!isDomicilio) gates.push("no DOMICILIO");
-      if (!isRetirado) gates.push("no RETIRADO");
-      if (!hasValidHoraEntrega) gates.push("hora_entrega inválida");
-      if (!inReturnWindow) gates.push("fuera de ventana (ETA+grace)");
-      if (riderLeftAgainExcluded) gates.push("excluido: rider salió de nuevo");
-      const etaHHMM = Number.isFinite(etaMs)
-        ? new Date(etaMs).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" })
-        : "—";
-      dbgRows = (
-        <>
-          <div>id: {dbgLatest.id} · numero: {dbgLatest.numero ?? "—"} · cliente: {dbgLatest.nombre || "—"}</div>
-          <div>tipo_consegna: {String(dbgLatest.tipo_consegna)} · estado: {String(dbgLatest.estado)} · zona: {String(dbgLatest.zona)}</div>
-          <div>hora_salida: {String(dbgLatest.hora_salida)} · hora_entrega: {String(dbgLatest.hora_entrega)}</div>
-          <div>durata_andata_min: {String(dbgLatest.durata_andata_min)} · returnMin(calc): {String(returnMin)}</div>
-          <div>etaMs: {String(etaMs)} · ETA: {etaHHMM} (Madrid)</div>
-          <div>nowMs: {String(nowMs)} · graceUntilMs: {String(graceUntilMs)}</div>
-          <div>isDomicilio={String(isDomicilio)} · isRetirado={String(isRetirado)} · hasValidHoraEntrega={String(hasValidHoraEntrega)}</div>
-          <div>hasValidReturnMin={String(hasValidReturnMin)} · inReturnWindow={String(inReturnWindow)}</div>
-          <div>riderLeftAgainExcluded={String(riderLeftAgainExcluded)} · includedInReturningOrders={String(includedInReturningOrders)}</div>
-          {returningOrders.length === 0 && (
-            <div style={{ color: "#fca5a5" }}>failed gates: {gates.length ? gates.join(", ") : "(ninguno — debería incluirse)"}</div>
-          )}
-        </>
-      );
-    } else {
-      dbgRows = <div style={{ color: "#fca5a5" }}>No hay DOMICILIO RETIRADO en `ordenes` (dataset).</div>;
-    }
-    return (
-      <div style={{
-        marginBottom: 14, background: "#0b0b0b", border: "1px dashed #64748b",
-        borderRadius: 10, padding: "10px 12px",
-        fontFamily: "'DM Mono', monospace", fontSize: 11, lineHeight: 1.5, color: "#cbd5e1",
-        whiteSpace: "pre-wrap", wordBreak: "break-word"
-      }}>
-        <div style={{ color: "#fbbf24", fontWeight: 800, marginBottom: 4 }}>🔧 DEBUG Rider Return ETA (temporal)</div>
-        <div>host: {typeof window !== "undefined" ? window.location.host : "—"}</div>
-        <div>url: {typeof window !== "undefined" ? window.location.href : "—"}</div>
-        <div>version.json commit: {debugVersionCommit} · esperado: ac4f1d9</div>
-        <div>branch render: {entregas.length === 0 ? "EMPTY entregas" : "MAIN"}</div>
-        <hr style={{ borderColor: "#334155", margin: "6px 0" }} />
-        <div>driverStato: {driverStato ? JSON.stringify(driverStato) : "null"}</div>
-        <div>stato={String(driverStato?.stato)} · partito_alle={String(driverStato?.partito_alle)} · rientro_stimato={String(driverStato?.rientro_stimato)}</div>
-        <hr style={{ borderColor: "#334155", margin: "6px 0" }} />
-        <div>ordenes={ordenes.length} · entregas={entregas.length} · consegnati={consegnati.length}</div>
-        <div>returningOrders={returningOrders.length} · consegnatiCollapsed={consegnatiCollapsed.length} · riderReturnActive={String(riderReturnActive)}</div>
-        <hr style={{ borderColor: "#334155", margin: "6px 0" }} />
-        {dbgRows}
-      </div>
-    );
-  })() : null;
-
   // in quello principale, così l'operatore la vede sempre durante il ritorno.
   const RiderReturnSection = riderReturnActive ? (
     <div style={{ marginBottom: 14 }}>
@@ -1305,10 +1213,12 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
         <span style={{ fontSize: 18, lineHeight: 1 }}>🛵</span>
         <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 170 }}>
           <span style={{ color: "#fdba74", fontWeight: 900, fontSize: 13.5 }}>
-            {riderReturnBeforeEta ? "Rider volviendo" : "Rider debería estar llegando"}
+            {riderReturnBeforeEta ? "Rider volviendo a pizzería" : "Rider debería estar llegando a pizzería"}
           </span>
           <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 11.5, fontWeight: 600 }}>
-            ETA pizzería {riderReturnEtaHHMM}{riderReturnBeforeEta ? ` · quedan ${riderReturnQuedanMin} min` : ""} · estimado
+            {riderReturnBeforeEta
+              ? `Regreso estimado en ~${riderReturnQuedanMin} min${riderReturnEtaHHMM ? ` · Hora estimada ${riderReturnEtaHHMM}` : ""}`
+              : "Regreso estimado cumplido"}
           </span>
         </div>
       </div>
@@ -1322,7 +1232,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
             background: "rgba(249,115,22,0.08)",
             padding: "6px 12px", fontSize: 11.5, fontWeight: 800, color: "#fdba74"
           }}>
-            🛵 Rider volviendo · {returningOrders.length}
+            🛵 Rider volviendo a pizzería · {returningOrders.length} {returningOrders.length === 1 ? "pedido" : "pedidos"}
           </div>
           <div style={{ padding: "4px 12px" }}>
             {returningOrders.map((o, i) => {
@@ -1390,7 +1300,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
 
   if (entregas.length === 0) return (
     <div>
-      {RiderDebugPanel}
       {RiderReturnSection}
       <div style={{ textAlign: "center", padding: "60px 24px", color: "rgba(255,255,255,0.2)" }}>
         <div style={{ fontSize: 48, marginBottom: 12, opacity: .35 }}>🛵</div>
@@ -1408,7 +1317,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     <div>
       <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}`}</style>
 
-      {RiderDebugPanel}
       {RiderReturnSection}
 
       {/* Giro manual persistente (P1C.1): selezione locale, mutazioni via api.createManualGiro. */}
