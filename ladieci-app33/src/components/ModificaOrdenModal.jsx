@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { C, MENU, CATS, tot, useWidth, INGREDIENTI, calcTotale } from '../constants';
+import { C, MENU, CATS, tot, useWidth, INGREDIENTI, EXTRAS_DULCES, calcTotale, pizzaLabel, esDulce, findExtra } from '../constants';
 import Chip from './ui/Chip';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 import { ZONE_DELIVERY, zonaBadgeStyle } from '../zones';
@@ -135,6 +135,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
               <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:8}}>
                 {MENU.filter(m=>m.cat===cat).map(p=>{
                   const s = items.find(i=>String(i.id)===String(p.id));
+                  const lbl = pizzaLabel(p);
                   return (
                     <button key={p.id} onClick={()=>tap(p)} style={{
                       background:s?C.rosso+"33":C.carbone2,
@@ -148,9 +149,9 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                         borderRadius:"50%",width:22,height:22,fontSize:11,fontWeight:900,
                         display:"flex",alignItems:"center",justifyContent:"center"}}>{s.q}</span>}
                       <span style={{fontSize:28}}>{p.e}</span>
-                      <span style={{color:C.bianco,fontSize:12,fontWeight:600,
-                        textAlign:"center",lineHeight:1.2}}>{p.n}</span>
-                      {p.sub&&<span style={{color:C.grigio,fontSize:10,textAlign:"center"}}>{p.sub}</span>}
+                      <span style={{color:C.bianco,fontSize:12,fontWeight:700,
+                        textAlign:"center",lineHeight:1.2}}>{lbl.primary}</span>
+                      {lbl.secondary&&<span style={{color:C.grigio,fontSize:10,fontStyle:p.num?"italic":"normal",textAlign:"center"}}>{lbl.secondary}</span>}
                       <span style={{color:s?C.avana:C.rosso,fontSize:12,fontWeight:700}}>
                         {p.p.toFixed(2)}€</span>
                     </button>
@@ -208,7 +209,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                       const counts={};
                       matches.forEach(m=>{const name=m.replace(/^\+/,"").trim();counts[name]=(counts[name]||0)+1;});
                       const extras=Object.entries(counts).map(([name,qty])=>{
-                        const ing=INGREDIENTI.find(g=>g.n===name);
+                        const ing=findExtra(name);
                         return{name,qty,prezzo:ing?Math.round(ing.prezzo*qty*100)/100:0,e:ing?ing.e:"➕"};
                       });
                       if(!extras.length) return null;
@@ -222,7 +223,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                               <span style={{color:"#ccc",flex:1}}>{ex.e} {ex.qty}× {ex.name}</span>
                               <span style={{color:"#a855f7",fontWeight:700,fontFamily:"'DM Mono',monospace"}}>+{ex.prezzo.toFixed(2)}€</span>
                               <button onClick={()=>{
-                                const ing=INGREDIENTI.find(g=>g.n===ex.name);
+                                const ing=findExtra(ex.name);
                                 setItems(prev=>prev.map((x,j)=>{
                                   if(j!==idx) return x;
                                   const parts=(x.sub||"").split(",").map(s=>s.trim()).filter(Boolean);
@@ -249,13 +250,13 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                         border:`1px solid ${showIngPanel===idx?"#a855f7":"rgba(168,85,247,0.3)"}`,
                         borderRadius:7,color:"#a855f7",fontSize:11,fontWeight:700,
                         padding:"4px 10px",cursor:"pointer",width:"100%"}}>
-                      {showIngPanel===idx?"✕ Cerrar":"➕ Añadir ingrediente extra"}
+                      {showIngPanel===idx?"✕ Cerrar":(esDulce(it)?"➕ Añadir extra dulce":"➕ Añadir ingrediente extra")}
                     </button>
                     {showIngPanel===idx&&(
                       <div style={{marginTop:5,background:"rgba(14,14,14,0.95)",borderRadius:10,
                         border:"1px solid rgba(168,85,247,0.3)",padding:"8px",
                         display:"flex",flexWrap:"wrap",gap:5}}>
-                        {INGREDIENTI.filter(ing=>ing.prezzo>0).map(ing=>(
+                        {(esDulce(it)?EXTRAS_DULCES:INGREDIENTI).filter(ing=>ing.prezzo>0).map(ing=>(
                           <button key={ing.id}
                             onClick={()=>{
                               setItems(prev=>prev.map((x,j)=>j===idx?{

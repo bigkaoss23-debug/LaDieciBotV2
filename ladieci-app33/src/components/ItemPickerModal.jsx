@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { C, MENU, CATS, INGREDIENTI, genId } from '../constants';
+import { C, MENU, CATS, INGREDIENTI, EXTRAS_DULCES, genId, pizzaLabel, esDulce, findExtra } from '../constants';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 
 /**
@@ -86,7 +86,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
 
   // Rimuove extra da una pizza nel carrello
   const removeExtra = (uid, ingName) => {
-    const ing = INGREDIENTI.find(g => g.n === ingName);
+    const ing = findExtra(ingName);
     setCart(prev => {
       if (!prev[uid]) return prev;
       const parts = (prev[uid].sub || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -200,6 +200,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
               }}>
                 {MENU.filter(m => m.cat === cat).map(p => {
                   const qty = qtyOf(p.id);
+                  const lbl = pizzaLabel(p);
                   return (
                     <div key={p.id}
                       onClick={() => increment(p)}
@@ -224,8 +225,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                         }}>{qty}</span>
                       )}
                       <span style={{ fontSize: 26, pointerEvents: "none" }}>{p.e}</span>
-                      <span style={{ color: C.bianco, fontSize: 13, fontWeight: 700, textAlign: "center", lineHeight: 1.2 }}>{p.n}</span>
-                      {p.sub && <span style={{ color: "#888", fontSize: 12, textAlign: "center", lineHeight: 1.2 }}>{p.sub}</span>}
+                      <span style={{ color: C.bianco, fontSize: p.num ? 14 : 13, fontWeight: 800, textAlign: "center", lineHeight: 1.2 }}>{lbl.primary}</span>
+                      {lbl.secondary && <span style={{ color: "#888", fontSize: 12, fontStyle: p.num ? "italic" : "normal", textAlign: "center", lineHeight: 1.2 }}>{lbl.secondary}</span>}
                       <span style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 13, fontWeight: 700 }}>
                         {p.p.toFixed(2)}€
                       </span>
@@ -250,7 +251,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                         counts[name] = (counts[name] || 0) + 1;
                       });
                       return Object.entries(counts).map(([name, qty]) => {
-                        const ing = INGREDIENTI.find(g => g.n === name);
+                        const ing = findExtra(name);
                         return { name, qty, prezzo: ing ? Math.round(ing.prezzo * qty * 100) / 100 : 0, e: ing?.e || "➕" };
                       });
                     })();
@@ -304,8 +305,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           </div>
                         )}
 
-                        {/* Campo variazioni libero — solo per pizze */}
-                        {item.cat === "Pizzas" && (
+                        {/* Campo variazioni libero — pizze e pizze dolci */}
+                        {(item.cat === "Pizzas" || esDulce(item)) && (
                           <input
                             value={item.sub || ""}
                             onChange={e => setNota(item._uid, e.target.value)}
@@ -323,8 +324,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           />
                         )}
 
-                        {/* Bottone extras — solo per pizze, griglia appare subito */}
-                        {item.cat === "Pizzas" && (
+                        {/* Bottone extras — pizze (salati) e pizze dolci (EXTRAS_DULCES), griglia appare subito */}
+                        {(item.cat === "Pizzas" || esDulce(item)) && (
                           <div style={{ marginTop: 6 }}>
                             <button
                               onClick={() => {
@@ -337,7 +338,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                                 borderRadius: 7, color: "#a855f7", fontSize: 11, fontWeight: 700,
                                 padding: "4px 10px", cursor: "pointer", width: "100%"
                               }}>
-                              {isOpen ? "✕ Cerrar extras" : "➕ Añadir ingrediente extra"}
+                              {isOpen ? "✕ Cerrar extras" : (esDulce(item) ? "➕ Añadir extra dulce" : "➕ Añadir ingrediente extra")}
                             </button>
                             {isOpen && (
                               <div style={{
@@ -345,7 +346,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                                 borderRadius: 10, border: "1px solid rgba(168,85,247,0.3)",
                                 padding: 10, display: "flex", flexWrap: "wrap", gap: 6
                               }}>
-                                {INGREDIENTI.filter(ing => ing.prezzo > 0).map(ing => (
+                                {(esDulce(item) ? EXTRAS_DULCES : INGREDIENTI).filter(ing => ing.prezzo > 0).map(ing => (
                                   <button key={ing.id} onClick={() => addExtra(item._uid, ing)} style={{
                                     background: "rgba(168,85,247,0.1)",
                                     border: "1px solid rgba(168,85,247,0.35)",
@@ -363,8 +364,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           </div>
                         )}
 
-                        {/* Nota libera (non pizza) */}
-                        {item.cat !== "Pizzas" && (
+                        {/* Nota libera (non pizza e non pizza dolce) */}
+                        {item.cat !== "Pizzas" && !esDulce(item) && (
                           <input
                             value={item.sub || ""}
                             onChange={e => setNota(item._uid, e.target.value)}
