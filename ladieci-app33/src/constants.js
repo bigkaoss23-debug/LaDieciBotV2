@@ -55,27 +55,30 @@ const useWidth = () => {
 };
 
 const MENU = [
-  // PIZZAS
-  {id:1,  n:"El Pelusa",        sub:"Margarita Clásica",     p:12.0, cat:"Pizzas",  e:"🍕", ing:"Tomate San Marzano, Fior di latte, Albahaca",                          alg:"Gluten, Lácteos"},
-  {id:2,  n:"Zizou",            sub:"Bufalina",              p:12.5, cat:"Pizzas",  e:"🐄", ing:"Tomate San Marzano, Mozzarella di bufala DOP, Albahaca",                alg:"Gluten, Lácteos"},
-  {id:3,  n:"O Rei",            sub:"Marinara Clásica",      p:10.0, cat:"Pizzas",  e:"🧄", ing:"Tomate San Marzano, Ajo, Orégano, Aceitunas negras, Albahaca",          alg:"Gluten"},
-  {id:4,  n:"El Maestro",       sub:"Inferno",               p:13.5, cat:"Pizzas",  e:"🌶️🔥", ing:"Tomate San Marzano, Fior di latte, Gorgonzola DOP, Salami picante",   alg:"Gluten, Lácteos"},
-  {id:5,  n:"El Gaucho",        sub:"Diavola",               p:13.0, cat:"Pizzas",  e:"🌶️", ing:"Tomate San Marzano, Fior di latte, Spianata Calabra picante",           alg:"Gluten, Lácteos"},
-  {id:6,  n:"El Divino Codino", sub:"Prosciutto",            p:12.5, cat:"Pizzas",  e:"🍖", ing:"Tomate San Marzano, Fior di latte, Jamón cocido",                       alg:"Gluten, Lácteos"},
-  {id:7,  n:"La Pulga",         sub:"Jamón y Champiñones",   p:13.0, cat:"Pizzas",  e:"🍄", ing:"Tomate San Marzano, Fior di latte, Jamón cocido, Champiñones frescos",  alg:"Gluten, Lácteos"},
-  {id:8,  n:"Il Tulipano Nero", sub:"Cuatro Quesos",         p:14.5, cat:"Pizzas",  e:"🧀", ing:"Tomate San Marzano, Fior di latte, Gorgonzola, Provolone, Parmigiano",  alg:"Gluten, Lácteos, Huevo"},
-  {id:9,  n:"El Mago de Zadar", sub:"Vegetariana",           p:14.5, cat:"Pizzas",  e:"🥦", ing:"Tomate San Marzano, Fior di latte, Pimiento, Berenjena asada, Tomates confitados, Cebolla morada", alg:"Gluten, Lácteos"},
-  {id:10, n:"El Ultimo 10",     sub:"Atún y Cebolla",        p:14.0, cat:"Pizzas",  e:"🐟", ing:"Tomate San Marzano, Fior di latte, Atún, Cebolla morada, Aceitunas",    alg:"Gluten, Lácteos, Pescado"},
-  {id:11, n:"Il Gladiatore",    sub:"Caprichosa",            p:14.5, cat:"Pizzas",  e:"⚔️", ing:"Tomate San Marzano, Fior di latte, Champiñones, Jamón, Alcachofas, Aceitunas negras", alg:"Gluten, Lácteos"},
-  {id:37, n:"Magicbox",         sub:"Parmazola",             p:16.5, cat:"Pizzas",  e:"🍃", ing:"Fior di latte, Gorgonzola DOP, Jamón de Parma, Rúcula, Parmigiano Reggiano, Tomates confitados", alg:"Gluten, Lácteos"},
-  {id:38, n:"La Joya",          sub:"Carbonara",            p:15.0, cat:"Pizzas",  e:"🥓", ing:"Mozzarella Fior di Latte di Sorrento, Huevo carbonara, Pancetta",            alg:"Gluten, Lácteos, Huevo"},
-  {id:39, n:"La Pinturicchio",  sub:"La Ahumada",           p:15.0, cat:"Pizzas",  e:"🪵", ing:"Tomate San Marzano, Fior di latte, Provola ahumada, Salami Napoli, Nueces",   alg:"Gluten, Lácteos, Frutos de cáscara"},
+  // PIZZAS — l'ordine dell'array = numero ufficiale del menù cliente (`num`).
+  //          `id` resta la chiave interna STABILE (ordini/storico la referenziano) — NON cambiarla.
+  {id:1,  num:1,  n:"El Pelusa",        sub:"Margarita Clásica",     p:12.0, cat:"Pizzas",  e:"🍕", ing:"Tomate San Marzano, Fior di latte, Albahaca",                          alg:"Gluten, Lácteos"},
+  {id:2,  num:2,  n:"Zizou",            sub:"Bufalina",              p:12.5, cat:"Pizzas",  e:"🐄", ing:"Tomate San Marzano, Mozzarella di bufala DOP, Albahaca",                alg:"Gluten, Lácteos"},
+  {id:3,  num:3,  n:"O Rei",            sub:"Marinara Clásica",      p:10.0, cat:"Pizzas",  e:"🧄", ing:"Tomate San Marzano, Ajo, Orégano, Aceitunas negras, Albahaca",          alg:"Gluten"},
+  {id:11, num:4,  n:"Il Gladiatore",    sub:"Caprichosa",            p:14.5, cat:"Pizzas",  e:"⚔️", ing:"Tomate San Marzano, Fior di latte, Champiñones, Jamón, Alcachofas, Aceitunas negras", alg:"Gluten, Lácteos"},
+  {id:5,  num:5,  n:"El Gaucho",        sub:"Diavola",               p:13.0, cat:"Pizzas",  e:"🌶️", ing:"Tomate San Marzano, Fior di latte, Spianata Calabra picante",           alg:"Gluten, Lácteos"},
+  {id:6,  num:6,  n:"El Divino Codino", sub:"Prosciutto",            p:12.5, cat:"Pizzas",  e:"🍖", ing:"Tomate San Marzano, Fior di latte, Jamón cocido",                       alg:"Gluten, Lácteos"},
+  {id:7,  num:7,  n:"La Pulga",         sub:"Jamón y Champiñones",   p:13.0, cat:"Pizzas",  e:"🍄", ing:"Tomate San Marzano, Fior di latte, Jamón cocido, Champiñones frescos",  alg:"Gluten, Lácteos"},
+  {id:8,  num:8,  n:"Il Tulipano Nero", sub:"Cuatro Quesos",         p:14.5, cat:"Pizzas",  e:"🧀", ing:"Tomate San Marzano, Fior di latte, Gorgonzola, Provolone, Parmigiano",  alg:"Gluten, Lácteos, Huevo"},
+  {id:10, num:9,  n:"El Ultimo 10",     sub:"Atún y Cebolla",        p:14.0, cat:"Pizzas",  e:"🐟", ing:"Tomate San Marzano, Fior di latte, Atún, Cebolla morada, Aceitunas",    alg:"Gluten, Lácteos, Pescado"},
+  {id:9,  num:10, n:"El Mago de Zadar", sub:"Vegetariana",           p:14.5, cat:"Pizzas",  e:"🥦", ing:"Tomate San Marzano, Fior di latte, Pimiento, Berenjena asada, Tomates confitados, Cebolla morada", alg:"Gluten, Lácteos"},
+  {id:4,  num:11, n:"El Maestro",       sub:"Inferno",               p:13.5, cat:"Pizzas",  e:"🌶️🔥", ing:"Tomate San Marzano, Fior di latte, Gorgonzola DOP, Salami picante",   alg:"Gluten, Lácteos"},
+  {id:38, num:12, n:"La Joya",          sub:"Carbonara",            p:15.0, cat:"Pizzas",  e:"🥓", ing:"Mozzarella Fior di Latte di Sorrento, Huevo carbonara, Pancetta",            alg:"Gluten, Lácteos, Huevo"},
+  {id:37, num:13, n:"Magicbox",         sub:"Parmazola",             p:16.5, cat:"Pizzas",  e:"🍃", ing:"Fior di latte, Gorgonzola DOP, Jamón de Parma, Rúcula, Parmigiano Reggiano, Tomates confitados", alg:"Gluten, Lácteos"},
+  {id:39, num:14, n:"La Pinturicchio",  sub:"La Ahumada",           p:15.0, cat:"Pizzas",  e:"🪵", ing:"Tomate San Marzano, Fior di latte, Provola ahumada, Salami Napoli, Nueces",   alg:"Gluten, Lácteos, Frutos de cáscara"},
   // POSTRES
   {id:12, n:"Misu Clásico",     sub:"Tiramisú", p:5.00, cat:"Postres", e:"🍰", ing:"", alg:"Gluten, Lácteos, Huevo"},
   {id:13, n:"Misu Especial",    sub:"Tiramisú", p:6.00, cat:"Postres", e:"✨", ing:"", alg:"Gluten, Lácteos, Huevo"},
   {id:14, n:"Ferrero Rocher",   sub:"",         p:7.00, cat:"Postres", e:"🍫", ing:"", alg:"Gluten, Lácteos, Frutos de cáscara"},
   {id:15, n:"Babá Napoletano",  sub:"",         p:5.00, cat:"Postres", e:"🍮", ing:"", alg:"Gluten, Lácteos, Huevo"},
-  {id:16, n:"Pizza Nutella",    sub:"",         p:9.00, cat:"Postres", e:"🍕", ing:"", alg:"Gluten, Lácteos, Soja, Frutos de cáscara"},
+  {id:16, n:"Pizza Nutella",    sub:"", dulce:true, p:9.00, cat:"Postres", e:"🍕", ing:"", alg:"Gluten, Lácteos, Soja, Frutos de cáscara"},
+  {id:40, n:"Pizza KitKat",     sub:"", dulce:true, p:9.00, cat:"Postres", e:"🍫", ing:"", alg:"Gluten, Lácteos, Soja, Frutos de cáscara"},
+  {id:41, n:"Pizza Kinder",     sub:"", dulce:true, p:9.00, cat:"Postres", e:"🍫", ing:"", alg:"Gluten, Lácteos, Soja, Frutos de cáscara"},
   {id:17, n:"Tartufo Bianco",     sub:"",  p:5.00, cat:"Postres", e:"⚪", ing:"", alg:"Gluten, Lácteos, Huevo, Frutos de cáscara"},
   {id:18, n:"Tartufo Nero",       sub:"",  p:5.00, cat:"Postres", e:"⚫", ing:"", alg:"Gluten, Lácteos, Huevo, Frutos de cáscara"},
   {id:19, n:"Tartufo Pistacchio", sub:"",  p:5.00, cat:"Postres", e:"🟢", ing:"", alg:"Gluten, Lácteos, Huevo, Pistacho, Frutos de cáscara"},
@@ -84,17 +87,22 @@ const MENU = [
   {id:21, n:"Estrella Galicia",  sub:"33cl",   p:3.0, cat:"Bebidas", e:"🍺", ing:"", alg:"Gluten"},
   {id:22, n:"Heineken",          sub:"33cl",   p:3.0, cat:"Bebidas", e:"🍺", ing:"", alg:"Gluten"},
   {id:23, n:"Peroni",            sub:"50cl",   p:4.0, cat:"Bebidas", e:"🍺", ing:"", alg:"Gluten"},
-  {id:26, n:"Coca Cola",         sub:"0,5L",   p:2.0, cat:"Bebidas", e:"🥤", ing:"", alg:""},
+  {id:43, n:"San Miguel 0,0",    sub:"Sin alcohol", p:3.0, cat:"Bebidas", e:"🍺", ing:"", alg:"Gluten"},
+  {id:44, n:"Brutus",            sub:"",       p:3.0, cat:"Bebidas", e:"🍺", ing:"", alg:"Gluten"},
+  {id:26, n:"Coca Cola",         sub:"0,33L",  p:2.0, cat:"Bebidas", e:"🥤", ing:"", alg:""},
   {id:27, n:"Coca Cola",         sub:"1L",     p:3.5, cat:"Bebidas", e:"🥤", ing:"", alg:""},
-  {id:28, n:"Coca Cola Zero",    sub:"0,5L",   p:2.0, cat:"Bebidas", e:"🖤", ing:"", alg:""},
+  {id:28, n:"Coca Cola Zero",    sub:"0,33L",  p:2.0, cat:"Bebidas", e:"🖤", ing:"", alg:""},
   {id:29, n:"Coca Cola Zero",    sub:"1L",     p:3.5, cat:"Bebidas", e:"🖤", ing:"", alg:""},
-  {id:30, n:"Fanta Naranja",     sub:"0,5L",   p:2.0, cat:"Bebidas", e:"🟠", ing:"", alg:""},
+  {id:30, n:"Fanta Naranja",     sub:"0,33L",  p:2.0, cat:"Bebidas", e:"🟠", ing:"", alg:""},
   {id:31, n:"Fanta Naranja",     sub:"1L",     p:3.5, cat:"Bebidas", e:"🟠", ing:"", alg:""},
   {id:32, n:"Nestea Limón",      sub:"",       p:2.0, cat:"Bebidas", e:"🍋", ing:"", alg:""},
   {id:33, n:"Nestea Maracuyá",   sub:"",       p:2.0, cat:"Bebidas", e:"🌺", ing:"", alg:""},
   {id:34, n:"Aquarius",          sub:"",       p:2.0, cat:"Bebidas", e:"💦", ing:"", alg:""},
+  {id:45, n:"Aquarius Limón",    sub:"",       p:2.0, cat:"Bebidas", e:"🍋", ing:"", alg:""},
+  {id:46, n:"Aquarius Naranja",  sub:"",       p:2.0, cat:"Bebidas", e:"🟠", ing:"", alg:""},
   {id:35, n:"Sprite",            sub:"",       p:2.0, cat:"Bebidas", e:"🟢", ing:"", alg:""},
   {id:25, n:"Agua Natural",      sub:"0,5L",   p:1.5, cat:"Bebidas", e:"💧", ing:"", alg:""},
+  {id:42, n:"Agua Natural",      sub:"1L",     p:2.5, cat:"Bebidas", e:"💧", ing:"", alg:""},
   {id:36, n:"Agua con Gas",      sub:"0,5L",   p:1.5, cat:"Bebidas", e:"💧", ing:"", alg:""},
 ];
 const CATS = ["Pizzas", "Postres", "Bebidas"];
@@ -127,6 +135,8 @@ const INGREDIENTI = [
   { id:"ing_huevo",    n:"Huevo carbonara",          e:"🥚", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
   { id:"ing_salami",   n:"Salami picante Napoli",    e:"🌶️", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
   { id:"ing_spianata", n:"Spianata Calabra",         e:"🌶️", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
+  { id:"ing_salami_napoli", n:"Salami Napoli",       e:"🥩", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
+  { id:"ing_coppa",    n:"Coppa",                    e:"🥓", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
   { id:"ing_atun",     n:"Atún",                     e:"🐟", prezzo:0.50, tipo:"standard", gruppo:"Pescados" },
   { id:"ing_provolone",n:"Provolone",                e:"🧀", prezzo:0.50, tipo:"standard", gruppo:"Quesos" },
   { id:"ing_parmigiano",n:"Parmigiano Reggiano",     e:"🧀", prezzo:0.50, tipo:"standard", gruppo:"Quesos" },
@@ -137,6 +147,42 @@ const INGREDIENTI = [
 ];
 
 const GRUPPI_ING = ["Base","Verduras y hierbas","Carnes","Pescados","Quesos"];
+
+// ─── EXTRAS DULCES ────────────────────────────────────────────
+// Toppings dolci per le pizze dessert (KitKat, Kinder, Nutella…).
+// Lista separata da INGREDIENTI (che è solo per la pizza salata custom).
+const EXTRAS_DULCES = [
+  { id:"dul_nutella",  n:"Nutella",   e:"🍫", prezzo:0.50, tipo:"dulce", gruppo:"Dulces" },
+  { id:"dul_kinder",   n:"Kinder",    e:"🐻", prezzo:0.50, tipo:"dulce", gruppo:"Dulces" },
+  { id:"dul_kitkat",   n:"KitKat",    e:"🍫", prezzo:0.50, tipo:"dulce", gruppo:"Dulces" },
+  { id:"dul_pistacho", n:"Pistacho",  e:"🟢", prezzo:0.50, tipo:"dulce", gruppo:"Dulces" },
+  { id:"dul_almendra", n:"Almendra",  e:"🌰", prezzo:0.50, tipo:"dulce", gruppo:"Dulces" },
+];
+
+// Etichetta prodotto per il picker.
+// Pizza (ha `num` ufficiale): primario = "N. NOME CLÁSICO" (il cliente ordina per numero),
+//                             secondario = soprannome tra virgolette (es. «El Pelusa»).
+// Altri prodotti: primario = nome, secondario = sub (es. formato bottiglia).
+function pizzaLabel(p) {
+  if (p && p.num) {
+    return { primary: `${p.num}. ${(p.sub || "").toUpperCase()}`, secondary: p.n ? `«${p.n}»` : "" };
+  }
+  return { primary: p ? p.n : "", secondary: p ? (p.sub || "") : "" };
+}
+
+// Un item accetta EXTRAS_DULCES (pizza dessert: Nutella / KitKat / Kinder)?
+// Robusto anche in modifica: se l'item salvato non porta `dulce`, lo si ricava dal MENU via id.
+function esDulce(item) {
+  if (!item) return false;
+  if (item.dulce) return true;
+  const m = MENU.find(x => String(x.id) === String(item.id));
+  return !!(m && m.dulce);
+}
+
+// Cerca un extra (salato o dolce) per nome — usato nei riepiloghi per prezzo/emoji.
+function findExtra(name) {
+  return INGREDIENTI.find(g => g.n === name) || EXTRAS_DULCES.find(g => g.n === name) || null;
+}
 
 const genId = () => `#${Date.now().toString(36).toUpperCase().slice(-4)}${Math.random().toString(36).slice(2,4).toUpperCase()}`;
 const tot = items => items.reduce((s,i) => s + i.p * i.q, 0).toFixed(2);
@@ -187,7 +233,7 @@ function aplicarDescuento(totaleBase, tipo, valor) {
 export {
   LOGO_RED_B64, LOGO_RED_SRC,
   C, G, useWidth,
-  MENU, CATS, PIZZA_BASE, INGREDIENTI, GRUPPI_ING,
+  MENU, CATS, PIZZA_BASE, INGREDIENTI, GRUPPI_ING, EXTRAS_DULCES, pizzaLabel, esDulce, findExtra,
   genId, tot, ORDENES_INIT, WA_INIT, blockedTels, MAX_PIZZE_ORA,
   DELIVERY_FEE, deliveryFeeFor, calcTotale, aplicarDescuento
 };
