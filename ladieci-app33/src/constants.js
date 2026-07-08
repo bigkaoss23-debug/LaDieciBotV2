@@ -160,12 +160,13 @@ const EXTRAS_DULCES = [
 ];
 
 // Etichetta prodotto per il picker.
-// Pizza (ha `num` ufficiale): primario = "N. NOME CLÁSICO" (il cliente ordina per numero),
-//                             secondario = soprannome tra virgolette (es. «El Pelusa»).
+// Pizza (ha `num` ufficiale): primario = NOME CLÁSICO prominente, secondario = soprannome
+//   tra virgolette (es. «El Pelusa»). Il numero ufficiale NON va nel titolo: viene reso
+//   in un footer/badge dedicato in fondo alla card (vedi picker) per non rompere il layout.
 // Altri prodotti: primario = nome, secondario = sub (es. formato bottiglia).
 function pizzaLabel(p) {
   if (p && p.num) {
-    return { primary: `${p.num}. ${(p.sub || "").toUpperCase()}`, secondary: p.n ? `«${p.n}»` : "" };
+    return { primary: (p.sub || "").toUpperCase(), secondary: p.n ? `«${p.n}»` : "" };
   }
   return { primary: p ? p.n : "", secondary: p ? (p.sub || "") : "" };
 }
