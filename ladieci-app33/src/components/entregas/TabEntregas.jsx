@@ -831,6 +831,9 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const riderReturnBeforeEta = Number.isFinite(riderBannerEtaMs) && nowMs <= riderBannerEtaMs;
   const riderReturnQuedanMin = Number.isFinite(riderBannerEtaMs)
     ? Math.max(0, Math.ceil((riderBannerEtaMs - nowMs) / 60000)) : 0;
+  // Dopo l'ETA (dentro la grace di 5 min): minuti trascorsi dalla stima. <1 min → "~1 min".
+  const riderReturnElapsedMin = Number.isFinite(riderBannerEtaMs)
+    ? Math.max(1, Math.ceil((nowMs - riderBannerEtaMs) / 60000)) : 0;
   const riderReturnEtaHHMM = Number.isFinite(riderBannerEtaMs)
     ? new Date(riderBannerEtaMs).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" })
     : "";
@@ -1218,7 +1221,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
           <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 11.5, fontWeight: 600 }}>
             {riderReturnBeforeEta
               ? `Regreso estimado en ~${riderReturnQuedanMin} min${riderReturnEtaHHMM ? ` · Hora estimada ${riderReturnEtaHHMM}` : ""}`
-              : "Regreso estimado cumplido"}
+              : `Estimado cumplido hace ~${riderReturnElapsedMin} min${riderReturnEtaHHMM ? ` · Hora estimada ${riderReturnEtaHHMM}` : ""}`}
           </span>
         </div>
       </div>
