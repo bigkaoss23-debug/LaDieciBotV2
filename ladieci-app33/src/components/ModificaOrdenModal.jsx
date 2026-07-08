@@ -140,23 +140,26 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                     <button key={p.id} onClick={()=>tap(p)} style={{
                       background:s?C.rosso+"33":C.carbone2,
                       border:`2px solid ${s?C.rosso:C.fumo}`,
-                      borderRadius:14,padding:"14px 8px",
+                      borderRadius:14,padding:"9px 7px",
                       display:"flex",flexDirection:"column",
-                      alignItems:"center",gap:5,position:"relative",
+                      alignItems:"center",gap:3,position:"relative",
                       boxShadow:s?`0 4px 16px ${C.rosso}33`:"none"}}>
                       {s&&<span style={{position:"absolute",top:-8,right:-8,
                         background:C.rosso,color:"#fff",border:`2px solid ${C.carbone}`,
                         borderRadius:"50%",width:22,height:22,fontSize:11,fontWeight:900,
                         display:"flex",alignItems:"center",justifyContent:"center"}}>{s.q}</span>}
-                      <span style={{fontSize:28}}>{p.e}</span>
+                      <span style={{fontSize:24,lineHeight:1}}>{p.e}</span>
+                      {/* Slot titolo altezza fissa (2 righe) → downstream non salta su nomi 1 vs 2 righe */}
                       <span style={{color:C.bianco,fontSize:12,fontWeight:700,
-                        textAlign:"center",lineHeight:1.2}}>{lbl.primary}</span>
-                      {lbl.secondary&&<span style={{color:C.grigio,fontSize:10,fontStyle:p.num?"italic":"normal",textAlign:"center"}}>{lbl.secondary}</span>}
+                        textAlign:"center",lineHeight:1.15,
+                        minHeight:p.num?28:undefined,
+                        display:"flex",alignItems:"center",justifyContent:"center"}}>{lbl.primary}</span>
+                      {lbl.secondary&&<span style={{color:C.grigio,fontSize:10,fontStyle:p.num?"italic":"normal",textAlign:"center",lineHeight:1.1}}>{lbl.secondary}</span>}
                       <span style={{color:s?C.avana:C.rosso,fontSize:12,fontWeight:700}}>
                         {p.p.toFixed(2)}€</span>
-                      {/* Footer numero ufficiale — solo pizze (p.num), slot altezza fissa per allineamento */}
+                      {/* Footer numero ufficiale — solo pizze (p.num). margin-top:auto → ancorato in fondo, allineato su tutta la riga */}
                       {p.num&&(
-                        <div style={{marginTop:4,paddingTop:5,width:"100%",height:20,
+                        <div style={{marginTop:"auto",paddingTop:4,width:"100%",height:18,
                           borderTop:`1px solid ${C.fumo}`,
                           display:"flex",alignItems:"center",justifyContent:"center"}}>
                           <span style={{color:C.grigio,fontSize:10,fontWeight:800,letterSpacing:0.5}}>Nº {p.num}</span>

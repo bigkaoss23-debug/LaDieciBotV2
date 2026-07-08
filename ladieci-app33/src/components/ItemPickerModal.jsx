@@ -207,9 +207,9 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                       style={{
                       background: qty > 0 ? C.rosso + "22" : C.carbone2,
                       border: `2px solid ${qty > 0 ? C.rosso : C.fumo}`,
-                      borderRadius: 14, padding: "12px 8px",
+                      borderRadius: 14, padding: "9px 7px",
                       display: "flex", flexDirection: "column",
-                      alignItems: "center", gap: 5, position: "relative",
+                      alignItems: "center", gap: 3, position: "relative",
                       boxShadow: qty > 0 ? `0 4px 16px ${C.rosso}33` : "none",
                       cursor: "pointer"
                     }}>
@@ -224,21 +224,28 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           display: "flex", alignItems: "center", justifyContent: "center"
                         }}>{qty}</span>
                       )}
-                      <span style={{ fontSize: 26, pointerEvents: "none" }}>{p.e}</span>
-                      <span style={{ color: C.bianco, fontSize: p.num ? 14 : 13, fontWeight: 800, textAlign: "center", lineHeight: 1.2 }}>{lbl.primary}</span>
-                      {lbl.secondary && <span style={{ color: "#888", fontSize: 12, fontStyle: p.num ? "italic" : "normal", textAlign: "center", lineHeight: 1.2 }}>{lbl.secondary}</span>}
+                      <span style={{ fontSize: 24, lineHeight: 1, pointerEvents: "none" }}>{p.e}</span>
+                      {/* Slot titolo ad altezza fissa (2 righe) → nickname/prezzo/footer non saltano
+                          quando il nome è 1 riga vs 2 righe */}
+                      <span style={{
+                        color: C.bianco, fontSize: p.num ? 13 : 13, fontWeight: 800,
+                        textAlign: "center", lineHeight: 1.15,
+                        minHeight: p.num ? 30 : undefined,
+                        display: "flex", alignItems: "center", justifyContent: "center"
+                      }}>{lbl.primary}</span>
+                      {lbl.secondary && <span style={{ color: "#888", fontSize: 11, fontStyle: p.num ? "italic" : "normal", textAlign: "center", lineHeight: 1.1 }}>{lbl.secondary}</span>}
                       <span style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 13, fontWeight: 700 }}>
                         {p.p.toFixed(2)}€
                       </span>
-                      {/* Footer numero ufficiale — solo pizze (p.num). Slot ad altezza fissa
-                          così le card pizza restano allineate; i non-pizza non lo ricevono. */}
+                      {/* Footer numero ufficiale — solo pizze (p.num). margin-top:auto lo àncora
+                          in fondo alla card → footer allineato su tutta la riga. Non-pizza: niente footer. */}
                       {p.num && (
                         <div style={{
-                          marginTop: 4, paddingTop: 5, width: "100%", height: 22,
+                          marginTop: "auto", paddingTop: 4, width: "100%", height: 19,
                           borderTop: `1px solid ${C.fumo}`,
                           display: "flex", alignItems: "center", justifyContent: "center"
                         }}>
-                          <span style={{ color: "#888", fontSize: 11, fontWeight: 800, letterSpacing: 0.5 }}>
+                          <span style={{ color: "#888", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5 }}>
                             Nº {p.num}
                           </span>
                         </div>
