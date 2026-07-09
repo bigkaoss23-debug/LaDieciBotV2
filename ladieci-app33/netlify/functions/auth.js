@@ -1,13 +1,23 @@
 // Netlify Function — PIN verification + JWT token generation
-// PINs are stored in Supabase config table (APP_PIN, REPARTIDOR_PIN)
-// so the owner can change them from the app without touching Netlify.
-// Rate limiting: blocks an IP for 15 minutes after 5 failed attempts.
+// PHASE 0A1: PINs and JWT secret come ONLY from Netlify environment variables
+// (APP_PIN, REPARTIDOR_PIN, JWT_SECRET). No Supabase-config PIN lookup, no
+// default fallbacks. Missing required env → fail closed (503). DEV_AUTH_BYPASS
+// is honored only OUTSIDE the production context.
+// Rate limiting: blocks an IP for 15 minutes after 5 failed attempts (uses the
+// Supabase anon key for the AUTH_BLOCK_* counters only — never for PINs).
 
 const crypto = require('crypto');
 
-const JWT_SECRET      = process.env.JWT_SECRET || "CHANGE_ME_IN_NETLIFY_ENV";
+// Env-only secrets. No fallbacks — a missing value must fail closed, never
+// authenticate with a guessable default.
+const JWT_SECRET      = process.env.JWT_SECRET;
+const APP_PIN_ENV     = process.env.APP_PIN;
+const REPARTIDOR_PIN_ENV = process.env.REPARTIDOR_PIN;
+// Production context guard: DEV_AUTH_BYPASS can never activate in production.
+const IS_PRODUCTION   = process.env.CONTEXT === "production";
+
 const SUPABASE_URL    = "https://wnswassgfuuivmfwjxsf.supabase.co";
-// Try service key first, fall back to anon key (APP_PIN is publicly readable via RLS)
+// Anon key — used ONLY for the AUTH_BLOCK_* rate-limit counters, never for PINs.
 const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || "sb_publishable_esObmXoAcWH9z27Sj_-jtw_PO0VeL5O";
 const MAX_ATTEMPTS    = 5;
 const BLOCK_MS        = 15 * 60 * 1000; // 15 minutes
@@ -31,13 +41,7 @@ async function sbUpsert(table, data) {
   });
 }
 
-// ─── Read PIN from Supabase config table ────────────────────────────────────
-async function getPin(chiave, fallback) {
-  try {
-    const rows = await sbSelect("config", `chiave=eq.${chiave}&limit=1`);
-    return (rows && rows[0] && rows[0].valore) ? String(rows[0].valore) : fallback;
-  } catch(e) { return fallback; }
-}
+// PIN lookup from Supabase config REMOVED (Phase 0A1) — PINs are env-only now.
 
 // ─── Rate limiting via Supabase config table ────────────────────────────────
 // Stores: chiave = "AUTH_BLOCK_<ip_hash>", valore = JSON {count, until}
@@ -98,12 +102,22 @@ exports.handler = async (event) => {
   const { pin, role } = body;
   const ip = event.headers["x-forwarded-for"]?.split(",")[0].trim() || event.headers["client-ip"] || "unknown";
 
+  // FAIL CLOSED: required secrets must come from the environment. If any is
+  // missing we refuse to authenticate and return a GENERIC 503 that does not
+  // reveal which variable is absent. No default PIN, no default JWT secret.
+  if (!APP_PIN_ENV || !REPARTIDOR_PIN_ENV || !JWT_SECRET) {
+    return respond(503, { error: "auth no configurado" });
+  }
+
   // Validate PIN format (4-8 digits)
   if (!pin || !/^\d{4,8}$/.test(String(pin))) {
     return respond(400, { error: "El PIN debe tener entre 4 y 8 dígitos" });
   }
 
+  // DEV_AUTH_BYPASS: only OUTSIDE the production context, and only if explicitly
+  // enabled. Can never activate when CONTEXT === "production".
   const isLocalOperatorBypass =
+    !IS_PRODUCTION &&
     process.env.DEV_AUTH_BYPASS === "true" &&
     role !== "repartidor" &&
     String(pin) === "123456";
@@ -119,10 +133,8 @@ exports.handler = async (event) => {
     return respond(429, { error: `Demasiados intentos. Espera ${rl.retryAfter} minutos.` });
   }
 
-  // Read correct PIN from Supabase
-  const correctPin = role === "repartidor"
-    ? await getPin("REPARTIDOR_PIN", process.env.REPARTIDOR_PIN || "000000")
-    : await getPin("APP_PIN",        process.env.APP_PIN        || "000000");
+  // Correct PIN comes ONLY from the environment (no Supabase config lookup).
+  const correctPin = role === "repartidor" ? REPARTIDOR_PIN_ENV : APP_PIN_ENV;
 
   if (pin !== correctPin) {
     const count = await recordFailure(ip);
