@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { calcTotale } from '../../constants';
 import { api } from '../../api';
-import { sb } from '../../api';
 import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
@@ -758,20 +757,17 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     return () => clearInterval(tick);
   }, []);
 
-  // Legge DRIVER_STATO da Supabase ogni 15s
+  // Rider return = TELEMETRIA VISIVA dal backend (getDriverStatus), read-only ogni 15s.
+  // Il frontend NON scrive più DRIVER_STATO: la telemetria è un side-effect backend
+  // (d569163). Null/errore → nessun banner (degrado silenzioso), zero crash.
   useEffect(() => {
     let mounted = true;
     const loadDriver = async () => {
       try {
-        const rows = await sb.select("config", "chiave=eq.DRIVER_STATO");
+        const s = await api.getDriverStatus();
         if (!mounted) return;
-        if (rows && rows.length > 0) {
-          const val = typeof rows[0].valore === "string"
-            ? JSON.parse(rows[0].valore)
-            : rows[0].valore;
-          setDriverStato(val);
-        }
-      } catch(e) {}
+        setDriverStato(s || null);
+      } catch(e) { if (mounted) setDriverStato(null); }
     };
     loadDriver();
     const poll = setInterval(loadDriver, 15000);
@@ -791,51 +787,35 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     o.tipo_consegna === "DOMICILIO" && o.estado === ORDER_STATES.RETIRADO
   );
 
-  // ── Rider return ETA ──────────────────────────────────────────────────────
-  // Robusto a DRIVER_STATO non popolato: ETA ricavata dai dati dell'ordine
-  // consegnato (hora_entrega + minuti di ritorno ≈ andata), con
-  // DRIVER_STATO.rientro_stimato (backend, chiudiGiro) preferito quando presente.
-  // Nessun GPS, nessuna posizione reale: tutto "estimado". Non usa updated_at.
-  // Nessun import planner/scheduling: usa durata_andata_min o tempoAndata (zones).
+  // ── Rider return: TELEMETRIA VISIVA dal backend ───────────────────────────
+  // Sorgente UNICA = getDriverStatus (backend d569163). `driverStato` è già
+  // normalizzato { out, returning, rientro_stimato, partito_alle, ... } oppure
+  // null (DRIVER_STATO assente/LIBERO/malformato) → nessun banner.
+  // NIENTE fallback hora_entrega+durata: eviterebbe il "returning" prematuro in
+  // un giro multi-ordine (no banner > banner sbagliato). Il "returning" diventa
+  // vero solo quando il backend chiude il giro (ultima consegna). Nessuna
+  // scrittura DRIVER_STATO lato frontend.
   const RIDER_RETURN_GRACE_MIN = 5;
-  // nowMs deriva dal ticker UI (riderNowMs): countdown/elapsed avanzano senza refresh.
+  // nowMs deriva dal ticker UI (riderNowMs): il countdown avanza senza refresh.
   const nowMs = riderNowMs;
-  // Minuti di ritorno per un ordine: durata_andata_min affidabile, else zone helper.
-  const riderReturnMinFor = (o) => {
-    const d = Number(o?.durata_andata_min);
-    if (Number.isFinite(d) && d > 0) return d;
-    const zObj = ZONE_DELIVERY.find(z => z.id === o?.zona) || null;
-    const t = tempoAndata(o, zObj);
-    return (Number.isFinite(t) && t > 0) ? t : 0;
-  };
-  // ETA di rientro per-ordine (fallback su dati ordine, sempre presenti post-consegna).
-  const riderEtaMsFor = (o) => {
-    const he = Number(o?.hora_entrega);
-    if (!Number.isFinite(he)) return NaN;
-    return he + riderReturnMinFor(o) * 60000;
-  };
-  // Backend giro-level ETA (preferita quando presente e valida).
-  const riderDriverEtaMs = driverStato?.rientro_stimato ? Date.parse(driverStato.rientro_stimato) : NaN;
-  // Se il rider è già ripartito per un nuovo giro (registrarSalidaDriver → partito_alle
-  // aggiornato, rientro_stimato:null), gli ordini consegnati PRIMA di quella partenza
-  // non sono più "in ritorno": la sezione si azzera al prossimo Salgo.
-  const riderPartitoMs = driverStato?.partito_alle ? Date.parse(driverStato.partito_alle) : NaN;
-  const riderLeftAgain = driverStato?.stato === "IN_GIRO" && Number.isFinite(riderPartitoMs);
-  const returningOrders = consegnati.filter(o => {
-    const he = Number(o?.hora_entrega);
-    if (!Number.isFinite(he)) return false;
-    if (riderLeftAgain && riderPartitoMs > he) return false; // consegna di un giro precedente
-    const eta = riderEtaMsFor(o);
-    return Number.isFinite(eta) && nowMs <= eta + RIDER_RETURN_GRACE_MIN * 60000;
-  });
+  const driverOut = !!(driverStato && driverStato.out === true);
+  const driverReturning = !!(driverStato && driverStato.returning === true && driverStato.rientro_stimato);
+  const driverPartitoMs = driverStato?.partito_alle ? Date.parse(driverStato.partito_alle) : NaN;
+  const riderBannerEtaMs = driverReturning ? Date.parse(driverStato.rientro_stimato) : NaN;
+  // Card del giro in ritorno: ordini consegnati DOPO la partenza corrente,
+  // mostrati SOLO quando il backend dichiara returning=true (giro chiuso).
+  const returningOrders = (driverReturning && Number.isFinite(riderBannerEtaMs))
+    ? consegnati.filter(o => {
+        const he = Number(o?.hora_entrega);
+        if (!Number.isFinite(he)) return false;
+        return !Number.isFinite(driverPartitoMs) || he >= driverPartitoMs;
+      })
+    : [];
   const returningIds = new Set(returningOrders.map(o => o.id));
   // Esclude i returning dal riepilogo collassato per evitare duplicati.
   const consegnatiCollapsed = consegnati.filter(o => !returningIds.has(o.id));
-  // ETA banner: preferisci rientro_stimato backend, else max ETA per-ordine del ritorno.
-  const riderBannerEtaMs = Number.isFinite(riderDriverEtaMs)
-    ? riderDriverEtaMs
-    : (returningOrders.length ? Math.max(...returningOrders.map(riderEtaMsFor)) : NaN);
-  const riderReturnActive = returningOrders.length > 0 && Number.isFinite(riderBannerEtaMs);
+  // Banner attivo finché non superata ETA + grace (5 min); poi si nasconde.
+  const riderReturnActive = Number.isFinite(riderBannerEtaMs) && nowMs <= riderBannerEtaMs + RIDER_RETURN_GRACE_MIN * 60000;
   const riderReturnBeforeEta = Number.isFinite(riderBannerEtaMs) && nowMs <= riderBannerEtaMs;
   const riderReturnQuedanMin = Number.isFinite(riderBannerEtaMs)
     ? Math.max(0, Math.ceil((riderBannerEtaMs - nowMs) / 60000)) : 0;
@@ -845,6 +825,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const riderReturnEtaHHMM = Number.isFinite(riderBannerEtaMs)
     ? new Date(riderBannerEtaMs).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" })
     : "";
+  // Mostra la sezione anche per "driver fuori senza ETA" (out && !returning).
+  const riderSectionVisible = riderReturnActive || (driverOut && !driverReturning);
 
   const toMin = (t) => { if (!t) return 9999; const [h,m] = t.split(":").map(Number); return h*60+m; };
   const toHora = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
@@ -1092,36 +1074,9 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     try {
       await api.marcarEnEntrega(id);
       if (notify) notify("🛵 Repartidor en camino", ORANGE);
-
-      // DELIVERY-RIDER-RETURN-01: primo Salgo del giro dal pannello operatore →
-      // registra la partenza driver in DRIVER_STATO (partito_alle) e azzera il
-      // rientro_stimato del giro precedente. Mirror di RepartidorPage.handleSalgo.
-      // Solo DOMICILIO; salta se un altro ordine è già EN_ENTREGA (giro in corso).
-      if (current?.tipo_consegna === "DOMICILIO") {
-        const giaInViaggio = ordenes.some(o =>
-          o.tipo_consegna === "DOMICILIO" && o.estado === ORDER_STATES.EN_ENTREGA && o.id !== id
-        );
-        if (!giaInViaggio) {
-          const nOrdini = ordenes.filter(o =>
-            o.tipo_consegna === "DOMICILIO" &&
-            (o.id === id || o.estado === ORDER_STATES.EN_ENTREGA)
-          ).length || 1;
-          try {
-            await api.registrarSalidaDriver(current?.zona || null, nOrdini);
-            // Ottimistico: aggiorna lo stato driver locale finché il poll 15s non riallinea.
-            setDriverStato({
-              stato: "IN_GIRO",
-              zona: current?.zona || null,
-              partito_alle: new Date().toISOString(),
-              n_ordini: nOrdini,
-              rientro_stimato: null,
-            });
-          } catch (errSalida) {
-            console.warn("[handleSendRepartidor] registrarSalidaDriver failed:", errSalida?.message || errSalida);
-            if (notify) notify("⚠️ Rider en camino · estado driver no registrado", "#fbbf24");
-          }
-        }
-      }
+      // Telemetria DRIVER_STATO (driver fuori) è un side-effect BACKEND della
+      // transizione EN_ENTREGA (d569163). Il frontend non scrive più DRIVER_STATO:
+      // il poll getDriverStatus (15s) riallinea il banner visivo, se disponibile.
     } catch(e) {
       logRollback({
         component: "TabEntregas",
@@ -1139,25 +1094,18 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     setLoadingId(null);
   };
 
-  // Override operatore: registra salida manualmente (driver dimenticò Salgo)
+  // Override operatore: la telemetria "driver fuori" è ora BACKEND-owned (side-effect
+  // di EN_ENTREGA, d569163). Il frontend non scrive più DRIVER_STATO — questo handler
+  // si limita a ri-leggere lo status backend (read-only) e riallineare il banner.
   const handleForzaSalida = async (ordine) => {
-    logLegacyBypass({
-      component: "TabEntregas",
-      action: "handleForzaSalida",
-      orderId: ordine?.id,
-      from: ordine?.estado,
-      to: ordine?.estado,
-      metadata: { reason: "registra uscita driver senza cambio stato ordine" },
-    });
     setLoadingId(ordine?.id || null);
-    const enEntrega = entregas.filter(o => o.estado === ORDER_STATES.EN_ENTREGA);
-    const nOrdini = enEntrega.length || 1;
     try {
-      await api.registrarSalidaDriver(ordine?.zona || null, nOrdini);
-      const nuovoStato = { stato: "IN_GIRO", zona: ordine?.zona || null, partito_alle: new Date().toISOString(), n_ordini: nOrdini, rientro_stimato: null };
-      setDriverStato(nuovoStato);
-      if (notify) notify("⚠️ Salida registrada manualmente", "#fbbf24");
-    } catch(e) { if (notify) notify("❌ Error al registrar salida", "#E8341C"); }
+      const s = await api.getDriverStatus();
+      setDriverStato(s || null);
+      if (notify) notify("🛵 Estado del rider actualizado", "#fbbf24");
+    } catch(e) {
+      console.warn("[handleForzaSalida] getDriverStatus refresh failed:", e?.message || e);
+    }
     setLoadingId(null);
   };
 
@@ -1184,9 +1132,9 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     setOrdenes(prev => prev.map(o => o.id === ordine.id ? { ...o, estado: ORDER_STATES.RETIRADO, hora_entrega: Date.now() } : o));
     try {
       await api.marcarEntregado(ordine.id, true, ordine, "manual");
-      // Controlla se era l'ultimo
-      const rimanenti = entregas.filter(o => [ORDER_STATES.LISTO, ORDER_STATES.EN_ENTREGA].includes(o.estado) && o.id !== ordine.id);
-      if (rimanenti.length === 0) await api.chiudiGiro();
+      // La chiusura del giro + ETA rientro sono ora un side-effect BACKEND del
+      // RETIRADO (d569163): il backend rileva l'ultima consegna del giro
+      // server-side. Niente decisione last-of-giro né chiudiGiro lato frontend.
       if (notify) notify("✓ Driver volvió (operador)", "#22C55E");
     } catch(e) {
       logRollback({
@@ -1213,7 +1161,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   // ── Sezione "Rider volviendo": banner globale + card del giro in ritorno ──
   // Renderizzata sia nel ramo vuoto (giro chiuso → nessuna entrega attiva) sia
   // in quello principale, così l'operatore la vede sempre durante il ritorno.
-  const RiderReturnSection = riderReturnActive ? (
+  const RiderReturnSection = riderSectionVisible ? (
     <div style={{ marginBottom: 14 }}>
       <div style={{
         background: "rgba(249,115,22,0.10)",
@@ -1224,12 +1172,16 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
         <span style={{ fontSize: 18, lineHeight: 1 }}>🛵</span>
         <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 170 }}>
           <span style={{ color: "#fdba74", fontWeight: 900, fontSize: 13.5 }}>
-            {riderReturnBeforeEta ? "Rider volviendo a pizzería" : "Rider debería estar llegando a pizzería"}
+            {!driverReturning
+              ? "Rider en reparto"
+              : (riderReturnBeforeEta ? "Rider volviendo a pizzería" : "Rider debería estar llegando a pizzería")}
           </span>
           <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 11.5, fontWeight: 600 }}>
-            {riderReturnBeforeEta
-              ? `Regreso estimado en ~${riderReturnQuedanMin} min${riderReturnEtaHHMM ? ` · Hora estimada ${riderReturnEtaHHMM}` : ""}`
-              : `Estimado cumplido hace ~${riderReturnElapsedMin} min${riderReturnEtaHHMM ? ` · Hora estimada ${riderReturnEtaHHMM}` : ""}`}
+            {!driverReturning
+              ? "En reparto · sin hora estimada todavía"
+              : (riderReturnBeforeEta
+                  ? `Regreso estimado en ~${riderReturnQuedanMin} min${riderReturnEtaHHMM ? ` · Hora estimada ${riderReturnEtaHHMM}` : ""}`
+                  : `Estimado cumplido hace ~${riderReturnElapsedMin} min${riderReturnEtaHHMM ? ` · Hora estimada ${riderReturnEtaHHMM}` : ""}`)}
           </span>
         </div>
       </div>

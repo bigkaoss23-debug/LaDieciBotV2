@@ -379,11 +379,21 @@ const api = {
   marcarLlegado: function(id, llegado) {
     return proxyPost({ action:'marcarLlegado', id, llegado: llegado !== false });
   },
-  registrarSalidaDriver: function(zona, n_ordini) {
-    return proxyPost({ action:'registrarSalidaDriver', zona, n_ordini });
-  },
-  chiudiGiro: function() {
-    return proxyPost({ action:'chiudiGiro' });
+  // NB: registrarSalidaDriver / chiudiGiro rimossi dal frontend — DRIVER_STATO è
+  // telemetria BACKEND-owned (side-effect di EN_ENTREGA/RETIRADO, d569163). Gli
+  // endpoint restano lato Railway per back-compat, ma il frontend non li chiama più.
+  // Rider return = TELEMETRIA VISIVA opzionale (read-only). Il backend (d569163)
+  // è la fonte: ritorna lo status normalizzato { stato,out,returning,zona,
+  // partito_alle,rientro_stimato,n_ordini,orders_remaining } oppure null se
+  // DRIVER_STATO è assente/LIBERO/malformato. Qualsiasi errore o forma inattesa
+  // → null: la dashboard degrada in silenzio (nessun banner). Mai throw.
+  getDriverStatus: async function() {
+    try {
+      const r = await proxyGet("getDriverStatus");
+      if (!r || typeof r !== "object" || r.error) return null;
+      if (r.out !== true) return null; // null/LIBERO/forma inattesa → niente banner
+      return r;
+    } catch (e) { console.warn("getDriverStatus failed:", e); return null; }
   },
 
   // ── Manual giros (DELIVERY-MANUAL-GIRO-01 P1C.1) ──────────────

@@ -4,7 +4,7 @@ import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import { calcTotale } from '../../constants';
 import { applyUiOffset } from '../../utils/uiOffset';
 import Suoni from '../../sounds';
-import { ORDER_STATES, isCompletedState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
+import { ORDER_STATES, isCompletedState, logRollback, logTransition } from '../../core/orders';
 
 const mapsUrl = (dir) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((dir || "") + " Roquetas de Mar")}`;
@@ -435,23 +435,9 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
     setOrdLocal(prev => prev.map(o => o.id === id ? { ...o, estado: ORDER_STATES.EN_ENTREGA, hora_salida: Date.now() } : o));
     try {
       await api.marcarEnEntrega(id);
-
-      // Primo Salgo del giro → registra partenza in DRIVER_STATO
-      const giaInViaggio = ordLocal.some(o => o.estado === ORDER_STATES.EN_ENTREGA && o.id !== id);
-      if (!giaInViaggio) {
-        const orden = ordLocal.find(o => o.id === id);
-        const ordiniGiro = ordLocal.filter(o => [ORDER_STATES.EN_ENTREGA, ORDER_STATES.LISTO].includes(o.estado));
-        logLegacyBypass({
-          component: "RepartidorPage",
-          action: "registrarSalidaDriver",
-          orderId: id,
-          from: current?.estado,
-          to: ORDER_STATES.EN_ENTREGA,
-          metadata: { reason: "side effect driver accoppiato al primo Salgo", n_ordini: ordiniGiro.length },
-        });
-        await api.registrarSalidaDriver(orden?.zona || null, ordiniGiro.length);
-      }
-
+      // La telemetria "driver fuori" (DRIVER_STATO) è ora un side-effect BACKEND
+      // della transizione EN_ENTREGA (d569163). Nessuna rilevazione primo-giro né
+      // scrittura DRIVER_STATO lato repartidor: Salgo = solo cambio stato ordine.
       if (notify) notify("🛵 Entrega iniciada", "#F97316");
     } catch(e) {
       logRollback({
@@ -482,21 +468,9 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
     setOrdLocal(prev => prev.map(o => o.id === id ? { ...o, estado: ORDER_STATES.RETIRADO, hora_entrega: Date.now() } : o));
     try {
       await api.marcarEntregado(id, true, orden, metodo_pago || "");
-
-      // Ultimo Entregado del giro → calcola rientro e salva log
-      const rimanenti = ordLocal.filter(o => [ORDER_STATES.LISTO, ORDER_STATES.EN_ENTREGA].includes(o.estado) && o.id !== id);
-      if (rimanenti.length === 0) {
-        logLegacyBypass({
-          component: "RepartidorPage",
-          action: "chiudiGiro",
-          orderId: id,
-          from: orden?.estado,
-          to: ORDER_STATES.RETIRADO,
-          metadata: { reason: "side effect giro legato all'ultima consegna" },
-        });
-        await api.chiudiGiro();
-      }
-
+      // La chiusura del giro + ETA rientro sono ora un side-effect BACKEND del
+      // RETIRADO (d569163): il backend rileva l'ultima consegna del giro
+      // server-side. Niente decisione last-of-giro né chiudiGiro lato repartidor.
       if (notify) notify(
         metodo_pago === "tarjeta" ? "💳 Entregado — Tarjeta" : "💵 Entregado — Efectivo",
         "#16A34A"
