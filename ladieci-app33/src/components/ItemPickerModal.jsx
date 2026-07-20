@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { C, MENU, CATS, INGREDIENTI, genId } from '../constants';
+import { C, MENU, CATS, INGREDIENTI, EXTRAS_DULCES, genId, pizzaLabel, esDulce, findExtra } from '../constants';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 
 /**
@@ -33,7 +33,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
       const uid = itemEsistente._uid || genId();
       setCart({ [uid]: { ...itemEsistente, _uid: uid } });
       setCat(itemEsistente.cat || "Pizzas");
-      setExtrasOpen(itemEsistente.cat === "Pizzas" ? uid : null);
+      setExtrasOpen((itemEsistente.cat === "Pizzas" || esDulce(itemEsistente)) ? uid : null);
     } else {
       setCart({});
       setCat("Pizzas");
@@ -87,7 +87,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
 
   // Rimuove extra da una pizza nel carrello
   const removeExtra = (uid, ingName) => {
-    const ing = INGREDIENTI.find(g => g.n === ingName);
+    const ing = findExtra(ingName);
     setCart(prev => {
       if (!prev[uid]) return prev;
       const parts = (prev[uid].sub || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -141,6 +141,9 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
 
   // Item su cui è aperto il popup ingredienti extra (matita)
   const extrasTarget = extrasOpen ? cart[extrasOpen] : null;
+  // Pizza dolce → lista EXTRAS_DULCES; pizza salata → INGREDIENTI
+  const extrasEsDulce = esDulce(extrasTarget);
+  const extrasList = extrasEsDulce ? EXTRAS_DULCES : INGREDIENTI;
 
   // Conferma
   const handleConfirm = () => {
@@ -181,7 +184,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
           maxHeight: "90vh",
           // In modifica di una pizza il popup ingredienti è la schermata: il modal
           // dev'essere alto come in aggiunta, così l'overlay mostra la tabella completa.
-          ...(isModifica && itemEsistente?.cat === "Pizzas" ? { height: "90vh" } : {}),
+          ...(isModifica && (itemEsistente?.cat === "Pizzas" || esDulce(itemEsistente)) ? { height: "90vh" } : {}),
           display: "flex",
           flexDirection: "column",
           boxShadow: "0 20px 60px rgba(0,0,0,0.7)",
@@ -240,6 +243,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
               }}>
                 {MENU.filter(m => m.cat === cat).map(p => {
                   const qty = qtyOf(p.id);
+                  const lbl = pizzaLabel(p);
                   return (
                     <div key={p.id}
                       onClick={() => increment(p)}
@@ -264,8 +268,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                         }}>{qty}</span>
                       )}
                       <span style={{ fontSize: 30, pointerEvents: "none" }}>{p.e}</span>
-                      <span style={{ color: C.bianco, fontSize: 14, fontWeight: 700, textAlign: "center", lineHeight: 1.25 }}>{p.n}</span>
-                      {p.sub && <span style={{ color: "#a99f8b", fontSize: 13, textAlign: "center", lineHeight: 1.2 }}>{p.sub}</span>}
+                      <span style={{ color: C.bianco, fontSize: p.num ? 15 : 14, fontWeight: 800, textAlign: "center", lineHeight: 1.2 }}>{lbl.primary}</span>
+                      {lbl.secondary && <span style={{ color: "#a99f8b", fontSize: 12, fontStyle: p.num ? "italic" : "normal", textAlign: "center", lineHeight: 1.2 }}>{lbl.secondary}</span>}
                       <span style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 14, fontWeight: 800, marginTop: 2 }}>
                         {p.p.toFixed(2)}€
                       </span>
@@ -293,7 +297,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                         counts[name] = (counts[name] || 0) + 1;
                       });
                       return Object.entries(counts).map(([name, qty]) => {
-                        const ing = INGREDIENTI.find(g => g.n === name);
+                        const ing = findExtra(name);
                         return { name, qty, prezzo: ing ? Math.round(ing.prezzo * qty * 100) / 100 : 0, e: ing?.e || "➕" };
                       });
                     })();
@@ -334,10 +338,10 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           </div>
                           {/* Azioni a destra: matita (quadratino grigio) + quantità — come la riga Nuevo Pedido */}
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginLeft: 12 }}>
-                            {item.cat === "Pizzas" && (
+                            {(item.cat === "Pizzas" || esDulce(item)) && (
                               <button
                                 onClick={() => { if (isOpen) setExtrasOpen(null); else setExtrasOpen(item._uid); }}
-                                title={isOpen ? "Cerrar ingredientes" : "Añadir ingrediente extra"}
+                                title={isOpen ? "Cerrar extras" : (esDulce(item) ? "Añadir extra dulce" : "Añadir ingrediente extra")}
                                 style={{
                                   background: isOpen ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.035)",
                                   border: `1px solid ${isOpen ? "rgba(255,255,255,0.4)" : "rgba(208,184,145,0.20)"}`,
@@ -368,7 +372,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                         </div>
 
                         {/* Nota cucina rossa — SOLO la nota libera, NON gli extra (che restano chip) */}
-                        {item.cat === "Pizzas" && (() => {
+                        {(item.cat === "Pizzas" || esDulce(item)) && (() => {
                           const notaLibera = splitSub(item.sub).note;
                           return (
                           <input
@@ -389,8 +393,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           );
                         })()}
 
-                        {/* Nota libera (non pizza) */}
-                        {item.cat !== "Pizzas" && (
+                        {/* Nota libera (non pizza e non dolce con extras) */}
+                        {item.cat !== "Pizzas" && !esDulce(item) && (
                           <input
                             value={item.sub || ""}
                             onChange={e => setNota(item._uid, e.target.value)}
@@ -461,8 +465,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
           </div>
         )}
 
-        {/* ── Popup ingredienti extra (stile picker pizze) — aperto dalla matita ── */}
-        {extrasTarget && extrasTarget.cat === "Pizzas" && (
+        {/* ── Popup extra (stile picker pizze) — aperto dalla matita. Salato (INGREDIENTI) o dolce (EXTRAS_DULCES) ── */}
+        {extrasTarget && (extrasTarget.cat === "Pizzas" || extrasEsDulce) && (
           <div
             onClick={closeExtras}
             style={{
@@ -487,7 +491,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
               }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ color: C.bianco, fontWeight: 800, fontSize: 18 }}>🧀 Ingredientes extra</span>
+                    <span style={{ color: C.bianco, fontWeight: 800, fontSize: 18 }}>{extrasEsDulce ? "🍫 Extras dulces" : "🧀 Ingredientes extra"}</span>
                     <span style={{ color: "#ffd439", fontWeight: 800, fontSize: 13 }}>(+0,50€ c/u)</span>
                   </div>
                 </div>
@@ -503,7 +507,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                 flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 12,
                 display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(116px, 1fr))", gap: 8
               }}>
-                {INGREDIENTI.filter(ing => ing.prezzo > 0).map(ing => {
+                {extrasList.filter(ing => ing.prezzo > 0).map(ing => {
                   const veces = splitSub(extrasTarget.sub).extras.filter(t => t === `+${ing.n}`).length;
                   return (
                     <button key={ing.id} onClick={() => addExtra(extrasTarget._uid, ing)} style={{
