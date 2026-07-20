@@ -45,11 +45,11 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   ck(`${name}: "GIRO MANUAL" assente`, () => {
     assert.ok(!/GIRO MANUAL/.test(src));
   });
-  // 3. label ALTO CONTRASTO: bianco pieno + textShadow scuro rinforzato nella fascia
-  ck(`${name}: label alto contrasto (#fff + textShadow scuro rinforzato)`, () => {
+  // 3. ribbon ALTO CONTRASTO: bianco pieno + textShadow scuro
+  ck(`${name}: ribbon alto contrasto (#fff + textShadow scuro)`, () => {
     assert.ok(
-      /background:giroAccent \|\| zonaColore,color:"#fff"[\s\S]*?textShadow:"0 1px 3px rgba\(0,0,0,0\.6\)"[\s\S]*?🚚 DELIVERY/.test(src),
-      "banner deve avere color #fff + textShadow scuro rinforzato prima del testo DELIVERY"
+      /color:"#fff",fontSize:12,fontWeight:900,letterSpacing:\.7,textTransform:"uppercase",[\s\S]*?textShadow:"0 1px 3px rgba\(0,0,0,0\.55\)"/.test(src),
+      "ribbon deve avere color #fff + textShadow scuro"
     );
   });
   // 3b. niente label attenuata/grigia (no opacity sul testo della fascia)
@@ -59,17 +59,21 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
       "la fascia DELIVERY non deve usare opacity sul testo"
     );
   });
-  // 4. número + cliente nella STESSA fila (flex baseline) con id-span e nombre-span
-  ck(`${name}: número + cliente stessa fila header (baseline)`, () => {
+  // 4. número + cliente STACKED (cliente SOTTO l'id — pixel grid)
+  ck(`${name}: cliente sotto il numero ordine (stacked)`, () => {
     assert.ok(
-      /display:"flex",alignItems:"baseline"[\s\S]*?\{o\.id\}<\/span>[\s\S]*?👤 \{o\.nombre\}<\/span>/.test(src),
-      "id e nombre devono stare in una riga flex baseline condivisa"
+      /\{o\.id\}<\/div>\s*<div[^>]*textOverflow:"ellipsis"[^>]*>👤 \{o\.nombre\}<\/div>/.test(src),
+      "id in un div e cliente nel div successivo (non più stessa riga)"
+    );
+    assert.ok(
+      !/alignItems:"baseline"[\s\S]{0,120}?👤 \{o\.nombre\}/.test(src),
+      "niente baseline row attorno al cliente"
     );
   });
-  // 4b. cliente secondario troncato con ellipsis (sin wrap) nella riga header
+  // 4b. cliente secondario troncato con ellipsis (sin wrap)
   ck(`${name}: cliente troncato ellipsis/nowrap`, () => {
     assert.ok(
-      /whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0\}\}>👤 \{o\.nombre\}<\/span>/.test(src),
+      /whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"\}\}>👤 \{o\.nombre\}<\/div>/.test(src),
       "il nombre deve troncare con ellipsis senza andare a capo"
     );
   });

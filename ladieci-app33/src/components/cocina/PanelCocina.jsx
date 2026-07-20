@@ -15,6 +15,12 @@ import {
   resolveGiroReadyBy
 } from './manualGiroCocina';
 
+// COCINA_CARD_PIXEL_GRID: costanti griglia visiva unica per le card Cocina.
+// RIBBON_H = altezza fissa del top slot (ribbon) uguale per delivery e retiro.
+// SYS_FONT = stack di sistema per la leggibilità (solo Cocina; numeri restano 'DM Mono').
+const RIBBON_H = 26;
+const SYS_FONT = 'system-ui, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif';
+
 const subtractMinutes = (hora, min) => {
   if (!hora || !min) return null;
   const [hh, mm] = hora.split(":").map(Number);
@@ -105,7 +111,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       const aH = a.horaForno || a.hora, bH = b.horaForno || b.hora;
       if(aH && bH) {
         const aMs = manualGiroSortAnchorMs(a, activosBase)||0, bMs = manualGiroSortAnchorMs(b, activosBase)||0;
-        // A parità di slot 10min → RITIRO viene PRIMA (max 5min ritardo accettabile per delivery)
+        // A parità di slot 10min → il pickup viene PRIMA (max 5min ritardo accettabile per delivery)
         const aSlot10 = Math.floor(aMs/(10*60*1000));
         const bSlot10 = Math.floor(bMs/(10*60*1000));
         if (a.manual_giro_id && a.manual_giro_id === b.manual_giro_id) {
@@ -240,62 +246,62 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                 : null;
               // COCINA_MANUAL_GIRO_VISUAL_GROUPING — accent condiviso per membri stesso giro.
               const giroAccent = o.manualGiro ? manualGiroAccentColor(o.manualGiro) : null;
+              // COCINA_CARD_BORDER_WEIGHT: contorno UNIFORME 4px per pickup e delivery
+              // (era 2px sui pickup). Halo pieno anche sui non-delivery (rinforzato in
+              // late/tarde) → peso visivo coerente riga per riga.
               return (
                 <div key={o.id} style={{
                   background:"#fff",
                   borderRadius:16,
-                  border: giroAccent ? `4px solid ${giroAccent}` : (isDelivery ? `4px solid ${zonaColore}` : `2px solid ${fc.border}`),
+                  border: giroAccent ? `4px solid ${giroAccent}` : (isDelivery ? `4px solid ${zonaColore}` : `4px solid ${fc.border}`),
                   display:"flex",flexDirection:"column",overflow:"hidden",
                   boxShadow: giroAccent
                     ? `0 0 0 4px ${giroAccent}88, 0 6px 24px ${giroAccent}55`
                     : isDelivery
                       ? `0 0 0 4px ${zonaColore}88, 0 6px 24px ${zonaColore}55`
                       : isUrgent
-                        ? `0 0 0 3px ${fc.border}44, 0 4px 20px ${fc.border}33`
-                        : "0 2px 10px rgba(0,0,0,0.12)",
+                        ? `0 0 0 4px ${fc.border}88, 0 6px 24px ${fc.border}55`
+                        : "0 0 0 3px " + fc.border + "44, 0 4px 16px rgba(0,0,0,0.15)",
                   position:"relative"
                 }}>
-                  {isDelivery && (
-                    /* COCINA_DELIVERY_VISUAL_CONTRACT: fascia DELIVERY unica per OGNI
-                       delivery in Cocina. Differenza singolo vs giro manuale = SOLO
-                       accent (zona vs giro) + suffisso `· G{seq}`. LOCO/RITIRO non la
-                       ricevono. No zona Q*, no scooter, nessuna label legacy. */
-                    <div style={{background:giroAccent || zonaColore,color:"#fff",textAlign:"center",
-                      padding:"5px 8px",fontSize:13,fontWeight:900,letterSpacing:.7,
-                      textTransform:"uppercase",display:"flex",alignItems:"center",
-                      justifyContent:"center",gap:6,
-                      /* label alto contrasto — bianco pieno + ombra scura più marcata per
-                         leggibilità sopra accenti chiari (amber/green/cyan/zona). */
-                      textShadow:"0 1px 3px rgba(0,0,0,0.6)"}}>
-                      🚚 DELIVERY{o.manualGiro ? ` · ${formatManualGiroLabel(o.manualGiro)}` : ""}
-                    </div>
-                  )}
+                  {/* COCINA_CARD_PIXEL_GRID · TOP_SLOT_SILENT: top slot ad altezza fissa
+                      (RIBBON_H) uguale per TUTTE le card → allineamento. SOLO i delivery
+                      mostrano la label (`🚚 DELIVERY[· G{seq}]`, accent zona/giro). I
+                      non-delivery hanno slot MUTO (nessun testo/icona), fondo coerente con
+                      l'header (fc.bgLight) → nessun segnale visivo forte, solo allineamento. */}
+                  <div style={{height:RIBBON_H,flexShrink:0,boxSizing:"border-box",
+                    display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"0 8px",
+                    background: isDelivery ? (giroAccent || zonaColore) : fc.bgLight,
+                    color:"#fff",fontSize:12,fontWeight:900,letterSpacing:.7,textTransform:"uppercase",
+                    textShadow:"0 1px 3px rgba(0,0,0,0.55)"}}>
+                    {isDelivery
+                      ? <>🚚 DELIVERY{o.manualGiro ? ` · ${formatManualGiroLabel(o.manualGiro)}` : ""}</>
+                      : null}
+                  </div>
                   {/* Header colorato per fase — tema chiaro (full-screen pizzeria) */}
-                  <div style={{background:fc.bgLight, padding:"12px 16px",
+                  <div style={{background:fc.bgLight, padding:"12px 16px",minHeight:88,boxSizing:"border-box",
                     display:"flex",justifyContent:"space-between",alignItems:"flex-start",
                     borderBottom:`1px solid ${fc.border}55`}}>
                     <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
-                      {/* COCINA_DELIVERY_CARD_HEADER_READABILITY: número + cliente en la
-                          MISMA fila (baseline compartida) → recupera una línea vertical.
-                          El número domina (23px, mono, 900); el cliente es secundario
-                          (14px, peso 600) y se trunca con ellipsis sin ir a capo. */}
-                      <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
-                        <span style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:23,lineHeight:1,flexShrink:0}}>{o.id}</span>
-                        <span style={{color:fc.textLight,opacity:0.8,fontWeight:600,fontSize:14,lineHeight:1,
-                          whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>👤 {o.nombre}</span>
-                      </div>
+                      {/* COCINA_CARD_PIXEL_GRID: cliente SOTTO il numero ordine (stacked).
+                          Numero dominante (24, mono, 900); cliente secondario con ellipsis. */}
+                      <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:24,lineHeight:1}}>{o.id}</div>
+                      <div style={{fontFamily:SYS_FONT,color:fc.textLight,opacity:0.82,fontWeight:600,fontSize:14,lineHeight:1.15,marginTop:4,
+                        whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {o.nombre}</div>
                       {/* COCINA_DELIVERY_CARD_COMPACT_UI: chip zona (Q2/Q5) RETIRADO de Cocina
                           (routing no útil; el giro se ve por la fascia + borde). Zona intacta
                           en Entregas/Repartidor/Nuevo Pedido. */}
                       {(o.horaForno || o.hora) && (
                         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:5,marginTop:5}}>
                           <div style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                            {/* COCINA_CARD_PIXEL_GRID: chip ora forno VERDE uniforme in Cocina
+                                (stesso per pickup e delivery). Il tipo si distingue dal ribbon. */}
                             <div style={{display:"inline-flex",alignItems:"center",gap:6,
-                              background: o.isDelivery ? "#F97316" : "#16A34A",
-                              border: o.isDelivery ? "1.5px solid rgba(249,115,22,0.7)" : "1.5px solid #78350F",
+                              background:"#16A34A",
+                              border:"1.5px solid #0E7A38",
                               borderRadius:20,padding:"4px 10px",
-                              boxShadow: o.isDelivery ? "0 2px 8px rgba(249,115,22,.4)" : "0 2px 8px rgba(120,53,15,.4)"}}>
-                              <span style={{fontSize:14}}>{o.isDelivery ? "⏱" : "🕐"}</span>
+                              boxShadow:"0 2px 8px rgba(22,163,74,.35)"}}>
+                              <span style={{fontSize:14}}>🕐</span>
                               <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
                                 {o.horaForno || o.hora}
                               </span>
@@ -348,6 +354,9 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                       const nomeBreve    = it.n || "";
                       const varSub       = it.sub || "";
                       const nomeIng      = mi?.ing || it.ing || "";
+                      // COCINA_CARD_PIXEL_GRID: nome pizza reale dominante + tag menù a fianco.
+                      const realName = nomeCompleto || nomeBreve;
+                      const tagName  = (nomeCompleto && nomeBreve && nomeBreve !== nomeCompleto) ? nomeBreve : "";
                       return (
                         <div key={i} style={{
                           borderBottom: !compact && i<o.items.length-1 ? `2px dashed ${fc.border}44` : "none",
@@ -359,31 +368,27 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                           minWidth: 0,
                           overflow: "hidden",
                         }}>
-                          {/* 1. Pill qty + nome breve */}
-                          <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:compact?4:8}}>
-                            <div style={{display:"inline-flex",alignItems:"center",gap:8,
-                              background:"#f0f0f0",borderRadius:9,padding:"4px 10px"}}>
-                              <span style={{background:"#111",color:"#fff",
-                                borderRadius:7,padding:compact?"3px 11px":"5px 14px",fontFamily:"'DM Mono',monospace",
-                                fontWeight:900,fontSize:compact?19:26,lineHeight:1}}>×{it.q}</span>
-                              <span style={{color:"#222",fontSize:compact?13:15,fontWeight:800,letterSpacing:.3}}>{nomeBreve}</span>
+                          {/* COCINA_CARD_PIZZA_NAME: layout prodotto esplicito e stabile —
+                              badge ×N a sinistra; a destra colonna [riga1 = nome breve/tag,
+                              riga2 = nome vero grande]; ingredienti sotto. */}
+                          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:compact?5:7,minWidth:0}}>
+                            <span style={{background:"#111",color:"#fff",flexShrink:0,
+                              borderRadius:8,padding:compact?"4px 12px":"6px 15px",fontFamily:"'DM Mono',monospace",
+                              fontWeight:900,fontSize:compact?20:28,lineHeight:1}}>×{it.q}</span>
+                            <div style={{display:"flex",flexDirection:"column",minWidth:0,flex:1,overflow:"hidden",gap:1}}>
+                              {/* riga 1 — nome breve/tag (secondario) */}
+                              {tagName && (
+                                <span style={{fontFamily:SYS_FONT,color:"#6B7280",fontSize:compact?11:13,fontWeight:700,letterSpacing:.2,lineHeight:1.1,
+                                  whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{tagName}</span>
+                              )}
+                              {/* riga 2 — nome vero (prioritario, clamp 2 righe) */}
+                              <span style={{fontFamily:SYS_FONT,color:"#111",fontSize:compact?16:22,fontWeight:900,lineHeight:1.12,letterSpacing:-.2,
+                                display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{realName}</span>
                             </div>
                           </div>
-                          {/* 2. Nome completo — grande */}
-                          {nomeCompleto && (
-                            <div style={{color:"#111",fontSize:compact?16:24,fontWeight:900,lineHeight:1.2,
-                              marginBottom:4,letterSpacing:-.3}}>
-                              {nomeCompleto}
-                            </div>
-                          )}
-                          {!nomeCompleto && (
-                            <div style={{color:"#111",fontSize:compact?16:24,fontWeight:900,lineHeight:1.2,marginBottom:4}}>
-                              {nomeBreve}
-                            </div>
-                          )}
-                          {/* 3. Ingredienti — piccoli grigi */}
+                          {/* Ingredienti — piccoli grigi, normal-case */}
                           {nomeIng && (
-                            <div style={{color:"#777",fontSize:compact?10:12,fontWeight:500,lineHeight:1.5,marginBottom:varSub?6:0}}>
+                            <div style={{fontFamily:SYS_FONT,color:"#777",fontSize:compact?10:12,fontWeight:500,lineHeight:1.5,marginBottom:varSub?6:0}}>
                               {nomeIng}
                             </div>
                           )}

@@ -44,26 +44,24 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
     assert.ok(/🚚 DELIVERY\{o\.manualGiro \?/.test(src), "base label 🚚 DELIVERY presente");
     assert.ok(!/🚚 DELIVERY · \{formatManualGiroLabel/.test(src), "niente suffisso · G{seq} statico");
   });
-  // 3. LOCO/RITIRO NON riceve la fascia → fascia gated da isDelivery, NON da manualGiro
-  ck(`${name}: fascia DELIVERY gated da isDelivery (LOCO/RITIRO esclusi)`, () => {
+  // 3. TOP SLOT: SOLO delivery mostra label; non-delivery = slot MUTO (else null)
+  ck(`${name}: ribbon — DELIVERY solo delivery, non-delivery muto`, () => {
     assert.ok(
-      /(?:o\.)?isDelivery && \(\s*\/\* COCINA_DELIVERY_VISUAL_CONTRACT/.test(src),
-      "la fascia (marker COCINA_DELIVERY_VISUAL_CONTRACT) deve essere condizionata a isDelivery"
+      /(?:o\.)?isDelivery\s*\?\s*<>🚚 DELIVERY/.test(src),
+      "il contenuto DELIVERY del ribbon deve essere gated da isDelivery"
     );
-    assert.ok(
-      !/o\.manualGiro && \(\s*\/\* COCINA_DELIVERY_VISUAL_CONTRACT/.test(src),
-      "la fascia NON deve essere gated solo da o.manualGiro"
-    );
+    assert.ok(/<>🚚 DELIVERY[\s\S]*?<\/>\s*: null\}/.test(src), "non-delivery = slot muto (else null)");
+    assert.ok(!/🏠/.test(src), "niente label/icona per non-delivery");
   });
   // 4. giro manuale usa accent giro (grouped/manual): background giroAccent-first + palette
   ck(`${name}: giro manuale usa accent giro (giroAccent-first + manualGiroAccentColor)`, () => {
-    assert.ok(/background:giroAccent \|\| zonaColore/.test(src), "banner: giroAccent ha precedenza");
+    assert.ok(/background: (?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\)/.test(src), "ribbon: giroAccent ha precedenza per delivery");
     assert.ok(/manualGiroAccentColor\(o\.manualGiro\)/.test(src), "accent giro dal manualGiroAccentColor");
     assert.ok(/giroAccent \? `4px solid \$\{giroAccent\}`/.test(src), "border giro = 4px giroAccent");
   });
-  // 5. delivery singolo usa accent zona: fallback zonaColore nel banner + border zona
+  // 5. delivery singolo usa accent zona: fallback zonaColore nel ribbon + border zona
   ck(`${name}: delivery singolo usa accent zona (zonaColore)`, () => {
-    assert.ok(/background:giroAccent \|\| zonaColore/.test(src), "banner: fallback zonaColore");
+    assert.ok(/background: (?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : fc\.bg(?:Light)?/.test(src), "ribbon: fallback zonaColore delivery / colore header non-delivery");
     assert.ok(/(?:o\.)?isDelivery \? `4px solid \$\{zonaColore\}`/.test(src), "border delivery = 4px zonaColore");
   });
   // 6. "GIRO MANUAL" assente
@@ -86,15 +84,18 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   ck(`${name}: bottone LISTO (✅ LISTO) presente`, () => {
     assert.ok(/✅ LISTO/.test(src));
   });
-  // 11. header id + cliente sulla stessa riga (rifinitura precedente preservata)
-  ck(`${name}: header id + cliente stessa riga (baseline) preservato`, () => {
-    assert.ok(/display:"flex",alignItems:"baseline"[\s\S]*?\{o\.id\}<\/span>[\s\S]*?👤 \{o\.nombre\}<\/span>/.test(src));
+  // 11. header id + cliente STACKED (cliente sotto il numero ordine — pixel grid)
+  ck(`${name}: header cliente sotto il numero ordine (stacked)`, () => {
+    assert.ok(/\{o\.id\}<\/div>\s*<div[^>]*textOverflow:"ellipsis"[^>]*>👤 \{o\.nombre\}<\/div>/.test(src),
+      "id in un div e cliente nel div successivo (stacked)");
+    assert.ok(!/alignItems:"baseline"[\s\S]{0,120}?👤 \{o\.nombre\}/.test(src),
+      "niente baseline row attorno al cliente");
   });
-  // 12. label alto contrasto: #fff + textShadow scuro rinforzato
-  ck(`${name}: label alto contrasto (#fff + textShadow 0 1px 3px rgba(0,0,0,0.6))`, () => {
+  // 12. ribbon alto contrasto: #fff + textShadow scuro
+  ck(`${name}: ribbon alto contrasto (#fff + textShadow)`, () => {
     assert.ok(
-      /background:giroAccent \|\| zonaColore,color:"#fff"[\s\S]*?textShadow:"0 1px 3px rgba\(0,0,0,0\.6\)"[\s\S]*?🚚 DELIVERY/.test(src),
-      "banner: #fff + textShadow rinforzato prima del testo"
+      /color:"#fff",fontSize:12,fontWeight:900,letterSpacing:\.7,textTransform:"uppercase",[\s\S]*?textShadow:"0 1px 3px rgba\(0,0,0,0\.55\)"/.test(src),
+      "ribbon: #fff + textShadow scuro"
     );
   });
 }
