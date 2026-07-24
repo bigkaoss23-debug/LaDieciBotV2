@@ -1,8 +1,8 @@
-// ─── ACCOUNT APP (customer-facing) ──────────────────────────────────────────
-// S2-7C2. Minimal, professional account surface: Accedi / Crea account / Password
-// dimenticata, plus email-confirmation and password-recovery landings. Rendered by
-// index.js ONLY for the /cuenta route or a Supabase auth-callback landing at root —
-// the operator PIN app is never touched.
+// ─── ACCOUNT APP (customer-facing, Spanish) ─────────────────────────────────
+// S2-7C2. Minimal, professional account surface in Spanish: Iniciar sesión /
+// Crear cuenta / ¿Olvidaste tu contraseña?, plus email-confirmation and
+// password-recovery landings. Rendered by index.js ONLY for the /cuenta route or
+// a Supabase auth-callback landing at root — the operator PIN app is never touched.
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   PASSWORD_MIN,
@@ -19,27 +19,27 @@ import {
 } from '../../account/accountApi';
 import { getAccountClient } from '../../account/supabaseAccountClient';
 
-const POLICY_TEXT = `Minimo ${PASSWORD_MIN} caratteri, con lettere e numeri.`;
+const POLICY_TEXT = `Mínimo ${PASSWORD_MIN} caracteres, con letras y números.`;
 
 function policyError(code) {
   switch (code) {
-    case 'too_short': return `La password deve avere almeno ${PASSWORD_MIN} caratteri.`;
-    case 'need_letter': return 'La password deve contenere almeno una lettera.';
-    case 'need_digit': return 'La password deve contenere almeno un numero.';
-    default: return 'Password non valida.';
+    case 'too_short': return `La contraseña debe tener al menos ${PASSWORD_MIN} caracteres.`;
+    case 'need_letter': return 'La contraseña debe contener al menos una letra.';
+    case 'need_digit': return 'La contraseña debe contener al menos un número.';
+    default: return 'Contraseña no válida.';
   }
 }
 
-// Map a Supabase auth error to a neutral, non-secret Italian message.
+// Map a Supabase auth error to a neutral, non-secret Spanish message.
 function friendlyAuthError(error) {
   const msg = (error && (error.message || error.error_description || error.error)) || '';
   const m = String(msg).toLowerCase();
-  if (m.includes('invalid login')) return 'Email o password non corretti.';
-  if (m.includes('email not confirmed')) return 'Devi prima confermare l’email.';
-  if (m.includes('already registered') || m.includes('already been registered')) return 'Esiste già un account con questa email.';
-  if (m.includes('rate limit') || m.includes('too many')) return 'Troppi tentativi. Riprova tra qualche minuto.';
+  if (m.includes('invalid login')) return 'Correo o contraseña incorrectos.';
+  if (m.includes('email not confirmed')) return 'Primero debes confirmar el correo electrónico.';
+  if (m.includes('already registered') || m.includes('already been registered')) return 'Ya existe una cuenta con este correo electrónico.';
+  if (m.includes('rate limit') || m.includes('too many')) return 'Demasiados intentos. Vuelve a probar en unos minutos.';
   if (m.includes('weak') || m.includes('password')) return policyError('too_short');
-  return 'Si è verificato un errore. Riprova.';
+  return 'Se ha producido un error. Inténtalo de nuevo.';
 }
 
 function initialViewFromUrl() {
@@ -53,16 +53,46 @@ function initialViewFromUrl() {
   return { view: 'home', cb };
 }
 
+// Accessible show/hide password field. Default hidden; the toggle is a real
+// <button> (keyboard focusable, Enter/Space activatable) with a visible Spanish
+// label ("Mostrar"/"Ocultar") as its accessible name and aria-pressed for state.
+// Toggling only flips this input's type between password/text — the value is
+// never logged or persisted, and autoComplete keeps password managers working.
+function PasswordField({ id, label, value, onChange, autoComplete }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="ld-acc-label">
+      <label htmlFor={id}>{label}</label>
+      <span className="ld-acc-pwwrap">
+        <input
+          id={id}
+          className="ld-acc-input ld-acc-input-pw"
+          type={show ? 'text' : 'password'}
+          autoComplete={autoComplete}
+          value={value}
+          onChange={onChange}
+        />
+        <button
+          type="button"
+          className="ld-acc-eye"
+          aria-pressed={show}
+          onClick={() => setShow((s) => !s)}
+        >
+          {show ? 'Ocultar' : 'Mostrar'}
+        </button>
+      </span>
+    </div>
+  );
+}
+
 export default function AccountApp() {
   const init = useMemo(initialViewFromUrl, []);
   const [view, setView] = useState(init.view);
 
-  // Remove all auth query/hash params from the visible URL after the callback is
-  // processed — tokens, error fragments and recovery params must not linger in the
-  // address bar or history. CRITICAL ORDERING: we strip only AFTER Supabase has
-  // consumed the URL (detectSessionInUrl runs async and needs the hash to establish
-  // the recovery/confirm session). We wait for the first auth event, then replace;
-  // a short fallback covers the invalid-link case (no session, so no auth event).
+  // Remove all auth query/hash params from the visible URL AFTER the callback is
+  // processed. See supabaseAccountClient — detectSessionInUrl runs async and needs
+  // the hash to establish the recovery/confirm session, so we strip only once the
+  // first auth event fires; a short fallback covers the invalid-link case.
   useEffect(() => {
     if (!(init.view === 'recovery' || init.view === 'confirmed' || init.view === 'link_error')) return;
     let stripped = false;
@@ -73,21 +103,19 @@ export default function AccountApp() {
     };
     let sub = null;
     try {
-      const supabase = getAccountClient(); // starts detectSessionInUrl on the callback URL
+      const supabase = getAccountClient();
       const r = supabase.auth.onAuthStateChange(() => strip());
       sub = r && r.data && r.data.subscription;
     } catch (_) { /* noop */ }
-    const t = setTimeout(strip, 1500); // fallback: invalid/expired link never fires an auth event
+    const t = setTimeout(strip, 1500);
     return () => { clearTimeout(t); if (sub && sub.unsubscribe) sub.unsubscribe(); };
   }, [init.view]);
-
-  const goHome = useCallback(() => setView('home'), []);
 
   return (
     <div className="ld-acc-root">
       <StyleTag />
       <div className="ld-acc-card">
-        <div className="ld-acc-brand">La Dieci · Account</div>
+        <div className="ld-acc-brand">La Dieci · Cuenta</div>
 
         {view === 'home' && <HomeView setView={setView} />}
         {view === 'signup' && <SignupView setView={setView} />}
@@ -107,8 +135,8 @@ export default function AccountApp() {
 function SeparationNote() {
   return (
     <p className="ld-acc-note">
-      Questo è l’accesso <strong>cliente</strong>. L’accesso operativo con PIN è
-      separato: <a href="/" className="ld-acc-link">apri l’app operativa</a>.
+      Este es el acceso de <strong>cliente</strong>. El acceso operativo con PIN es
+      distinto: <a href="/" className="ld-acc-link">abre la app operativa</a>.
     </p>
   );
 }
@@ -116,11 +144,11 @@ function SeparationNote() {
 function HomeView({ setView }) {
   return (
     <div>
-      <h1 className="ld-acc-h1">Il tuo account</h1>
-      <p className="ld-acc-sub">Accedi o crea un nuovo account cliente.</p>
-      <button className="ld-acc-btn" onClick={() => setView('login')}>Accedi</button>
-      <button className="ld-acc-btn ld-acc-btn-secondary" onClick={() => setView('signup')}>Crea account</button>
-      <button className="ld-acc-linkbtn" onClick={() => setView('forgot')}>Password dimenticata</button>
+      <h1 className="ld-acc-h1">Tu cuenta</h1>
+      <p className="ld-acc-sub">Inicia sesión o crea una cuenta nueva.</p>
+      <button className="ld-acc-btn" onClick={() => setView('login')}>Iniciar sesión</button>
+      <button className="ld-acc-btn ld-acc-btn-secondary" onClick={() => setView('signup')}>Crear cuenta</button>
+      <button className="ld-acc-linkbtn" onClick={() => setView('forgot')}>¿Olvidaste tu contraseña?</button>
     </div>
   );
 }
@@ -136,10 +164,10 @@ function SignupView({ setView }) {
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
-    if (!validateEmail(email)) { setErr('Inserisci un’email valida.'); return; }
+    if (!validateEmail(email)) { setErr('Introduce un correo electrónico válido.'); return; }
     const v = validatePassword(pw);
     if (!v.ok) { setErr(policyError(v.code)); return; }
-    if (pw !== pw2) { setErr('Le due password non coincidono.'); return; }
+    if (pw !== pw2) { setErr('Las dos contraseñas no coinciden.'); return; }
     setBusy(true);
     const { error } = await accountSignUp(email, pw);
     setBusy(false);
@@ -150,32 +178,28 @@ function SignupView({ setView }) {
   if (done) {
     return (
       <div>
-        <h1 className="ld-acc-h1">Account creato</h1>
-        <p className="ld-acc-ok">Controlla la tua email per confermare l’account.</p>
-        <button className="ld-acc-btn ld-acc-btn-secondary" onClick={() => setView('home')}>Torna all’inizio</button>
+        <h1 className="ld-acc-h1">Cuenta creada</h1>
+        <p className="ld-acc-ok">Revisa tu correo electrónico para confirmar la cuenta.</p>
+        <button className="ld-acc-btn ld-acc-btn-secondary" onClick={() => setView('home')}>Volver al inicio</button>
       </div>
     );
   }
 
   return (
     <form onSubmit={submit} noValidate>
-      <h1 className="ld-acc-h1">Crea account</h1>
-      <label className="ld-acc-label">Email
-        <input className="ld-acc-input" type="email" autoComplete="email" value={email}
+      <h1 className="ld-acc-h1">Crear cuenta</h1>
+      <label className="ld-acc-label" htmlFor="su-email">Correo electrónico
+        <input id="su-email" className="ld-acc-input" type="email" autoComplete="email" value={email}
           onChange={(e) => setEmail(e.target.value)} />
       </label>
-      <label className="ld-acc-label">Password
-        <input className="ld-acc-input" type="password" autoComplete="new-password" value={pw}
-          onChange={(e) => setPw(e.target.value)} />
-      </label>
-      <label className="ld-acc-label">Conferma password
-        <input className="ld-acc-input" type="password" autoComplete="new-password" value={pw2}
-          onChange={(e) => setPw2(e.target.value)} />
-      </label>
+      <PasswordField id="su-pw" label="Contraseña" value={pw} autoComplete="new-password"
+        onChange={(e) => setPw(e.target.value)} />
+      <PasswordField id="su-pw2" label="Confirmar contraseña" value={pw2} autoComplete="new-password"
+        onChange={(e) => setPw2(e.target.value)} />
       <p className="ld-acc-policy">{POLICY_TEXT}</p>
       {err && <p className="ld-acc-err">{err}</p>}
-      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Attendere…' : 'Crea account'}</button>
-      <button className="ld-acc-linkbtn" type="button" onClick={() => setView('home')}>Indietro</button>
+      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Crear cuenta'}</button>
+      <button className="ld-acc-linkbtn" type="button" onClick={() => setView('home')}>Atrás</button>
     </form>
   );
 }
@@ -189,8 +213,8 @@ function LoginView({ setView }) {
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
-    if (!validateEmail(email)) { setErr('Inserisci un’email valida.'); return; }
-    if (!pw) { setErr('Inserisci la password.'); return; }
+    if (!validateEmail(email)) { setErr('Introduce un correo electrónico válido.'); return; }
+    if (!pw) { setErr('Introduce la contraseña.'); return; }
     setBusy(true);
     const { error } = await accountSignIn(email, pw);
     setBusy(false);
@@ -200,19 +224,17 @@ function LoginView({ setView }) {
 
   return (
     <form onSubmit={submit} noValidate>
-      <h1 className="ld-acc-h1">Accedi</h1>
-      <label className="ld-acc-label">Email
-        <input className="ld-acc-input" type="email" autoComplete="email" value={email}
+      <h1 className="ld-acc-h1">Iniciar sesión</h1>
+      <label className="ld-acc-label" htmlFor="li-email">Correo electrónico
+        <input id="li-email" className="ld-acc-input" type="email" autoComplete="email" value={email}
           onChange={(e) => setEmail(e.target.value)} />
       </label>
-      <label className="ld-acc-label">Password
-        <input className="ld-acc-input" type="password" autoComplete="current-password" value={pw}
-          onChange={(e) => setPw(e.target.value)} />
-      </label>
+      <PasswordField id="li-pw" label="Contraseña" value={pw} autoComplete="current-password"
+        onChange={(e) => setPw(e.target.value)} />
       {err && <p className="ld-acc-err">{err}</p>}
-      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Attendere…' : 'Accedi'}</button>
-      <button className="ld-acc-linkbtn" type="button" onClick={() => setView('forgot')}>Password dimenticata</button>
-      <button className="ld-acc-linkbtn" type="button" onClick={() => setView('home')}>Indietro</button>
+      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Iniciar sesión'}</button>
+      <button className="ld-acc-linkbtn" type="button" onClick={() => setView('forgot')}>¿Olvidaste tu contraseña?</button>
+      <button className="ld-acc-linkbtn" type="button" onClick={() => setView('home')}>Atrás</button>
     </form>
   );
 }
@@ -226,7 +248,7 @@ function ForgotView({ setView }) {
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
-    if (!validateEmail(email)) { setErr('Inserisci un’email valida.'); return; }
+    if (!validateEmail(email)) { setErr('Introduce un correo electrónico válido.'); return; }
     setBusy(true);
     const { error } = await accountRequestReset(email);
     setBusy(false);
@@ -238,24 +260,24 @@ function ForgotView({ setView }) {
   if (done) {
     return (
       <div>
-        <h1 className="ld-acc-h1">Controlla l’email</h1>
-        <p className="ld-acc-ok">Se esiste un account con questa email, riceverai un link per reimpostare la password.</p>
-        <button className="ld-acc-btn ld-acc-btn-secondary" onClick={() => setView('home')}>Torna all’inizio</button>
+        <h1 className="ld-acc-h1">Revisa tu correo electrónico</h1>
+        <p className="ld-acc-ok">Si existe una cuenta con este correo electrónico, recibirás un enlace para restablecer la contraseña.</p>
+        <button className="ld-acc-btn ld-acc-btn-secondary" onClick={() => setView('home')}>Volver al inicio</button>
       </div>
     );
   }
 
   return (
     <form onSubmit={submit} noValidate>
-      <h1 className="ld-acc-h1">Password dimenticata</h1>
-      <p className="ld-acc-sub">Inserisci la tua email: ti invieremo un link per reimpostare la password.</p>
-      <label className="ld-acc-label">Email
-        <input className="ld-acc-input" type="email" autoComplete="email" value={email}
+      <h1 className="ld-acc-h1">¿Olvidaste tu contraseña?</h1>
+      <p className="ld-acc-sub">Introduce tu correo electrónico: te enviaremos un enlace para restablecer la contraseña.</p>
+      <label className="ld-acc-label" htmlFor="fp-email">Correo electrónico
+        <input id="fp-email" className="ld-acc-input" type="email" autoComplete="email" value={email}
           onChange={(e) => setEmail(e.target.value)} />
       </label>
       {err && <p className="ld-acc-err">{err}</p>}
-      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Attendere…' : 'Invia link'}</button>
-      <button className="ld-acc-linkbtn" type="button" onClick={() => setView('home')}>Indietro</button>
+      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Enviar enlace'}</button>
+      <button className="ld-acc-linkbtn" type="button" onClick={() => setView('home')}>Atrás</button>
     </form>
   );
 }
@@ -272,7 +294,7 @@ function RecoveryView({ setView }) {
     setErr('');
     const v = validatePassword(pw);
     if (!v.ok) { setErr(policyError(v.code)); return; }
-    if (pw !== pw2) { setErr('Le due password non coincidono.'); return; }
+    if (pw !== pw2) { setErr('Las dos contraseñas no coinciden.'); return; }
     setBusy(true);
     const { error } = await accountUpdatePassword(pw);
     setBusy(false);
@@ -285,27 +307,23 @@ function RecoveryView({ setView }) {
   if (done) {
     return (
       <div>
-        <h1 className="ld-acc-h1">Password aggiornata</h1>
-        <p className="ld-acc-ok">La tua password è stata aggiornata. Accedi con la nuova password.</p>
-        <button className="ld-acc-btn" onClick={() => setView('login')}>Accedi</button>
+        <h1 className="ld-acc-h1">Contraseña actualizada</h1>
+        <p className="ld-acc-ok">Tu contraseña se ha actualizado. Inicia sesión con la nueva contraseña.</p>
+        <button className="ld-acc-btn" onClick={() => setView('login')}>Iniciar sesión</button>
       </div>
     );
   }
 
   return (
     <form onSubmit={submit} noValidate>
-      <h1 className="ld-acc-h1">Nuova password</h1>
-      <label className="ld-acc-label">Nuova password
-        <input className="ld-acc-input" type="password" autoComplete="new-password" value={pw}
-          onChange={(e) => setPw(e.target.value)} />
-      </label>
-      <label className="ld-acc-label">Conferma nuova password
-        <input className="ld-acc-input" type="password" autoComplete="new-password" value={pw2}
-          onChange={(e) => setPw2(e.target.value)} />
-      </label>
+      <h1 className="ld-acc-h1">Nueva contraseña</h1>
+      <PasswordField id="rc-pw" label="Nueva contraseña" value={pw} autoComplete="new-password"
+        onChange={(e) => setPw(e.target.value)} />
+      <PasswordField id="rc-pw2" label="Confirmar nueva contraseña" value={pw2} autoComplete="new-password"
+        onChange={(e) => setPw2(e.target.value)} />
       <p className="ld-acc-policy">{POLICY_TEXT}</p>
       {err && <p className="ld-acc-err">{err}</p>}
-      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Attendere…' : 'Aggiorna password'}</button>
+      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Guardar nueva contraseña'}</button>
     </form>
   );
 }
@@ -313,10 +331,10 @@ function RecoveryView({ setView }) {
 function ConfirmedView({ setView }) {
   return (
     <div>
-      <h1 className="ld-acc-h1">Email confermata</h1>
-      <p className="ld-acc-ok">Il tuo account è stato confermato. Ora puoi accedere.</p>
-      <button className="ld-acc-btn" onClick={() => setView('account')}>Vai al mio account</button>
-      <button className="ld-acc-linkbtn" onClick={() => setView('login')}>Accedi</button>
+      <h1 className="ld-acc-h1">Correo electrónico verificado</h1>
+      <p className="ld-acc-ok">Tu cuenta ha sido confirmada. Ya puedes iniciar sesión.</p>
+      <button className="ld-acc-btn" onClick={() => setView('account')}>Ir a mi cuenta</button>
+      <button className="ld-acc-linkbtn" onClick={() => setView('login')}>Iniciar sesión</button>
     </div>
   );
 }
@@ -324,10 +342,10 @@ function ConfirmedView({ setView }) {
 function LinkErrorView({ setView }) {
   return (
     <div>
-      <h1 className="ld-acc-h1">Link non valido</h1>
-      <p className="ld-acc-err">Il link è scaduto o non è più valido. Richiedine uno nuovo.</p>
-      <button className="ld-acc-btn" onClick={() => setView('forgot')}>Richiedi un nuovo link</button>
-      <button className="ld-acc-linkbtn" onClick={() => setView('home')}>Torna all’inizio</button>
+      <h1 className="ld-acc-h1">Enlace no válido</h1>
+      <p className="ld-acc-err">El enlace ha caducado o ya no es válido. Solicita uno nuevo.</p>
+      <button className="ld-acc-btn" onClick={() => setView('forgot')}>Solicitar un enlace nuevo</button>
+      <button className="ld-acc-linkbtn" onClick={() => setView('home')}>Volver al inicio</button>
     </div>
   );
 }
@@ -347,23 +365,23 @@ function AccountView({ setView }) {
 
   const logout = async () => { await accountSignOut(); setView('home'); };
 
-  if (state.loading) return <p className="ld-acc-sub">Caricamento…</p>;
+  if (state.loading) return <p className="ld-acc-sub">Cargando…</p>;
   if (state.unauth) {
     return (
       <div>
-        <h1 className="ld-acc-h1">Sessione scaduta</h1>
-        <p className="ld-acc-err">Accedi di nuovo per continuare.</p>
-        <button className="ld-acc-btn" onClick={() => setView('login')}>Accedi</button>
+        <h1 className="ld-acc-h1">Sesión caducada</h1>
+        <p className="ld-acc-err">Vuelve a iniciar sesión para continuar.</p>
+        <button className="ld-acc-btn" onClick={() => setView('login')}>Iniciar sesión</button>
       </div>
     );
   }
   if (state.error) {
     return (
       <div>
-        <h1 className="ld-acc-h1">Errore</h1>
-        <p className="ld-acc-err">Impossibile caricare l’account. Riprova.</p>
-        <button className="ld-acc-btn ld-acc-btn-secondary" onClick={load}>Riprova</button>
-        <button className="ld-acc-linkbtn" onClick={logout}>Esci</button>
+        <h1 className="ld-acc-h1">Error</h1>
+        <p className="ld-acc-err">No se pudo cargar la cuenta. Inténtalo de nuevo.</p>
+        <button className="ld-acc-btn ld-acc-btn-secondary" onClick={load}>Reintentar</button>
+        <button className="ld-acc-linkbtn" onClick={logout}>Cerrar sesión</button>
       </div>
     );
   }
@@ -375,24 +393,24 @@ function AccountView({ setView }) {
 
   return (
     <div>
-      <h1 className="ld-acc-h1">Il mio account</h1>
+      <h1 className="ld-acc-h1">Mi cuenta</h1>
       <ul className="ld-acc-list">
         <li>
-          <span className="ld-acc-k">Email</span>
-          <span className={me.emailVerified ? 'ld-acc-badge ok' : 'ld-acc-badge warn'}>
-            {me.emailVerified ? 'verificata' : 'non verificata'}
+          <span className="ld-acc-k">Correo electrónico</span>
+          <span className={summary.emailVerified ? 'ld-acc-badge ok' : 'ld-acc-badge warn'}>
+            {summary.emailVerified ? 'verificado' : 'no verificado'}
           </span>
         </li>
         <li>
-          <span className="ld-acc-k">Spazio di lavoro</span>
-          <span className="ld-acc-v">{noWorkspace ? 'Nessuno spazio di lavoro assegnato' : `${me.memberships.length} assegnato/i`}</span>
+          <span className="ld-acc-k">Negocio</span>
+          <span className="ld-acc-v">{noWorkspace ? 'Ningún negocio asignado' : `${summary.membershipCount} asignado(s)`}</span>
         </li>
         <li>
-          <span className="ld-acc-k">Accesso La Dieci</span>
-          <span className="ld-acc-v">{noAccess ? 'Nessun accesso a La Dieci ancora' : 'Attivo'}</span>
+          <span className="ld-acc-k">Acceso La Dieci</span>
+          <span className="ld-acc-v">{noAccess ? 'Sin acceso a La Dieci' : 'Activo'}</span>
         </li>
       </ul>
-      <button className="ld-acc-linkbtn" onClick={logout}>Esci</button>
+      <button className="ld-acc-linkbtn" onClick={logout}>Cerrar sesión</button>
     </div>
   );
 }
@@ -409,6 +427,11 @@ function StyleTag() {
       .ld-acc-label{display:block;font-size:13px;color:#c3c9d6;margin:0 0 12px;}
       .ld-acc-input{width:100%;box-sizing:border-box;margin-top:6px;padding:11px 12px;border-radius:9px;border:1px solid #2c3240;background:#0f1218;color:#e8eaed;font-size:15px;outline:none;}
       .ld-acc-input:focus{border-color:#4f7cff;}
+      .ld-acc-pwwrap{position:relative;display:block;}
+      .ld-acc-input-pw{padding-right:86px;}
+      .ld-acc-eye{position:absolute;right:6px;top:calc(50% + 3px);transform:translateY(-50%);
+        background:#232838;border:1px solid #2c3240;color:#c3c9d6;font-size:12px;padding:5px 10px;border-radius:7px;cursor:pointer;}
+      .ld-acc-eye:focus{outline:2px solid #4f7cff;outline-offset:1px;}
       .ld-acc-policy{font-size:12px;color:#8b93a7;margin:2px 0 14px;}
       .ld-acc-btn{width:100%;padding:12px;border:none;border-radius:9px;background:#4f7cff;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin:6px 0;}
       .ld-acc-btn:disabled{opacity:.6;cursor:default;}
