@@ -92,15 +92,60 @@ export function shouldRenderAccount(loc) {
 }
 
 // Reduce a /api/account/me body to the neutral account-page flags. An unassigned
-// account (memberships [] and workspaces []) => noWorkspace + noAccess true.
+// account (memberships [] and workspaces []) => noWorkspace + noAccess true. S2-7D adds
+// the server-derived owner-workspace + admin-PIN-setup signals (never guessed here).
 export function summarizeAccount(me) {
   const m = me || {};
   const memberships = Array.isArray(m.memberships) ? m.memberships : [];
   const workspaces = Array.isArray(m.workspaces) ? m.workspaces : [];
+  const ownerMembership = memberships.find((x) => x && x.role === 'workspace_owner') || null;
   return {
     emailVerified: m.emailVerified === true,
     membershipCount: memberships.length,
     noWorkspace: memberships.length === 0,
     noAccess: workspaces.length === 0,
+    // Owner workspace (if any) for display + the admin-PIN endpoint target.
+    ownerWorkspaceId: ownerMembership ? (ownerMembership.workspaceId || null) : null,
+    ownerWorkspaceName: ownerMembership ? (ownerMembership.workspaceName || null) : null,
+    // Trust the server flag ONLY. Never infer PIN-setup need from missing data.
+    adminPinSetupRequired: m.adminPinSetupRequired === true,
   };
+}
+
+// ── operational ADMIN PIN policy (mirror of the backend pinPolicy 'admin' rule) ──
+// Admin PINs are 9–12 digits and must not be trivial. This is a client-side pre-check
+// for fast feedback; the backend re-validates authoritatively and is the source of truth.
+export const ADMIN_PIN_MIN = 9;
+export const ADMIN_PIN_MAX = 12;
+export const ADMIN_PIN_POLICY_MESSAGE =
+  `El PIN de administrador debe tener entre ${ADMIN_PIN_MIN} y ${ADMIN_PIN_MAX} dígitos y no puede ser una secuencia u obvio.`;
+export const ADMIN_PIN_MISMATCH_MESSAGE = 'Los dos PIN no coinciden.';
+
+function pinAllSame(pin) { return /^(\d)\1*$/.test(pin); }
+function pinSequential(pin) {
+  let asc = true, desc = true;
+  for (let i = 1; i < pin.length; i++) {
+    const d = pin.charCodeAt(i) - pin.charCodeAt(i - 1);
+    if (d !== 1) asc = false;
+    if (d !== -1) desc = false;
+  }
+  return asc || desc;
+}
+function pinRepeatedBlock(pin) {
+  const n = pin.length;
+  for (let b = 1; b <= Math.floor(n / 2); b++) {
+    if (n % b !== 0) continue;
+    if (pin.slice(0, b).repeat(n / b) === pin) return true;
+  }
+  return false;
+}
+
+// Returns { ok, code } where code ∈ 'ok' | 'policy' | 'mismatch'. Pure.
+export function validateAdminPin(pin, pin2) {
+  const s = pin == null ? '' : String(pin);
+  if (!/^\d+$/.test(s)) return { ok: false, code: 'policy' };
+  if (s.length < ADMIN_PIN_MIN || s.length > ADMIN_PIN_MAX) return { ok: false, code: 'policy' };
+  if (pinAllSame(s) || pinSequential(s) || pinRepeatedBlock(s)) return { ok: false, code: 'policy' };
+  if (pin2 !== undefined && s !== String(pin2 == null ? '' : pin2)) return { ok: false, code: 'mismatch' };
+  return { ok: true, code: 'ok' };
 }

@@ -18,6 +18,13 @@ import {
   accountSignOut,
   fetchAccountMe,
   summarizeAccount,
+  claimWorkspace,
+  setAdminPin,
+  ADMIN_PIN_MIN,
+  ADMIN_PIN_MAX,
+  ADMIN_PIN_POLICY_MESSAGE,
+  ADMIN_PIN_MISMATCH_MESSAGE,
+  validateAdminPin,
 } from '../../account/accountApi';
 import { getAccountClient } from '../../account/supabaseAccountClient';
 
@@ -68,7 +75,7 @@ function initialViewFromUrl() {
 // label ("Mostrar"/"Ocultar") as its accessible name and aria-pressed for state.
 // Toggling only flips this input's type between password/text — the value is
 // never logged or persisted, and autoComplete keeps password managers working.
-export function PasswordField({ id, label, value, onChange, autoComplete }) {
+export function PasswordField({ id, label, value, onChange, autoComplete, inputMode, pattern }) {
   const [show, setShow] = useState(false);
   return (
     <div className="ld-acc-label">
@@ -79,6 +86,8 @@ export function PasswordField({ id, label, value, onChange, autoComplete }) {
           className="ld-acc-input ld-acc-input-pw"
           type={show ? 'text' : 'password'}
           autoComplete={autoComplete}
+          inputMode={inputMode}
+          pattern={pattern}
           value={value}
           onChange={onChange}
         />
@@ -132,6 +141,7 @@ export default function AccountApp() {
         {view === 'login' && <LoginView setView={setView} />}
         {view === 'forgot' && <ForgotView setView={setView} />}
         {view === 'account' && <AccountView setView={setView} />}
+        {view === 'admin_pin' && <AdminPinView setView={setView} />}
         {view === 'recovery' && <RecoveryView setView={setView} />}
         {view === 'confirmed' && <ConfirmedView setView={setView} />}
         {view === 'link_error' && <LinkErrorView setView={setView} />}
@@ -405,7 +415,7 @@ function AccountView({ setView }) {
   const me = state.me || {};
   const summary = summarizeAccount(me);
   const noWorkspace = summary.noWorkspace;
-  const noAccess = summary.noAccess;
+  const ownerName = summary.ownerWorkspaceName || 'La Dieci';
 
   return (
     <div>
@@ -419,15 +429,153 @@ function AccountView({ setView }) {
         </li>
         <li>
           <span className="ld-acc-k">Negocio</span>
-          <span className="ld-acc-v">{noWorkspace ? 'Ningún negocio asignado' : `${summary.membershipCount} asignado(s)`}</span>
+          <span className="ld-acc-v">{noWorkspace ? 'Ningún negocio asignado' : ownerName}</span>
         </li>
-        <li>
-          <span className="ld-acc-k">Acceso La Dieci</span>
-          <span className="ld-acc-v">{noAccess ? 'Sin acceso a La Dieci' : 'Activo'}</span>
-        </li>
+        {!noWorkspace && (
+          <li>
+            <span className="ld-acc-k">Tu rol</span>
+            <span className="ld-acc-v">{summary.ownerWorkspaceId ? 'Propietario' : 'Miembro'}</span>
+          </li>
+        )}
       </ul>
+
+      {noWorkspace && <ClaimWorkspaceBlock onClaimed={load} />}
+
+      {summary.adminPinSetupRequired && summary.ownerWorkspaceId && (
+        <div className="ld-acc-cta">
+          <p className="ld-acc-sub">
+            Falta configurar el <strong>PIN de administrador</strong> para el acceso operativo diario.
+          </p>
+          <button className="ld-acc-btn" onClick={() => setView('admin_pin')}>Crear PIN de administrador</button>
+        </div>
+      )}
+
       <button className="ld-acc-linkbtn" onClick={logout}>Cerrar sesión</button>
     </div>
+  );
+}
+
+// Owner bootstrap. The server decides whether this account may claim La Dieci (staging
+// allowlist); a rejection shows a neutral message and never reveals ownership state.
+function ClaimWorkspaceBlock({ onClaimed }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const claim = async () => {
+    if (busy) return;
+    setErr(''); setBusy(true);
+    const r = await claimWorkspace();
+    setBusy(false);
+    if (r.ok && r.body && r.body.ok) { onClaimed(); return; }
+    setErr('Esta cuenta no puede activar La Dieci. Contacta con el administrador.');
+  };
+
+  return (
+    <div className="ld-acc-cta">
+      <p className="ld-acc-sub">Esta cuenta todavía no tiene un negocio asignado.</p>
+      {err && <p className="ld-acc-err">{err}</p>}
+      <button className="ld-acc-btn" onClick={claim} disabled={busy}>{busy ? 'Espera…' : 'Activar La Dieci'}</button>
+    </div>
+  );
+}
+
+// Admin-PIN onboarding. Rendered only after the server (via /api/account/me) says setup is
+// required for the owner workspace. The PIN is chosen here by the user, sent once, hashed
+// server-side; it is never stored, prefilled, logged or recoverable in plaintext.
+export function AdminPinView({ setView }) {
+  const [state, setState] = useState({ loading: true });
+  const [pin, setPin] = useState('');
+  const [pin2, setPin2] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const load = useCallback(async () => {
+    setState({ loading: true });
+    const r = await fetchAccountMe();
+    if (r.status === 401) { setState({ loading: false, unauth: true }); return; }
+    if (!r.ok) { setState({ loading: false, error: true }); return; }
+    setState({ loading: false, summary: summarizeAccount(r.body) });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  if (state.loading) return <p className="ld-acc-sub">Cargando…</p>;
+  if (state.unauth) {
+    return (
+      <div>
+        <h1 className="ld-acc-h1">Sesión caducada</h1>
+        <p className="ld-acc-err">Vuelve a iniciar sesión para continuar.</p>
+        <button className="ld-acc-btn" onClick={() => setView('login')}>Iniciar sesión</button>
+      </div>
+    );
+  }
+  const summary = state.summary || {};
+  const workspaceId = summary.ownerWorkspaceId;
+
+  if (state.error || !workspaceId) {
+    return (
+      <div>
+        <h1 className="ld-acc-h1">PIN de administrador</h1>
+        <p className="ld-acc-err">No se pudo preparar la configuración del PIN. Inténtalo de nuevo.</p>
+        <button className="ld-acc-linkbtn" onClick={() => setView('account')}>Volver a mi cuenta</button>
+      </div>
+    );
+  }
+
+  if (done || !summary.adminPinSetupRequired) {
+    return (
+      <div>
+        <h1 className="ld-acc-h1">PIN de administrador listo</h1>
+        <p className="ld-acc-ok">
+          El PIN de administrador está configurado. Úsalo en el acceso operativo con PIN
+          (es distinto de la contraseña de tu cuenta).
+        </p>
+        <a className="ld-acc-btn" href="/" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+          Ir al acceso operativo
+        </a>
+        <button className="ld-acc-linkbtn" onClick={() => setView('account')}>Volver a mi cuenta</button>
+      </div>
+    );
+  }
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy) return; // double-submit guard
+    setErr('');
+    const v = validateAdminPin(pin, pin2);
+    if (!v.ok) { setErr(v.code === 'mismatch' ? ADMIN_PIN_MISMATCH_MESSAGE : ADMIN_PIN_POLICY_MESSAGE); return; }
+    setBusy(true);
+    const r = await setAdminPin(workspaceId, pin);
+    setBusy(false);
+    if (r.ok && r.body && r.body.ok) {
+      // Never keep the entered values around.
+      setPin(''); setPin2(''); setDone(true);
+      return;
+    }
+    // Neutral error — never reveals policy vs ownership vs actor existence.
+    setErr('No se pudo guardar el PIN. Revisa que cumpla la política e inténtalo de nuevo.');
+  };
+
+  return (
+    <form onSubmit={submit} noValidate>
+      <h1 className="ld-acc-h1">Crear PIN de administrador</h1>
+      <p className="ld-acc-sub">
+        Tu <strong>cuenta</strong> identifica al propietario. El <strong>PIN</strong> se usa para el
+        acceso operativo diario y es <strong>distinto</strong> de la contraseña de la cuenta.
+      </p>
+      <p className="ld-acc-policy">
+        El PIN nunca se envía por correo ni se puede recuperar en texto. Si lo olvidas, podrás
+        crear uno nuevo desde tu cuenta de propietario verificada.
+      </p>
+      <PasswordField id="ap-pin" label="PIN" value={pin} autoComplete="off"
+        inputMode="numeric" pattern="[0-9]*" onChange={(e) => setPin(e.target.value)} />
+      <PasswordField id="ap-pin2" label="Confirmar PIN" value={pin2} autoComplete="off"
+        inputMode="numeric" pattern="[0-9]*" onChange={(e) => setPin2(e.target.value)} />
+      <p className="ld-acc-policy">Entre {ADMIN_PIN_MIN} y {ADMIN_PIN_MAX} dígitos.</p>
+      {err && <p className="ld-acc-err">{err}</p>}
+      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Guardar PIN'}</button>
+      <button className="ld-acc-linkbtn" type="button" onClick={() => setView('account')}>Atrás</button>
+    </form>
   );
 }
 
@@ -457,6 +605,7 @@ function StyleTag() {
       .ld-acc-ok{color:#7fe0a3;font-size:14px;margin:6px 0 16px;line-height:1.45;}
       .ld-acc-note{font-size:12px;color:#8b93a7;margin:18px 0 0;line-height:1.5;border-top:1px solid #262b36;padding-top:14px;}
       .ld-acc-link,.ld-acc-note a{color:#8fa4ff;text-decoration:none;}
+      .ld-acc-cta{margin:8px 0 6px;padding:14px 0 4px;border-top:1px solid #262b36;}
       .ld-acc-list{list-style:none;padding:0;margin:6px 0 16px;}
       .ld-acc-list li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #21262f;font-size:14px;}
       .ld-acc-k{color:#a7adbb;}

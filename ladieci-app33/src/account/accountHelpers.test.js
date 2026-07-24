@@ -12,6 +12,9 @@ import {
   isAccountRoute,
   shouldRenderAccount,
   summarizeAccount,
+  validateAdminPin,
+  ADMIN_PIN_MIN,
+  ADMIN_PIN_MAX,
 } from './accountHelpers';
 
 describe('password policy (signup + reset validation)', () => {
@@ -114,7 +117,10 @@ describe('PIN-app regression: operator entries still render the operator app', (
 describe('account summary (/api/account/me → neutral flags)', () => {
   test('unassigned account: no workspace, no La Dieci access', () => {
     const s = summarizeAccount({ emailVerified: true, memberships: [], workspaces: [] });
-    expect(s).toEqual({ emailVerified: true, membershipCount: 0, noWorkspace: true, noAccess: true });
+    expect(s).toEqual({
+      emailVerified: true, membershipCount: 0, noWorkspace: true, noAccess: true,
+      ownerWorkspaceId: null, ownerWorkspaceName: null, adminPinSetupRequired: false,
+    });
   });
   test('assigned account reflects membership count and access', () => {
     const s = summarizeAccount({ emailVerified: true, memberships: [{ workspaceId: 'w1' }], workspaces: ['w1'] });
@@ -123,7 +129,10 @@ describe('account summary (/api/account/me → neutral flags)', () => {
     expect(s.membershipCount).toBe(1);
   });
   test('missing/garbage body is treated as unassigned + unverified', () => {
-    expect(summarizeAccount(null)).toEqual({ emailVerified: false, membershipCount: 0, noWorkspace: true, noAccess: true });
+    expect(summarizeAccount(null)).toEqual({
+      emailVerified: false, membershipCount: 0, noWorkspace: true, noAccess: true,
+      ownerWorkspaceId: null, ownerWorkspaceName: null, adminPinSetupRequired: false,
+    });
     expect(summarizeAccount({}).noWorkspace).toBe(true);
   });
 });
@@ -176,5 +185,55 @@ describe('describeResetOutcome (privacy-safe, never claims an email was sent)', 
     const r = describeResetOutcome({ status: 500, message: 'boom' });
     expect(r.rateLimited).toBe(false);
     expect(r.message).toBe(RESET_REQUEST_MESSAGE);
+  });
+});
+
+describe('S2-7D summarizeAccount owner + admin-PIN signals', () => {
+  const ownerMe = {
+    emailVerified: true,
+    memberships: [{ workspaceId: 'ws1', workspaceName: 'La Dieci', role: 'workspace_owner', status: 'active' }],
+    workspaces: ['ws1'],
+    adminPinSetupRequired: true,
+  };
+  test('surfaces owner workspace id/name', () => {
+    const s = summarizeAccount(ownerMe);
+    expect(s.ownerWorkspaceId).toBe('ws1');
+    expect(s.ownerWorkspaceName).toBe('La Dieci');
+    expect(s.noWorkspace).toBe(false);
+  });
+  test('adminPinSetupRequired reflects the server flag ONLY', () => {
+    expect(summarizeAccount(ownerMe).adminPinSetupRequired).toBe(true);
+    expect(summarizeAccount({ ...ownerMe, adminPinSetupRequired: false }).adminPinSetupRequired).toBe(false);
+    // Never inferred when the flag is absent.
+    expect(summarizeAccount({ memberships: ownerMe.memberships }).adminPinSetupRequired).toBe(false);
+  });
+  test('no owner membership → null owner workspace', () => {
+    const s = summarizeAccount({ memberships: [{ workspaceId: 'ws2', role: 'workspace_admin', status: 'active' }], workspaces: ['ws2'] });
+    expect(s.ownerWorkspaceId).toBe(null);
+  });
+});
+
+describe('S2-7D validateAdminPin (admin 9–12 digits, mirrors backend policy)', () => {
+  test('accepts a valid non-trivial 9-digit PIN', () => {
+    expect(validateAdminPin('903421756').ok).toBe(true);
+  });
+  test('rejects operator-length (6–8) PINs', () => {
+    expect(validateAdminPin('123457').ok).toBe(false);
+    expect(validateAdminPin('90342175').code).toBe('policy'); // 8 digits
+  });
+  test('rejects non-digits, sequential, all-same, repeated block', () => {
+    expect(validateAdminPin('90342175a').ok).toBe(false);
+    expect(validateAdminPin('123456789').ok).toBe(false);
+    expect(validateAdminPin('999999999').ok).toBe(false);
+    expect(validateAdminPin('123123123').ok).toBe(false);
+  });
+  test('too long (>12) rejected', () => {
+    expect(validateAdminPin('9034217560341').ok).toBe(false);
+  });
+  test('mismatch code when confirmation differs', () => {
+    expect(validateAdminPin('903421756', '903421999')).toEqual({ ok: false, code: 'mismatch' });
+  });
+  test('policy bounds exported', () => {
+    expect([ADMIN_PIN_MIN, ADMIN_PIN_MAX]).toEqual([9, 12]);
   });
 });

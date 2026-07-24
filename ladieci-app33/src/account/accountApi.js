@@ -22,6 +22,11 @@ export {
   isAccountRoute,
   shouldRenderAccount,
   summarizeAccount,
+  ADMIN_PIN_MIN,
+  ADMIN_PIN_MAX,
+  ADMIN_PIN_POLICY_MESSAGE,
+  ADMIN_PIN_MISMATCH_MESSAGE,
+  validateAdminPin,
 } from './accountHelpers';
 
 // ── Supabase Auth actions ────────────────────────────────────────────────────
@@ -65,22 +70,44 @@ export async function accountSignOut() {
   try { await supabase.auth.signOut(); } catch (_) { /* best effort */ }
 }
 
-// Call the backend account boundary with the current Supabase access token.
-// Returns { status, ok, body }. The token is used only for the Authorization
-// header and never returned.
-export async function fetchAccountMe() {
+// Authenticated call to the backend account boundary using the current Supabase access
+// token. The token is used ONLY for the Authorization header and never returned/persisted.
+// `body`, when given, is sent as JSON. Returns { status, ok, body }.
+async function accountFetch(path, { method = 'GET', body } = {}) {
   const session = await accountGetSession();
   if (!session || !session.access_token) return { status: 401, ok: false, body: { error: 'no_session' } };
+  const headers = { Authorization: 'Bearer ' + session.access_token };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res;
   try {
-    res = await fetch('/api/account/me', {
-      headers: { Authorization: 'Bearer ' + session.access_token },
+    res = await fetch(path, {
+      method,
+      headers,
       cache: 'no-store',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (_) {
     return { status: 0, ok: false, body: { error: 'network' } };
   }
-  let body = {};
-  try { body = await res.json(); } catch (_) { body = {}; }
-  return { status: res.status, ok: res.ok, body };
+  let out = {};
+  try { out = await res.json(); } catch (_) { out = {}; }
+  return { status: res.status, ok: res.ok, body: out };
+}
+
+// GET /api/account/me — profile + memberships + server-derived adminPinSetupRequired.
+export async function fetchAccountMe() {
+  return accountFetch('/api/account/me');
+}
+
+// POST /api/account/workspaces/bootstrap — idempotent La Dieci owner claim (staging-guarded
+// server side). No identity in the body — the backend uses the verified token subject.
+export async function claimWorkspace() {
+  return accountFetch('/api/account/workspaces/bootstrap', { method: 'POST' });
+}
+
+// POST /api/account/workspaces/:id/admin-pin — create/rotate the owner operational PIN.
+// The PIN is sent once over HTTPS, hashed server-side; it is never logged or persisted here.
+export async function setAdminPin(workspaceId, pin) {
+  const id = encodeURIComponent(String(workspaceId == null ? '' : workspaceId));
+  return accountFetch(`/api/account/workspaces/${id}/admin-pin`, { method: 'POST', body: { pin } });
 }
