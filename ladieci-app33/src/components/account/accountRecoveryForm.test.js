@@ -23,9 +23,12 @@ jest.mock('../../account/accountApi', () => {
     __esModule: true,
     PASSWORD_MIN: helpers.PASSWORD_MIN,
     PASSWORD_POLICY_MESSAGE: helpers.PASSWORD_POLICY_MESSAGE,
+    RESET_REQUEST_MESSAGE: helpers.RESET_REQUEST_MESSAGE,
+    RESET_RATE_LIMIT_MESSAGE: helpers.RESET_RATE_LIMIT_MESSAGE,
     validateNewPassword: helpers.validateNewPassword,
     validatePassword: helpers.validatePassword,
     validateEmail: helpers.validateEmail,
+    describeResetOutcome: helpers.describeResetOutcome,
     parseAuthCallback: helpers.parseAuthCallback,
     summarizeAccount: helpers.summarizeAccount,
     accountUpdatePassword: jest.fn(async () => ({ data: {}, error: null })),
@@ -38,8 +41,8 @@ jest.mock('../../account/accountApi', () => {
   };
 });
 
-import { PasswordField, RecoveryView } from './AccountApp';
-import { accountUpdatePassword, accountSignOut } from '../../account/accountApi';
+import { PasswordField, RecoveryView, ForgotView } from './AccountApp';
+import { accountUpdatePassword, accountSignOut, accountRequestReset } from '../../account/accountApi';
 
 // Set a controlled input's value the way a real user would (native setter +
 // input event), so React's onChange updates state.
@@ -119,6 +122,48 @@ describe('RecoveryView submit', () => {
 
     expect(accountUpdatePassword).not.toHaveBeenCalled();
     expect(container.textContent).toContain('no coinciden');
+
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+});
+
+describe('ForgotView reset-request UX', () => {
+  beforeEach(() => {
+    accountRequestReset.mockReset();
+    accountRequestReset.mockResolvedValue({ data: {}, error: null });
+  });
+
+  test('shows the privacy-safe message, starts a resend cooldown, and prevents double submission', async () => {
+    const { container, root } = mount(<ForgotView setView={() => {}} />);
+    const email = container.querySelector('input[type="email"]');
+    act(() => { typeInto(email, 'dev@example.com'); });
+    const submit = container.querySelector('button[type="submit"]');
+
+    await act(async () => { submit.click(); await new Promise((r) => setTimeout(r, 0)); });
+    expect(accountRequestReset).toHaveBeenCalledTimes(1);
+    // never claims an email was definitely sent
+    expect(container.textContent).toContain('recibirás un enlace');
+    expect(submit.disabled).toBe(true);
+    expect(container.textContent).toMatch(/Reenviar en \d+ s/);
+
+    // second click during cooldown must NOT fire another request
+    await act(async () => { submit.click(); await new Promise((r) => setTimeout(r, 0)); });
+    expect(accountRequestReset).toHaveBeenCalledTimes(1);
+
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  test('maps a 429 to an accurate Spanish rate-limit message', async () => {
+    accountRequestReset.mockResolvedValueOnce({ data: {}, error: { status: 429, code: 'over_email_send_rate_limit' } });
+    const { container, root } = mount(<ForgotView setView={() => {}} />);
+    const email = container.querySelector('input[type="email"]');
+    act(() => { typeInto(email, 'dev@example.com'); });
+    const submit = container.querySelector('button[type="submit"]');
+
+    await act(async () => { submit.click(); await new Promise((r) => setTimeout(r, 0)); });
+    expect(container.textContent).toContain('Demasiadas solicitudes');
 
     act(() => { root.unmount(); });
     container.remove();

@@ -29,6 +29,25 @@ export function validateNewPassword(pw, pw2) {
   return { ok: true, code: 'ok' };
 }
 
+// Privacy-safe outcome for a password-reset REQUEST. We never confirm an email
+// was actually sent (no account enumeration, and the built-in mailer may be
+// rate-limited or unavailable). A genuine rate-limit (429 / over_email_send) gets
+// its own accurate message; everything else gets the neutral "maybe sent" text.
+export const RESET_REQUEST_MESSAGE =
+  'Si la dirección es válida y el servicio de correo puede procesar la solicitud, recibirás un enlace para restablecer la contraseña.';
+export const RESET_RATE_LIMIT_MESSAGE =
+  'Demasiadas solicitudes de envío. Espera unos minutos antes de pedir otro enlace.';
+
+export function describeResetOutcome(error) {
+  const status = error && error.status;
+  const code = String((error && error.code) || '').toLowerCase();
+  const msg = String((error && error.message) || '').toLowerCase();
+  if (status === 429 || code.includes('over_email_send') || /rate limit|too many/.test(`${msg} ${code}`)) {
+    return { rateLimited: true, message: RESET_RATE_LIMIT_MESSAGE };
+  }
+  return { rateLimited: false, message: RESET_REQUEST_MESSAGE };
+}
+
 export function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email == null ? '' : email).trim());
 }

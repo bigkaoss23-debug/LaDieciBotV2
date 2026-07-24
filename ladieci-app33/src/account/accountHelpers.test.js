@@ -2,8 +2,11 @@
 import {
   PASSWORD_MIN,
   PASSWORD_POLICY_MESSAGE,
+  RESET_REQUEST_MESSAGE,
+  RESET_RATE_LIMIT_MESSAGE,
   validatePassword,
   validateNewPassword,
+  describeResetOutcome,
   validateEmail,
   parseAuthCallback,
   isAccountRoute,
@@ -149,5 +152,29 @@ describe('password policy message is accurate (never "only a number")', () => {
     expect(PASSWORD_POLICY_MESSAGE).toContain('12');
     expect(PASSWORD_POLICY_MESSAGE).toContain('letras');
     expect(PASSWORD_POLICY_MESSAGE).toContain('números');
+  });
+});
+
+describe('describeResetOutcome (privacy-safe, never claims an email was sent)', () => {
+  test('success (no error) → neutral "maybe sent" message, not rate limited', () => {
+    const r = describeResetOutcome(null);
+    expect(r).toEqual({ rateLimited: false, message: RESET_REQUEST_MESSAGE });
+    expect(RESET_REQUEST_MESSAGE).toBe('Si la dirección es válida y el servicio de correo puede procesar la solicitud, recibirás un enlace para restablecer la contraseña.');
+    // never asserts an email WAS sent
+    expect(RESET_REQUEST_MESSAGE.toLowerCase()).not.toContain('hemos enviado');
+  });
+  test('HTTP 429 → rate-limited message', () => {
+    expect(describeResetOutcome({ status: 429 })).toEqual({ rateLimited: true, message: RESET_RATE_LIMIT_MESSAGE });
+  });
+  test('over_email_send_rate_limit code → rate-limited', () => {
+    expect(describeResetOutcome({ code: 'over_email_send_rate_limit' }).rateLimited).toBe(true);
+  });
+  test('generic message with "rate limit" → rate-limited', () => {
+    expect(describeResetOutcome({ message: 'Email rate limit exceeded' }).rateLimited).toBe(true);
+  });
+  test('unrelated error still returns the neutral message (no enumeration)', () => {
+    const r = describeResetOutcome({ status: 500, message: 'boom' });
+    expect(r.rateLimited).toBe(false);
+    expect(r.message).toBe(RESET_REQUEST_MESSAGE);
   });
 });

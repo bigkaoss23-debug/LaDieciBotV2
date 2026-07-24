@@ -8,6 +8,7 @@ import {
   PASSWORD_MIN,
   PASSWORD_POLICY_MESSAGE,
   validateNewPassword,
+  describeResetOutcome,
   validateEmail,
   parseAuthCallback,
   accountSignUp,
@@ -247,33 +248,39 @@ function LoginView({ setView }) {
   );
 }
 
-function ForgotView({ setView }) {
+export function ForgotView({ setView }) {
   const [email, setEmail] = useState('');
   const [err, setErr] = useState('');
+  const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  // Visible resend countdown (60s) after any request attempt.
+  useEffect(() => {
+    if (cooldown <= 0) return undefined;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
   const submit = async (e) => {
     e.preventDefault();
-    setErr('');
+    if (busy || cooldown > 0) return; // prevent double submission / resend during cooldown
+    setErr(''); setInfo('');
     if (!validateEmail(email)) { setErr('Introduce un correo electrónico válido.'); return; }
     setBusy(true);
-    const { error } = await accountRequestReset(email);
+    const res = await accountRequestReset(email);
+    const error = res ? res.error : null;
     setBusy(false);
-    // Neutral confirmation regardless of whether the address exists (no enumeration).
-    if (error && /rate limit|too many/i.test(error.message || '')) { setErr(friendlyAuthError(error)); return; }
-    setDone(true);
+    // Never claim unconditionally that an email was sent. A genuine 429 gets an
+    // accurate message; everything else gets the neutral privacy-safe text.
+    const outcome = describeResetOutcome(error);
+    if (outcome.rateLimited) setErr(outcome.message);
+    else setInfo(outcome.message);
+    setCooldown(60);
   };
 
-  if (done) {
-    return (
-      <div>
-        <h1 className="ld-acc-h1">Revisa tu correo electrónico</h1>
-        <p className="ld-acc-ok">Si existe una cuenta con este correo electrónico, recibirás un enlace para restablecer la contraseña.</p>
-        <button className="ld-acc-btn ld-acc-btn-secondary" onClick={() => setView('home')}>Volver al inicio</button>
-      </div>
-    );
-  }
+  const disabled = busy || cooldown > 0;
+  const label = busy ? 'Espera…' : (cooldown > 0 ? `Reenviar en ${cooldown} s` : 'Enviar enlace');
 
   return (
     <form onSubmit={submit} noValidate>
@@ -284,7 +291,8 @@ function ForgotView({ setView }) {
           onChange={(e) => setEmail(e.target.value)} />
       </label>
       {err && <p className="ld-acc-err">{err}</p>}
-      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Enviar enlace'}</button>
+      {info && <p className="ld-acc-ok">{info}</p>}
+      <button className="ld-acc-btn" type="submit" disabled={disabled}>{label}</button>
       <button className="ld-acc-linkbtn" type="button" onClick={() => setView('home')}>Atrás</button>
     </form>
   );
@@ -329,6 +337,7 @@ export function RecoveryView({ setView }) {
       <PasswordField id="rc-pw2" label="Confirmar nueva contraseña" value={pw2} autoComplete="new-password"
         onChange={(e) => setPw2(e.target.value)} />
       <p className="ld-acc-policy">{POLICY_TEXT}</p>
+      <p className="ld-acc-policy">La nueva contraseña debe ser distinta de la anterior.</p>
       {err && <p className="ld-acc-err">{err}</p>}
       <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Guardar nueva contraseña'}</button>
     </form>

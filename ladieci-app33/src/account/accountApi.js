@@ -12,8 +12,11 @@ import { getAccountClient, ACCOUNT_REDIRECT_URL } from './supabaseAccountClient'
 export {
   PASSWORD_MIN,
   PASSWORD_POLICY_MESSAGE,
+  RESET_REQUEST_MESSAGE,
+  RESET_RATE_LIMIT_MESSAGE,
   validatePassword,
   validateNewPassword,
+  describeResetOutcome,
   validateEmail,
   parseAuthCallback,
   isAccountRoute,
