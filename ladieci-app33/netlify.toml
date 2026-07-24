@@ -41,6 +41,17 @@
   to = "/.netlify/functions/api"
   status = 200
 
+# S2-7C2 — customer ACCOUNT boundary. Same-origin proxy to the staging Railway
+# backend's Supabase-Bearer account route. Netlify forwards the request
+# Authorization header (the customer's Supabase access token) to the backend, so
+# the browser never talks cross-origin. Staging backend URL is hardcoded here on
+# purpose (this branch is staging-only, like the URLs above).
+[[redirects]]
+  from = "/api/account/*"
+  to = "https://fearless-reverence-production-80bc.up.railway.app/api/account/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
