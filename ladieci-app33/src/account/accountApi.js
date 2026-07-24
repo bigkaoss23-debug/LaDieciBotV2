@@ -11,7 +11,9 @@ import { getAccountClient, ACCOUNT_REDIRECT_URL } from './supabaseAccountClient'
 // isolation). Re-exported here so callers have a single import surface.
 export {
   PASSWORD_MIN,
+  PASSWORD_POLICY_MESSAGE,
   validatePassword,
+  validateNewPassword,
   validateEmail,
   parseAuthCallback,
   isAccountRoute,

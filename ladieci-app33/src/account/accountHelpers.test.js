@@ -1,7 +1,9 @@
 // S2-7C2 — account helper unit tests (pure, no DOM/network).
 import {
   PASSWORD_MIN,
+  PASSWORD_POLICY_MESSAGE,
   validatePassword,
+  validateNewPassword,
   validateEmail,
   parseAuthCallback,
   isAccountRoute,
@@ -20,9 +22,19 @@ describe('password policy (signup + reset validation)', () => {
   test('requires at least one digit', () => {
     expect(validatePassword('abcdefghijkl')).toEqual({ ok: false, code: 'need_digit' });
   });
-  test('accepts a 12+ char letters+digits password', () => {
+  test('accepts EXACTLY 12 chars with letters and digits', () => {
+    expect('abcdefgh1234'.length).toBe(12);
     expect(validatePassword('abcdefgh1234')).toEqual({ ok: true, code: 'ok' });
     expect(PASSWORD_MIN).toBe(12);
+  });
+  test('accepts MORE than 12 chars with letters and digits', () => {
+    const pw = 'abcdefghijk12345'; // 16 chars, letters + digits
+    expect(pw.length).toBeGreaterThan(12);
+    expect(validatePassword(pw)).toEqual({ ok: true, code: 'ok' });
+  });
+  test('a long password with a digit but NO letter still fails (need_letter)', () => {
+    // >12 chars, has digits, but no letter → must NOT pass, message must not imply "only a number"
+    expect(validatePassword('1234567890123!@#')).toEqual({ ok: false, code: 'need_letter' });
   });
   test('handles null/undefined safely', () => {
     expect(validatePassword(null).ok).toBe(false);
@@ -110,5 +122,32 @@ describe('account summary (/api/account/me → neutral flags)', () => {
   test('missing/garbage body is treated as unassigned + unverified', () => {
     expect(summarizeAccount(null)).toEqual({ emailVerified: false, membershipCount: 0, noWorkspace: true, noAccess: true });
     expect(summarizeAccount({}).noWorkspace).toBe(true);
+  });
+});
+
+describe('validateNewPassword (recovery / signup pair)', () => {
+  test('exactly 12 chars, letters + digits, matching → ok', () => {
+    expect(validateNewPassword('abcdefgh1234', 'abcdefgh1234')).toEqual({ ok: true, code: 'ok' });
+  });
+  test('more than 12 chars, letters + digits, matching → ok', () => {
+    expect(validateNewPassword('abcdefghijk12345', 'abcdefghijk12345')).toEqual({ ok: true, code: 'ok' });
+  });
+  test('missing digit → need_digit (blocked before mismatch check)', () => {
+    expect(validateNewPassword('abcdefghijklm', 'abcdefghijklm')).toEqual({ ok: false, code: 'need_digit' });
+  });
+  test('missing letter → need_letter', () => {
+    expect(validateNewPassword('1234567890123', '1234567890123')).toEqual({ ok: false, code: 'need_letter' });
+  });
+  test('valid password but confirmation mismatch → mismatch', () => {
+    expect(validateNewPassword('abcdefgh1234', 'abcdefgh1235')).toEqual({ ok: false, code: 'mismatch' });
+  });
+});
+
+describe('password policy message is accurate (never "only a number")', () => {
+  test('states the full rule: length + letters + numbers', () => {
+    expect(PASSWORD_POLICY_MESSAGE).toBe('La contraseña debe tener al menos 12 caracteres e incluir letras y números.');
+    expect(PASSWORD_POLICY_MESSAGE).toContain('12');
+    expect(PASSWORD_POLICY_MESSAGE).toContain('letras');
+    expect(PASSWORD_POLICY_MESSAGE).toContain('números');
   });
 });

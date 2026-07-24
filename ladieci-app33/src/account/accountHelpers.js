@@ -14,6 +14,21 @@ export function validatePassword(pw) {
   return { ok: true, code: 'ok' };
 }
 
+// Single accurate message for EVERY policy failure (length AND composition).
+// Deliberately states the full rule so it never implies that only a number, or
+// only length, is required. Mirrors the staging Supabase policy exactly.
+export const PASSWORD_POLICY_MESSAGE =
+  `La contraseña debe tener al menos ${PASSWORD_MIN} caracteres e incluir letras y números.`;
+
+// Validate a new-password + confirmation pair (signup / recovery). Pure and
+// testable: returns { ok, code } where code is a policy code, 'mismatch', or 'ok'.
+export function validateNewPassword(pw, pw2) {
+  const v = validatePassword(pw);
+  if (!v.ok) return { ok: false, code: v.code };
+  if (pw !== pw2) return { ok: false, code: 'mismatch' };
+  return { ok: true, code: 'ok' };
+}
+
 export function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email == null ? '' : email).trim());
 }

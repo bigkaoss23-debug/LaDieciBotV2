@@ -6,7 +6,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   PASSWORD_MIN,
-  validatePassword,
+  PASSWORD_POLICY_MESSAGE,
+  validateNewPassword,
   validateEmail,
   parseAuthCallback,
   accountSignUp,
@@ -21,24 +22,32 @@ import { getAccountClient } from '../../account/supabaseAccountClient';
 
 const POLICY_TEXT = `Mínimo ${PASSWORD_MIN} caracteres, con letras y números.`;
 
+// A single accurate message for every policy failure (length + composition),
+// plus the confirmation-mismatch case. Never claims that only a number, or only
+// length, is required.
 function policyError(code) {
-  switch (code) {
-    case 'too_short': return `La contraseña debe tener al menos ${PASSWORD_MIN} caracteres.`;
-    case 'need_letter': return 'La contraseña debe contener al menos una letra.';
-    case 'need_digit': return 'La contraseña debe contener al menos un número.';
-    default: return 'Contraseña no válida.';
-  }
+  if (code === 'mismatch') return 'Las dos contraseñas no coinciden.';
+  return PASSWORD_POLICY_MESSAGE;
 }
 
-// Map a Supabase auth error to a neutral, non-secret Spanish message.
+// Map a Supabase auth error to a neutral, non-secret Spanish message. NB: we must
+// NOT collapse every error containing the word "password" into a length message —
+// only genuine weak/short-password errors map to the policy message; a
+// same-as-old-password error gets its own accurate message.
 function friendlyAuthError(error) {
   const msg = (error && (error.message || error.error_description || error.error)) || '';
+  const code = (error && error.code) || '';
   const m = String(msg).toLowerCase();
   if (m.includes('invalid login')) return 'Correo o contraseña incorrectos.';
   if (m.includes('email not confirmed')) return 'Primero debes confirmar el correo electrónico.';
   if (m.includes('already registered') || m.includes('already been registered')) return 'Ya existe una cuenta con este correo electrónico.';
   if (m.includes('rate limit') || m.includes('too many')) return 'Demasiados intentos. Vuelve a probar en unos minutos.';
-  if (m.includes('weak') || m.includes('password')) return policyError('too_short');
+  if (m.includes('different from the old') || m.includes('should be different') || m.includes('same as the old')) {
+    return 'La nueva contraseña debe ser distinta de la anterior.';
+  }
+  if (code === 'weak_password' || m.includes('weak password') || m.includes('should be at least') || m.includes('should contain')) {
+    return PASSWORD_POLICY_MESSAGE;
+  }
   return 'Se ha producido un error. Inténtalo de nuevo.';
 }
 
@@ -58,7 +67,7 @@ function initialViewFromUrl() {
 // label ("Mostrar"/"Ocultar") as its accessible name and aria-pressed for state.
 // Toggling only flips this input's type between password/text — the value is
 // never logged or persisted, and autoComplete keeps password managers working.
-function PasswordField({ id, label, value, onChange, autoComplete }) {
+export function PasswordField({ id, label, value, onChange, autoComplete }) {
   const [show, setShow] = useState(false);
   return (
     <div className="ld-acc-label">
@@ -165,9 +174,8 @@ function SignupView({ setView }) {
     e.preventDefault();
     setErr('');
     if (!validateEmail(email)) { setErr('Introduce un correo electrónico válido.'); return; }
-    const v = validatePassword(pw);
+    const v = validateNewPassword(pw, pw2);
     if (!v.ok) { setErr(policyError(v.code)); return; }
-    if (pw !== pw2) { setErr('Las dos contraseñas no coinciden.'); return; }
     setBusy(true);
     const { error } = await accountSignUp(email, pw);
     setBusy(false);
@@ -282,7 +290,7 @@ function ForgotView({ setView }) {
   );
 }
 
-function RecoveryView({ setView }) {
+export function RecoveryView({ setView }) {
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
   const [err, setErr] = useState('');
@@ -292,9 +300,8 @@ function RecoveryView({ setView }) {
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
-    const v = validatePassword(pw);
+    const v = validateNewPassword(pw, pw2);
     if (!v.ok) { setErr(policyError(v.code)); return; }
-    if (pw !== pw2) { setErr('Las dos contraseñas no coinciden.'); return; }
     setBusy(true);
     const { error } = await accountUpdatePassword(pw);
     setBusy(false);
