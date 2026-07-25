@@ -110,6 +110,15 @@ describe('operational session restore', () => {
   });
 });
 
+describe('rule C: no operational session lands on the PIN, not Home or the account', () => {
+  test('the post-splash default opens the PIN when unauthenticated', () => {
+    const app = fs.readFileSync(path.join(__dirname, 'App.jsx'), 'utf8');
+    const block = app.slice(app.indexOf('const postSplashAction'), app.indexOf('useEffect', app.indexOf('const postSplashAction')));
+    expect(block).toMatch(/if \(!auth\.isAuthenticated\(\)\)/);
+    expect(block).toMatch(/setShowPin\(true\)/);
+  });
+});
+
 describe('operational menu', () => {
   test('rendered on authenticated operational screens, not on splash/booting', () => {
     expect(APP).toMatch(/screen !== "splash" && screen !== "booting" && <OperationalMenu/);

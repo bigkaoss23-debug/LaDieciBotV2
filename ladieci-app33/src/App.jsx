@@ -48,8 +48,17 @@ export default function App({ skipSplash = false } = {}) {
   const [pinLoading,   setPinLoading]   = useState(false);
   const [pendingAction,setPendingAction] = useState(null);
 
-  // Deep link: azione da eseguire DOPO la splash (PIN o navigazione diretta)
-  const postSplashAction = useRef(() => setScreen("home"));
+  // Deep link: azione da eseguire DOPO la splash (PIN o navigazione diretta).
+  // S2-7D3 regola C: senza una sessione operativa valida la landing è il PIN, SUBITO —
+  // non il selettore Home e mai la superficie account, anche se l'account personale è attivo.
+  const postSplashAction = useRef(() => {
+    setScreen("home");
+    if (!auth.isAuthenticated()) {
+      setPendingAction(null);
+      setPinInput(""); setPinError(false);
+      setShowPin(true);
+    }
+  });
 
   useEffect(() => {
     const path = window.location.pathname.replace(/^\//, '').toLowerCase();
