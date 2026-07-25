@@ -94,7 +94,9 @@ export default function App() {
     const value = pin !== undefined ? pin : pinInput;
     if (value.length < PIN_LOGIN_MIN || value.length > PIN_LOGIN_MAX) return;
     setPinLoading(true);
-    const result = await auth.login(value, "operador");
+    // Universal Auth V2 contract: only the complete PIN. The backend resolves actor+role
+    // from auth_actors — the client never asserts which actor it is.
+    const result = await auth.login(value);
     setPinLoading(false);
     if (result.success) {
       setPinUnlocked(true);

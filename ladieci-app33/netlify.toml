@@ -31,6 +31,16 @@
   SUPABASE_URL = "https://tdikhfeinufaahagmpjz.supabase.co"
   SUPABASE_ANON_KEY = "sb_publishable_qMYSRpFm1TQ4S04nD8Bw3Q_7Fc92qaS"
 
+# S2-7D2 — canonical operational login. Same-origin proxy to the staging Railway Auth V2
+# route, which verifies auth_actors.pin_hash and returns an {actor, role, session_version}
+# token. MUST stay above the retired /api/auth rule so it is matched first.
+[[redirects]]
+  from = "/api/auth/v2/login"
+  to = "https://fearless-reverence-production-80bc.up.railway.app/api/auth/v2/login"
+  status = 200
+  force = true
+
+# RETIRED legacy login — kept only as a fail-closed 410 stub (see netlify/functions/auth.js).
 [[redirects]]
   from = "/api/auth"
   to = "/.netlify/functions/auth"

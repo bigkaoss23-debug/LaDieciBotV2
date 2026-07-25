@@ -288,10 +288,16 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
   const prevIdsRef = useRef(null);
 
   // ─── PIN gate per Repartidor ───────────────────────────────────────────
+  // S2-7D2: the canonical Auth V2 role for the delivery actor is 'rider' (auth_actors.role),
+  // not the retired Netlify vocabulary 'repartidor'. A valid Auth V2 token is the gate;
+  // ld_role is only a presentation cache and never admits on its own.
+  const REP_ROLE = "rider";
+  const REP_PIN_MIN = 6;
+  const REP_PIN_MAX = 12;   // backend universal login range /^\d{6,12}$/
+
   const [repUnlocked, setRepUnlocked] = useState(() => {
     try {
-      const role = sessionStorage.getItem("ld_role");
-      return role === "repartidor" && auth.isAuthenticated();
+      return auth.isAuthenticated() && auth.getRole() === REP_ROLE;
     } catch(e) { return false; }
   });
   const [repPin, setRepPin] = useState("");
@@ -301,23 +307,21 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
   const handleRepPinKey = (k) => {
     if (repPinLoading) return;
     if (k === "DEL") { setRepPin(p => p.slice(0,-1)); return; }
-    if (repPin.length < 6) {
-      const next = repPin + k;
-      setRepPin(next);
-      if (next.length === 6) checkRepPin(next);
-    }
+    // no auto-submit: a 6-digit prefix of a longer legacy PIN must not be sent alone
+    if (repPin.length < REP_PIN_MAX) setRepPin(repPin + k);
   };
 
   const checkRepPin = async (pin) => {
     if (repPinLoading) return;
     const value = pin !== undefined ? pin : repPin;
-    if (value.length < 6) return;
+    if (value.length < REP_PIN_MIN || value.length > REP_PIN_MAX) return;
     setRepPinLoading(true);
-    const result = await auth.login(value, "repartidor");
+    const result = await auth.login(value);
     setRepPinLoading(false);
-    if (result.success) {
+    if (result.success && result.role === REP_ROLE) {
       setRepUnlocked(true);
     } else {
+      if (result.success) auth.clear();   // authenticated, but not the delivery actor
       setRepPinError(true); setRepPin("");
       setTimeout(() => setRepPinError(false), 1200);
     }
@@ -368,11 +372,11 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
       <div style={{minHeight:"100dvh",background:"#1F2937",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
         <div style={{fontSize:48,marginBottom:8}}>🛵</div>
         <div style={{color:"#fff",fontSize:20,fontWeight:700,marginBottom:6}}>PIN Repartidor</div>
-        <div style={{color:"rgba(255,255,255,0.4)",fontSize:13,marginBottom:24}}>6 dígitos</div>
+        <div style={{color:"rgba(255,255,255,0.4)",fontSize:13,marginBottom:24}}>PIN del repartidor</div>
 
-        {/* 6 puntos */}
+        {/* puntos — 6 minimo, cresce fino a 12 per i PIN legacy non ancora ruotati */}
         <div style={{display:"flex",gap:12,marginBottom:16}}>
-          {[0,1,2,3,4,5].map(i => (
+          {Array.from({length: Math.max(REP_PIN_MIN, repPin.length)}, (_, i) => i).map(i => (
             <div key={i} style={{
               width:14,height:14,borderRadius:"50%",
               background: i < repPin.length ? (repPinError ? "#E8341C" : "#F59E0B") : "transparent",
@@ -397,6 +401,21 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
             }}>{k==="DEL"?"⌫":k}</button>
           ))}
         </div>
+
+        {/* Entrar esplicito — nessun auto-submit a 6 cifre */}
+        <button
+          onClick={()=>checkRepPin()}
+          disabled={repPinLoading || repPin.length < REP_PIN_MIN}
+          style={{
+            marginTop:18, width:240, height:52, borderRadius:14,
+            border:"1px solid rgba(255,255,255,0.1)",
+            background: repPin.length >= REP_PIN_MIN && !repPinLoading ? "#F59E0B" : "#111827",
+            color: repPin.length >= REP_PIN_MIN && !repPinLoading ? "#000" : "rgba(255,255,255,0.35)",
+            fontSize:16, fontWeight:800, letterSpacing:1,
+            cursor: repPinLoading || repPin.length < REP_PIN_MIN ? "default" : "pointer"
+          }}>
+          Entrar
+        </button>
       </div>
     );
   }

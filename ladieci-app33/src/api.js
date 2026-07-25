@@ -13,7 +13,11 @@ import { isDeleteConfirmed } from "./utils/deleteReconcile";
 import { BACKEND_BASE_URL } from "./utils/backendBase";
 
 const PROXY_URL = "/api/proxy";
-const AUTH_URL = "/api/auth";
+// S2-7D2 cutover: the operational keypad authenticates against the CANONICAL Auth V2 login,
+// which verifies auth_actors.pin_hash and returns an actor/role/session-version token.
+// The old /api/auth Netlify function (plaintext config.APP_PIN → role-only JWT) is retired
+// and now fails closed; it is never called from here again.
+const AUTH_V2_LOGIN_URL = "/api/auth/v2/login";
 
 // ═══ SUPABASE (anon key — public by design, RLS protegge i sensibili) ═══
 // Env-based (build-time CRA, prefisso REACT_APP_). FAIL-CLOSED (ENV_SPLIT_V1_08):
@@ -127,6 +131,13 @@ const auth = {
   setRole(role) {
     try { sessionStorage.setItem("ld_role", role); } catch(e) {}
   },
+  // Canonical actor identity, from the verified Auth V2 response. Presentation only —
+  // authorization is decided by Railway from the token, never from this value.
+  getActor() {
+    try { return sessionStorage.getItem("ld_actor") || ""; } catch(e) { return ""; }
+  },
+  // The ONLY gate for entering an authenticated operational surface: a canonical Auth V2
+  // token. ld_pin_ok / ld_role are presentation caches and can never admit on their own.
   isAuthenticated() {
     const token = this.getToken();
     if (!token) return false;
@@ -134,6 +145,8 @@ const auth = {
       const parts = token.split(".");
       if (parts.length !== 3) return false;
       const payload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+      // canonical Auth V2 claims: role, sub (actor), sv (session version), exp
+      if (!payload.sub || !payload.role || !Number.isInteger(payload.sv)) return false;
       return payload.exp > Math.floor(Date.now() / 1000);
     } catch(e) { return false; }
   },
@@ -141,26 +154,36 @@ const auth = {
     try {
       sessionStorage.removeItem("ld_token");
       sessionStorage.removeItem("ld_role");
+      sessionStorage.removeItem("ld_actor");
       sessionStorage.removeItem("ld_pin_ok");
+      // S2-7D2: purge any pre-cutover operational credential left in localStorage by an
+      // older build. The operational token is tab-scoped and must never outlive the tab
+      // on a shared device.
+      localStorage.removeItem("ld_token");
+      localStorage.removeItem("ld_role");
+      localStorage.removeItem("ld_pin_ok");
     } catch(e) {}
   },
-  async login(pin, role) {
+  // Canonical operational login. Universal contract: the COMPLETE entered PIN, nothing else.
+  // Role/actor are resolved by the backend from auth_actors — never asserted by the client.
+  async login(pin) {
     try {
-      const res = await fetch(AUTH_URL, {
+      const res = await fetch(AUTH_V2_LOGIN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin, role: role || "operador" })
+        body: JSON.stringify({ pin })
       });
       const data = await res.json();
       if (res.ok && data.token) {
         this.setToken(data.token);
         this.setRole(data.role);
+        try { sessionStorage.setItem("ld_actor", data.actor || ""); } catch(e) {}
         try { sessionStorage.setItem("ld_pin_ok", "1"); } catch(e) {}
-        return { success: true, role: data.role };
+        return { success: true, role: data.role, actor: data.actor };
       }
-      return { error: data.error || "PIN incorrecto" };
+      return { error: "PIN incorrecto" }; // neutral: never surfaces the backend reason
     } catch(err) {
-      return { error: "Errore di rete" };
+      return { error: "PIN incorrecto" };
     }
   }
 };
@@ -488,12 +511,11 @@ const api = {
   },
 
   // ── App PIN ────────────────────────────────────────────────────
+  // S2-7D2: setAppPin was REMOVED. It wrote the plaintext config.APP_PIN that the retired
+  // /api/auth function used to compare against. Operational credentials now live only in
+  // auth_actors.pin_hash and rotate through the canonical Auth V2 path (account admin-PIN
+  // form → auth_set_actor_pin_v2). It had no callers.
   getAppPin: async function() { return "server-side"; },
-  setAppPin: async function(newPin) {
-    const clean = String(newPin||"").replace(/\D/g,"").slice(0,8);
-    if (clean.length < 4) return { error:"PIN debe tener al menos 4 dígitos" };
-    return await proxyPost({ action:'setConfig', chiave:'APP_PIN', valore: clean });
-  },
 
   // ── Storico/serata: letture pesanti aggregate ──────────────────
   getStorico: async function() {

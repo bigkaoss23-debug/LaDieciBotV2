@@ -1,8 +1,7 @@
 // Netlify Function — Secure proxy to Railway backend
 // Verifies JWT token before forwarding requests
-// Secrets needed: RAILWAY_API_KEY, JWT_SECRET
+// Secrets needed: RAILWAY_API_KEY (transport). Operational identity: Auth V2 bearer (Railway).
 
-const crypto = require('crypto');
 const { resolveBackendUrl } = require('./_env');
 
 const RAILWAY_API_KEY = process.env.RAILWAY_API_KEY;
@@ -20,15 +19,10 @@ console.log("[api proxy] backend mode:",
 // Base senza il suffisso /api — usato per le route REST esplicite del backend
 // (es. il Delivery Planner shadow preview, che vive fuori da /api?action=...).
 const RAILWAY_BASE = RAILWAY_URL ? RAILWAY_URL.replace(/\/api$/, "") : null;
-const JWT_SECRET = process.env.JWT_SECRET || "CHANGE_ME_IN_NETLIFY_ENV";
 
 // Actions allowed for repartidor role (read-only + mark delivered)
-const REPARTIDOR_ALLOWED = [
-  "getOrdenes",
-  "updateEstado",  // solo EN_ENTREGA → RETIRADO
-  "marcarEnEntrega",
-  "marcarEntregado"
-];
+// S2-7D2: the proxy-side rider allow-list was REMOVED — src/auth/legacyActionRoles.js on
+// Railway is the authoritative role->action map, applied against the verified token.
 
 // Actions that don't need auth (public health check)
 const PUBLIC_ACTIONS = [];
@@ -51,34 +45,31 @@ exports.handler = async (event) => {
     return respond(401, { error: "token mancante" });
   }
 
-  const payload = verifyToken(token);
-  if (!payload) {
-    return respond(401, { error: "token invalido o scaduto" });
-  }
-
-  const role = payload.role;
+  // S2-7D2: the proxy no longer decides WHO the caller is. The Auth V2 bearer is minted and
+  // verified by Railway (AUTH_JWT_SECRET_B64URL) and carries actor + role + session_version;
+  // this function cannot and must not validate it (different secret, and no access to
+  // auth_actors for the active/freshness checks). It is forwarded verbatim and Railway's
+  // already-enabled legacy Auth V2 guard is the sole authority on actor/role/session.
+  // X-Api-Key stays as the server-to-server transport boundary only.
 
   try {
     if (event.httpMethod === "GET") {
       const params = event.queryStringParameters || {};
       const action = params.action || "";
 
-      // Role check for repartidor
-      if (role === "repartidor" && !REPARTIDOR_ALLOWED.includes(action)) {
-        return respond(403, { error: "permesso negato per repartidor" });
-      }
+      // Role authorization is Railway's (legacyActionRoles is the authoritative map).
 
       // Delivery Planner — Shadow Preview (READ-ONLY, internal/admin).
       // Vive su una route REST esplicita del backend (GET /api/delivery/shadow-preview),
       // fuori dallo schema /api?action=... . Inoltra SOLO il parametro `date`, sempre
       // GET, con la stessa X-Api-Key del proxy. Nessuna scrittura. Il check ruolo sopra
-      // blocca già `repartidor` (shadowPreview non è in REPARTIDOR_ALLOWED).
+      // Il ruolo è verificato da Railway sul bearer Auth V2.
       if (action === "shadowPreview") {
         const date = params.date || "";
         const url = RAILWAY_BASE + "/api/delivery/shadow-preview" +
           (date ? "?date=" + encodeURIComponent(date) : "");
         const res = await fetch(url, {
-          headers: { "X-Api-Key": RAILWAY_API_KEY }
+          headers: { "X-Api-Key": RAILWAY_API_KEY, "Authorization": "Bearer " + token }
         });
         const data = await res.json();
         return respond(res.status, data);
@@ -89,7 +80,7 @@ exports.handler = async (event) => {
         .join("&");
 
       const res = await fetch(RAILWAY_URL + "?" + qs, {
-        headers: { "X-Api-Key": RAILWAY_API_KEY }
+        headers: { "X-Api-Key": RAILWAY_API_KEY, "Authorization": "Bearer " + token }
       });
       const data = await res.json();
       return respond(res.status, data);
@@ -103,16 +94,14 @@ exports.handler = async (event) => {
 
       const action = body.action || "";
 
-      // Role check for repartidor
-      if (role === "repartidor" && !REPARTIDOR_ALLOWED.includes(action)) {
-        return respond(403, { error: "permesso negato per repartidor" });
-      }
+      // Role authorization is Railway's (legacyActionRoles is the authoritative map).
 
       const res = await fetch(RAILWAY_URL + "?action=" + encodeURIComponent(action), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Api-Key": RAILWAY_API_KEY
+          "X-Api-Key": RAILWAY_API_KEY,
+          "Authorization": "Bearer " + token
         },
         body: JSON.stringify(body)
       });
@@ -126,28 +115,10 @@ exports.handler = async (event) => {
   }
 };
 
-function verifyToken(token) {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-
-    const [header, body, signature] = parts;
-    const expected = crypto.createHmac('sha256', JWT_SECRET)
-      .update(header + "." + body)
-      .digest('base64url');
-
-    if (signature !== expected) return null;
-
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
-
-    // Check expiration
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
-
-    return payload;
-  } catch(e) {
-    return null;
-  }
-}
+// S2-7D2: verifyToken() was REMOVED. It validated the retired role-only JWT with the local
+// JWT_SECRET and produced a proxy-side role decision. Operational identity now comes only
+// from the Auth V2 bearer, verified by Railway against auth_actors (active + fresh
+// session_version). No local token verification and no local role authorization remain.
 
 function respond(status, body) {
   return {

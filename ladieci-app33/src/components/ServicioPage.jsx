@@ -1410,81 +1410,25 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       {/* Modal Cambiar PIN */}
       {showCambioPin && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div style={{background:"#1F2937",borderRadius:20,padding:28,width:"100%",maxWidth:340,display:"flex",flexDirection:"column",alignItems:"center",gap:18}}>
+          <div style={{background:"#1F2937",borderRadius:20,padding:28,width:"100%",maxWidth:360,display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
             <div style={{fontSize:30}}>🔑</div>
             <div style={{color:"#fff",fontWeight:800,fontSize:18}}>Cambiar PIN</div>
-
-            {/* Scelta tipo */}
-            <div style={{display:"flex",gap:8,width:"100%"}}>
-              {["operador","repartidor"].map(t => (
-                <button key={t} onClick={()=>setPinChange(p=>({...p,tipo:t,viejo:"",nuevo:"",confirm:"",error:"",step:1}))} style={{
-                  flex:1,padding:"10px 0",borderRadius:12,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,
-                  background:pinChange.tipo===t?"#F97316":"rgba(255,255,255,0.1)",
-                  color:pinChange.tipo===t?"#000":"rgba(255,255,255,0.6)"
-                }}>{t==="operador"?"Operador":"Repartidor"}</button>
-              ))}
+            {/* S2-7D2: this modal used to verify the plaintext config.APP_PIN / REPARTIDOR_PIN
+                and overwrite them via setConfig. Nothing reads those values any more — the
+                operational login verifies auth_actors.pin_hash through Auth V2 — so leaving it
+                live would report success while changing no real credential. Rotation now has a
+                single canonical home. */}
+            <div style={{color:"rgba(255,255,255,0.65)",fontSize:14,textAlign:"center",lineHeight:1.5}}>
+              El cambio de PIN se hace ahora desde <b style={{color:"#fff"}}>Mi cuenta</b>,
+              en el apartado del PIN de administrador.
             </div>
-
-            {/* Step 1: PIN attuale */}
-            {pinChange.step === 1 && (
-              <>
-                <div style={{color:"rgba(255,255,255,0.6)",fontSize:13}}>PIN attuale ({pinChange.tipo})</div>
-                <input type="password" inputMode="numeric" maxLength={6} value={pinChange.viejo}
-                  onChange={e=>setPinChange(p=>({...p,viejo:e.target.value.replace(/\D/g,"").slice(0,6)}))}
-                  placeholder="••••••"
-                  style={{width:"100%",padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.07)",color:"#fff",fontSize:22,textAlign:"center",letterSpacing:6,outline:"none"}}
-                />
-                {pinChange.error && <div style={{color:"#E8341C",fontSize:13}}>{pinChange.error}</div>}
-                <button onClick={async()=>{
-                  if(pinChange.viejo.length < 6){ setPinChange(p=>({...p,error:"El PIN tiene 6 dígitos"})); return; }
-                  setPinChange(p=>({...p,loading:true,error:""}));
-                  const r = await auth.login(pinChange.viejo, pinChange.tipo);
-                  if(r.success){ setPinChange(p=>({...p,step:2,loading:false})); }
-                  else { setPinChange(p=>({...p,loading:false,error:r.error||"PIN incorrecto"})); }
-                }} disabled={pinChange.loading} style={{
-                  width:"100%",padding:"14px 0",borderRadius:14,border:"none",
-                  background:"#F97316",color:"#000",fontWeight:800,fontSize:15,cursor:"pointer"
-                }}>{pinChange.loading?"Verificando…":"Verificar"}</button>
-              </>
-            )}
-
-            {/* Step 2: Nuovo PIN */}
-            {pinChange.step === 2 && (
-              <>
-                <div style={{color:"rgba(255,255,255,0.6)",fontSize:13}}>Nuevo PIN (6 dígitos)</div>
-                <input type="password" inputMode="numeric" maxLength={6} value={pinChange.nuevo}
-                  onChange={e=>setPinChange(p=>({...p,nuevo:e.target.value.replace(/\D/g,"").slice(0,6)}))}
-                  placeholder="••••••"
-                  style={{width:"100%",padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.07)",color:"#fff",fontSize:22,textAlign:"center",letterSpacing:6,outline:"none"}}
-                />
-                <div style={{color:"rgba(255,255,255,0.6)",fontSize:13}}>Repite el nuevo PIN</div>
-                <input type="password" inputMode="numeric" maxLength={6} value={pinChange.confirm}
-                  onChange={e=>setPinChange(p=>({...p,confirm:e.target.value.replace(/\D/g,"").slice(0,6)}))}
-                  placeholder="••••••"
-                  style={{width:"100%",padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.07)",color:"#fff",fontSize:22,textAlign:"center",letterSpacing:6,outline:"none"}}
-                />
-                {pinChange.error && <div style={{color:"#E8341C",fontSize:13}}>{pinChange.error}</div>}
-                {pinChange.ok && <div style={{color:"#22C55E",fontSize:14,fontWeight:700}}>✅ PIN cambiado correctamente</div>}
-                <button onClick={async()=>{
-                  if(pinChange.nuevo.length < 6){ setPinChange(p=>({...p,error:"El nuevo PIN debe tener 6 dígitos"})); return; }
-                  if(pinChange.nuevo !== pinChange.confirm){ setPinChange(p=>({...p,error:"Los PINs no coinciden"})); return; }
-                  setPinChange(p=>({...p,loading:true,error:""}));
-                  const chiave = pinChange.tipo === "repartidor" ? "REPARTIDOR_PIN" : "APP_PIN";
-                  const res = await api.post({ action:"setConfig", chiave, valore: pinChange.nuevo });
-                  if(res && res.success !== false){
-                    setPinChange(p=>({...p,loading:false,ok:true}));
-                    setTimeout(()=>setShowCambioPin(false), 1500);
-                  } else {
-                    setPinChange(p=>({...p,loading:false,error:"Error al guardar. Reintentar."}));
-                  }
-                }} disabled={pinChange.loading} style={{
-                  width:"100%",padding:"14px 0",borderRadius:14,border:"none",
-                  background:"#22C55E",color:"#000",fontWeight:800,fontSize:15,cursor:"pointer"
-                }}>{pinChange.loading?"Guardando…":"Guardar nuevo PIN"}</button>
-              </>
-            )}
-
-            <button onClick={()=>setShowCambioPin(false)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+            <div style={{color:"rgba(255,255,255,0.4)",fontSize:12,textAlign:"center",lineHeight:1.5}}>
+              Este acceso antiguo ya no cambia ninguna credencial.
+            </div>
+            <button onClick={()=>setShowCambioPin(false)} style={{
+              width:"100%",padding:"12px 0",borderRadius:14,border:"none",
+              background:"rgba(255,255,255,0.12)",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"
+            }}>Cerrar</button>
           </div>
         </div>
       )}
