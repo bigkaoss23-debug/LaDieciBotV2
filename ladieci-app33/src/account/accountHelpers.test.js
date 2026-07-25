@@ -17,11 +17,13 @@ import {
   ADMIN_PIN_MAX,
   T9_MAP,
   wordToPin,
-  validateWordPin,
-  wordPinMessage,
-  WORD_PIN_LENGTH_MESSAGE,
-  WORD_PIN_UNSUPPORTED_MESSAGE,
-  ADMIN_PIN_POLICY_MESSAGE,
+  resolvePinInput,
+  pinInputMessage,
+  PIN_MIXED_MESSAGE,
+  PIN_NUMERIC_LENGTH_MESSAGE,
+  PIN_WORD_LENGTH_MESSAGE,
+  PIN_UNSUPPORTED_CHAR_MESSAGE,
+  PIN_HELP_TEXT,
 } from './accountHelpers';
 
 describe('password policy (signup + reset validation)', () => {
@@ -246,8 +248,8 @@ describe('S2-7D validateAdminPin (admin 9–12 digits, mirrors backend policy)',
 });
 
 
-describe('S2-7D T9 word → PIN mapping (local memory aid only)', () => {
-  test('canonical telephone mapping, one letter → exactly one digit', () => {
+describe('S2-7D unified PIN input — telephone mapping', () => {
+  test('canonical mapping, one letter → exactly one digit', () => {
     expect(wordToPin('ABC').pin).toBe('222');
     expect(wordToPin('DEF').pin).toBe('333');
     expect(wordToPin('GHI').pin).toBe('444');
@@ -257,79 +259,120 @@ describe('S2-7D T9 word → PIN mapping (local memory aid only)', () => {
     expect(wordToPin('TUV').pin).toBe('888');
     expect(wordToPin('WXYZ').pin).toBe('9999');
   });
-  test('every mapped letter yields exactly one digit (length preserved)', () => {
+  test('every mapped letter yields exactly one digit', () => {
     Object.keys(T9_MAP).forEach((d) => {
       const letters = T9_MAP[d];
       const r = wordToPin(letters);
-      expect(r.ok).toBe(true);
-      expect(r.pin.length).toBe(letters.length);
       expect(r.pin).toBe(String(d).repeat(letters.length));
     });
   });
-  test('lowercase and uppercase are equivalent', () => {
-    expect(wordToPin('margarita').pin).toBe(wordToPin('MARGARITA').pin);
-    expect(wordToPin('MaRgArItA').pin).toBe(wordToPin('margarita').pin);
+});
+
+describe('S2-7D resolvePinInput — automatic mode detection', () => {
+  test('digits only → numeric mode, used directly as the PIN', () => {
+    const r = resolvePinInput('123456789');
+    expect(r.ok).toBe(true);
+    expect(r.mode).toBe('numeric');
+    expect(r.pin).toBe('123456789');
   });
-  test('separators (space, hyphen, underscore, dot, apostrophe, comma) are ignored', () => {
-    const base = wordToPin('pizzanapoli').pin;
-    expect(wordToPin('pizza napoli').pin).toBe(base);
-    expect(wordToPin('pizza-napoli').pin).toBe(base);
-    expect(wordToPin('pizza_napoli').pin).toBe(base);
-    expect(wordToPin('pizza.napoli').pin).toBe(base);
-    expect(wordToPin("pizza'napoli").pin).toBe(base);
-    expect(wordToPin('pizza, napoli').pin).toBe(base);
+  test('letters only → word mode, converted locally', () => {
+    const r = resolvePinInput('margarita');
+    expect(r.ok).toBe(true);
+    expect(r.mode).toBe('word');
+    expect(r.pin).toBe('627427482');
   });
-  test('Spanish diacritics normalise (á→a→2, ñ→n→6)', () => {
-    expect(wordToPin('á').pin).toBe('2');
-    expect(wordToPin('ñ').pin).toBe('6');
-    expect(wordToPin('almería').pin).toBe(wordToPin('almeria').pin);
+  test('uppercase and lowercase are equivalent', () => {
+    expect(resolvePinInput('MARGARITA').pin).toBe(resolvePinInput('margarita').pin);
+    expect(resolvePinInput('MaRgArItA').pin).toBe(resolvePinInput('margarita').pin);
   });
-  test('unsupported characters are rejected', () => {
-    expect(wordToPin('pizza!').code).toBe('unsupported');
-    expect(wordToPin('piz@za').code).toBe('unsupported');
-    expect(wordToPin('piz/za').ok).toBe(false);
+  test('spaces and hyphens are ignored (in both modes)', () => {
+    expect(resolvePinInput('marga rita').pin).toBe('627427482');
+    expect(resolvePinInput('marga-rita').pin).toBe('627427482');
+    expect(resolvePinInput(' MARGA - RITA ').pin).toBe('627427482');
+    expect(resolvePinInput('123 456-789').pin).toBe('123456789');
   });
-  test('empty / separators-only input is not a PIN', () => {
-    expect(wordToPin('').code).toBe('empty');
-    expect(wordToPin('   ').code).toBe('empty');
+  test('mixed letters and digits are REJECTED (PIZZA2026)', () => {
+    const r = resolvePinInput('PIZZA2026');
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('mixed');
+    expect(r.pin).toBe('');
+    expect(pinInputMessage(r.code)).toBe(PIN_MIXED_MESSAGE);
+    expect(PIN_MIXED_MESSAGE).toBe('Introduce solo letras o solo números, sin mezclarlos.');
+  });
+  test('accented letters are REJECTED, not converted', () => {
+    ['almería', 'mañana', 'ÁNGEL'].forEach((w) => {
+      const r = resolvePinInput(w);
+      expect(r.ok).toBe(false);
+      expect(r.code).toBe('unsupported');
+      expect(r.pin).toBe('');
+    });
+    expect(pinInputMessage('unsupported')).toBe(PIN_UNSUPPORTED_CHAR_MESSAGE);
+  });
+  test('other unsupported characters rejected', () => {
+    ['margarita!', 'marga@rita', 'marga.rita', 'marga_rita'].forEach((w) => {
+      expect(resolvePinInput(w).code).toBe('unsupported');
+    });
+  });
+  test('empty / separators only → not a PIN', () => {
+    expect(resolvePinInput('').code).toBe('empty');
+    expect(resolvePinInput('  - ').code).toBe('empty');
   });
 });
 
-describe('S2-7D validateWordPin enforces the SAME 9–12 admin policy', () => {
-  test('accepts a word generating 9–12 non-trivial digits', () => {
-    const r = validateWordPin('margarita'); // 9 letters
-    expect(r.ok).toBe(true);
-    expect(r.pin).toBe('627427482');
-    expect(r.pin.length).toBe(9);
-  });
-  test('rejects a generated PIN shorter than 9', () => {
-    const r = validateWordPin('pizza'); // 5 digits
+describe('S2-7D length policy (9–12) with mode-specific messages', () => {
+  test('numeric shorter than 9 → numeric length message', () => {
+    const r = resolvePinInput('12345');
     expect(r.ok).toBe(false);
-    expect(r.code).toBe('length');
-    expect(wordPinMessage(r.code)).toBe(WORD_PIN_LENGTH_MESSAGE);
+    expect(r.code).toBe('length_numeric');
+    expect(pinInputMessage(r.code)).toBe(PIN_NUMERIC_LENGTH_MESSAGE);
+    expect(PIN_NUMERIC_LENGTH_MESSAGE).toBe('El PIN debe tener entre 9 y 12 dígitos.');
   });
-  test('rejects a generated PIN longer than 12', () => {
-    const r = validateWordPin('extraordinario'); // 14 letters
+  test('word generating fewer than 9 digits → word length message', () => {
+    const r = resolvePinInput('pizza');
+    expect(r.code).toBe('length_word');
+    expect(pinInputMessage(r.code)).toBe(PIN_WORD_LENGTH_MESSAGE);
+    expect(PIN_WORD_LENGTH_MESSAGE).toBe('La palabra debe generar un PIN de entre 9 y 12 dígitos.');
+  });
+  test('longer than 12 rejected in both modes', () => {
+    expect(resolvePinInput('extraordinario').code).toBe('length_word');
+    expect(resolvePinInput('1234567890123').code).toBe('length_numeric');
+  });
+  test('exactly 9 and exactly 12 accepted', () => {
+    expect(resolvePinInput('903421756').ok).toBe(true);
+    expect(resolvePinInput('abcdefghijkl').ok).toBe(true);
+    expect(resolvePinInput('abcdefghijkl').pin.length).toBe(12);
+  });
+  test('pin is still exposed for the live preview while too short', () => {
+    const r = resolvePinInput('pizza');
     expect(r.ok).toBe(false);
-    expect(r.code).toBe('length');
+    expect(r.pin).toBe('74992');   // preview updates per letter
   });
-  test('accepts exactly 12 and rejects exactly 13', () => {
-    expect(validateWordPin('abcdefghijkl').pin.length).toBe(12);
-    expect(validateWordPin('abcdefghijklm').code).toBe('length');
+  test('preview grows one digit per compatible letter', () => {
+    expect(resolvePinInput('m').pin).toBe('6');
+    expect(resolvePinInput('ma').pin).toBe('62');
+    expect(resolvePinInput('mar').pin).toBe('627');
+    expect(resolvePinInput('marg').pin).toBe('6274');
   });
-  test('unsupported characters keep their own message', () => {
-    const r = validateWordPin('margarita!');
-    expect(r.code).toBe('unsupported');
-    expect(wordPinMessage(r.code)).toBe(WORD_PIN_UNSUPPORTED_MESSAGE);
+});
+
+describe('S2-7D two independent inputs compare only their digits', () => {
+  test('different capitalization / separators still match', () => {
+    const a = resolvePinInput('margarita');
+    const b = resolvePinInput('MARGA-RITA');
+    expect(a.pin).toBe(b.pin);
   });
-  test('a word generating a trivial PIN is rejected by the policy', () => {
-    const r = validateWordPin('aaaaaaaaa'); // 222222222 → all same
-    expect(r.ok).toBe(false);
-    expect(r.code).toBe('policy');
-    expect(wordPinMessage(r.code)).toBe(ADMIN_PIN_POLICY_MESSAGE);
+  test('a word and the equivalent digits match', () => {
+    expect(resolvePinInput('margarita').pin).toBe(resolvePinInput('627427482').pin);
   });
-  test('failed validation never leaks a partial pin', () => {
-    expect(validateWordPin('pizza').pin).toBe('');
-    expect(validateWordPin('margarita!').pin).toBe('');
+  test('different words produce different PINs', () => {
+    expect(resolvePinInput('margarita').pin).not.toBe(resolvePinInput('napolitana').pin);
+  });
+});
+
+describe('S2-7D help text', () => {
+  test('states the mapping and that the operational access uses the numeric PIN', () => {
+    expect(PIN_HELP_TEXT).toContain('ABC = 2');
+    expect(PIN_HELP_TEXT).toContain('WXYZ = 9');
+    expect(PIN_HELP_TEXT).toContain('El acceso operativo siempre se realiza con el PIN numérico generado.');
   });
 });

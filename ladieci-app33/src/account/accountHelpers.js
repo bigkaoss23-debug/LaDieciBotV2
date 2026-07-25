@@ -150,12 +150,13 @@ export function validateAdminPin(pin, pin2) {
   return { ok: true, code: 'ok' };
 }
 
-// ── T9 "memorable word" → numeric PIN (LOCAL memory aid only) ────────────────
-// Standard telephone keypad mapping. The word is a local aid to remember the digits:
-// it is NEVER sent to the backend, never stored (no localStorage/sessionStorage/DB),
-// never logged and never placed in a URL. Only the numeric PIN reaches the API.
-// Spanish-friendly: diacritics are normalised first (á→a→2, ñ→n→6), so accented input
-// still maps one letter → exactly one digit.
+// ── Unified PIN input: a memorable WORD or a direct NUMERIC PIN ─────────────
+// ONE field accepts either digits only, or ASCII letters only (spaces and hyphens are
+// harmless separators). Mixed letters+digits (e.g. "PIZZA2026") are rejected so the mode is
+// never ambiguous. Letters convert LOCALLY with the standard telephone mapping; the word is
+// a mnemonic only — never sent to the server, never stored, never logged. Accented letters
+// are deliberately REJECTED (not transliterated) so frontend behaviour matches the accepted
+// backend/T9 contract exactly.
 export const T9_MAP = Object.freeze({
   2: 'ABC', 3: 'DEF', 4: 'GHI', 5: 'JKL', 6: 'MNO', 7: 'PQRS', 8: 'TUV', 9: 'WXYZ',
 });
@@ -166,47 +167,66 @@ const T9_LOOKUP = (() => {
   return t;
 })();
 
-// Separators a human naturally types; ignored rather than rejected.
-const T9_SEPARATORS = /[\s\-_.'’,]/;
+// Only spaces and hyphens are ignored; everything else must be a letter or a digit.
+const PIN_SEPARATOR = /[\s-]/;
+const ASCII_LETTER = /^[A-Za-z]$/;
 
-// Convert a word/phrase to digits. Returns { ok, pin, code } with
-// code ∈ 'ok' | 'unsupported' | 'empty'. Pure — no I/O, no storage, no logging.
+// Convert a pure ASCII word to digits. { ok, pin, code } — code ∈ 'ok'|'unsupported'|'empty'.
 export function wordToPin(word) {
   const raw = word == null ? '' : String(word);
-  // Strip diacritics so Spanish words map naturally (NFD + combining-mark removal).
-  const norm = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   let out = '';
-  for (const ch of norm) {
-    if (T9_SEPARATORS.test(ch)) continue;      // ignored
-    if (ch >= '0' && ch <= '9') { out += ch; continue; } // already a digit
-    const d = T9_LOOKUP[ch.toUpperCase()];
-    if (!d) return { ok: false, code: 'unsupported', pin: '' };
-    out += d;
+  for (const ch of raw) {
+    if (PIN_SEPARATOR.test(ch)) continue;
+    if (!ASCII_LETTER.test(ch)) return { ok: false, code: 'unsupported', pin: '' };
+    out += T9_LOOKUP[ch.toUpperCase()];
   }
   if (out.length === 0) return { ok: false, code: 'empty', pin: '' };
   return { ok: true, code: 'ok', pin: out };
 }
 
-export const WORD_PIN_LENGTH_MESSAGE =
-  `La palabra debe generar un PIN de entre ${ADMIN_PIN_MIN} y ${ADMIN_PIN_MAX} dígitos.`;
-export const WORD_PIN_UNSUPPORTED_MESSAGE = 'Esta palabra contiene caracteres no compatibles.';
-
-// Full word→PIN validation against the SAME admin policy the backend enforces.
-// Returns { ok, pin, code } with code ∈ 'ok' | 'unsupported' | 'empty' | 'length' | 'policy'.
-export function validateWordPin(word) {
-  const r = wordToPin(word);
-  if (!r.ok) return { ok: false, pin: '', code: r.code };
-  if (r.pin.length < ADMIN_PIN_MIN || r.pin.length > ADMIN_PIN_MAX) {
-    return { ok: false, pin: '', code: 'length' };
+// THE unified resolver used by the admin-PIN form. Returns
+// { ok, pin, mode, code } with mode ∈ 'word'|'numeric'|null and
+// code ∈ 'ok'|'empty'|'mixed'|'unsupported'|'length_word'|'length_numeric'.
+// `pin` is populated even when the length is still invalid, so the live preview can update
+// on every keystroke; it is empty for mixed/unsupported input.
+export function resolvePinInput(text) {
+  const raw = text == null ? '' : String(text);
+  let letters = 0, digits = 0, out = '';
+  for (const ch of raw) {
+    if (PIN_SEPARATOR.test(ch)) continue;
+    if (ch >= '0' && ch <= '9') { digits++; out += ch; continue; }
+    if (ASCII_LETTER.test(ch)) { letters++; out += T9_LOOKUP[ch.toUpperCase()]; continue; }
+    return { ok: false, pin: '', mode: null, code: 'unsupported' };  // accents included
   }
-  const v = validateAdminPin(r.pin);
-  if (!v.ok) return { ok: false, pin: '', code: 'policy' };
-  return { ok: true, pin: r.pin, code: 'ok' };
+  if (letters > 0 && digits > 0) return { ok: false, pin: '', mode: null, code: 'mixed' };
+  if (out.length === 0) return { ok: false, pin: '', mode: null, code: 'empty' };
+  const mode = letters > 0 ? 'word' : 'numeric';
+  if (out.length < ADMIN_PIN_MIN || out.length > ADMIN_PIN_MAX) {
+    return { ok: false, pin: out, mode, code: mode === 'word' ? 'length_word' : 'length_numeric' };
+  }
+  return { ok: true, pin: out, mode, code: 'ok' };
 }
 
-// Map any word-mode failure code to its precise Spanish message.
-export function wordPinMessage(code) {
-  if (code === 'unsupported') return WORD_PIN_UNSUPPORTED_MESSAGE;
-  if (code === 'length' || code === 'empty') return WORD_PIN_LENGTH_MESSAGE;
-  return ADMIN_PIN_POLICY_MESSAGE;
+export const PIN_MIXED_MESSAGE = 'Introduce solo letras o solo números, sin mezclarlos.';
+export const PIN_NUMERIC_LENGTH_MESSAGE =
+  `El PIN debe tener entre ${ADMIN_PIN_MIN} y ${ADMIN_PIN_MAX} dígitos.`;
+export const PIN_WORD_LENGTH_MESSAGE =
+  `La palabra debe generar un PIN de entre ${ADMIN_PIN_MIN} y ${ADMIN_PIN_MAX} dígitos.`;
+export const PIN_UNSUPPORTED_CHAR_MESSAGE = 'Este carácter no es compatible.';
+export const PIN_MISMATCH_MESSAGE = 'Los PIN no coinciden.';
+export const PIN_MATCH_LABEL = 'Los PIN coinciden';
+export const PIN_MISMATCH_LABEL = 'Los PIN no coinciden';
+
+export function pinInputMessage(code) {
+  if (code === 'mixed') return PIN_MIXED_MESSAGE;
+  if (code === 'unsupported') return PIN_UNSUPPORTED_CHAR_MESSAGE;
+  if (code === 'length_word') return PIN_WORD_LENGTH_MESSAGE;
+  return PIN_NUMERIC_LENGTH_MESSAGE;   // length_numeric + empty
 }
+
+// Spanish help shown behind the information control next to the field label.
+export const PIN_HELP_TEXT =
+  'Puedes escribir directamente un PIN numérico o utilizar una palabra fácil de recordar. ' +
+  'Las letras se convierten en números como en un teclado telefónico: ABC = 2, DEF = 3, ' +
+  'GHI = 4, JKL = 5, MNO = 6, PQRS = 7, TUV = 8 y WXYZ = 9. El acceso operativo siempre se ' +
+  'realiza con el PIN numérico generado.';
