@@ -27,6 +27,12 @@ export {
   ADMIN_PIN_POLICY_MESSAGE,
   ADMIN_PIN_MISMATCH_MESSAGE,
   validateAdminPin,
+  T9_MAP,
+  wordToPin,
+  validateWordPin,
+  wordPinMessage,
+  WORD_PIN_LENGTH_MESSAGE,
+  WORD_PIN_UNSUPPORTED_MESSAGE,
 } from './accountHelpers';
 
 // ── Supabase Auth actions ────────────────────────────────────────────────────

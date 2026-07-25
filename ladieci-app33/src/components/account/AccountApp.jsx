@@ -3,7 +3,7 @@
 // Crear cuenta / ¿Olvidaste tu contraseña?, plus email-confirmation and
 // password-recovery landings. Rendered by index.js ONLY for the /cuenta route or
 // a Supabase auth-callback landing at root — the operator PIN app is never touched.
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   PASSWORD_MIN,
   PASSWORD_POLICY_MESSAGE,
@@ -25,6 +25,8 @@ import {
   ADMIN_PIN_POLICY_MESSAGE,
   ADMIN_PIN_MISMATCH_MESSAGE,
   validateAdminPin,
+  validateWordPin,
+  wordPinMessage,
 } from '../../account/accountApi';
 import { getAccountClient } from '../../account/supabaseAccountClient';
 
@@ -479,16 +481,53 @@ function ClaimWorkspaceBlock({ onClaimed }) {
   );
 }
 
+// On-screen numeric keypad. Large touch targets for phone/tablet; every key is a real
+// <button> (focusable, Enter/Space activatable) with an explicit Spanish accessible name.
+// The form never depends on the device keyboard alone, though physical typing still works
+// through the masked input above it.
+export function PinKeypad({ onDigit, onBackspace, onClear, disabled }) {
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+  return (
+    <div className="ld-acc-keypad" role="group" aria-label="Teclado numérico">
+      {keys.map((k) => (
+        <button key={k} type="button" className="ld-acc-key" disabled={disabled}
+          aria-label={k} onClick={() => onDigit(k)}>{k}</button>
+      ))}
+      <button type="button" className="ld-acc-key ld-acc-key-alt" disabled={disabled}
+        aria-label="Borrar" onClick={onBackspace}>⌫</button>
+      <button type="button" className="ld-acc-key" disabled={disabled}
+        aria-label="0" onClick={() => onDigit('0')}>0</button>
+      <button type="button" className="ld-acc-key ld-acc-key-alt" disabled={disabled}
+        aria-label="Limpiar" onClick={onClear}>C</button>
+    </div>
+  );
+}
+
 // Admin-PIN onboarding. Rendered only after the server (via /api/account/me) says setup is
 // required for the owner workspace. The PIN is chosen here by the user, sent once, hashed
 // server-side; it is never stored, prefilled, logged or recoverable in plaintext.
+//
+// Two ways to enter the SAME numeric PIN:
+//   * keypad  — on-screen digits with a separate confirmation step;
+//   * word    — a memorable word converted LOCALLY via the T9 phone mapping.
+// The word is only a local memory aid: it never reaches the backend, never goes into
+// storage/URL/history/logs, and is wiped from state on success and on unmount.
 export function AdminPinView({ setView }) {
   const [state, setState] = useState({ loading: true });
+  const [mode, setMode] = useState('keypad');   // 'keypad' | 'word'
+  const [step, setStep] = useState('pin');      // keypad: 'pin' | 'confirm'
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
+  const [word, setWord] = useState('');
+  const [show, setShow] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+
+  // Belt-and-braces wipe of the memory aid when the form goes away.
+  const wordRef = useRef('');
+  wordRef.current = word;
+  useEffect(() => () => { wordRef.current = ''; }, []);
 
   const load = useCallback(async () => {
     setState({ loading: true });
@@ -538,26 +577,57 @@ export function AdminPinView({ setView }) {
     );
   }
 
-  const submit = async (e) => {
-    e.preventDefault();
-    if (busy) return; // double-submit guard
-    setErr('');
-    const v = validateAdminPin(pin, pin2);
-    if (!v.ok) { setErr(v.code === 'mismatch' ? ADMIN_PIN_MISMATCH_MESSAGE : ADMIN_PIN_POLICY_MESSAGE); return; }
+  // Send ONLY the numeric PIN. The memorable word is never part of the payload.
+  const sendPin = async (numericPin) => {
     setBusy(true);
-    const r = await setAdminPin(workspaceId, pin);
+    const r = await setAdminPin(workspaceId, numericPin);
     setBusy(false);
     if (r.ok && r.body && r.body.ok) {
-      // Never keep the entered values around.
-      setPin(''); setPin2(''); setDone(true);
+      // Never keep the entered values — or the memory aid — around.
+      setPin(''); setPin2(''); setWord(''); wordRef.current = ''; setShow(false); setDone(true);
       return;
     }
     // Neutral error — never reveals policy vs ownership vs actor existence.
     setErr('No se pudo guardar el PIN. Revisa que cumpla la política e inténtalo de nuevo.');
   };
 
-  return (
-    <form onSubmit={submit} noValidate>
+  const onlyDigits = (s) => String(s || '').replace(/\D/g, '').slice(0, ADMIN_PIN_MAX);
+  const current = step === 'pin' ? pin : pin2;
+  const setCurrent = step === 'pin' ? setPin : setPin2;
+
+  const keypadSubmit = async (e) => {
+    e.preventDefault();
+    if (busy) return;                      // double-submit guard
+    setErr('');
+    if (step === 'pin') {
+      const v = validateAdminPin(pin);
+      if (!v.ok) { setErr(ADMIN_PIN_POLICY_MESSAGE); return; }
+      setStep('confirm'); setShow(false);
+      return;
+    }
+    const v = validateAdminPin(pin, pin2);
+    if (!v.ok) { setErr(v.code === 'mismatch' ? ADMIN_PIN_MISMATCH_MESSAGE : ADMIN_PIN_POLICY_MESSAGE); return; }
+    await sendPin(pin);
+  };
+
+  const wordResult = validateWordPin(word);
+  const wordSubmit = async (e) => {
+    e.preventDefault();
+    if (busy) return;                      // double-submit guard
+    setErr('');
+    if (!wordResult.ok) { setErr(wordPinMessage(wordResult.code)); return; }
+    await sendPin(wordResult.pin);         // numeric PIN only
+  };
+
+  const switchMode = (m) => {
+    setErr(''); setShow(false);
+    setPin(''); setPin2(''); setStep('pin');
+    setWord(''); wordRef.current = '';     // the aid never survives a mode switch
+    setMode(m);
+  };
+
+  const Intro = (
+    <>
       <h1 className="ld-acc-h1">Crear PIN de administrador</h1>
       <p className="ld-acc-sub">
         Tu <strong>cuenta</strong> identifica al propietario. El <strong>PIN</strong> se usa para el
@@ -567,13 +637,80 @@ export function AdminPinView({ setView }) {
         El PIN nunca se envía por correo ni se puede recuperar en texto. Si lo olvidas, podrás
         crear uno nuevo desde tu cuenta de propietario verificada.
       </p>
-      <PasswordField id="ap-pin" label="PIN" value={pin} autoComplete="off"
-        inputMode="numeric" pattern="[0-9]*" onChange={(e) => setPin(e.target.value)} />
-      <PasswordField id="ap-pin2" label="Confirmar PIN" value={pin2} autoComplete="off"
-        inputMode="numeric" pattern="[0-9]*" onChange={(e) => setPin2(e.target.value)} />
-      <p className="ld-acc-policy">Entre {ADMIN_PIN_MIN} y {ADMIN_PIN_MAX} dígitos.</p>
+      <div className="ld-acc-tabs" role="group" aria-label="Modo de entrada del PIN">
+        <button type="button" aria-pressed={mode === 'keypad'}
+          className={'ld-acc-tab' + (mode === 'keypad' ? ' active' : '')}
+          onClick={() => switchMode('keypad')}>Teclado numérico</button>
+        <button type="button" aria-pressed={mode === 'word'}
+          className={'ld-acc-tab' + (mode === 'word' ? ' active' : '')}
+          onClick={() => switchMode('word')}>Generar PIN a partir de una palabra</button>
+      </div>
+    </>
+  );
+
+  if (mode === 'word') {
+    return (
+      <form onSubmit={wordSubmit} noValidate>
+        {Intro}
+        <p className="ld-acc-policy">
+          Escribe una palabra fácil de recordar: se convierte en números como en el teclado del
+          teléfono (ABC→2, DEF→3, GHI→4, JKL→5, MNO→6, PQRS→7, TUV→8, WXYZ→9). La palabra
+          <strong> no se envía ni se guarda</strong>: solo es una ayuda para recordar el PIN.
+        </p>
+        <div className="ld-acc-label">
+          <label htmlFor="ap-word">Palabra</label>
+          <span className="ld-acc-pwwrap">
+            <input id="ap-word" className="ld-acc-input ld-acc-input-pw"
+              type={show ? 'text' : 'password'} autoComplete="off" spellCheck="false"
+              value={word} onChange={(e) => { setErr(''); setWord(e.target.value); }} />
+            <button type="button" className="ld-acc-eye" aria-pressed={show}
+              onClick={() => setShow((s) => !s)}>{show ? 'Ocultar' : 'Mostrar'}</button>
+          </span>
+        </div>
+        <p className="ld-acc-policy" data-testid="word-pin-preview">
+          PIN generado: <strong>{wordResult.ok ? (show ? wordResult.pin : '•'.repeat(wordResult.pin.length)) : '—'}</strong>
+          {wordResult.ok ? ` (${wordResult.pin.length} dígitos)` : ''}
+        </p>
+        {err && <p className="ld-acc-err">{err}</p>}
+        <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Guardar PIN'}</button>
+        <button className="ld-acc-linkbtn" type="button" onClick={() => setView('account')}>Atrás</button>
+      </form>
+    );
+  }
+
+  return (
+    <form onSubmit={keypadSubmit} noValidate>
+      {Intro}
+      <div className="ld-acc-label">
+        <label htmlFor="ap-pin">{step === 'pin' ? 'PIN' : 'Confirmar PIN'}</label>
+        <span className="ld-acc-pwwrap">
+          <input id="ap-pin" className="ld-acc-input ld-acc-input-pw"
+            type={show ? 'text' : 'password'} inputMode="numeric" pattern="[0-9]*"
+            autoComplete="off" value={current}
+            onChange={(e) => { setErr(''); setCurrent(onlyDigits(e.target.value)); }} />
+          <button type="button" className="ld-acc-eye" aria-pressed={show}
+            onClick={() => setShow((s) => !s)}>{show ? 'Ocultar' : 'Mostrar'}</button>
+        </span>
+      </div>
+      <p className="ld-acc-policy" data-testid="pin-length">
+        {current.length} dígitos · entre {ADMIN_PIN_MIN} y {ADMIN_PIN_MAX}
+      </p>
+      <PinKeypad
+        disabled={busy}
+        onDigit={(d) => { setErr(''); setCurrent(onlyDigits(current + d)); }}
+        onBackspace={() => { setErr(''); setCurrent(current.slice(0, -1)); }}
+        onClear={() => { setErr(''); setCurrent(''); }}
+      />
       {err && <p className="ld-acc-err">{err}</p>}
-      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Guardar PIN'}</button>
+      <button className="ld-acc-btn" type="submit" disabled={busy}>
+        {busy ? 'Espera…' : (step === 'pin' ? 'Continuar' : 'Guardar PIN')}
+      </button>
+      {step === 'confirm' && (
+        <button className="ld-acc-linkbtn" type="button"
+          onClick={() => { setErr(''); setPin2(''); setShow(false); setStep('pin'); }}>
+          Volver al paso anterior
+        </button>
+      )}
       <button className="ld-acc-linkbtn" type="button" onClick={() => setView('account')}>Atrás</button>
     </form>
   );
@@ -606,6 +743,19 @@ function StyleTag() {
       .ld-acc-note{font-size:12px;color:#8b93a7;margin:18px 0 0;line-height:1.5;border-top:1px solid #262b36;padding-top:14px;}
       .ld-acc-link,.ld-acc-note a{color:#8fa4ff;text-decoration:none;}
       .ld-acc-cta{margin:8px 0 6px;padding:14px 0 4px;border-top:1px solid #262b36;}
+      .ld-acc-tabs{display:flex;gap:8px;margin:6px 0 16px;flex-wrap:wrap;}
+      .ld-acc-tab{flex:1 1 140px;padding:9px 10px;border-radius:9px;border:1px solid #2c3240;
+        background:#171a21;color:#c3c9d6;font-size:13px;cursor:pointer;line-height:1.25;}
+      .ld-acc-tab.active{background:#232838;color:#e8eaed;border-color:#4f7cff;}
+      .ld-acc-tab:focus-visible{outline:2px solid #4f7cff;outline-offset:1px;}
+      .ld-acc-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:4px 0 14px;}
+      .ld-acc-key{padding:16px 0;font-size:22px;font-weight:600;border-radius:11px;
+        border:1px solid #2c3240;background:#232838;color:#e8eaed;cursor:pointer;
+        min-height:56px;-webkit-tap-highlight-color:transparent;}
+      .ld-acc-key:active{background:#2c3446;}
+      .ld-acc-key:disabled{opacity:.5;cursor:default;}
+      .ld-acc-key:focus-visible{outline:2px solid #4f7cff;outline-offset:1px;}
+      .ld-acc-key-alt{font-size:18px;background:#1b1f28;color:#a7adbb;}
       .ld-acc-list{list-style:none;padding:0;margin:6px 0 16px;}
       .ld-acc-list li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #21262f;font-size:14px;}
       .ld-acc-k{color:#a7adbb;}

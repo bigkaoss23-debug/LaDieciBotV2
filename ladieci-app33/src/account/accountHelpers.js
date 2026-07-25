@@ -149,3 +149,64 @@ export function validateAdminPin(pin, pin2) {
   if (pin2 !== undefined && s !== String(pin2 == null ? '' : pin2)) return { ok: false, code: 'mismatch' };
   return { ok: true, code: 'ok' };
 }
+
+// ── T9 "memorable word" → numeric PIN (LOCAL memory aid only) ────────────────
+// Standard telephone keypad mapping. The word is a local aid to remember the digits:
+// it is NEVER sent to the backend, never stored (no localStorage/sessionStorage/DB),
+// never logged and never placed in a URL. Only the numeric PIN reaches the API.
+// Spanish-friendly: diacritics are normalised first (á→a→2, ñ→n→6), so accented input
+// still maps one letter → exactly one digit.
+export const T9_MAP = Object.freeze({
+  2: 'ABC', 3: 'DEF', 4: 'GHI', 5: 'JKL', 6: 'MNO', 7: 'PQRS', 8: 'TUV', 9: 'WXYZ',
+});
+
+const T9_LOOKUP = (() => {
+  const t = {};
+  Object.keys(T9_MAP).forEach((d) => { for (const ch of T9_MAP[d]) t[ch] = d; });
+  return t;
+})();
+
+// Separators a human naturally types; ignored rather than rejected.
+const T9_SEPARATORS = /[\s\-_.'’,]/;
+
+// Convert a word/phrase to digits. Returns { ok, pin, code } with
+// code ∈ 'ok' | 'unsupported' | 'empty'. Pure — no I/O, no storage, no logging.
+export function wordToPin(word) {
+  const raw = word == null ? '' : String(word);
+  // Strip diacritics so Spanish words map naturally (NFD + combining-mark removal).
+  const norm = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  let out = '';
+  for (const ch of norm) {
+    if (T9_SEPARATORS.test(ch)) continue;      // ignored
+    if (ch >= '0' && ch <= '9') { out += ch; continue; } // already a digit
+    const d = T9_LOOKUP[ch.toUpperCase()];
+    if (!d) return { ok: false, code: 'unsupported', pin: '' };
+    out += d;
+  }
+  if (out.length === 0) return { ok: false, code: 'empty', pin: '' };
+  return { ok: true, code: 'ok', pin: out };
+}
+
+export const WORD_PIN_LENGTH_MESSAGE =
+  `La palabra debe generar un PIN de entre ${ADMIN_PIN_MIN} y ${ADMIN_PIN_MAX} dígitos.`;
+export const WORD_PIN_UNSUPPORTED_MESSAGE = 'Esta palabra contiene caracteres no compatibles.';
+
+// Full word→PIN validation against the SAME admin policy the backend enforces.
+// Returns { ok, pin, code } with code ∈ 'ok' | 'unsupported' | 'empty' | 'length' | 'policy'.
+export function validateWordPin(word) {
+  const r = wordToPin(word);
+  if (!r.ok) return { ok: false, pin: '', code: r.code };
+  if (r.pin.length < ADMIN_PIN_MIN || r.pin.length > ADMIN_PIN_MAX) {
+    return { ok: false, pin: '', code: 'length' };
+  }
+  const v = validateAdminPin(r.pin);
+  if (!v.ok) return { ok: false, pin: '', code: 'policy' };
+  return { ok: true, pin: r.pin, code: 'ok' };
+}
+
+// Map any word-mode failure code to its precise Spanish message.
+export function wordPinMessage(code) {
+  if (code === 'unsupported') return WORD_PIN_UNSUPPORTED_MESSAGE;
+  if (code === 'length' || code === 'empty') return WORD_PIN_LENGTH_MESSAGE;
+  return ADMIN_PIN_POLICY_MESSAGE;
+}
