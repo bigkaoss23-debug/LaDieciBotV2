@@ -117,7 +117,10 @@ describe('6-8. proxy forwards, never authorizes', () => {
 
 describe('9-10. stale/inactive responses clear only operational state', () => {
   test('a 401 clears operational state and never the account session', () => {
-    expect(API).toMatch(/res\.status === 401.*auth\.clear\(\)/s);
+    // S2-7D3: 401/403 now routes through THE canonical operational logout (which clears the
+    // token AND tears down realtime/polling) instead of only dropping the token inline.
+    expect(API).toMatch(/res\.status === 401 \|\| res\.status === 403.*onOperationalUnauthorized\(\)/s);
+    expect(API).toMatch(/function onOperationalUnauthorized[\s\S]*auth\.clear\(\)/);
     // clear() touches only ld_* operational keys
     const clearBody = API.slice(API.indexOf('clear() {'), API.indexOf('async login('));
     expect(clearBody).toMatch(/ld_token/);

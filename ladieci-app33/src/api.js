@@ -188,6 +188,15 @@ const auth = {
   }
 };
 
+// S2-7D3: an Auth V2 rejection (expired / malformed / stale session_version / inactive
+// actor) must reach THE one operational-logout path, not just drop the token locally. The
+// app listens for this event and runs the canonical logout: realtime + polling torn down,
+// operational state cleared, back to the PIN screen — personal account session untouched.
+function onOperationalUnauthorized() {
+  try { auth.clear(); } catch (e) {}
+  try { window.dispatchEvent(new Event("ld-operational-unauthorized")); } catch (e) {}
+}
+
 // ═══ PROXY HELPERS — Railway via Netlify Function con JWT ═══
 function proxyHeaders() {
   return {
@@ -202,7 +211,7 @@ async function proxyGet(action, params) {
     const qs = Object.entries(Object.assign({action}, p))
       .map(function(e){ return e[0]+'='+encodeURIComponent(e[1]); }).join('&');
     const res = await fetch(PROXY_URL+'?'+qs, { cache: "no-store", headers: proxyHeaders() });
-    if (res.status === 401) { auth.clear(); return { error: "sesión expirada" }; }
+    if (res.status === 401 || res.status === 403) { onOperationalUnauthorized(); return { error: "sesión expirada" }; }
     return await res.json();
   } catch(err) { console.error('API GET error:', err); return { error: err.toString() }; }
 }
@@ -212,7 +221,7 @@ async function proxyPost(body) {
     const res = await fetch(PROXY_URL, {
       method: 'POST', headers: proxyHeaders(), body: JSON.stringify(body)
     });
-    if (res.status === 401) { auth.clear(); return { error: "sesión expirada", _status: 401 }; }
+    if (res.status === 401 || res.status === 403) { onOperationalUnauthorized(); return { error: "sesión expirada", _status: 401 }; }
     // Annota _status e _ok per i chiamanti che vogliono distinguere errori HTTP
     // dai successi. Manteniamo il body originale per backwards compat.
     let json;

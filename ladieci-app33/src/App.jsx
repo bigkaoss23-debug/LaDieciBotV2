@@ -16,15 +16,20 @@ import ShadowPreviewPanel from './components/ShadowPreviewPanel';
 import PremiumProposalsLabPanel from './components/PremiumProposalsLabPanel';
 import { DevHeartbeatSender } from './components/DevPresence';
 import OpsHealthBadge from './components/OpsHealthBadge';
+import OperationalMenu from './components/OperationalMenu';
+import { operationalLogout, registerOperationalTeardown } from './operationalSession';
 
-export default function App() {
+export default function App({ skipSplash = false } = {}) {
   // ─── Deep link via URL path (affidabile su tutti i device/iOS/Safari) ──────
   // Link: /repartidor | /servizio | /econbot
   // Netlify _redirects: /* /index.html 200  →  pathname rimane intatto
+  //
+  // S2-7D3: quando il boot gate (index.js) ha già mostrato la splash e completato
+  // l'inizializzazione, App parte OLTRE la splash — una sola splash, mai due.
   const [screen,setScreen] = useState(() => {
     const path = window.location.pathname.replace(/^\//, '').toLowerCase();
     if (path === 'repartidor') return 'repartidor';
-    return 'splash'; // tutti gli altri path (inclusi /servizio e /econbot) vedono la splash
+    return skipSplash ? 'booting' : 'splash';
   });
   // true se la sessione è iniziata sul link /repartidor — il back button non deve mai
   // mostrare la Home (il delivery non ha accesso al pannello operatore)
@@ -45,6 +50,7 @@ export default function App() {
 
   // Deep link: azione da eseguire DOPO la splash (PIN o navigazione diretta)
   const postSplashAction = useRef(() => setScreen("home"));
+
   useEffect(() => {
     const path = window.location.pathname.replace(/^\//, '').toLowerCase();
     if (!path || path === 'repartidor') return;
@@ -66,6 +72,14 @@ export default function App() {
     }
   }, []);
 
+  // S2-7D3: la splash è già stata mostrata dal boot gate, e il deep link qui sopra ha già
+  // scelto la destinazione → esegui subito l'azione post-splash senza una seconda animazione.
+  // Dichiarato DOPO l'effect del deep link: gli effect girano in ordine di dichiarazione.
+  useEffect(() => {
+    if (screen !== 'booting') return;
+    postSplashAction.current();
+  }, [screen]);
+
   const withPin = (action) => {
     if (pinUnlocked && auth.isAuthenticated()) { action(); return; }
     setPendingAction(() => action);
@@ -81,6 +95,46 @@ export default function App() {
   // also stop an old longer PIN from ever reaching the backend to be rejected.
   const PIN_LOGIN_MIN = 6;
   const PIN_LOGIN_MAX = 12;
+
+  // ── THE canonical operational logout (S2-7D3) ─────────────────────────────
+  // One path used by: the menu action, the 15-minute inactivity timeout, and every
+  // 401/403 from Auth V2. Clears ONLY operational state — realtime/polling teardown runs
+  // first, then the token and its presentation flags. The personal Supabase account
+  // session (ld-account-auth) is deliberately preserved.
+  const doOperationalLogout = useCallback(() => {
+    operationalLogout();
+    setPinUnlocked(false);
+    setShowPin(false);
+    setPendingAction(null);
+    setPinInput(""); setPinError(false);
+    setOrdenes([]); setWaMsgs([]);   // drop operational data from memory
+    setScreen(startedAtRepartidor.current ? "repartidor" : "home");
+  }, []);
+
+  // Auth V2 rejection (expired / malformed / stale session_version / inactive actor)
+  // funnels into the SAME logout path.
+  useEffect(() => {
+    const onUnauthorized = () => doOperationalLogout();
+    window.addEventListener("ld-operational-unauthorized", onUnauthorized);
+    return () => window.removeEventListener("ld-operational-unauthorized", onUnauthorized);
+  }, [doOperationalLogout]);
+
+  // 15-minute inactivity timeout on any authenticated operational surface.
+  useEffect(() => {
+    if (!pinUnlocked) return undefined;
+    let timer = null;
+    const reset = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(doOperationalLogout, 15 * 60 * 1000);
+    };
+    reset();
+    const events = ["pointerdown", "keydown", "visibilitychange"];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    return () => {
+      if (timer) clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [pinUnlocked, doOperationalLogout]);
 
   const handlePinKey = (k) => {
     if (pinLoading) return;
@@ -330,7 +384,17 @@ export default function App() {
     // Fallback polling ogni 5s — attivo solo se WebSocket non è connesso
     const fallbackPoll = setInterval(() => { if (mounted && !wsConnected) loadAll(); }, 5000);
 
+    // S2-7D3: il logout operativo canonico deve staccare realtime e polling PRIMA di
+    // buttare il token — altrimenti resterebbero socket e timer vivi dopo la disconnessione.
+    const unregister = registerOperationalTeardown(() => {
+      mounted = false;
+      if (ws) { try { ws.close(); } catch (_) {} }
+      if (heartbeat) clearInterval(heartbeat);
+      clearInterval(fallbackPoll);
+    });
+
     return () => {
+      unregister();
       mounted = false;
       if (ws) ws.close();
       if (heartbeat) clearInterval(heartbeat);
@@ -342,6 +406,7 @@ export default function App() {
       <style>{G}</style>
       <DevHeartbeatSender/>
       {screen !== "splash" && <OpsHealthBadge/>}
+      {screen !== "splash" && screen !== "booting" && <OperationalMenu onLogout={doOperationalLogout}/>}
       {screen==="splash"   && <Splash onDone={()=>{ postSplashAction.current(); }}/>}
       {screen==="home"     && <Home
           onServizio={()=>withPin(()=>setScreen("servicio"))}
