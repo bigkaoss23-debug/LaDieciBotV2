@@ -9,6 +9,20 @@
 // MENU items keep the legacy shape consumed by existing components:
 //   id (=legacyId, compat), databaseId, clave, num, n (fantasy), sub (classic),
 //   p, cat (category LABEL), e, ing (string), alg (string), flags, extrasPermitidos.
+// Per-product extras allowlist, tolerant of both backend lineages (see call site).
+// Returns stable legacy keys, de-duplicated, order preserved. Never throws.
+export function normalizeAllowedExtraKeys(product) {
+  if (!product) return [];
+  const out = [];
+  const push = (k) => {
+    const key = typeof k === "string" ? k : (k && typeof k.legacyKey === "string" ? k.legacyKey : null);
+    if (key && !out.includes(key)) out.push(key);
+  };
+  if (Array.isArray(product.extrasPermitidos)) product.extrasPermitidos.forEach(push);
+  else if (Array.isArray(product.extras)) product.extras.forEach(push);
+  return out;
+}
+
 export function toLegacyMenu(payload) {
   if (!payload || !Array.isArray(payload.productos) || !Array.isArray(payload.categorias)) {
     throw new Error("menuAdapter: invalid getMenu payload");
@@ -38,7 +52,14 @@ export function toLegacyMenu(payload) {
       disponible: p.disponible !== false,
       visiblePicker: p.visiblePicker !== false,
       visibleCocina: p.visibleCocina !== false,
-      extrasPermitidos: Array.isArray(p.extrasPermitidos) ? p.extrasPermitidos.slice() : [],
+      // S2-7D4D: the two backend lineages express the per-product extras allowlist
+      // differently. The historical adapter (ladieci-menu-staging) emits
+      // `extrasPermitidos: [legacyKey]`; the CURRENT staging backend emits
+      // `extras: [{legacyKey, ...}]`. Reading only the first shape against the live
+      // backend yields [] for every product, which makes canEditExtras() false
+      // everywhere — the dead-pencil bug, reintroduced through the payload rather than
+      // the policy. Accept BOTH shapes and normalise to stable keys.
+      extrasPermitidos: normalizeAllowedExtraKeys(p),
     };
   });
 

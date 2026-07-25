@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { C, tot, MAX_PIZZE_ORA, LOGO_RED_SRC, useWidth } from '../../constants';
 import { caricoTotale, lookupMenu, orarioToMs, calcTimer, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
+import { formatItemExtrasLabel, resolveItemNote } from '../../menu/itemDisplay';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import Suoni from '../../sounds';
@@ -352,7 +353,15 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                       const mi = lookupMenu(it);
                       const nomeCompleto = mi?.sub || "";
                       const nomeBreve    = it.n || "";
-                      const varSub       = it.sub || "";
+                      // S2-7D4D — operational separation. The old single `it.sub` badge
+                      // lumped supplements and the operator's free note into one orange
+                      // "⚠ +Kinder, cortar en 4" blob. These are different things for the
+                      // pizzaiolo, so they get separate rows: extras keep the orange chip
+                      // (no "+" prefix — position and colour already say "extra"), the
+                      // manual note gets its own red NOTA row.
+                      const extrasLabel  = formatItemExtrasLabel(it);
+                      const notaItem     = resolveItemNote(it);
+                      const hasVar       = !!(extrasLabel || notaItem);
                       const nomeIng      = mi?.ing || it.ing || "";
                       // COCINA_CARD_PIXEL_GRID: nome pizza reale dominante + tag menù a fianco.
                       const realName = nomeCompleto || nomeBreve;
@@ -388,16 +397,26 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                           </div>
                           {/* Ingredienti — piccoli grigi, normal-case */}
                           {nomeIng && (
-                            <div style={{fontFamily:SYS_FONT,color:"#777",fontSize:compact?10:12,fontWeight:500,lineHeight:1.5,marginBottom:varSub?6:0}}>
+                            <div style={{fontFamily:SYS_FONT,color:"#777",fontSize:compact?10:12,fontWeight:500,lineHeight:1.5,marginBottom:hasVar?6:0}}>
                               {nomeIng}
                             </div>
                           )}
-                          {/* 4. Variazione — IN FONDO, badge arancione */}
-                          {varSub && (
+                          {/* 4a. EXTRAS / supplementi — badge arancione, senza prefisso "+" */}
+                          {extrasLabel && (
                             <div style={{display:"inline-block",background:"#FF6B00",color:"#fff",
                               borderRadius:8,padding: compact?"3px 8px":"4px 12px",fontSize:compact?11:14,fontWeight:800,
-                              marginTop:4,letterSpacing:.2}}>
-                              ⚠ {varSub}
+                              marginTop:4,letterSpacing:.2,textTransform:"uppercase"}}>
+                              {extrasLabel}
+                            </div>
+                          )}
+                          {/* 4b. NOTA operatore — riga separata, outline rosso, wrap consentito.
+                              Stile deliberatamente diverso dagli extras: non è un supplemento. */}
+                          {notaItem && (
+                            <div style={{marginTop:5,background:"#FEE2E2",border:"2px solid #DC2626",
+                              borderRadius:8,padding:"6px 11px",color:"#991B1B",fontFamily:SYS_FONT,
+                              fontSize:compact?11:14,fontWeight:900,letterSpacing:.2,textTransform:"uppercase",
+                              whiteSpace:"normal",wordBreak:"break-word",lineHeight:1.25}}>
+                              📝 NOTA: {notaItem}
                             </div>
                           )}
                         </div>
@@ -422,17 +441,27 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                           const isSize = mi?.sub && /^[\d,.]+\s*(cl|ml|l)$/i.test(mi.sub.trim());
                           const nomeProdotto = mi?.n || it.n || "";
                           const sizeInfo = isSize ? ` ${mi.sub}` : "";
-                          const varSub = it.sub || "";
+                          // S2-7D4D — the note no longer REPLACES the product name. Previously
+                          // `it.sub ? it.sub : nome` meant a drink with any note rendered as the
+                          // note alone, hiding what to actually put in the bag.
+                          const notaItem = resolveItemNote(it);
                           return (
-                            <div key={i} style={{display:"flex",alignItems:"center",gap:8,
+                            <div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",
                               padding:"3px 0",borderTop:i>0?"1px dashed #F0B00066":"none"}}>
                               <span style={{background:"#F0B000",color:"#fff",borderRadius:6,
                                 padding:"2px 8px",fontFamily:"'DM Mono',monospace",
                                 fontWeight:900,fontSize:13,lineHeight:1,flexShrink:0}}>×{it.q}</span>
-                              <span style={{color:"#3A2A00",fontSize:13,fontWeight:800,flex:1,
+                              <span style={{color:"#3A2A00",fontSize:13,fontWeight:800,flex:1,minWidth:0,
                                 whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                                {varSub ? varSub : `${nomeProdotto}${sizeInfo}`}
+                                {`${nomeProdotto}${sizeInfo}`}
                               </span>
+                              {notaItem && (
+                                <span style={{background:"#FEE2E2",border:"2px solid #DC2626",borderRadius:7,
+                                  padding:"2px 8px",color:"#991B1B",fontFamily:SYS_FONT,fontSize:12,fontWeight:900,
+                                  textTransform:"uppercase",whiteSpace:"normal",wordBreak:"break-word",flexBasis:"100%"}}>
+                                  📝 NOTA: {notaItem}
+                                </span>
+                              )}
                             </div>
                           );
                         })}

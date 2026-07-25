@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
-import { C, MENU, CATS, INGREDIENTI, EXTRAS_DULCES, genId, pizzaLabel, esDulce, findExtra } from '../constants';
+import { C, EXTRAS_DULCES, genId, pizzaLabel, esDulce, findExtra } from '../constants';
+import { useMenuData } from '../menu/useMenuData';
+import { canEditExtras } from '../menu/extrasPolicy';
+import { extrasForProduct } from '../menu/menuAdapter';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 
 /**
@@ -23,6 +26,26 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
   // Quale pizza ha il pannello extras aperto (uid)
   const [extrasOpen, setExtrasOpen] = useState(null);
 
+  // S2-7D4D — catalogue SOURCE. useMenuData is a drop-in returning the same
+  // { MENU, CATS, INGREDIENTI } shape this component already used: with
+  // REACT_APP_DYNAMIC_MENU_FRONTEND_ENABLED absent/false it returns the static
+  // constants unchanged, so existing behaviour is preserved exactly.
+  // Declared here, above every consumer, so no helper below closes over a
+  // still-uninitialised binding.
+  const { MENU, CATS, INGREDIENTI, source: menuSource, emergency: menuEmergency } = useMenuData();
+
+  // Extra lookup that works in BOTH modes: dynamic extras come from the catalogue
+  // (INGREDIENTI above), static ones from constants (savoury + sweet).
+  const resolveExtra = (name) =>
+    (INGREDIENTI || []).find(g => g.n === name) || findExtra(name);
+
+  // Phase 3 diagnostic marker. Rendered ONLY when the dynamic flag is explicitly on,
+  // i.e. in the draft build — a normal published (flag-absent) build never shows it.
+  // States: dynamic | static | fallback (dynamic requested, catalogue load failed and
+  // the emergency static fallback was allowed).
+  const DIAG_ON = process.env.REACT_APP_DYNAMIC_MENU_FRONTEND_ENABLED === "true";
+  const menuMode = menuEmergency ? "fallback" : menuSource;
+
   // Reset quando si apre/chiude
   useEffect(() => {
     if (!visible) return;
@@ -33,7 +56,12 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
       const uid = itemEsistente._uid || genId();
       setCart({ [uid]: { ...itemEsistente, _uid: uid } });
       setCat(itemEsistente.cat || "Pizzas");
-      setExtrasOpen((itemEsistente.cat === "Pizzas" || esDulce(itemEsistente)) ? uid : null);
+      // S2-7D4D — same predicate as the pencil and the extras panel. Using the old
+      // inline `cat === "Pizzas" || esDulce(...)` here would re-open the exact
+      // divergence extrasPolicy was written to close: a dynamic product that legitimately
+      // accepts extras (extrasPermitidos) but sits in another category would never
+      // auto-open its panel in edit mode.
+      setExtrasOpen(canEditExtras(itemEsistente) ? uid : null);
     } else {
       setCart({});
       setCat("Pizzas");
@@ -47,7 +75,21 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
   // Ogni tap crea sempre una riga separata — mai merge
   const increment = (p) => {
     const uid = genId();
-    setCart(prev => ({ ...prev, [uid]: { ...p, q: 1, sub: "", _uid: uid } }));
+    // S2-7D4D — capture the catalogue identity that the working cart shape would
+    // otherwise destroy: `sub` holds the CLASSIC name on a catalogue product, but the
+    // cart reuses `sub` as the extras/note string, and `p` accumulates extra prices.
+    // Snapshotting both here is what lets the emitted item carry a truthful
+    // classicName / baseUnitPrice (see buildEmittedItem). Additive: no existing
+    // field changes meaning, in either catalogue mode.
+    setCart(prev => ({
+      ...prev,
+      [uid]: {
+        ...p, q: 1, sub: "", _uid: uid,
+        classicName: p.sub || "",
+        fantasyName: p.n || "",
+        baseUnitPrice: Number(p.p) || 0,
+      },
+    }));
   };
 
   // Decrementa — rimuove se arriva a 0
@@ -87,7 +129,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
 
   // Rimuove extra da una pizza nel carrello
   const removeExtra = (uid, ingName) => {
-    const ing = findExtra(ingName);
+    const ing = resolveExtra(ingName);
     setCart(prev => {
       if (!prev[uid]) return prev;
       const parts = (prev[uid].sub || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -141,17 +183,71 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
 
   // Item su cui è aperto il popup ingredienti extra (matita)
   const extrasTarget = extrasOpen ? cart[extrasOpen] : null;
-  // Pizza dolce → lista EXTRAS_DULCES; pizza salata → INGREDIENTI
+  // Extras offered for the open item.
+  //  - dynamic: exactly the catalogue allowlist for that product (product-extra
+  //    associations are enforced here, so a disallowed extra is never selectable);
+  //  - static : the accepted Auth V2 split (dessert pizza -> EXTRAS_DULCES).
   const extrasEsDulce = esDulce(extrasTarget);
-  const extrasList = extrasEsDulce ? EXTRAS_DULCES : INGREDIENTI;
+  const dynamicAllowed = extrasTarget && Array.isArray(extrasTarget.extrasPermitidos)
+    && extrasTarget.extrasPermitidos.length > 0;
+  const extrasList = dynamicAllowed
+    ? extrasForProduct(extrasTarget, INGREDIENTI)
+    : (extrasEsDulce ? EXTRAS_DULCES : INGREDIENTI);
+
+  // S2-7D4D — EMISSION BOUNDARY.
+  // The internal cart keeps its legacy working shape (`sub` = "+Extra, nota",
+  // `p` = unit price incl. extras) so every render path above is untouched. Here,
+  // and only here, that shape is ALSO expressed structurally, because `sub` alone
+  // is lossy: it cannot carry an extra's price/key, and it cannot distinguish a
+  // supplement from the operator's note.
+  //
+  // Emitted additively — `id/n/sub/p/q/cat/...` keep their exact current values and
+  // meaning, so a consumer that ignores the new fields behaves as before. What the
+  // new fields buy is a complete, immutable snapshot downstream.
+  //
+  // NB: `removedIngredients` is deliberately NOT synthesized. This picker has no
+  // "remove ingredient" control — a removal is typed into the free note today — and
+  // guessing one out of note text would invent data. It stays absent (backend
+  // defaults to []) until a real removal control exists.
+  const buildEmittedItem = (item) => {
+    const { extras: extraTokens, note } = splitSub(item.sub);
+    const counts = new Map();
+    extraTokens.forEach(t => {
+      const name = t.replace(/^\+/, "").trim();
+      if (name) counts.set(name, (counts.get(name) || 0) + 1);
+    });
+    const extras = [...counts.entries()].map(([name, quantity]) => {
+      const ing = resolveExtra(name);
+      return {
+        key: ing?.id ?? null,
+        name,
+        price: ing ? Number(ing.prezzo) || 0 : 0,
+        emoji: ing?.e ?? null,
+        quantity,
+      };
+    });
+    const extrasUnit = Math.round(extras.reduce((s, e) => s + e.price * e.quantity, 0) * 100) / 100;
+    return {
+      ...item,
+      classicName: item.classicName || descrizioneDi(item) || "",
+      fantasyName: item.fantasyName || item.n || "",
+      // Prefer the captured base; fall back to (final − extras) for an item loaded
+      // in edit mode, which never passed through increment().
+      baseUnitPrice: item.baseUnitPrice != null
+        ? item.baseUnitPrice
+        : Math.max(0, Math.round((Number(item.p) - extrasUnit) * 100) / 100),
+      extras,
+      notes: note || "",
+    };
+  };
 
   // Conferma
   const handleConfirm = () => {
     if (cartItems.length === 0) return;
     if (isModifica) {
-      onUpdate(cartItems[0]);
+      onUpdate(buildEmittedItem(cartItems[0]));
     } else {
-      cartItems.forEach(item => onAdd(item));
+      cartItems.forEach(item => onAdd(buildEmittedItem(item)));
     }
     onClose();
   };
@@ -215,6 +311,22 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
           borderBottom: `1px solid ${C.fumo}`,
           overflowX: "auto", flexShrink: 0
         }}>
+          {DIAG_ON && (
+            <span
+              data-testid="menu-source-marker"
+              title={"Catálogo: " + menuMode}
+              style={{
+                position: "absolute", top: 6, left: 8, zIndex: 5,
+                fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
+                padding: "2px 7px", borderRadius: 7,
+                background: menuMode === "dynamic" ? "rgba(34,197,94,0.18)" : "rgba(251,191,36,0.18)",
+                color: menuMode === "dynamic" ? "#22C55E" : "#fbbf24",
+                border: "1px solid currentColor", pointerEvents: "none",
+              }}
+            >
+              {String(menuMode).toUpperCase()}
+            </span>
+          )}
           {[...CATS, "⭐ Custom"].map(c => (
             <button key={c} onClick={() => handleCat(c)} style={{
               background: cat === c
@@ -241,7 +353,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                 gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
                 gap: 12
               }}>
-                {MENU.filter(m => m.cat === cat).map(p => {
+                {MENU.filter(m => m.cat === cat
+                  && m.disponible !== false && m.visiblePicker !== false).map(p => {
                   const qty = qtyOf(p.id);
                   const lbl = pizzaLabel(p);
                   return (
@@ -297,7 +410,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                         counts[name] = (counts[name] || 0) + 1;
                       });
                       return Object.entries(counts).map(([name, qty]) => {
-                        const ing = findExtra(name);
+                        const ing = resolveExtra(name);
                         return { name, qty, prezzo: ing ? Math.round(ing.prezzo * qty * 100) / 100 : 0, e: ing?.e || "➕" };
                       });
                     })();
@@ -466,7 +579,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
         )}
 
         {/* ── Popup extra (stile picker pizze) — aperto dalla matita. Salato (INGREDIENTI) o dolce (EXTRAS_DULCES) ── */}
-        {extrasTarget && (extrasTarget.cat === "Pizzas" || extrasEsDulce) && (
+        {extrasTarget && canEditExtras(extrasTarget) && (
           <div
             onClick={closeExtras}
             style={{

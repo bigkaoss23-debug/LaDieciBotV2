@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { C, MENU, CATS, tot, useWidth, INGREDIENTI, EXTRAS_DULCES, calcTotale, pizzaLabel, esDulce, findExtra } from '../constants';
+import { C, tot, useWidth, EXTRAS_DULCES, calcTotale, pizzaLabel, esDulce, findExtra } from '../constants';
+import { useMenuData } from '../menu/useMenuData';
+// NB: canEditExtras is deliberately NOT used here. This modal has never gated the
+// extras button by product type (it renders for every item), and introducing that gate
+// would be a behaviour change beyond this port's scope.
+import { extrasForProduct } from '../menu/menuAdapter';
 import Chip from './ui/Chip';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 import { ZONE_DELIVERY, zonaBadgeStyle } from '../zones';
@@ -16,6 +21,13 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
     }
     return [];
   };
+
+  // S2-7D4D — catalogue SOURCE (drop-in). Flag off -> the same static constants this
+  // modal already used, so editing existing orders is unchanged. Flag on -> Supabase
+  // catalogue for lookup, price and availability. Items ALREADY on the order keep their
+  // persisted snapshot values; the catalogue is only consulted for newly added products.
+  const { MENU, CATS, INGREDIENTI } = useMenuData();
+  const resolveExtra = (name) => (INGREDIENTI || []).find(g => g.n === name) || findExtra(name);
   const [items, setItems] = useState(()=>parseItems(orden.items));
   const [nota,  setNota]  = useState(String(orden.nota||""));
   const [hora,  setHora]  = useState(String(orden.hora||""));
@@ -133,7 +145,8 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
           <div style={{padding:10,overflowY:"auto",flex:1}}>
             {cat !== "⭐ Custom" ? (
               <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:8}}>
-                {MENU.filter(m=>m.cat===cat).map(p=>{
+                {MENU.filter(m=>m.cat===cat
+                  && m.disponible!==false && m.visiblePicker!==false).map(p=>{
                   const s = items.find(i=>String(i.id)===String(p.id));
                   const lbl = pizzaLabel(p);
                   return (
@@ -209,7 +222,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                       const counts={};
                       matches.forEach(m=>{const name=m.replace(/^\+/,"").trim();counts[name]=(counts[name]||0)+1;});
                       const extras=Object.entries(counts).map(([name,qty])=>{
-                        const ing=findExtra(name);
+                        const ing=resolveExtra(name);
                         return{name,qty,prezzo:ing?Math.round(ing.prezzo*qty*100)/100:0,e:ing?ing.e:"➕"};
                       });
                       if(!extras.length) return null;
@@ -223,7 +236,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                               <span style={{color:"#ccc",flex:1}}>{ex.e} {ex.qty}× {ex.name}</span>
                               <span style={{color:"#a855f7",fontWeight:700,fontFamily:"'DM Mono',monospace"}}>+{ex.prezzo.toFixed(2)}€</span>
                               <button onClick={()=>{
-                                const ing=findExtra(ex.name);
+                                const ing=resolveExtra(ex.name);
                                 setItems(prev=>prev.map((x,j)=>{
                                   if(j!==idx) return x;
                                   const parts=(x.sub||"").split(",").map(s=>s.trim()).filter(Boolean);
@@ -256,7 +269,10 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                       <div style={{marginTop:5,background:"rgba(14,14,14,0.95)",borderRadius:10,
                         border:"1px solid rgba(168,85,247,0.3)",padding:"8px",
                         display:"flex",flexWrap:"wrap",gap:5}}>
-                        {(esDulce(it)?EXTRAS_DULCES:INGREDIENTI).filter(ing=>ing.prezzo>0).map(ing=>(
+                        {(Array.isArray(it.extrasPermitidos) && it.extrasPermitidos.length>0
+                            ? extrasForProduct(it, INGREDIENTI)
+                            : (esDulce(it)?EXTRAS_DULCES:INGREDIENTI)
+                          ).filter(ing=>ing.prezzo>0).map(ing=>(
                           <button key={ing.id}
                             onClick={()=>{
                               setItems(prev=>prev.map((x,j)=>j===idx?{

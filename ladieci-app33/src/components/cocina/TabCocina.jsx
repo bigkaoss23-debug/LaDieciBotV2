@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react';
 import { C, tot, useWidth, MENU } from '../../constants';
 import { sb, api } from '../../api';
 import Suoni from '../../sounds';
-import { lookupMenu, orarioToMs, calcTimer, formatSub, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
+// NB: `formatSub` is deliberately no longer imported. It collapsed duplicate tokens but
+// kept the raw "+" prefix and could not tell a supplement from an operator note;
+// formatItemExtrasLabel supersedes it for the Cocina item rows (S2-7D4D).
+import { lookupMenu, orarioToMs, calcTimer, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
+import { formatItemExtrasLabel, resolveItemNote } from '../../menu/itemDisplay';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import SnoozeButton from '../ui/SnoozeButton';
@@ -347,7 +351,10 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                     const _isSize = mi?.sub && /^[\d,.]+\s*(cl|ml|l)$/i.test(mi.sub.trim());
                     const nomeSub = (_cat==="Bebidas"||_cat==="Postres"||_isSize) ? "" : (mi?.sub || "");
                     const sizeInfo = _isSize ? ` ${mi.sub}` : "";
-                    const varSub  = it.sub || "";
+                    // S2-7D4D — extras and the operator's manual note are separate concepts
+                    // and get separate rows (see PanelCocina for the same split).
+                    const extrasLabel = formatItemExtrasLabel(it);
+                    const notaItem    = resolveItemNote(it);
                     const nomeIng = mi?.ing || it.ing || "";
                     // COCINA_CARD_PIXEL_GRID: nome pizza reale dominante + tag menù a fianco.
                     const realName = nomeSub || it.n;
@@ -379,12 +386,21 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                               display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{realName}{sizeInfo}</span>
                           </div>
                         </div>
-                        {/* Variazione ingredienti cliente — evidenziata in arancione */}
-                        {varSub && (
+                        {/* EXTRAS / supplementi — badge arancione, senza prefisso "+" */}
+                        {extrasLabel && (
                           <div style={{display:"inline-block",background:"#FF6B00",color:"#fff",
                             borderRadius:8,padding:"4px 12px",fontSize:compact?12:15,fontWeight:800,
-                            marginBottom:5,letterSpacing:.2}}>
-                            ⚠ {formatSub(varSub)}
+                            marginBottom:5,letterSpacing:.2,textTransform:"uppercase"}}>
+                            {extrasLabel}
+                          </div>
+                        )}
+                        {/* NOTA operatore — riga separata, outline rosso, wrap consentito */}
+                        {notaItem && (
+                          <div style={{background:"#FEE2E2",border:"2px solid #DC2626",
+                            borderRadius:8,padding:"6px 11px",color:"#991B1B",fontFamily:SYS_FONT,
+                            fontSize:compact?12:15,fontWeight:900,letterSpacing:.2,textTransform:"uppercase",
+                            whiteSpace:"normal",wordBreak:"break-word",lineHeight:1.25,marginBottom:5}}>
+                            📝 NOTA: {notaItem}
                           </div>
                         )}
                         {/* Ingredienti — piccoli e grigi, normal-case */}
@@ -414,17 +430,25 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                         const isSize = mi?.sub && /^[\d,.]+\s*(cl|ml|l)$/i.test(mi.sub.trim());
                         const nomeProdotto = mi?.n || it.n || "";
                         const sizeInfo = isSize ? ` ${mi.sub}` : "";
-                        const varSub = it.sub || "";
+                        // S2-7D4D — the note no longer REPLACES the product name.
+                        const notaItem = resolveItemNote(it);
                         return (
-                          <div key={i} style={{display:"flex",alignItems:"center",gap:8,
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",
                             padding:"3px 0",borderTop:i>0?"1px dashed #F0B00066":"none"}}>
                             <span style={{background:"#F0B000",color:"#fff",borderRadius:6,
                               padding:"2px 8px",fontFamily:"'DM Mono',monospace",
                               fontWeight:900,fontSize:13,lineHeight:1,flexShrink:0}}>×{it.q}</span>
-                            <span style={{color:"#3A2A00",fontSize:13,fontWeight:800,flex:1,
+                            <span style={{color:"#3A2A00",fontSize:13,fontWeight:800,flex:1,minWidth:0,
                               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                              {varSub ? varSub : `${nomeProdotto}${sizeInfo}`}
+                              {`${nomeProdotto}${sizeInfo}`}
                             </span>
+                            {notaItem && (
+                              <span style={{background:"#FEE2E2",border:"2px solid #DC2626",borderRadius:7,
+                                padding:"2px 8px",color:"#991B1B",fontFamily:SYS_FONT,fontSize:12,fontWeight:900,
+                                textTransform:"uppercase",whiteSpace:"normal",wordBreak:"break-word",flexBasis:"100%"}}>
+                                📝 NOTA: {notaItem}
+                              </span>
+                            )}
                           </div>
                         );
                       })}
