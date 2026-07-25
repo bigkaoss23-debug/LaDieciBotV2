@@ -3,6 +3,7 @@ import { C, EXTRAS_DULCES, genId, pizzaLabel, esDulce, findExtra } from '../cons
 import { useMenuData } from '../menu/useMenuData';
 import { canEditExtras } from '../menu/extrasPolicy';
 import { extrasForProduct } from '../menu/menuAdapter';
+import { DRAFT_NO_PERSIST } from '../draftGuard';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 
 /**
@@ -45,6 +46,11 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
   // the emergency static fallback was allowed).
   const DIAG_ON = process.env.REACT_APP_DYNAMIC_MENU_FRONTEND_ENABLED === "true";
   const menuMode = menuEmergency ? "fallback" : menuSource;
+  // S2-7D4D-FIX1 — when the draft write lock is on, the marker must say so. The
+  // operator has to be able to tell, without asking, that nothing they do here
+  // will be saved. Both halves are build-time flags, so neither reaches a normal
+  // published build.
+  const draftLabel = String(menuMode).toUpperCase() + (DRAFT_NO_PERSIST ? " · SIN GUARDAR" : "");
 
   // Reset quando si apre/chiude
   useEffect(() => {
@@ -149,6 +155,40 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
     });
   };
 
+  // S2-7D4D-FIX1 — INGREDIENTI RIMOSSI.
+  // Prima di questo blocco una rimozione si scriveva a mano nella nota libera
+  // ("sin cebolla"), quindi cucina non poteva distinguere una rimozione da
+  // un'istruzione ("cortar en 4"). Ora è una selezione vera e vive in un campo
+  // suo, `removedIngredients`, separato sia dagli extra sia da `notes`.
+  //
+  // Fonte: `ingredientesBase` del catalogo (array strutturato). In modalità
+  // statica quel campo non esiste e si ripiega sullo split di `ing` — è una
+  // stima, ma sull'unica stringa disponibile, ed è confinata al ramo statico.
+  const baseIngredientsOf = (item) => {
+    if (!item) return [];
+    if (Array.isArray(item.ingredientesBase) && item.ingredientesBase.length) {
+      return item.ingredientesBase.map(s => String(s).trim()).filter(Boolean);
+    }
+    return String(item.ing || "").split(",").map(s => s.trim()).filter(Boolean);
+  };
+
+  const isRemoved = (item, ingName) =>
+    Array.isArray(item?.removedIngredients) && item.removedIngredients.includes(ingName);
+
+  // Toggle puro: non tocca né il prezzo né `sub`. Una rimozione non è uno sconto
+  // (regola commerciale corrente) e non deve mai finire fra gli extra.
+  const toggleRemoved = (uid, ingName) => {
+    setCart(prev => {
+      const it = prev[uid];
+      if (!it) return prev;
+      const cur = Array.isArray(it.removedIngredients) ? it.removedIngredients : [];
+      const next = cur.includes(ingName)
+        ? cur.filter(x => x !== ingName)
+        : [...cur, ingName];
+      return { ...prev, [uid]: { ...it, removedIngredients: next } };
+    });
+  };
+
   // Aggiorna nota libera
   const setNota = (uid, val) => {
     setCart(prev => prev[uid] ? { ...prev, [uid]: { ...prev[uid], sub: val } } : prev);
@@ -205,10 +245,11 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
   // meaning, so a consumer that ignores the new fields behaves as before. What the
   // new fields buy is a complete, immutable snapshot downstream.
   //
-  // NB: `removedIngredients` is deliberately NOT synthesized. This picker has no
-  // "remove ingredient" control — a removal is typed into the free note today — and
-  // guessing one out of note text would invent data. It stays absent (backend
-  // defaults to []) until a real removal control exists.
+  // S2-7D4D-FIX1 — `removedIngredients` is now emitted, because there is a real
+  // removal control (see "Quitar ingredientes"). It is copied VERBATIM from the
+  // explicit selection and is never derived from note text: a historical note
+  // reading "sin cebolla" stays a note, and is not retro-interpreted as a removal.
+  // That inference would silently rewrite the meaning of existing orders.
   const buildEmittedItem = (item) => {
     const { extras: extraTokens, note } = splitSub(item.sub);
     const counts = new Map();
@@ -238,6 +279,9 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
         : Math.max(0, Math.round((Number(item.p) - extrasUnit) * 100) / 100),
       extras,
       notes: note || "",
+      removedIngredients: Array.isArray(item.removedIngredients)
+        ? item.removedIngredients.slice()
+        : [],
     };
   };
 
@@ -314,17 +358,21 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
           {DIAG_ON && (
             <span
               data-testid="menu-source-marker"
-              title={"Catálogo: " + menuMode}
+              title={"Catálogo: " + menuMode + (DRAFT_NO_PERSIST ? " · draft sin persistencia" : "")}
               style={{
                 position: "absolute", top: 6, left: 8, zIndex: 5,
                 fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
                 padding: "2px 7px", borderRadius: 7,
-                background: menuMode === "dynamic" ? "rgba(34,197,94,0.18)" : "rgba(251,191,36,0.18)",
-                color: menuMode === "dynamic" ? "#22C55E" : "#fbbf24",
+                // The write lock dominates the colour: "we are not saving" matters
+                // more to the operator than which catalogue is in use.
+                background: DRAFT_NO_PERSIST ? "rgba(220,38,38,0.18)"
+                  : menuMode === "dynamic" ? "rgba(34,197,94,0.18)" : "rgba(251,191,36,0.18)",
+                color: DRAFT_NO_PERSIST ? "#F87171"
+                  : menuMode === "dynamic" ? "#22C55E" : "#fbbf24",
                 border: "1px solid currentColor", pointerEvents: "none",
               }}
             >
-              {String(menuMode).toUpperCase()}
+              {draftLabel}
             </span>
           )}
           {[...CATS, "⭐ Custom"].map(c => (
@@ -491,7 +539,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                           <input
                             value={notaLibera}
                             onChange={e => setNotaLibera(item._uid, e.target.value)}
-                            placeholder="Nota cocina (cortar en 4, sin cebolla...)"
+                            placeholder="Nota cocina (cortar en 4, poco hecha...)"
                             style={{
                               width: "100%", marginTop: 6,
                               background: "rgba(232,52,28,0.08)",
@@ -662,6 +710,52 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                 })}
               </div>
 
+              {/* ── QUITAR INGREDIENTES — S2-7D4D-FIX1 ──────────────────────
+                  Sezione distinta dagli extra (che AGGIUNGONO e costano) e dalla
+                  nota (testo libero). Stile volutamente diverso: barrato + grigio,
+                  nessun prezzo, così a colpo d'occhio non si confonde con un extra. */}
+              {(() => {
+                const base = baseIngredientsOf(extrasTarget);
+                if (!base.length) return null;
+                return (
+                  <div style={{
+                    padding: "9px 14px", borderTop: `1px solid ${C.fumo}`, flexShrink: 0,
+                    background: "rgba(255,255,255,0.02)", maxHeight: 132, overflowY: "auto"
+                  }}>
+                    <div style={{
+                      fontSize: 10, fontWeight: 900, letterSpacing: 1, color: C.grigio,
+                      textTransform: "uppercase", marginBottom: 7
+                    }}>
+                      Quitar ingredientes
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {base.map(ingName => {
+                        const off = isRemoved(extrasTarget, ingName);
+                        return (
+                          <button
+                            key={ingName}
+                            data-testid="remove-ingredient-chip"
+                            aria-pressed={off}
+                            onClick={() => toggleRemoved(extrasTarget._uid, ingName)}
+                            style={{
+                              background: off ? "rgba(220,38,38,0.16)" : C.carbone2,
+                              border: `1.5px solid ${off ? "#DC2626" : C.fumo}`,
+                              borderRadius: 999, padding: "5px 11px", cursor: "pointer",
+                              color: off ? "#F87171" : C.bianco,
+                              fontSize: 12, fontWeight: 700,
+                              textDecoration: off ? "line-through" : "none",
+                              opacity: off ? 0.95 : 0.8,
+                            }}
+                          >
+                            {off ? "✕ " : ""}{ingName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Footer: nota cucina (stesso campo/dato di item.sub, stesso salvataggio) + Listo */}
               <div style={{
                 padding: "10px 16px", borderTop: `1px solid ${C.fumo}`, flexShrink: 0,
@@ -673,7 +767,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                     <input
                       value={notaLibera}
                       onChange={e => setNotaLibera(extrasTarget._uid, e.target.value)}
-                      placeholder="Nota cocina (cortar en 4, sin cebolla...)"
+                      placeholder="Nota cocina (cortar en 4, poco hecha...)"
                       style={{
                         flex: 1, minWidth: 0,
                         background: "rgba(232,52,28,0.08)",

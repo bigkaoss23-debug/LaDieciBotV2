@@ -292,6 +292,51 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                         ))}
                       </div>
                     )}
+                    {/* ── S2-7D4D-FIX1 — INGREDIENTI RIMOSSI, riapribili e modificabili.
+                        Un ordine già salvato deve poter mostrare e cambiare le sue
+                        rimozioni, altrimenti sarebbero scrivibili una volta sola.
+                        Le rimozioni restano fuori da `sub` e non toccano il prezzo. */}
+                    {(() => {
+                      const base = Array.isArray(it.ingredientesBase) && it.ingredientesBase.length
+                        ? it.ingredientesBase
+                        : String(it.ing || "").split(",").map(s=>s.trim()).filter(Boolean);
+                      const removed = Array.isArray(it.removedIngredients) ? it.removedIngredients : [];
+                      // Un ordine storico può portare rimozioni per ingredienti non più
+                      // nel catalogo: vanno comunque mostrate, o sparirebbero in silenzio.
+                      const orphan = removed.filter(r => !base.includes(r));
+                      const all = [...base, ...orphan];
+                      if (!all.length) return null;
+                      const toggle = (name) => setItems(prev=>prev.map((x,j)=>{
+                        if (j!==idx) return x;
+                        const cur = Array.isArray(x.removedIngredients)?x.removedIngredients:[];
+                        return {...x, removedIngredients: cur.includes(name)
+                          ? cur.filter(v=>v!==name) : [...cur, name]};
+                      }));
+                      return (
+                        <div style={{marginTop:5}}>
+                          <div style={{fontSize:9,fontWeight:900,letterSpacing:.8,color:"#777",
+                            textTransform:"uppercase",marginBottom:4}}>Quitar ingredientes</div>
+                          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                            {all.map(name=>{
+                              const off = removed.includes(name);
+                              return (
+                                <button key={name}
+                                  data-testid="modifica-remove-chip"
+                                  aria-pressed={off}
+                                  onClick={()=>toggle(name)}
+                                  style={{background:off?"rgba(220,38,38,0.16)":"rgba(255,255,255,0.04)",
+                                    border:`1px solid ${off?"#DC2626":"#333"}`,borderRadius:999,
+                                    color:off?"#F87171":"#bbb",fontSize:11,fontWeight:700,
+                                    padding:"3px 9px",cursor:"pointer",
+                                    textDecoration:off?"line-through":"none"}}>
+                                  {off?"✕ ":""}{name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                   );
                 })}

@@ -11,6 +11,7 @@
 import { calcTotale } from "./constants";
 import { isDeleteConfirmed } from "./utils/deleteReconcile";
 import { BACKEND_BASE_URL } from "./utils/backendBase";
+import { isBlockedMutation, assertMutationAllowed, DraftWriteBlockedError } from "./draftGuard";
 
 const PROXY_URL = "/api/proxy";
 // S2-7D2 cutover: the operational keypad authenticates against the CANONICAL Auth V2 login,
@@ -85,6 +86,9 @@ const sb = {
   // upsert/update/insert/del esposti SOLO per casi non critici (geo_cache, ecc.).
   // Per ordini/conv/wa_msgs usare SEMPRE api.* che passa da Railway.
   async upsert(table, data, onConflict = null) {
+    // S2-7D4D-FIX1 — direct Supabase writes bypass the proxy entirely, so they
+    // need their own lock. Guarded BEFORE the fetch.
+    assertMutationAllowed(`sb.upsert(${table})`);
     // PostgREST richiede on_conflict=<col> quando il prefer è merge-duplicates,
     // altrimenti risponde 400. Per retrocompatibilità onConflict è opzionale, ma
     // chi lo omette deve sapere che è in realtà un INSERT puro.
@@ -96,6 +100,7 @@ const sb = {
     return res.json();
   },
   async update(table, query, data) {
+    assertMutationAllowed(`sb.update(${table})`);
     const res = await fetch(SUPABASE_URL+"/rest/v1/"+table+"?"+query, {
       method: "PATCH", headers: sbHeaders, body: JSON.stringify(data)
     });
@@ -104,12 +109,14 @@ const sb = {
     return res.json();
   },
   async insert(table, data) {
+    assertMutationAllowed(`sb.insert(${table})`);
     const res = await fetch(SUPABASE_URL+"/rest/v1/"+table, {
       method: "POST", headers: sbHeaders, body: JSON.stringify(data)
     });
     return res.json();
   },
   async del(table, query) {
+    assertMutationAllowed(`sb.del(${table})`);
     const res = await fetch(SUPABASE_URL+"/rest/v1/"+table+"?"+query, {
       method: "DELETE", headers: sbHeaders
     });
@@ -217,6 +224,14 @@ async function proxyGet(action, params) {
 }
 
 async function proxyPost(body) {
+  // S2-7D4D-FIX1 — draft write lock, BEFORE the network call. Read-only POST
+  // computations (preview*) are allowlisted in draftGuard so the planner keeps
+  // working. No effect unless REACT_APP_DRAFT_NO_PERSIST === "true".
+  if (isBlockedMutation((body && body.action) || "post")) {
+    const e = new DraftWriteBlockedError((body && body.action) || "post");
+    try { assertMutationAllowed((body && body.action) || "post"); } catch (x) { /* recorded */ }
+    return { error: e.message, draftBlocked: true, _status: 0, _ok: false };
+  }
   try {
     const res = await fetch(PROXY_URL, {
       method: 'POST', headers: proxyHeaders(), body: JSON.stringify(body)

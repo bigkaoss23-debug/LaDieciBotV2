@@ -47,6 +47,11 @@ export function toLegacyMenu(payload) {
       cat: cat ? cat.label : p.categoria,
       e: p.emoji,
       ing: Array.isArray(p.ingredientesBase) ? p.ingredientesBase.join(", ") : "",
+      // S2-7D4D-FIX1 — the STRUCTURED base ingredients, kept alongside the joined
+      // `ing` string every current view renders. The removal picker needs the real
+      // list: splitting `ing` back on "," would be guesswork the moment an
+      // ingredient name legitimately contains a comma.
+      ingredientesBase: Array.isArray(p.ingredientesBase) ? p.ingredientesBase.slice() : [],
       alg: Array.isArray(p.alergenos) ? p.alergenos.join(", ") : "",
       activo: p.activo !== false,
       disponible: p.disponible !== false,

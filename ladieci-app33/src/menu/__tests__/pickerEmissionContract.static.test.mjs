@@ -71,9 +71,38 @@ ck("baseUnitPrice ha un fallback per l'item aperto in modifica", () => {
   assert.ok(/Number\(item\.p\) - extrasUnit/.test(b), "altrimenti finale − extra");
 });
 
-ck("removedIngredients NON viene inventato (nessun controllo di rimozione nel picker)", () => {
+// S2-7D4D-FIX1 — esiste un controllo di rimozione vero, quindi il campo ORA si
+// emette. Resta vietato DEDURLO dal testo della nota.
+ck("removedIngredients viene emesso, copiato dalla selezione esplicita", () => {
   const b = /const buildEmittedItem[\s\S]*?\n  \};/.exec(codeOnly)[0];
-  assert.ok(!/removedIngredients:/.test(b), "assente per scelta: il backend applica []");
+  assert.ok(/removedIngredients: Array\.isArray\(item\.removedIngredients\)/.test(b),
+    "copiato dall'item, non sintetizzato");
+  assert.ok(/\.slice\(\)/.test(b), "copia difensiva");
+});
+
+ck("removedIngredients NON viene dedotto dalla nota", () => {
+  const b = /const buildEmittedItem[\s\S]*?\n  \};/.exec(codeOnly)[0];
+  // la nota non deve comparire nella derivazione delle rimozioni
+  assert.ok(!/removedIngredients:[^\n]*note/.test(b), "nessun legame con `note`");
+  assert.ok(!/sin\s/i.test(b), "nessun parsing di 'sin ...'");
+});
+
+ck("il picker offre una selezione di rimozione basata su ingredientesBase", () => {
+  assert.ok(/const baseIngredientsOf = \(item\) =>/.test(codeOnly), "sorgente ingredienti base");
+  assert.ok(/item\.ingredientesBase/.test(codeOnly), "usa il campo strutturato");
+  assert.ok(/const toggleRemoved = \(uid, ingName\) =>/.test(codeOnly), "toggle presente");
+  assert.ok(/data-testid="remove-ingredient-chip"/.test(codeOnly), "chip renderizzati");
+});
+
+ck("una rimozione non tocca prezzo né `sub`", () => {
+  const t = /const toggleRemoved[\s\S]*?\n  \};/.exec(codeOnly);
+  assert.ok(t, "corpo di toggleRemoved");
+  assert.ok(!/\bp:/.test(t[0]), "non modifica il prezzo");
+  assert.ok(!/\bsub:/.test(t[0]), "non modifica sub");
+});
+
+ck("il placeholder della nota non insegna più 'sin cebolla' come nota", () => {
+  assert.ok(!/sin cebolla/i.test(codeOnly), "esempio rimosso dal placeholder");
 });
 
 ck("l'emissione è ADDITIVA: i campi legacy non vengono riscritti", () => {
