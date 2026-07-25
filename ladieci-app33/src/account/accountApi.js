@@ -36,6 +36,8 @@ export {
   PIN_MATCH_LABEL,
   PIN_MISMATCH_LABEL,
   PIN_HELP_TEXT,
+  IDLE_TIMEOUT_MS,
+  shouldResumeSession,
 } from './accountHelpers';
 
 // ── Supabase Auth actions ────────────────────────────────────────────────────

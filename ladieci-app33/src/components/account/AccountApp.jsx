@@ -30,6 +30,9 @@ import {
   PIN_MATCH_LABEL,
   PIN_MISMATCH_LABEL,
   PIN_HELP_TEXT,
+  IDLE_TIMEOUT_MS,
+  shouldResumeSession,
+  accountGetSession,
 } from '../../account/accountApi';
 import { getAccountClient } from '../../account/supabaseAccountClient';
 
@@ -113,6 +116,44 @@ export default function AccountApp() {
   const init = useMemo(initialViewFromUrl, []);
   const [view, setView] = useState(init.view);
 
+  // ── resume an existing tab-scoped session ────────────────────────────────
+  // The token already lives in this tab's storage, so showing the login form again
+  // protected nothing and only forced a pointless re-login on every reload. Auth-callback
+  // landings (recovery / confirmed / link_error) keep their own view.
+  useEffect(() => {
+    if (init.view !== 'home') return undefined;
+    let alive = true;
+    (async () => {
+      let session = null;
+      try { session = await accountGetSession(); } catch (_) { session = null; }
+      if (alive && shouldResumeSession(init.view, !!session)) setView('account');
+    })();
+    return () => { alive = false; };
+  }, [init.view]);
+
+  // ── idle auto-logout (the real shared-device protection) ─────────────────
+  // While a signed-in surface is on screen, 15 minutes without interaction signs the
+  // account out. Listeners are passive and removed on unmount.
+  useEffect(() => {
+    if (!(view === 'account' || view === 'admin_pin')) return undefined;
+    let timer = null;
+    const signOutIdle = async () => {
+      try { await accountSignOut(); } catch (_) { /* best effort */ }
+      setView('idle_timeout');
+    };
+    const reset = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(signOutIdle, IDLE_TIMEOUT_MS);
+    };
+    reset();
+    const events = ['pointerdown', 'keydown', 'visibilitychange'];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    return () => {
+      if (timer) clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [view]);
+
   // Remove all auth query/hash params from the visible URL AFTER the callback is
   // processed. See supabaseAccountClient — detectSessionInUrl runs async and needs
   // the hash to establish the recovery/confirm session, so we strip only once the
@@ -150,6 +191,7 @@ export default function AccountApp() {
         {view === 'recovery' && <RecoveryView setView={setView} />}
         {view === 'confirmed' && <ConfirmedView setView={setView} />}
         {view === 'link_error' && <LinkErrorView setView={setView} />}
+        {view === 'idle_timeout' && <IdleTimeoutView setView={setView} />}
 
         <SeparationNote />
       </div>
@@ -697,6 +739,19 @@ export function AdminPinView({ setView }) {
       <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Guardar PIN'}</button>
       <button className="ld-acc-linkbtn" type="button" onClick={() => setView('account')}>Atrás</button>
     </form>
+  );
+}
+
+export function IdleTimeoutView({ setView }) {
+  return (
+    <div>
+      <h1 className="ld-acc-h1">Sesión cerrada</h1>
+      <p className="ld-acc-sub">
+        Hemos cerrado la sesión automáticamente tras 15 minutos sin actividad, para proteger
+        tu cuenta en un dispositivo compartido.
+      </p>
+      <button className="ld-acc-btn" onClick={() => setView('login')}>Iniciar sesión</button>
+    </div>
   );
 }
 

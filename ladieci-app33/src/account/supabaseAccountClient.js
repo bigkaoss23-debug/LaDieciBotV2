@@ -20,6 +20,30 @@ export const ACCOUNT_REDIRECT_URL =
 
 let _client = null;
 
+// TAB-SCOPED session storage. The account token lives in sessionStorage, NOT localStorage:
+// reloading the page keeps you signed in (no pointless re-login), but closing the tab or the
+// browser ends the session. On a shared pizzeria tablet that is the behaviour we want, and it
+// honours the project rule "MAI localStorage — app usata da più operatori sullo stesso
+// browser". Falls back to an in-memory store where sessionStorage is unavailable (SSR/tests)
+// so the client never throws and never silently downgrades to a persistent store.
+export function accountSessionStorage() {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      // probe: Safari private mode exposes the API but throws on write
+      const k = '__ld_probe__';
+      window.sessionStorage.setItem(k, '1');
+      window.sessionStorage.removeItem(k);
+      return window.sessionStorage;
+    }
+  } catch (_) { /* fall through to memory */ }
+  const mem = new Map();
+  return {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => { mem.set(k, String(v)); },
+    removeItem: (k) => { mem.delete(k); },
+  };
+}
+
 // Lazily construct a single account client. Constructed only inside the account
 // surface, so the operator app never instantiates it (and never runs URL session
 // detection).
@@ -33,6 +57,8 @@ export function getAccountClient() {
       flowType: 'implicit',
       // Distinct storage key: makes the separation from the PIN session explicit.
       storageKey: 'ld-account-auth',
+      // Tab-scoped (see above) — never localStorage.
+      storage: accountSessionStorage(),
     },
   });
   return _client;

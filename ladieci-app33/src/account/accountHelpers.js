@@ -231,3 +231,16 @@ export const PIN_HELP_TEXT =
   'de tu cuenta: no se envía por correo y no se puede recuperar en texto. Si no quieres ' +
   'memorizarlo, pulsa «Generar PIN seguro» y guárdalo en tu gestor de contraseñas o anótalo ' +
   'en un lugar seguro. Tu cuenta de propietario verificada puede cambiarlo cuando quieras.';
+
+// ── Session resume + idle auto-logout ───────────────────────────────────────
+// The account session is tab-scoped (see supabaseAccountClient). Resuming it on load is
+// safe — the token is already in the tab's storage, so forcing a fresh login only added
+// friction without protecting anything. The REAL protection on a shared device is this
+// idle timeout: after 15 minutes without interaction the account is signed out.
+export const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
+// A session may be resumed only on the plain entry point. An email-confirmation or
+// password-recovery landing has its own view and must never be overridden by the resume.
+export function shouldResumeSession(initialView, hasSession) {
+  return hasSession === true && initialView === 'home';
+}
