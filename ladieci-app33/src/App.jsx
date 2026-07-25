@@ -73,20 +73,26 @@ export default function App() {
     setShowPin(true);
   };
 
+  // S2-7D2 transition: the SHARED operational login must keep accepting the full
+  // backend-supported legacy range (validateUniversalPinFormat = /^\d{6,12}$/) until owner,
+  // operator_primary, operator_backup and rider have each been rotated. Only PIN
+  // CREATION/ROTATION is exactly six digits — that rule lives in the account admin-PIN form,
+  // not here. Capping this input at 6 would lock out every unrotated legacy actor and would
+  // also stop an old longer PIN from ever reaching the backend to be rejected.
+  const PIN_LOGIN_MIN = 6;
+  const PIN_LOGIN_MAX = 12;
+
   const handlePinKey = (k) => {
     if (pinLoading) return;
     if (k === "DEL") { setPinInput(p => p.slice(0,-1)); return; }
-    if (pinInput.length < 6) {
-      const next = pinInput + k;
-      setPinInput(next);
-      if (next.length === 6) checkPin(next);
-    }
+    // No auto-submit: a 6-digit prefix of a longer legacy PIN must not be sent on its own.
+    if (pinInput.length < PIN_LOGIN_MAX) setPinInput(pinInput + k);
   };
 
   const checkPin = async (pin) => {
     if (pinLoading) return;
     const value = pin !== undefined ? pin : pinInput;
-    if (value.length < 6) return;
+    if (value.length < PIN_LOGIN_MIN || value.length > PIN_LOGIN_MAX) return;
     setPinLoading(true);
     const result = await auth.login(value, "operador");
     setPinLoading(false);
@@ -381,9 +387,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* Puntos PIN — 6 cifre */}
+          {/* Puntos PIN — 6 minimo, cresce fino a 12 per i PIN legacy non ancora ruotati */}
           <div style={{display:"flex", gap:14}}>
-            {[0,1,2,3,4,5].map(i => (
+            {Array.from({length: Math.max(PIN_LOGIN_MIN, pinInput.length)}, (_, i) => i).map(i => (
               <div key={i} style={{
                 width:16, height:16, borderRadius:"50%",
                 background: i < pinInput.length
@@ -429,6 +435,25 @@ export default function App() {
               </button>
             ))}
           </div>
+
+          {/* Entrar — esplicito: senza auto-submit l'operatore decide quando inviare, così
+              un PIN legacy più lungo di 6 cifre si digita per intero. */}
+          <button
+            onClick={()=>checkPin()}
+            disabled={pinLoading || pinInput.length < PIN_LOGIN_MIN}
+            style={{
+              width:240, height:52, borderRadius:14,
+              background: pinInput.length >= PIN_LOGIN_MIN && !pinLoading
+                ? "#F97316" : "rgba(255,255,255,0.08)",
+              border:"1px solid rgba(255,255,255,0.1)",
+              color: pinInput.length >= PIN_LOGIN_MIN && !pinLoading
+                ? "#fff" : "rgba(255,255,255,0.35)",
+              fontSize:16, fontWeight:800, letterSpacing:1,
+              cursor: pinLoading || pinInput.length < PIN_LOGIN_MIN ? "default" : "pointer",
+              transition:"background .15s"
+            }}>
+            Entrar
+          </button>
 
           {/* Annulla */}
           <button onClick={()=>{ setShowPin(false); setPendingAction(null); }} style={{
