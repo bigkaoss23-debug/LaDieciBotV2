@@ -12,16 +12,15 @@ import {
   isAccountRoute,
   shouldRenderAccount,
   summarizeAccount,
-  validateAdminPin,
-  ADMIN_PIN_MIN,
-  ADMIN_PIN_MAX,
+  PIN_LENGTH,
   resolvePinInput,
   pinInputMessage,
-  formatPinGroups,
-  generateSecurePin,
-  PIN_NUMERIC_ONLY_MESSAGE,
+  isTrivialPin,
+  describePinSaveError,
   PIN_LENGTH_MESSAGE,
-  PIN_HELP_TEXT,
+  PIN_DUPLICATE_MESSAGE,
+  PIN_WEAK_MESSAGE,
+  PIN_GUIDANCE,
 } from './accountHelpers';
 
 describe('password policy (signup + reset validation)', () => {
@@ -220,112 +219,61 @@ describe('S2-7D summarizeAccount owner + admin-PIN signals', () => {
   });
 });
 
-describe('S2-7D validateAdminPin (admin 9–12 digits, mirrors backend policy)', () => {
-  test('accepts a valid non-trivial 9-digit PIN', () => {
-    expect(validateAdminPin('903421756').ok).toBe(true);
-  });
-  test('rejects operator-length (6–8) PINs', () => {
-    expect(validateAdminPin('123457').ok).toBe(false);
-    expect(validateAdminPin('90342175').code).toBe('policy'); // 8 digits
-  });
-  test('rejects non-digits, sequential, all-same, repeated block', () => {
-    expect(validateAdminPin('90342175a').ok).toBe(false);
-    expect(validateAdminPin('123456789').ok).toBe(false);
-    expect(validateAdminPin('999999999').ok).toBe(false);
-    expect(validateAdminPin('123123123').ok).toBe(false);
-  });
-  test('too long (>12) rejected', () => {
-    expect(validateAdminPin('9034217560341').ok).toBe(false);
-  });
-  test('mismatch code when confirmation differs', () => {
-    expect(validateAdminPin('903421756', '903421999')).toEqual({ ok: false, code: 'mismatch' });
-  });
-  test('policy bounds exported', () => {
-    expect([ADMIN_PIN_MIN, ADMIN_PIN_MAX]).toEqual([9, 12]);
-  });
-});
-
-
-describe('S2-7D admin PIN input — NUMERIC ONLY', () => {
-  test('accepts a valid 9-digit PIN', () => {
-    const r = resolvePinInput('903421756');
+describe('S2-7D2 six-digit operational PIN', () => {
+  test('exactly 6 digits accepted', () => {
+    const r = resolvePinInput('482915');
     expect(r.ok).toBe(true);
-    expect(r.pin).toBe('903421756');
+    expect(r.pin).toBe('482915');
+    expect(PIN_LENGTH).toBe(6);
   });
-  test('spaces and hyphens are ignored (people group digits naturally)', () => {
-    expect(resolvePinInput('903 421 756').pin).toBe('903421756');
-    expect(resolvePinInput('903-421-756').pin).toBe('903421756');
-    expect(resolvePinInput(' 903421756 ').ok).toBe(true);
+  test('5 digits rejected with the length message', () => {
+    const r = resolvePinInput('48291');
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('length');
+    expect(pinInputMessage(r.code)).toBe(PIN_LENGTH_MESSAGE);
+    expect(PIN_LENGTH_MESSAGE).toBe('El PIN debe tener exactamente 6 números.');
   });
-  test('letters are REJECTED — the T9 word mode is gone', () => {
-    ['margarita', 'PIZZA2026', 'abc', 'almería'].forEach((v) => {
+  test('7+ digits rejected', () => {
+    expect(resolvePinInput('4829156').ok).toBe(false);
+    expect(resolvePinInput('903421756').code).toBe('length');
+  });
+  test('letters and separators rejected', () => {
+    ['48291a', 'margarita', '482 91', '482-915'].forEach((v) => {
+      expect(resolvePinInput(v).ok).toBe(false);
+    });
+  });
+  test('trivial PINs rejected with their own message', () => {
+    ['111111', '123456', '654321', '121212', '123123'].forEach((v) => {
       const r = resolvePinInput(v);
       expect(r.ok).toBe(false);
-      expect(r.code).toBe('unsupported');
-      expect(r.pin).toBe('');
+      expect(r.code).toBe('weak');
+      expect(isTrivialPin(v)).toBe(true);
     });
-    expect(pinInputMessage('unsupported')).toBe(PIN_NUMERIC_ONLY_MESSAGE);
-    expect(PIN_NUMERIC_ONLY_MESSAGE).toBe('Introduce solo números.');
+    expect(pinInputMessage('weak')).toBe(PIN_WEAK_MESSAGE);
   });
-  test('other symbols rejected', () => {
-    ['9034!1756', '903_421_756', '903.421.756'].forEach((v) => {
-      expect(resolvePinInput(v).code).toBe('unsupported');
-    });
+  test('partial input still exposes digits so the dots can fill', () => {
+    expect(resolvePinInput('48').pin).toBe('48');
+    expect(resolvePinInput('48').ok).toBe(false);
   });
-  test('empty / separators only', () => {
+  test('empty input', () => {
     expect(resolvePinInput('').code).toBe('empty');
-    expect(resolvePinInput(' - ').code).toBe('empty');
   });
-  test('length policy 9–12 with its message', () => {
-    expect(resolvePinInput('12345').code).toBe('length');
-    expect(resolvePinInput('1234567890123').code).toBe('length');
-    expect(pinInputMessage('length')).toBe(PIN_LENGTH_MESSAGE);
-    expect(PIN_LENGTH_MESSAGE).toBe('El PIN debe tener entre 9 y 12 dígitos.');
-    expect(resolvePinInput('903421756').ok).toBe(true);       // exactly 9
-    expect(resolvePinInput('903421756903').ok).toBe(true);    // exactly 12
-  });
-  test('pin still exposed while too short so the live preview can update', () => {
-    const r = resolvePinInput('903');
-    expect(r.ok).toBe(false);
-    expect(r.pin).toBe('903');
+  test('no 9-12 wording anywhere in the guidance', () => {
+    expect(PIN_GUIDANCE).toBe('Elige un PIN de 6 números para el acceso diario. Es distinto de la contraseña de tu cuenta.');
+    expect(PIN_GUIDANCE).not.toMatch(/9|12/);
   });
 });
 
-describe('S2-7D grouped display', () => {
-  test('groups digits in threes without changing the value', () => {
-    expect(formatPinGroups('903421756')).toBe('903 421 756');
-    expect(formatPinGroups('903421756903')).toBe('903 421 756 903');
-    expect(formatPinGroups('9034')).toBe('903 4');
-    expect(formatPinGroups('')).toBe('');
+describe('S2-7D2 backend error mapping', () => {
+  test('409 / admin_pin_duplicate → the neutral Spanish duplicate message', () => {
+    expect(describePinSaveError(409, { error: 'admin_pin_duplicate' })).toBe(PIN_DUPLICATE_MESSAGE);
+    expect(PIN_DUPLICATE_MESSAGE).toBe('Este PIN no está disponible. Elige otro.');
   });
-});
-
-describe('S2-7D secure PIN generator', () => {
-  test('produces a policy-valid PIN of the minimum length by default', () => {
-    for (let i = 0; i < 20; i++) {
-      const pin = generateSecurePin();
-      expect(pin).toMatch(/^[0-9]{9}$/);
-      expect(validateAdminPin(pin).ok).toBe(true);
-      expect(resolvePinInput(pin).ok).toBe(true);
-    }
+  test('the duplicate message names no actor', () => {
+    expect(PIN_DUPLICATE_MESSAGE).not.toMatch(/operator|rider|owner|repartidor/i);
   });
-  test('respects a requested length within policy bounds', () => {
-    expect(generateSecurePin(12)).toMatch(/^[0-9]{12}$/);
-    expect(generateSecurePin(4)).toMatch(/^[0-9]{9}$/);   // clamped up to the minimum
-    expect(generateSecurePin(99)).toMatch(/^[0-9]{12}$/); // clamped down to the maximum
-  });
-  test('does not return the same PIN twice in a row (randomness sanity)', () => {
-    const seen = new Set();
-    for (let i = 0; i < 30; i++) seen.add(generateSecurePin());
-    expect(seen.size).toBeGreaterThan(25);
-  });
-});
-
-describe('S2-7D help text (numeric-only)', () => {
-  test('explains the separation and the safe-storage advice', () => {
-    expect(PIN_HELP_TEXT).toContain('numérico');
-    expect(PIN_HELP_TEXT).toContain('distinto de la contraseña');
-    expect(PIN_HELP_TEXT).toContain('Generar PIN seguro');
-    expect(PIN_HELP_TEXT).not.toContain('ABC');   // no telephone mapping any more
+  test('any other failure stays generic', () => {
+    expect(describePinSaveError(400, { error: 'admin_pin_rejected' })).toBe('No se pudo guardar el PIN. Inténtalo de nuevo.');
+    expect(describePinSaveError(500, {})).toBe('No se pudo guardar el PIN. Inténtalo de nuevo.');
   });
 });

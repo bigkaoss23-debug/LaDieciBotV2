@@ -20,16 +20,14 @@ import {
   summarizeAccount,
   claimWorkspace,
   setAdminPin,
-  ADMIN_PIN_MIN,
-  ADMIN_PIN_MAX,
+  PIN_LENGTH,
   resolvePinInput,
   pinInputMessage,
-  formatPinGroups,
-  generateSecurePin,
+  describePinSaveError,
   PIN_MISMATCH_MESSAGE,
   PIN_MATCH_LABEL,
   PIN_MISMATCH_LABEL,
-  PIN_HELP_TEXT,
+  PIN_GUIDANCE,
   IDLE_TIMEOUT_MS,
   shouldResumeSession,
   accountGetSession,
@@ -526,53 +524,59 @@ function ClaimWorkspaceBlock({ onClaimed }) {
   );
 }
 
-// On-screen numeric keypad. Shown by default: on a shared tablet this is the primary way
-// to enter the PIN. It writes into whichever field is focused — there is NO separate keypad
-// state. The physical keyboard keeps working on the same fields.
-export function PinKeypad({ onDigit, onBackspace, onClear, disabled, length }) {
+// Large on-screen keypad. Primary input on a shared tablet; every key is a real focusable
+// button with a Spanish accessible name. Writes into whichever PIN field is active — there
+// is no separate keypad state. The physical numeric keyboard keeps working too.
+export function PinKeypad({ onDigit, onBackspace, onClear, disabled }) {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
   return (
-    <div>
-      <div className="ld-acc-keypad" role="group" aria-label="Teclado numérico">
-        {keys.map((k) => (
-          <button key={k} type="button" className="ld-acc-key" disabled={disabled}
-            aria-label={k} onClick={() => onDigit(k)}>{k}</button>
-        ))}
-        <button type="button" className="ld-acc-key ld-acc-key-alt" disabled={disabled}
-          aria-label="Borrar" onClick={onBackspace}>⌫</button>
-        <button type="button" className="ld-acc-key" disabled={disabled}
-          aria-label="0" onClick={() => onDigit('0')}>0</button>
-        <button type="button" className="ld-acc-key ld-acc-key-alt" disabled={disabled}
-          aria-label="Limpiar" onClick={onClear}>C</button>
-      </div>
-      <p className="ld-acc-policy" data-testid="keypad-length">{length} dígitos</p>
+    <div className="ld-acc-keypad" role="group" aria-label="Teclado numérico">
+      {keys.map((k) => (
+        <button key={k} type="button" className="ld-acc-key" disabled={disabled}
+          aria-label={k} onClick={() => onDigit(k)}>{k}</button>
+      ))}
+      <button type="button" className="ld-acc-key ld-acc-key-alt" disabled={disabled}
+        aria-label="Borrar" onClick={onBackspace}>⌫</button>
+      <button type="button" className="ld-acc-key" disabled={disabled}
+        aria-label="0" onClick={() => onDigit('0')}>0</button>
+      <button type="button" className="ld-acc-key ld-acc-key-alt" disabled={disabled}
+        aria-label="Limpiar" onClick={onClear}>C</button>
     </div>
   );
 }
 
-// Admin-PIN onboarding — NUMERIC ONLY. Rendered only after the server (via /api/account/me)
-// says setup is required for the owner workspace.
-//
-// The PIN is the operational credential: it is typed on the keypad (or a physical keyboard),
-// shown grouped in threes so it can be transcribed reliably, and can be produced by a
-// cryptographically secure generator for owners who prefer to store it in a password manager
-// rather than memorise it. No word-to-digit conversion: that made the credential look
-// stronger while making it dictionary-guessable.
+// Six-position progress indicator: one dot per digit entered.
+export function PinDots({ value, active }) {
+  const filled = String(value || '').length;
+  return (
+    <div className={'ld-acc-dots' + (active ? ' active' : '')} data-testid="pin-dots"
+      aria-label={`${filled} de ${PIN_LENGTH} números`}>
+      {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+        <span key={i} className={'ld-acc-dot' + (i < filled ? ' on' : '')} />
+      ))}
+    </div>
+  );
+}
+
+// Admin-PIN onboarding — a single six-digit numeric flow. Rendered only after the server
+// (via /api/account/me) says setup is required for the owner workspace. The PIN is chosen by
+// the user, sent once and hashed server-side; it is never generated for them, never stored
+// in the browser, never logged and never recoverable in plaintext. Uniqueness against the
+// other operational actors is enforced server-side; a clash returns a neutral message that
+// never reveals which actor already uses that PIN.
 export function AdminPinView({ setView }) {
   const [state, setState] = useState({ loading: true });
-  const [text, setText] = useState('');
-  const [text2, setText2] = useState('');
+  const [pin, setPin] = useState('');
+  const [pin2, setPin2] = useState('');
   const [focusField, setFocusField] = useState('primary'); // 'primary' | 'confirm'
   const [show, setShow] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
-  const [generated, setGenerated] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
-  const textRef = useRef(''); textRef.current = text;
-  const text2Ref = useRef(''); text2Ref.current = text2;
-  useEffect(() => () => { textRef.current = ''; text2Ref.current = ''; }, []);
+  const pinRef = useRef(''); pinRef.current = pin;
+  const pin2Ref = useRef(''); pin2Ref.current = pin2;
+  useEffect(() => () => { pinRef.current = ''; pin2Ref.current = ''; }, []);
 
   const load = useCallback(async () => {
     setState({ loading: true });
@@ -622,23 +626,15 @@ export function AdminPinView({ setView }) {
     );
   }
 
-  const primary = resolvePinInput(text);
-  const confirm = resolvePinInput(text2);
-  const bothTyped = primary.pin.length > 0 && confirm.pin.length > 0;
-  const matches = bothTyped && primary.pin === confirm.pin;
+  const primary = resolvePinInput(pin);
+  const confirm = resolvePinInput(pin2);
+  const bothComplete = pin.length === PIN_LENGTH && pin2.length === PIN_LENGTH;
+  const matches = bothComplete && pin === pin2;
+  const canSubmit = primary.ok && confirm.ok && matches && !busy;
 
-  const activeText = focusField === 'primary' ? text : text2;
-  const setActive = focusField === 'primary' ? setText : setText2;
-  const activeLength = resolvePinInput(activeText).pin.length;
-
-  const generate = () => {
-    setErr('');
-    setText(generateSecurePin());
-    setText2('');
-    setShow(true);            // reveal it so the owner can write it down
-    setGenerated(true);
-    setFocusField('confirm');
-  };
+  const activeValue = focusField === 'primary' ? pin : pin2;
+  const setActive = focusField === 'primary' ? setPin : setPin2;
+  const onlyDigits = (v) => String(v || '').replace(/\D/g, '').slice(0, PIN_LENGTH);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -646,81 +642,45 @@ export function AdminPinView({ setView }) {
     setErr('');
     if (!primary.ok) { setErr(pinInputMessage(primary.code)); return; }
     if (!confirm.ok) { setErr(pinInputMessage(confirm.code)); return; }
-    if (primary.pin !== confirm.pin) { setErr(PIN_MISMATCH_MESSAGE); return; }
+    if (pin !== pin2) { setErr(PIN_MISMATCH_MESSAGE); return; }
 
     setBusy(true);
-    const r = await setAdminPin(workspaceId, primary.pin);
+    const r = await setAdminPin(workspaceId, pin);
     setBusy(false);
     if (r.ok && r.body && r.body.ok) {
-      setText(''); setText2(''); textRef.current = ''; text2Ref.current = '';
-      setShow(false); setShowHelp(false); setGenerated(false); setDone(true);
+      setPin(''); setPin2(''); pinRef.current = ''; pin2Ref.current = '';
+      setShow(false); setDone(true);
       return;
     }
-    setErr('No se pudo guardar el PIN. Revisa que cumpla la política e inténtalo de nuevo.');
+    // Duplicate → its own neutral message; everything else stays generic.
+    setErr(describePinSaveError(r.status, r.body));
   };
+
+  const field = (id, label, value, setValue, which) => (
+    <div className="ld-acc-label">
+      <label htmlFor={id}>{label}</label>
+      <span className="ld-acc-pwwrap">
+        <input id={id} className="ld-acc-input ld-acc-input-pw"
+          type={show ? 'text' : 'password'} inputMode="numeric" pattern="[0-9]*"
+          maxLength={PIN_LENGTH} autoComplete="off" value={value}
+          onFocus={() => setFocusField(which)}
+          onChange={(e) => { setErr(''); setValue(onlyDigits(e.target.value)); }} />
+        <button type="button" className="ld-acc-eye" aria-pressed={show}
+          onClick={() => setShow((v) => !v)}>{show ? 'Ocultar' : 'Mostrar'}</button>
+      </span>
+      <PinDots value={value} active={focusField === which} />
+    </div>
+  );
 
   return (
     <form onSubmit={submit} noValidate>
       <h1 className="ld-acc-h1">Crear PIN de administrador</h1>
-      <p className="ld-acc-sub">
-        Tu <strong>cuenta</strong> identifica al propietario. El <strong>PIN</strong> se usa para el
-        acceso operativo diario y es <strong>distinto</strong> de la contraseña de la cuenta.
-      </p>
+      <p className="ld-acc-sub">{PIN_GUIDANCE}</p>
 
-      <div className="ld-acc-label">
-        <span className="ld-acc-labelrow">
-          <label htmlFor="ap-input">PIN numérico</label>
-          <button type="button" className="ld-acc-info" aria-expanded={showHelp}
-            aria-label="Información sobre el PIN" onClick={() => setShowHelp((v) => !v)}>i</button>
-        </span>
-        <span className="ld-acc-pwwrap">
-          <input id="ap-input" className="ld-acc-input ld-acc-input-pw"
-            type={show ? 'text' : 'password'} inputMode="numeric" pattern="[0-9]*"
-            autoComplete="off" value={text}
-            onFocus={() => setFocusField('primary')}
-            onChange={(e) => { setErr(''); setText(e.target.value); }} />
-          <button type="button" className="ld-acc-eye" aria-pressed={show}
-            onClick={() => setShow((s) => !s)}>{show ? 'Ocultar' : 'Mostrar'}</button>
-        </span>
-      </div>
+      {field('ap-input', 'PIN', pin, setPin, 'primary')}
+      {field('ap-input2', 'Repite el PIN', pin2, setPin2, 'confirm')}
 
-      {showHelp && (
-        <div className="ld-acc-help" data-testid="pin-help">
-          <p>{PIN_HELP_TEXT}</p>
-          <ul>
-            <li>Solo se transmite el PIN, que se cifra en el servidor.</li>
-            <li>Nunca se envía por correo ni se puede recuperar en texto.</li>
-            <li>Los operadores y el repartidor tienen su propio PIN, distinto de este.</li>
-          </ul>
-        </div>
-      )}
-
-      {primary.pin.length > 0 && (
-        <p className="ld-acc-preview" data-testid="pin-preview" aria-live="polite" aria-readonly="true">
-          PIN: <strong>{show ? formatPinGroups(primary.pin) : '•'.repeat(primary.pin.length)}</strong>
-          {` (${primary.pin.length} dígitos)`}
-        </p>
-      )}
-
-      <button type="button" className="ld-acc-btn ld-acc-btn-secondary" onClick={generate}>
-        Generar PIN seguro
-      </button>
-      {generated && (
-        <p className="ld-acc-policy" data-testid="generated-note">
-          Anota este PIN o guárdalo en tu gestor de contraseñas, y vuelve a escribirlo abajo
-          para confirmarlo.
-        </p>
-      )}
-
-      <div className="ld-acc-label">
-        <label htmlFor="ap-input2">Repite el PIN</label>
-        <input id="ap-input2" className="ld-acc-input" type={show ? 'text' : 'password'}
-          inputMode="numeric" pattern="[0-9]*" autoComplete="off" value={text2}
-          onFocus={() => setFocusField('confirm')}
-          onChange={(e) => { setErr(''); setText2(e.target.value); }} />
-      </div>
-
-      {bothTyped && (
+      {bothComplete && (
         <p className={matches ? 'ld-acc-ok' : 'ld-acc-err'} data-testid="pin-match" aria-live="polite">
           {matches ? PIN_MATCH_LABEL : PIN_MISMATCH_LABEL}
         </p>
@@ -728,15 +688,15 @@ export function AdminPinView({ setView }) {
 
       <PinKeypad
         disabled={busy}
-        length={activeLength}
-        onDigit={(d) => { setErr(''); setActive(activeText + d); }}
-        onBackspace={() => { setErr(''); setActive(activeText.slice(0, -1)); }}
+        onDigit={(d) => { setErr(''); setActive(onlyDigits(activeValue + d)); }}
+        onBackspace={() => { setErr(''); setActive(activeValue.slice(0, -1)); }}
         onClear={() => { setErr(''); setActive(''); }}
       />
 
-      <p className="ld-acc-policy">Entre {ADMIN_PIN_MIN} y {ADMIN_PIN_MAX} dígitos.</p>
       {err && <p className="ld-acc-err">{err}</p>}
-      <button className="ld-acc-btn" type="submit" disabled={busy}>{busy ? 'Espera…' : 'Guardar PIN'}</button>
+      <button className="ld-acc-btn" type="submit" disabled={!canSubmit}>
+        {busy ? 'Espera…' : 'Guardar PIN'}
+      </button>
       <button className="ld-acc-linkbtn" type="button" onClick={() => setView('account')}>Atrás</button>
     </form>
   );
@@ -800,6 +760,10 @@ function StyleTag() {
       .ld-acc-preview{background:#12151c;border:1px solid #2c3240;border-radius:9px;
         padding:10px 12px;margin:0 0 14px;font-size:14px;color:#c3c9d6;}
       .ld-acc-preview strong{color:#e8eaed;letter-spacing:.08em;font-size:16px;}
+      .ld-acc-dots{display:flex;gap:9px;margin:9px 0 2px;}
+      .ld-acc-dot{width:11px;height:11px;border-radius:50%;border:1px solid #3a4152;background:transparent;}
+      .ld-acc-dot.on{background:#4f7cff;border-color:#4f7cff;}
+      .ld-acc-dots.active .ld-acc-dot{border-color:#4f7cff;}
       .ld-acc-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:4px 0 14px;}
       .ld-acc-key{padding:16px 0;font-size:22px;font-weight:600;border-radius:11px;
         border:1px solid #2c3240;background:#232838;color:#e8eaed;cursor:pointer;

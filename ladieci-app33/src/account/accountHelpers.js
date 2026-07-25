@@ -112,17 +112,28 @@ export function summarizeAccount(me) {
   };
 }
 
-// ── operational ADMIN PIN policy (mirror of the backend pinPolicy 'admin' rule) ──
-// Admin PINs are 9–12 digits and must not be trivial. This is a client-side pre-check
-// for fast feedback; the backend re-validates authoritatively and is the source of truth.
-export const ADMIN_PIN_MIN = 9;
-export const ADMIN_PIN_MAX = 12;
-export const ADMIN_PIN_POLICY_MESSAGE =
-  `El PIN de administrador debe tener entre ${ADMIN_PIN_MIN} y ${ADMIN_PIN_MAX} dígitos y no puede ser una secuencia u obvio.`;
-export const ADMIN_PIN_MISMATCH_MESSAGE = 'Los dos PIN no coinciden.';
+// ── Operational PIN — EXACTLY 6 DIGITS (S2-7D2) ─────────────────────────────
+// Mirrors the backend rotation policy (pinPolicy.validateNewPinFormat): exactly six digits,
+// no letters, no separators, no admin bypass, and no trivial values. The backend re-validates
+// authoritatively and owns uniqueness. NOTE: this is the policy for NEW/rotated PINs only —
+// login still accepts the legacy lengths until all four actors have been rotated.
+export const PIN_LENGTH = 6;
 
-function pinAllSame(pin) { return /^(\d)\1*$/.test(pin); }
-function pinSequential(pin) {
+// { ok, pin, code } — code ∈ 'ok' | 'empty' | 'unsupported' | 'length' | 'weak'.
+// `pin` is populated while still incomplete so the progress dots can update per keystroke.
+export function resolvePinInput(text) {
+  const raw = text == null ? '' : String(text);
+  for (const ch of raw) {
+    if (ch < '0' || ch > '9') return { ok: false, pin: '', code: 'unsupported' };
+  }
+  if (raw.length === 0) return { ok: false, pin: '', code: 'empty' };
+  if (raw.length !== PIN_LENGTH) return { ok: false, pin: raw, code: 'length' };
+  if (isTrivialPin(raw)) return { ok: false, pin: raw, code: 'weak' };
+  return { ok: true, pin: raw, code: 'ok' };
+}
+
+function pinAllSameDigits(pin) { return /^(\d)\1*$/.test(pin); }
+function pinSequentialDigits(pin) {
   let asc = true, desc = true;
   for (let i = 1; i < pin.length; i++) {
     const d = pin.charCodeAt(i) - pin.charCodeAt(i - 1);
@@ -131,7 +142,7 @@ function pinSequential(pin) {
   }
   return asc || desc;
 }
-function pinRepeatedBlock(pin) {
+function pinRepeatedBlockDigits(pin) {
   const n = pin.length;
   for (let b = 1; b <= Math.floor(n / 2); b++) {
     if (n % b !== 0) continue;
@@ -139,98 +150,33 @@ function pinRepeatedBlock(pin) {
   }
   return false;
 }
-
-// Returns { ok, code } where code ∈ 'ok' | 'policy' | 'mismatch'. Pure.
-export function validateAdminPin(pin, pin2) {
-  const s = pin == null ? '' : String(pin);
-  if (!/^\d+$/.test(s)) return { ok: false, code: 'policy' };
-  if (s.length < ADMIN_PIN_MIN || s.length > ADMIN_PIN_MAX) return { ok: false, code: 'policy' };
-  if (pinAllSame(s) || pinSequential(s) || pinRepeatedBlock(s)) return { ok: false, code: 'policy' };
-  if (pin2 !== undefined && s !== String(pin2 == null ? '' : pin2)) return { ok: false, code: 'mismatch' };
-  return { ok: true, code: 'ok' };
+export function isTrivialPin(pin) {
+  const s = String(pin == null ? '' : pin);
+  return pinAllSameDigits(s) || pinSequentialDigits(s) || pinRepeatedBlockDigits(s);
 }
 
-// ── Admin PIN input — NUMERIC ONLY ──────────────────────────────────────────
-// Deliberately numeric-only. An earlier draft let the owner type a memorable word that was
-// converted with the telephone keypad mapping (T9); it was removed because it WEAKENS the
-// credential: a 9-digit PIN derived from a dictionary word has ~10^5 realistic candidates
-// instead of 10^9, i.e. weaker than a random 6-digit PIN, while looking stronger. No serious
-// POS or banking app derives PINs from words. Memorability is solved instead by a secure
-// random generator plus grouped display, so the owner can note the number down.
-//
-// Spaces and hyphens are accepted as harmless separators (people group digits naturally);
-// anything else is rejected.
-const PIN_SEPARATOR = /[\s-]/;
-
-// { ok, pin, code } — code ∈ 'ok' | 'empty' | 'unsupported' | 'length'.
-// `pin` is populated even when the length is still invalid so the live preview can update
-// on every keystroke; it is empty when a non-digit character is present.
-export function resolvePinInput(text) {
-  const raw = text == null ? '' : String(text);
-  let out = '';
-  for (const ch of raw) {
-    if (PIN_SEPARATOR.test(ch)) continue;
-    if (ch < '0' || ch > '9') return { ok: false, pin: '', code: 'unsupported' };
-    out += ch;
-  }
-  if (out.length === 0) return { ok: false, pin: '', code: 'empty' };
-  if (out.length < ADMIN_PIN_MIN || out.length > ADMIN_PIN_MAX) {
-    return { ok: false, pin: out, code: 'length' };
-  }
-  return { ok: true, pin: out, code: 'ok' };
-}
-
-export const PIN_NUMERIC_ONLY_MESSAGE = 'Introduce solo números.';
-export const PIN_LENGTH_MESSAGE =
-  `El PIN debe tener entre ${ADMIN_PIN_MIN} y ${ADMIN_PIN_MAX} dígitos.`;
+export const PIN_LENGTH_MESSAGE = `El PIN debe tener exactamente ${PIN_LENGTH} números.`;
 export const PIN_MISMATCH_MESSAGE = 'Los PIN no coinciden.';
+export const PIN_DUPLICATE_MESSAGE = 'Este PIN no está disponible. Elige otro.';
+export const PIN_WEAK_MESSAGE = 'Evita PIN previsibles como 111111, 123456 o 121212.';
 export const PIN_MATCH_LABEL = 'Los PIN coinciden';
 export const PIN_MISMATCH_LABEL = 'Los PIN no coinciden';
 
 export function pinInputMessage(code) {
-  if (code === 'unsupported') return PIN_NUMERIC_ONLY_MESSAGE;
-  return PIN_LENGTH_MESSAGE;   // length + empty
+  if (code === 'weak') return PIN_WEAK_MESSAGE;
+  return PIN_LENGTH_MESSAGE;   // length + empty + unsupported (digits-only keypad)
 }
 
-// Display helper: group digits in threes so a long PIN can be read and copied reliably
-// (123 456 789). Never changes the value that is submitted.
-export function formatPinGroups(pin) {
-  const s = String(pin == null ? '' : pin);
-  return s.replace(/(\d{3})(?=\d)/g, '$1 ');
+// Map the backend response for a PIN rotation to a Spanish message. The duplicate case is
+// neutral: it never says WHICH actor already uses the PIN.
+export function describePinSaveError(status, body) {
+  const code = (body && body.error) || '';
+  if (status === 409 || code === 'admin_pin_duplicate') return PIN_DUPLICATE_MESSAGE;
+  return 'No se pudo guardar el PIN. Inténtalo de nuevo.';
 }
 
-// Cryptographically secure random PIN that already satisfies the admin policy (no
-// all-same / sequential / repeated-block result). Generated LOCALLY and shown to the owner
-// so it can be written down or stored in a password manager; never derived from a word.
-export function generateSecurePin(length = ADMIN_PIN_MIN) {
-  const n = Math.min(Math.max(Number(length) || ADMIN_PIN_MIN, ADMIN_PIN_MIN), ADMIN_PIN_MAX);
-  const randomDigits = () => {
-    const out = new Array(n);
-    const g = (typeof globalThis !== 'undefined' && globalThis.crypto
-      && typeof globalThis.crypto.getRandomValues === 'function') ? globalThis.crypto : null;
-    if (g) {
-      const buf = new Uint32Array(n);
-      g.getRandomValues(buf);
-      for (let i = 0; i < n; i++) out[i] = String(buf[i] % 10);
-    } else {
-      // Non-browser fallback (tests/SSR only); the browser path always uses WebCrypto.
-      for (let i = 0; i < n; i++) out[i] = String(Math.floor(Math.random() * 10));
-    }
-    return out.join('');
-  };
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const candidate = randomDigits();
-    if (validateAdminPin(candidate).ok) return candidate;
-  }
-  return randomDigits(); // practically unreachable; policy re-checked by the caller/backend
-}
-
-// Spanish help shown behind the information control next to the field label.
-export const PIN_HELP_TEXT =
-  'El PIN es numérico y sirve para el acceso operativo diario. Es distinto de la contraseña ' +
-  'de tu cuenta: no se envía por correo y no se puede recuperar en texto. Si no quieres ' +
-  'memorizarlo, pulsa «Generar PIN seguro» y guárdalo en tu gestor de contraseñas o anótalo ' +
-  'en un lugar seguro. Tu cuenta de propietario verificada puede cambiarlo cuando quieras.';
+export const PIN_GUIDANCE =
+  `Elige un PIN de ${PIN_LENGTH} números para el acceso diario. Es distinto de la contraseña de tu cuenta.`;
 
 // ── Session resume + idle auto-logout ───────────────────────────────────────
 // The account session is tab-scoped (see supabaseAccountClient). Resuming it on load is
