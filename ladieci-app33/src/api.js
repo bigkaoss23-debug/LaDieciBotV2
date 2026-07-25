@@ -302,6 +302,14 @@ const api = {
     if (Array.isArray(res)) return { clientes: res };
     return { clientes: res?.clientes || [] };
   },
+  // S2-7D4C — dynamic catalogue READ (Supabase-backed, served by the deployed backend
+  // `getMenu` action). Read-only: this block ships no catalogue writer of any kind.
+  // It deliberately goes through proxyGet, so it inherits the CURRENT Auth V2 chain —
+  // the operational bearer via proxyHeaders(), and 401/403 -> canonical operational
+  // logout. No legacy /api/auth path and no role-only JWT is reintroduced here.
+  getMenu: async function() {
+    return proxyGet("getMenu");
+  },
   upsertCliente: function(data) {
     return proxyPost({ action: "upsertCliente", ...data });
   },
