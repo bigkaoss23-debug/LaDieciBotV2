@@ -1,7 +1,7 @@
 // S2-7D — the account session must be TAB-SCOPED, never localStorage.
 // Project rule (CLAUDE.md): "MAI localStorage — app usata da più operatori sullo stesso
 // browser". Reload keeps the session (same tab); closing the tab ends it.
-import { accountSessionStorage } from './supabaseAccountClient';
+import { accountSessionStorage, purgeLegacyLocalSession } from './supabaseAccountClient';
 
 describe('account session storage', () => {
   test('resolves to sessionStorage in the browser', () => {
@@ -33,5 +33,30 @@ describe('account session storage', () => {
     store.removeItem('k');
     expect(store.getItem('k')).toBe(null);
     expect(window.localStorage.getItem('k')).toBe(null);
+  });
+});
+
+describe('legacy localStorage session purge', () => {
+  test('removes a pre-migration token left in localStorage', () => {
+    window.localStorage.setItem('ld-account-auth', '{"access_token":"legacy"}');
+    purgeLegacyLocalSession();
+    expect(window.localStorage.getItem('ld-account-auth')).toBe(null);
+  });
+
+  test('leaves the tab-scoped session and other keys untouched', () => {
+    window.sessionStorage.setItem('ld-account-auth', '{"access_token":"current"}');
+    window.localStorage.setItem('ld_token', 'operator-pin-session');
+    purgeLegacyLocalSession();
+    expect(window.sessionStorage.getItem('ld-account-auth')).toBe('{"access_token":"current"}');
+    expect(window.localStorage.getItem('ld_token')).toBe('operator-pin-session');
+    window.sessionStorage.removeItem('ld-account-auth');
+    window.localStorage.removeItem('ld_token');
+  });
+
+  test('never throws when storage is unavailable', () => {
+    const spy = jest.spyOn(window.localStorage.__proto__, 'removeItem')
+      .mockImplementation(() => { throw new Error('denied'); });
+    expect(() => purgeLegacyLocalSession()).not.toThrow();
+    spy.mockRestore();
   });
 });

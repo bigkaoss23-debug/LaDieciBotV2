@@ -44,11 +44,24 @@ export function accountSessionStorage() {
   };
 }
 
+// One-time cleanup of the pre-migration session. Until S2-7D the account token was written
+// to localStorage, where it survived indefinitely on a shared browser. Moving to
+// sessionStorage stops NEW tokens persisting, but an old one would still be sitting there —
+// a valid credential nobody reads any more. Remove it on startup.
+export function purgeLegacyLocalSession() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem('ld-account-auth');
+    }
+  } catch (_) { /* never block the account surface on storage errors */ }
+}
+
 // Lazily construct a single account client. Constructed only inside the account
 // surface, so the operator app never instantiates it (and never runs URL session
 // detection).
 export function getAccountClient() {
   if (_client) return _client;
+  purgeLegacyLocalSession();
   _client = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: {
       persistSession: true,
