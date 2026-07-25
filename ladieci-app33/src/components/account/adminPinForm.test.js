@@ -1,8 +1,6 @@
-// S2-7D — component tests for the UNIFIED admin-PIN creation form. One primary field
-// accepts a memorable word OR a direct numeric PIN (auto-detected), with a live read-only
-// generated-PIN preview, an independent confirmation field compared by digits only, a
-// collapsed keypad that writes into the focused field, and a strict security boundary:
-// the word never reaches the API payload or any storage.
+// S2-7D — component tests for the NUMERIC-ONLY admin-PIN creation form: keypad + physical
+// keyboard on the same fields, grouped read-only preview, secure random generator,
+// confirmation compared by digits, and no storage writes. The former word→T9 mode is gone.
 // react-dom + react-dom/test-utils (no @testing-library dependency).
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -27,12 +25,10 @@ jest.mock('../../account/accountApi', () => {
     validateAdminPin: helpers.validateAdminPin,
     resolvePinInput: helpers.resolvePinInput,
     pinInputMessage: helpers.pinInputMessage,
-    wordToPin: helpers.wordToPin,
-    T9_MAP: helpers.T9_MAP,
-    PIN_MIXED_MESSAGE: helpers.PIN_MIXED_MESSAGE,
-    PIN_NUMERIC_LENGTH_MESSAGE: helpers.PIN_NUMERIC_LENGTH_MESSAGE,
-    PIN_WORD_LENGTH_MESSAGE: helpers.PIN_WORD_LENGTH_MESSAGE,
-    PIN_UNSUPPORTED_CHAR_MESSAGE: helpers.PIN_UNSUPPORTED_CHAR_MESSAGE,
+    formatPinGroups: helpers.formatPinGroups,
+    generateSecurePin: helpers.generateSecurePin,
+    PIN_NUMERIC_ONLY_MESSAGE: helpers.PIN_NUMERIC_ONLY_MESSAGE,
+    PIN_LENGTH_MESSAGE: helpers.PIN_LENGTH_MESSAGE,
     PIN_MISMATCH_MESSAGE: helpers.PIN_MISMATCH_MESSAGE,
     PIN_MATCH_LABEL: helpers.PIN_MATCH_LABEL,
     PIN_MISMATCH_LABEL: helpers.PIN_MISMATCH_LABEL,
@@ -62,8 +58,7 @@ const OWNER_ME = {
   workspaces: ['ws1'],
   adminPinSetupRequired: true,
 };
-const WORD = 'margarita';          // → 627427482 (9 digits)
-const WORD_PIN = '627427482';
+const PIN = '903421756';
 
 function typeInto(input, value) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -100,108 +95,104 @@ beforeEach(() => {
   setAdminPin.mockResolvedValue({ status: 200, ok: true, body: { ok: true, event: 'pin_set' } });
 });
 
-describe('unified form structure', () => {
-  test('shows ONE primary field and one confirmation field (no competing forms)', async () => {
+describe('numeric-only form structure', () => {
+  test('shows the PIN field, the confirmation field and the keypad (no word mode)', async () => {
     const { container, root } = await mountForm();
     expect(container.textContent).toContain('Crear PIN de administrador');
-    expect(container.textContent).toContain('Palabra o PIN numérico');
-    expect(container.textContent).toContain('Repite la palabra o el PIN');
-    expect(container.querySelectorAll('input').length).toBe(2);
-    // the two old competing mode tabs are gone
-    expect(btnByText(container, 'Generar PIN a partir de una palabra')).toBeUndefined();
-    act(() => { root.unmount(); }); container.remove();
-  });
-
-  test('keypad is collapsed by default behind "Usar teclado numérico"', async () => {
-    const { container, root } = await mountForm();
-    expect(container.querySelector('.ld-acc-keypad')).toBe(null);
-    expect(btnByText(container, 'Usar teclado numérico')).toBeTruthy();
-    act(() => { btnByText(container, 'Usar teclado numérico').click(); });
+    expect(container.textContent).toContain('PIN numérico');
+    expect(container.textContent).toContain('Repite el PIN');
     expect(container.querySelector('.ld-acc-keypad')).toBeTruthy();
+    expect(container.textContent).not.toContain('Palabra');
+    expect(container.textContent).not.toContain('PIN generado');
     act(() => { root.unmount(); }); container.remove();
   });
 
-  test('information control reveals the Spanish help and the privacy guarantees', async () => {
+  test('fields are numeric and masked by default with a Mostrar/Ocultar control', async () => {
     const { container, root } = await mountForm();
-    expect(container.querySelector('[data-testid="pin-help"]')).toBe(null);
+    expect(primary(container).getAttribute('inputmode')).toBe('numeric');
+    expect(primary(container).type).toBe('password');
+    act(() => { btnByText(container, 'Mostrar').click(); });
+    expect(primary(container).type).toBe('text');
+    act(() => { root.unmount(); }); container.remove();
+  });
+
+  test('information control explains the separation and safe storage', async () => {
+    const { container, root } = await mountForm();
     act(() => { btnByLabel(container, 'Información sobre el PIN').click(); });
     const help = container.querySelector('[data-testid="pin-help"]');
-    expect(help.textContent).toContain('ABC = 2');
-    expect(help.textContent).toContain('WXYZ = 9');
-    expect(help.textContent).toContain('nunca se envía');
-    expect(help.textContent).toContain('no se guarda');
-    expect(help.textContent).toContain('puedes seguir usando el número mostrado');
+    expect(help.textContent).toContain('distinto de la contraseña');
+    expect(help.textContent).toContain('gestor de contraseñas');
+    expect(help.textContent).toContain('se cifra en el servidor');
+    expect(help.textContent).not.toContain('ABC = 2');
     act(() => { root.unmount(); }); container.remove();
   });
 });
 
-describe('live generated-PIN preview', () => {
-  test('word mode shows "PIN generado" with the real digits, updating per letter', async () => {
+describe('live preview', () => {
+  test('shows the length always, and the grouped digits when revealed', async () => {
     const { container, root } = await mountForm();
-    act(() => { typeInto(primary(container), 'mar'); });
-    expect(preview(container).textContent).toContain('PIN generado');
-    expect(preview(container).textContent).toContain('627');
-    act(() => { typeInto(primary(container), 'marg'); });
-    expect(preview(container).textContent).toContain('6274');
-    act(() => { typeInto(primary(container), WORD); });
-    expect(preview(container).textContent).toContain(WORD_PIN);
+    act(() => { typeInto(primary(container), PIN); });
+    expect(preview(container).textContent).toContain('9 dígitos');
+    expect(preview(container).textContent).not.toContain('903 421 756'); // masked
+    act(() => { btnByText(container, 'Mostrar').click(); });
+    expect(preview(container).textContent).toContain('903 421 756');     // grouped in threes
     act(() => { root.unmount(); }); container.remove();
   });
 
-  test('numeric mode shows the read-only "PIN numérico" summary', async () => {
+  test('the preview is read-only and not an input', async () => {
     const { container, root } = await mountForm();
-    act(() => { typeInto(primary(container), '123456789'); });
-    expect(preview(container).textContent).toContain('PIN numérico');
-    expect(preview(container).textContent).toContain('123456789');
-    act(() => { root.unmount(); }); container.remove();
-  });
-
-  test('the preview is NOT an input and cannot be edited', async () => {
-    const { container, root } = await mountForm();
-    act(() => { typeInto(primary(container), WORD); });
+    act(() => { typeInto(primary(container), PIN); });
     const p = preview(container);
     expect(p.tagName).not.toBe('INPUT');
     expect(p.querySelector('input')).toBe(null);
     expect(p.getAttribute('aria-readonly')).toBe('true');
-    expect(container.querySelectorAll('input').length).toBe(2); // still only the two fields
+    expect(container.querySelectorAll('input').length).toBe(2);
     act(() => { root.unmount(); }); container.remove();
   });
 
-  test('spaces and hyphens are ignored in the preview', async () => {
+  test('no preview when a letter is present', async () => {
     const { container, root } = await mountForm();
-    act(() => { typeInto(primary(container), 'marga - rita'); });
-    expect(preview(container).textContent).toContain(WORD_PIN);
-    act(() => { root.unmount(); }); container.remove();
-  });
-
-  test('no preview for mixed or unsupported input', async () => {
-    const { container, root } = await mountForm();
-    act(() => { typeInto(primary(container), 'PIZZA2026'); });
-    expect(preview(container)).toBe(null);
-    act(() => { typeInto(primary(container), 'almería'); });
+    act(() => { typeInto(primary(container), 'margarita'); });
     expect(preview(container)).toBe(null);
     act(() => { root.unmount(); }); container.remove();
   });
 });
 
-describe('confirmation compares digits only', () => {
-  test('same PIN from different capitalization/separators → "Los PIN coinciden"', async () => {
+describe('secure PIN generator', () => {
+  test('fills the PIN field with a policy-valid PIN, reveals it and asks to confirm', async () => {
     const { container, root } = await mountForm();
-    fill(container, WORD, 'MARGA-RITA');
+    act(() => { btnByText(container, 'Generar PIN seguro').click(); });
+    const value = primary(container).value;
+    expect(value).toMatch(/^[0-9]{9}$/);
+    expect(primary(container).type).toBe('text');            // revealed so it can be noted
+    expect(container.querySelector('[data-testid="generated-note"]')).toBeTruthy();
+    expect(confirmField(container).value).toBe('');          // confirmation NOT prefilled
+    act(() => { root.unmount(); }); container.remove();
+  });
+
+  test('a generated PIN can be confirmed and submitted', async () => {
+    const { container, root } = await mountForm();
+    act(() => { btnByText(container, 'Generar PIN seguro').click(); });
+    const value = primary(container).value;
+    act(() => { typeInto(confirmField(container), value); });
+    expect(matchLine(container).textContent).toBe('Los PIN coinciden');
+    await act(async () => { container.querySelector('button[type="submit"]').click(); });
+    expect(setAdminPin).toHaveBeenCalledWith('ws1', value);
+    act(() => { root.unmount(); }); container.remove();
+  });
+});
+
+describe('confirmation', () => {
+  test('same digits typed with different separators still match', async () => {
+    const { container, root } = await mountForm();
+    fill(container, PIN, '903 421-756');
     expect(matchLine(container).textContent).toBe('Los PIN coinciden');
     act(() => { root.unmount(); }); container.remove();
   });
 
-  test('a word and its equivalent digits also match', async () => {
+  test('different PINs → mismatch label and refused submit', async () => {
     const { container, root } = await mountForm();
-    fill(container, WORD, WORD_PIN);
-    expect(matchLine(container).textContent).toBe('Los PIN coinciden');
-    act(() => { root.unmount(); }); container.remove();
-  });
-
-  test('different generated PINs → "Los PIN no coinciden" and submit is refused', async () => {
-    const { container, root } = await mountForm();
-    fill(container, WORD, 'napolitana');
+    fill(container, PIN, '903421999');
     expect(matchLine(container).textContent).toBe('Los PIN no coinciden');
     await act(async () => { container.querySelector('button[type="submit"]').click(); });
     expect(setAdminPin).not.toHaveBeenCalled();
@@ -212,13 +203,12 @@ describe('confirmation compares digits only', () => {
 
 describe('validation messages', () => {
   const cases = [
-    ['PIZZA2026', 'PIZZA2026', 'Introduce solo letras o solo números, sin mezclarlos.'],
-    ['almería', 'almería', 'Este carácter no es compatible.'],
+    ['margarita', 'margarita', 'Introduce solo números.'],
+    ['PIZZA2026', 'PIZZA2026', 'Introduce solo números.'],
     ['12345', '12345', 'El PIN debe tener entre 9 y 12 dígitos.'],
-    ['pizza', 'pizza', 'La palabra debe generar un PIN de entre 9 y 12 dígitos.'],
-    ['extraordinario', 'extraordinario', 'La palabra debe generar un PIN de entre 9 y 12 dígitos.'],
+    ['1234567890123', '1234567890123', 'El PIN debe tener entre 9 y 12 dígitos.'],
   ];
-  test.each(cases)('input %s is rejected with its own message (no API call)', async (a, b, msg) => {
+  test.each(cases)('input %s rejected with its own message (no API call)', async (a, b, msg) => {
     const { container, root } = await mountForm();
     fill(container, a, b);
     await act(async () => { container.querySelector('button[type="submit"]').click(); });
@@ -228,34 +218,22 @@ describe('validation messages', () => {
   });
 });
 
-describe('submission — numeric PIN only', () => {
-  test('word input submits ONLY the digits; the word is absent from the payload', async () => {
+describe('submission', () => {
+  test('submits the numeric PIN once, separators stripped', async () => {
     const { container, root } = await mountForm();
-    fill(container, WORD, WORD);
+    fill(container, '903 421 756', PIN);
     await act(async () => { container.querySelector('button[type="submit"]').click(); });
     expect(setAdminPin).toHaveBeenCalledTimes(1);
-    expect(setAdminPin).toHaveBeenCalledWith('ws1', WORD_PIN);
-    const payload = JSON.stringify(setAdminPin.mock.calls[0]);
-    expect(payload).not.toContain(WORD);
-    expect(payload).not.toContain(WORD.toUpperCase());
+    expect(setAdminPin).toHaveBeenCalledWith('ws1', PIN);
     act(() => { root.unmount(); }); container.remove();
   });
 
-  test('direct numeric entry submits that PIN unchanged', async () => {
+  test('values cleared after success — the PIN vanishes from the DOM', async () => {
     const { container, root } = await mountForm();
-    fill(container, '903421756', '903421756');
-    await act(async () => { container.querySelector('button[type="submit"]').click(); });
-    expect(setAdminPin).toHaveBeenCalledWith('ws1', '903421756');
-    act(() => { root.unmount(); }); container.remove();
-  });
-
-  test('values are cleared after success — word and PIN vanish from the DOM', async () => {
-    const { container, root } = await mountForm();
-    fill(container, WORD, WORD);
+    fill(container, PIN, PIN);
     await act(async () => { container.querySelector('button[type="submit"]').click(); });
     expect(container.textContent).toContain('PIN de administrador listo');
-    expect(container.textContent).not.toContain(WORD);
-    expect(container.innerHTML).not.toContain(WORD_PIN);
+    expect(container.innerHTML).not.toContain(PIN);
     expect(primary(container)).toBe(null);
     act(() => { root.unmount(); }); container.remove();
   });
@@ -264,10 +242,10 @@ describe('submission — numeric PIN only', () => {
     let release;
     setAdminPin.mockImplementation(() => new Promise((res) => { release = () => res({ status: 200, ok: true, body: { ok: true } }); }));
     const { container, root } = await mountForm();
-    fill(container, WORD, WORD);
+    fill(container, PIN, PIN);
     const btn = container.querySelector('button[type="submit"]');
     await act(async () => { btn.click(); });
-    await act(async () => { btn.click(); btn.click(); });   // extra clicks while busy
+    await act(async () => { btn.click(); btn.click(); });
     expect(setAdminPin).toHaveBeenCalledTimes(1);
     expect(btn.disabled).toBe(true);
     await act(async () => { release(); });
@@ -276,19 +254,16 @@ describe('submission — numeric PIN only', () => {
 
   test('unmount does not throw and leaves nothing behind', async () => {
     const { container, root } = await mountForm();
-    fill(container, WORD, WORD);
+    fill(container, PIN, PIN);
     expect(() => { act(() => { root.unmount(); }); }).not.toThrow();
     expect(container.innerHTML).toBe('');
     container.remove();
   });
 });
 
-describe('collapsed keypad writes into the focused unified field', () => {
-  const openKeypad = (c) => act(() => { btnByText(c, 'Usar teclado numérico').click(); });
-
-  test('digits go to the primary field by default, with a length counter', async () => {
+describe('keypad writes into the focused field', () => {
+  test('digits go to the PIN field by default, with a length counter', async () => {
     const { container, root } = await mountForm();
-    openKeypad(container);
     act(() => { btnByLabel(container, '9').click(); });
     act(() => { btnByLabel(container, '0').click(); });
     act(() => { btnByLabel(container, '3').click(); });
@@ -299,19 +274,17 @@ describe('collapsed keypad writes into the focused unified field', () => {
 
   test('after focusing the confirmation field the keypad writes there instead', async () => {
     const { container, root } = await mountForm();
-    openKeypad(container);
     act(() => { btnByLabel(container, '1').click(); });
     expect(primary(container).value).toBe('1');
     act(() => { confirmField(container).focus(); });
     act(() => { btnByLabel(container, '7').click(); });
     expect(confirmField(container).value).toBe('7');
-    expect(primary(container).value).toBe('1');   // primary untouched
+    expect(primary(container).value).toBe('1');
     act(() => { root.unmount(); }); container.remove();
   });
 
-  test('Borrar removes the last character and Limpiar empties the active field', async () => {
+  test('Borrar and Limpiar act on the active field', async () => {
     const { container, root } = await mountForm();
-    openKeypad(container);
     act(() => { typeInto(primary(container), '9034'); });
     act(() => { btnByLabel(container, 'Borrar').click(); });
     expect(primary(container).value).toBe('903');
@@ -322,13 +295,19 @@ describe('collapsed keypad writes into the focused unified field', () => {
 
   test('a full PIN entered only with the keypad can be submitted', async () => {
     const { container, root } = await mountForm();
-    openKeypad(container);
-    for (const d of '903421756') act(() => { btnByLabel(container, d).click(); });
+    for (const d of PIN) act(() => { btnByLabel(container, d).click(); });
     act(() => { confirmField(container).focus(); });
-    for (const d of '903421756') act(() => { btnByLabel(container, d).click(); });
+    for (const d of PIN) act(() => { btnByLabel(container, d).click(); });
     expect(matchLine(container).textContent).toBe('Los PIN coinciden');
     await act(async () => { container.querySelector('button[type="submit"]').click(); });
-    expect(setAdminPin).toHaveBeenCalledWith('ws1', '903421756');
+    expect(setAdminPin).toHaveBeenCalledWith('ws1', PIN);
+    act(() => { root.unmount(); }); container.remove();
+  });
+
+  test('the physical keyboard still works on the same fields', async () => {
+    const { container, root } = await mountForm();
+    act(() => { typeInto(primary(container), PIN); });
+    expect(primary(container).value).toBe(PIN);
     act(() => { root.unmount(); }); container.remove();
   });
 });
@@ -337,8 +316,9 @@ describe('storage safety', () => {
   test('nothing is written to localStorage or sessionStorage', async () => {
     const spy = jest.spyOn(Storage.prototype, 'setItem');
     const { container, root } = await mountForm();
-    fill(container, WORD, WORD);
-    act(() => { btnByText(container, 'Usar teclado numérico').click(); });
+    act(() => { btnByText(container, 'Generar PIN seguro').click(); });
+    const value = primary(container).value;
+    act(() => { typeInto(confirmField(container), value); });
     await act(async () => { container.querySelector('button[type="submit"]').click(); });
     expect(spy).not.toHaveBeenCalled();
     act(() => { root.unmount(); }); container.remove();
@@ -355,10 +335,10 @@ describe('server-gated rendering is preserved', () => {
     act(() => { root.unmount(); }); container.remove();
   });
 
-  test('server rejection shows a neutral error and keeps the PIN out of the DOM', async () => {
+  test('server rejection shows a neutral error', async () => {
     setAdminPin.mockResolvedValue({ status: 400, ok: false, body: { error: 'admin_pin_rejected' } });
     const { container, root } = await mountForm();
-    fill(container, '903421756', '903421756');
+    fill(container, PIN, PIN);
     await act(async () => { container.querySelector('button[type="submit"]').click(); });
     expect(container.textContent).toContain('No se pudo guardar el PIN');
     act(() => { root.unmount(); }); container.remove();

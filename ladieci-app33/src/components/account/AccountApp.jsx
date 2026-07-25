@@ -24,6 +24,8 @@ import {
   ADMIN_PIN_MAX,
   resolvePinInput,
   pinInputMessage,
+  formatPinGroups,
+  generateSecurePin,
   PIN_MISMATCH_MESSAGE,
   PIN_MATCH_LABEL,
   PIN_MISMATCH_LABEL,
@@ -482,8 +484,9 @@ function ClaimWorkspaceBlock({ onClaimed }) {
   );
 }
 
-// On-screen numeric keypad, COLLAPSED by default. It writes into whichever unified field is
-// currently focused — there is deliberately NO separate keypad PIN state.
+// On-screen numeric keypad. Shown by default: on a shared tablet this is the primary way
+// to enter the PIN. It writes into whichever field is focused — there is NO separate keypad
+// state. The physical keyboard keeps working on the same fields.
 export function PinKeypad({ onDigit, onBackspace, onClear, disabled, length }) {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
   return (
@@ -505,28 +508,26 @@ export function PinKeypad({ onDigit, onBackspace, onClear, disabled, length }) {
   );
 }
 
-// Admin-PIN onboarding — ONE unified creation flow. Rendered only after the server (via
-// /api/account/me) says setup is required for the owner workspace.
+// Admin-PIN onboarding — NUMERIC ONLY. Rendered only after the server (via /api/account/me)
+// says setup is required for the owner workspace.
 //
-// A single primary field accepts either a memorable WORD (ASCII letters, spaces/hyphens
-// ignored) or a direct NUMERIC PIN; the mode is detected automatically and mixed input is
-// rejected. Letters are converted LOCALLY with the telephone mapping and the resulting
-// digits are shown read-only in real time, so the user understands the word is only a
-// mnemonic and the real operational credential is the number (which they may note down).
-// The word never enters the API payload, storage, logs, query strings or history; only the
-// numeric PIN is transmitted and hashed server-side.
+// The PIN is the operational credential: it is typed on the keypad (or a physical keyboard),
+// shown grouped in threes so it can be transcribed reliably, and can be produced by a
+// cryptographically secure generator for owners who prefer to store it in a password manager
+// rather than memorise it. No word-to-digit conversion: that made the credential look
+// stronger while making it dictionary-guessable.
 export function AdminPinView({ setView }) {
   const [state, setState] = useState({ loading: true });
   const [text, setText] = useState('');
   const [text2, setText2] = useState('');
   const [focusField, setFocusField] = useState('primary'); // 'primary' | 'confirm'
-  const [showKeypad, setShowKeypad] = useState(false);
+  const [show, setShow] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [generated, setGenerated] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
-  // Belt-and-braces wipe of the mnemonics when the form goes away.
   const textRef = useRef(''); textRef.current = text;
   const text2Ref = useRef(''); text2Ref.current = text2;
   useEffect(() => () => { textRef.current = ''; text2Ref.current = ''; }, []);
@@ -579,8 +580,6 @@ export function AdminPinView({ setView }) {
     );
   }
 
-  // Both fields are resolved INDEPENDENTLY with the same rules; only the resulting digits
-  // are compared, so capitalization/spaces/hyphens need not match literally.
   const primary = resolvePinInput(text);
   const confirm = resolvePinInput(text2);
   const bothTyped = primary.pin.length > 0 && confirm.pin.length > 0;
@@ -590,7 +589,14 @@ export function AdminPinView({ setView }) {
   const setActive = focusField === 'primary' ? setText : setText2;
   const activeLength = resolvePinInput(activeText).pin.length;
 
-  const clearAll = () => { setText(''); setText2(''); textRef.current = ''; text2Ref.current = ''; };
+  const generate = () => {
+    setErr('');
+    setText(generateSecurePin());
+    setText2('');
+    setShow(true);            // reveal it so the owner can write it down
+    setGenerated(true);
+    setFocusField('confirm');
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -601,10 +607,11 @@ export function AdminPinView({ setView }) {
     if (primary.pin !== confirm.pin) { setErr(PIN_MISMATCH_MESSAGE); return; }
 
     setBusy(true);
-    const r = await setAdminPin(workspaceId, primary.pin);   // numeric PIN ONLY
+    const r = await setAdminPin(workspaceId, primary.pin);
     setBusy(false);
     if (r.ok && r.body && r.body.ok) {
-      clearAll(); setShowKeypad(false); setShowHelp(false); setDone(true);
+      setText(''); setText2(''); textRef.current = ''; text2Ref.current = '';
+      setShow(false); setShowHelp(false); setGenerated(false); setDone(true);
       return;
     }
     setErr('No se pudo guardar el PIN. Revisa que cumpla la política e inténtalo de nuevo.');
@@ -620,40 +627,53 @@ export function AdminPinView({ setView }) {
 
       <div className="ld-acc-label">
         <span className="ld-acc-labelrow">
-          <label htmlFor="ap-input">Palabra o PIN numérico</label>
+          <label htmlFor="ap-input">PIN numérico</label>
           <button type="button" className="ld-acc-info" aria-expanded={showHelp}
             aria-label="Información sobre el PIN" onClick={() => setShowHelp((v) => !v)}>i</button>
         </span>
-        <input id="ap-input" className="ld-acc-input" type="text" autoComplete="off"
-          spellCheck="false" autoCapitalize="none" value={text}
-          onFocus={() => setFocusField('primary')}
-          onChange={(e) => { setErr(''); setText(e.target.value); }} />
+        <span className="ld-acc-pwwrap">
+          <input id="ap-input" className="ld-acc-input ld-acc-input-pw"
+            type={show ? 'text' : 'password'} inputMode="numeric" pattern="[0-9]*"
+            autoComplete="off" value={text}
+            onFocus={() => setFocusField('primary')}
+            onChange={(e) => { setErr(''); setText(e.target.value); }} />
+          <button type="button" className="ld-acc-eye" aria-pressed={show}
+            onClick={() => setShow((s) => !s)}>{show ? 'Ocultar' : 'Mostrar'}</button>
+        </span>
       </div>
 
       {showHelp && (
         <div className="ld-acc-help" data-testid="pin-help">
           <p>{PIN_HELP_TEXT}</p>
           <ul>
-            <li>La palabra <strong>nunca se envía</strong> al servidor.</li>
-            <li>La palabra <strong>no se guarda</strong> en ningún sitio.</li>
-            <li>Solo se transmite el PIN numérico, que se cifra en el servidor.</li>
-            <li>Si olvidas la palabra, puedes seguir usando el número mostrado.</li>
-            <li>Tu cuenta de propietario verificada puede cambiar el PIN más adelante.</li>
+            <li>Solo se transmite el PIN, que se cifra en el servidor.</li>
+            <li>Nunca se envía por correo ni se puede recuperar en texto.</li>
+            <li>Los operadores y el repartidor tienen su propio PIN, distinto de este.</li>
           </ul>
         </div>
       )}
 
       {primary.pin.length > 0 && (
         <p className="ld-acc-preview" data-testid="pin-preview" aria-live="polite" aria-readonly="true">
-          {primary.mode === 'word' ? 'PIN generado: ' : 'PIN numérico: '}
-          <strong>{primary.pin}</strong>
+          PIN: <strong>{show ? formatPinGroups(primary.pin) : '•'.repeat(primary.pin.length)}</strong>
+          {` (${primary.pin.length} dígitos)`}
+        </p>
+      )}
+
+      <button type="button" className="ld-acc-btn ld-acc-btn-secondary" onClick={generate}>
+        Generar PIN seguro
+      </button>
+      {generated && (
+        <p className="ld-acc-policy" data-testid="generated-note">
+          Anota este PIN o guárdalo en tu gestor de contraseñas, y vuelve a escribirlo abajo
+          para confirmarlo.
         </p>
       )}
 
       <div className="ld-acc-label">
-        <label htmlFor="ap-input2">Repite la palabra o el PIN</label>
-        <input id="ap-input2" className="ld-acc-input" type="text" autoComplete="off"
-          spellCheck="false" autoCapitalize="none" value={text2}
+        <label htmlFor="ap-input2">Repite el PIN</label>
+        <input id="ap-input2" className="ld-acc-input" type={show ? 'text' : 'password'}
+          inputMode="numeric" pattern="[0-9]*" autoComplete="off" value={text2}
           onFocus={() => setFocusField('confirm')}
           onChange={(e) => { setErr(''); setText2(e.target.value); }} />
       </div>
@@ -664,19 +684,13 @@ export function AdminPinView({ setView }) {
         </p>
       )}
 
-      <button type="button" className="ld-acc-linkbtn" aria-expanded={showKeypad}
-        onClick={() => setShowKeypad((v) => !v)}>
-        {showKeypad ? 'Ocultar teclado numérico' : 'Usar teclado numérico'}
-      </button>
-      {showKeypad && (
-        <PinKeypad
-          disabled={busy}
-          length={activeLength}
-          onDigit={(d) => { setErr(''); setActive(activeText + d); }}
-          onBackspace={() => { setErr(''); setActive(activeText.slice(0, -1)); }}
-          onClear={() => { setErr(''); setActive(''); }}
-        />
-      )}
+      <PinKeypad
+        disabled={busy}
+        length={activeLength}
+        onDigit={(d) => { setErr(''); setActive(activeText + d); }}
+        onBackspace={() => { setErr(''); setActive(activeText.slice(0, -1)); }}
+        onClear={() => { setErr(''); setActive(''); }}
+      />
 
       <p className="ld-acc-policy">Entre {ADMIN_PIN_MIN} y {ADMIN_PIN_MAX} dígitos.</p>
       {err && <p className="ld-acc-err">{err}</p>}

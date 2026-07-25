@@ -150,83 +150,84 @@ export function validateAdminPin(pin, pin2) {
   return { ok: true, code: 'ok' };
 }
 
-// ── Unified PIN input: a memorable WORD or a direct NUMERIC PIN ─────────────
-// ONE field accepts either digits only, or ASCII letters only (spaces and hyphens are
-// harmless separators). Mixed letters+digits (e.g. "PIZZA2026") are rejected so the mode is
-// never ambiguous. Letters convert LOCALLY with the standard telephone mapping; the word is
-// a mnemonic only — never sent to the server, never stored, never logged. Accented letters
-// are deliberately REJECTED (not transliterated) so frontend behaviour matches the accepted
-// backend/T9 contract exactly.
-export const T9_MAP = Object.freeze({
-  2: 'ABC', 3: 'DEF', 4: 'GHI', 5: 'JKL', 6: 'MNO', 7: 'PQRS', 8: 'TUV', 9: 'WXYZ',
-});
-
-const T9_LOOKUP = (() => {
-  const t = {};
-  Object.keys(T9_MAP).forEach((d) => { for (const ch of T9_MAP[d]) t[ch] = d; });
-  return t;
-})();
-
-// Only spaces and hyphens are ignored; everything else must be a letter or a digit.
+// ── Admin PIN input — NUMERIC ONLY ──────────────────────────────────────────
+// Deliberately numeric-only. An earlier draft let the owner type a memorable word that was
+// converted with the telephone keypad mapping (T9); it was removed because it WEAKENS the
+// credential: a 9-digit PIN derived from a dictionary word has ~10^5 realistic candidates
+// instead of 10^9, i.e. weaker than a random 6-digit PIN, while looking stronger. No serious
+// POS or banking app derives PINs from words. Memorability is solved instead by a secure
+// random generator plus grouped display, so the owner can note the number down.
+//
+// Spaces and hyphens are accepted as harmless separators (people group digits naturally);
+// anything else is rejected.
 const PIN_SEPARATOR = /[\s-]/;
-const ASCII_LETTER = /^[A-Za-z]$/;
 
-// Convert a pure ASCII word to digits. { ok, pin, code } — code ∈ 'ok'|'unsupported'|'empty'.
-export function wordToPin(word) {
-  const raw = word == null ? '' : String(word);
+// { ok, pin, code } — code ∈ 'ok' | 'empty' | 'unsupported' | 'length'.
+// `pin` is populated even when the length is still invalid so the live preview can update
+// on every keystroke; it is empty when a non-digit character is present.
+export function resolvePinInput(text) {
+  const raw = text == null ? '' : String(text);
   let out = '';
   for (const ch of raw) {
     if (PIN_SEPARATOR.test(ch)) continue;
-    if (!ASCII_LETTER.test(ch)) return { ok: false, code: 'unsupported', pin: '' };
-    out += T9_LOOKUP[ch.toUpperCase()];
+    if (ch < '0' || ch > '9') return { ok: false, pin: '', code: 'unsupported' };
+    out += ch;
   }
-  if (out.length === 0) return { ok: false, code: 'empty', pin: '' };
-  return { ok: true, code: 'ok', pin: out };
-}
-
-// THE unified resolver used by the admin-PIN form. Returns
-// { ok, pin, mode, code } with mode ∈ 'word'|'numeric'|null and
-// code ∈ 'ok'|'empty'|'mixed'|'unsupported'|'length_word'|'length_numeric'.
-// `pin` is populated even when the length is still invalid, so the live preview can update
-// on every keystroke; it is empty for mixed/unsupported input.
-export function resolvePinInput(text) {
-  const raw = text == null ? '' : String(text);
-  let letters = 0, digits = 0, out = '';
-  for (const ch of raw) {
-    if (PIN_SEPARATOR.test(ch)) continue;
-    if (ch >= '0' && ch <= '9') { digits++; out += ch; continue; }
-    if (ASCII_LETTER.test(ch)) { letters++; out += T9_LOOKUP[ch.toUpperCase()]; continue; }
-    return { ok: false, pin: '', mode: null, code: 'unsupported' };  // accents included
-  }
-  if (letters > 0 && digits > 0) return { ok: false, pin: '', mode: null, code: 'mixed' };
-  if (out.length === 0) return { ok: false, pin: '', mode: null, code: 'empty' };
-  const mode = letters > 0 ? 'word' : 'numeric';
+  if (out.length === 0) return { ok: false, pin: '', code: 'empty' };
   if (out.length < ADMIN_PIN_MIN || out.length > ADMIN_PIN_MAX) {
-    return { ok: false, pin: out, mode, code: mode === 'word' ? 'length_word' : 'length_numeric' };
+    return { ok: false, pin: out, code: 'length' };
   }
-  return { ok: true, pin: out, mode, code: 'ok' };
+  return { ok: true, pin: out, code: 'ok' };
 }
 
-export const PIN_MIXED_MESSAGE = 'Introduce solo letras o solo números, sin mezclarlos.';
-export const PIN_NUMERIC_LENGTH_MESSAGE =
+export const PIN_NUMERIC_ONLY_MESSAGE = 'Introduce solo números.';
+export const PIN_LENGTH_MESSAGE =
   `El PIN debe tener entre ${ADMIN_PIN_MIN} y ${ADMIN_PIN_MAX} dígitos.`;
-export const PIN_WORD_LENGTH_MESSAGE =
-  `La palabra debe generar un PIN de entre ${ADMIN_PIN_MIN} y ${ADMIN_PIN_MAX} dígitos.`;
-export const PIN_UNSUPPORTED_CHAR_MESSAGE = 'Este carácter no es compatible.';
 export const PIN_MISMATCH_MESSAGE = 'Los PIN no coinciden.';
 export const PIN_MATCH_LABEL = 'Los PIN coinciden';
 export const PIN_MISMATCH_LABEL = 'Los PIN no coinciden';
 
 export function pinInputMessage(code) {
-  if (code === 'mixed') return PIN_MIXED_MESSAGE;
-  if (code === 'unsupported') return PIN_UNSUPPORTED_CHAR_MESSAGE;
-  if (code === 'length_word') return PIN_WORD_LENGTH_MESSAGE;
-  return PIN_NUMERIC_LENGTH_MESSAGE;   // length_numeric + empty
+  if (code === 'unsupported') return PIN_NUMERIC_ONLY_MESSAGE;
+  return PIN_LENGTH_MESSAGE;   // length + empty
+}
+
+// Display helper: group digits in threes so a long PIN can be read and copied reliably
+// (123 456 789). Never changes the value that is submitted.
+export function formatPinGroups(pin) {
+  const s = String(pin == null ? '' : pin);
+  return s.replace(/(\d{3})(?=\d)/g, '$1 ');
+}
+
+// Cryptographically secure random PIN that already satisfies the admin policy (no
+// all-same / sequential / repeated-block result). Generated LOCALLY and shown to the owner
+// so it can be written down or stored in a password manager; never derived from a word.
+export function generateSecurePin(length = ADMIN_PIN_MIN) {
+  const n = Math.min(Math.max(Number(length) || ADMIN_PIN_MIN, ADMIN_PIN_MIN), ADMIN_PIN_MAX);
+  const randomDigits = () => {
+    const out = new Array(n);
+    const g = (typeof globalThis !== 'undefined' && globalThis.crypto
+      && typeof globalThis.crypto.getRandomValues === 'function') ? globalThis.crypto : null;
+    if (g) {
+      const buf = new Uint32Array(n);
+      g.getRandomValues(buf);
+      for (let i = 0; i < n; i++) out[i] = String(buf[i] % 10);
+    } else {
+      // Non-browser fallback (tests/SSR only); the browser path always uses WebCrypto.
+      for (let i = 0; i < n; i++) out[i] = String(Math.floor(Math.random() * 10));
+    }
+    return out.join('');
+  };
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const candidate = randomDigits();
+    if (validateAdminPin(candidate).ok) return candidate;
+  }
+  return randomDigits(); // practically unreachable; policy re-checked by the caller/backend
 }
 
 // Spanish help shown behind the information control next to the field label.
 export const PIN_HELP_TEXT =
-  'Puedes escribir directamente un PIN numérico o utilizar una palabra fácil de recordar. ' +
-  'Las letras se convierten en números como en un teclado telefónico: ABC = 2, DEF = 3, ' +
-  'GHI = 4, JKL = 5, MNO = 6, PQRS = 7, TUV = 8 y WXYZ = 9. El acceso operativo siempre se ' +
-  'realiza con el PIN numérico generado.';
+  'El PIN es numérico y sirve para el acceso operativo diario. Es distinto de la contraseña ' +
+  'de tu cuenta: no se envía por correo y no se puede recuperar en texto. Si no quieres ' +
+  'memorizarlo, pulsa «Generar PIN seguro» y guárdalo en tu gestor de contraseñas o anótalo ' +
+  'en un lugar seguro. Tu cuenta de propietario verificada puede cambiarlo cuando quieras.';
