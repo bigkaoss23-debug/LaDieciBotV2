@@ -179,6 +179,36 @@ export function getItemExtraDisplays(item) {
   return order;
 }
 
+// The REMOVED base ingredients of an item, for their own Cocina row.
+//
+// Reads the structured `removedIngredients` field ONLY. It deliberately does not
+// look at `sub` or `notes`: a historical order whose operator typed "sin cebolla"
+// as free text keeps that as a note. Inferring a removal from note text would
+// silently change what an existing order means, and would also mis-fire on
+// perfectly ordinary notes. Returns [] for anything without explicit removals.
+export function getItemRemovedDisplays(item) {
+  if (!item || typeof item !== "object") return [];
+  if (!Array.isArray(item.removedIngredients)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const r of item.removedIngredients) {
+    const name = String(r ?? "").trim();
+    if (!name) continue;
+    const k = name.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(name);
+  }
+  return out;
+}
+
+// Single "SIN: A, B" label for the Cocina removals row. Empty string when there
+// are none, so the caller hides the row entirely.
+export function formatItemRemovedLabel(item) {
+  const r = getItemRemovedDisplays(item);
+  return r.length ? `SIN: ${r.join(", ")}` : "";
+}
+
 // A single extras label "A, B ×2" from getItemExtraDisplays. Empty string when
 // the item has no extras (caller hides the extras row). NO "+" prefix: the
 // orange styling + position under the product already signal "extra", so the

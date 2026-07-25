@@ -12,6 +12,7 @@ import DireccionInlinePanel from './DireccionInlinePanel';
 import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
 import { getKitchenCapacityStatus } from '../core/kitchen/capacity';
+import { DRAFT_NO_PERSIST, DRAFT_NOTICE } from '../draftGuard';
 
 // A1 (NUEVO_PEDIDO_DEFAULT_HORA): parser puro "HH:MM" → minuti, SOLO per
 // confrontare la hora attiva con l'earliest fattibile fornito dal backend.
@@ -468,6 +469,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // ── Confirm ──────────────────────────────────────────────────────────────
   const handleConfirm = async () => {
     if (submittingRef.current || !ok) return;
+    // S2-7D4D-FIX1 — draft build: intercept the FINAL mutation control before any
+    // work is done, and say so in the operator's language. The api layer would
+    // refuse anyway; stopping here means the operator gets an explanation instead
+    // of a generic failure. Inert unless REACT_APP_DRAFT_NO_PERSIST === "true".
+    if (DRAFT_NO_PERSIST) { window.alert(DRAFT_NOTICE); return; }
     // Difesa in profondità (CONFIRMAR_GATING_01): anche se il bottone è disabled
     // quando il planner blocca, blocchiamo qui pure il submit programmatico.
     if (plannerBlocksConfirm) return;

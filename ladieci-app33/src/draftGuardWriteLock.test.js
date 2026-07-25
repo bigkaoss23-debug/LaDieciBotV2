@@ -80,5 +80,38 @@ describe("draftGuard", () => {
       const g = load("true");
       expect(g.isBlockedMutation("someBrandNewWriteAddedLater")).toBe(true);
     });
+
+    test("exposes the Spanish notice for the final mutation controls", () => {
+      const g = load("true");
+      expect(g.DRAFT_NOTICE).toBe("Borrador de prueba — no se guardarán cambios");
+    });
+  });
+
+  // The lock must come from the build ONLY. If a URL query, localStorage,
+  // sessionStorage, user input or a role/body claim could turn it off, the
+  // "draft cannot write" guarantee would be a suggestion, not a property.
+  describe("not switchable at runtime", () => {
+    test("query string, storage and user input cannot disarm it", () => {
+      const g = load("true");
+      const before = g.DRAFT_NO_PERSIST;
+      try {
+        window.history.replaceState({}, "", "/?draft=false&REACT_APP_DRAFT_NO_PERSIST=false");
+        window.localStorage.setItem("REACT_APP_DRAFT_NO_PERSIST", "false");
+        window.sessionStorage.setItem("REACT_APP_DRAFT_NO_PERSIST", "false");
+      } catch (e) { /* jsdom limits */ }
+      expect(g.DRAFT_NO_PERSIST).toBe(before);
+      expect(g.isBlockedMutation("createOrden")).toBe(true);
+      expect(() => g.assertMutationAllowed("createOrden")).toThrow();
+    });
+
+    test("a role/body claim cannot widen the allowlist", () => {
+      const g = load("true");
+      expect(g.isBlockedMutation("createOrden", { role: "admin", allow: true })).toBe(true);
+    });
+
+    test("the module reads no storage and no query at all", () => {
+      const src = require("fs").readFileSync(require("path").join(__dirname, "draftGuard.js"), "utf8");
+      expect(src).not.toMatch(/localStorage|sessionStorage|location\.search|URLSearchParams|document\.cookie/);
+    });
   });
 });

@@ -5,6 +5,7 @@ import { useMenuData } from '../menu/useMenuData';
 // extras button by product type (it renders for every item), and introducing that gate
 // would be a behaviour change beyond this port's scope.
 import { extrasForProduct } from '../menu/menuAdapter';
+import { DRAFT_NO_PERSIST, DRAFT_NOTICE } from '../draftGuard';
 import Chip from './ui/Chip';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 import { ZONE_DELIVERY, zonaBadgeStyle } from '../zones';
@@ -394,7 +395,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                 <div style={{color:C.verde,fontWeight:800,fontSize:20,
                   fontFamily:"'DM Mono',monospace"}}>{total}€</div>
               </div>
-              <button onClick={()=>onSave({
+              <button onClick={()=>{ if (DRAFT_NO_PERSIST) { window.alert(DRAFT_NOTICE); return; } return onSave({
                   ...orden, items, nota, hora,
                   ...(isDelivery ? {
                     // Step 2 anti-cerotto: solo input operatore. Il backend
@@ -412,7 +413,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                     durata_haversine_min: null,
                     geo_source:           null
                   } : {})
-                })}
+                }); }}
                 disabled={items.length===0}
                 style={{background:items.length>0?C.rosso:C.fumo,
                   color:items.length>0?"#fff":C.grigio,border:"none",

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { C, tot, MAX_PIZZE_ORA, LOGO_RED_SRC, useWidth } from '../../constants';
 import { caricoTotale, lookupMenu, orarioToMs, calcTimer, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
-import { formatItemExtrasLabel, resolveItemNote } from '../../menu/itemDisplay';
+import { formatItemExtrasLabel, resolveItemNote, formatItemRemovedLabel } from '../../menu/itemDisplay';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import Suoni from '../../sounds';
@@ -361,7 +361,8 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                       // manual note gets its own red NOTA row.
                       const extrasLabel  = formatItemExtrasLabel(it);
                       const notaItem     = resolveItemNote(it);
-                      const hasVar       = !!(extrasLabel || notaItem);
+                      const removedLabel = formatItemRemovedLabel(it);
+                      const hasVar       = !!(extrasLabel || notaItem || removedLabel);
                       const nomeIng      = mi?.ing || it.ing || "";
                       // COCINA_CARD_PIXEL_GRID: nome pizza reale dominante + tag menù a fianco.
                       const realName = nomeCompleto || nomeBreve;
@@ -409,7 +410,18 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                               {extrasLabel}
                             </div>
                           )}
-                          {/* 4b. NOTA operatore — riga separata, outline rosso, wrap consentito.
+                          {/* 4b. INGREDIENTI RIMOSSI — riga PROPRIA (S2-7D4D-FIX1).
+                              Terzo stile, distinto sia dagli extra (arancione, si aggiunge)
+                              sia dalla nota (rossa, è un'istruzione): qui si TOGLIE. */}
+                          {removedLabel && (
+                            <div style={{display:"inline-block",background:"#1F2937",color:"#FCA5A5",
+                              border:"2px solid #7F1D1D",borderRadius:8,
+                              padding: compact?"3px 8px":"4px 12px",fontSize:compact?11:14,fontWeight:900,
+                              marginTop:4,letterSpacing:.3,textTransform:"uppercase"}}>
+                              🚫 {removedLabel}
+                            </div>
+                          )}
+                          {/* 4c. NOTA operatore — riga separata, outline rosso, wrap consentito.
                               Stile deliberatamente diverso dagli extras: non è un supplemento. */}
                           {notaItem && (
                             <div style={{marginTop:5,background:"#FEE2E2",border:"2px solid #DC2626",

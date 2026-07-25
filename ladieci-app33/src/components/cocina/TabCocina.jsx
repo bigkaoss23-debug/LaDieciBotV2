@@ -6,7 +6,7 @@ import Suoni from '../../sounds';
 // kept the raw "+" prefix and could not tell a supplement from an operator note;
 // formatItemExtrasLabel supersedes it for the Cocina item rows (S2-7D4D).
 import { lookupMenu, orarioToMs, calcTimer, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
-import { formatItemExtrasLabel, resolveItemNote } from '../../menu/itemDisplay';
+import { formatItemExtrasLabel, resolveItemNote, formatItemRemovedLabel } from '../../menu/itemDisplay';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import SnoozeButton from '../ui/SnoozeButton';
@@ -355,6 +355,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                     // and get separate rows (see PanelCocina for the same split).
                     const extrasLabel = formatItemExtrasLabel(it);
                     const notaItem    = resolveItemNote(it);
+                    const removedLabel = formatItemRemovedLabel(it);
                     const nomeIng = mi?.ing || it.ing || "";
                     // COCINA_CARD_PIXEL_GRID: nome pizza reale dominante + tag menù a fianco.
                     const realName = nomeSub || it.n;
@@ -392,6 +393,16 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                             borderRadius:8,padding:"4px 12px",fontSize:compact?12:15,fontWeight:800,
                             marginBottom:5,letterSpacing:.2,textTransform:"uppercase"}}>
                             {extrasLabel}
+                          </div>
+                        )}
+                        {/* INGREDIENTI RIMOSSI — riga PROPRIA (S2-7D4D-FIX1). Terzo stile,
+                            distinto dagli extra (si aggiunge) e dalla nota (istruzione). */}
+                        {removedLabel && (
+                          <div style={{display:"inline-block",background:"#1F2937",color:"#FCA5A5",
+                            border:"2px solid #7F1D1D",borderRadius:8,padding:"4px 12px",
+                            fontSize:compact?12:15,fontWeight:900,marginBottom:5,letterSpacing:.3,
+                            textTransform:"uppercase"}}>
+                            🚫 {removedLabel}
                           </div>
                         )}
                         {/* NOTA operatore — riga separata, outline rosso, wrap consentito */}

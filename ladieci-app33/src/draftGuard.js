@@ -32,6 +32,10 @@ export const READ_ONLY_POST_ACTIONS = new Set([
   "previewManualGiroRoute",
 ]);
 
+// The notice shown ON the final mutation controls in a draft build, so the
+// operator sees why nothing saves before clicking, not after.
+export const DRAFT_NOTICE = "Borrador de prueba — no se guardarán cambios";
+
 export class DraftWriteBlockedError extends Error {
   constructor(what) {
     super(`[DRAFT · SIN GUARDAR] Escritura bloqueada: ${what}. ` +

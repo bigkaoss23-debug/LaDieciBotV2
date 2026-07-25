@@ -70,6 +70,17 @@ for (const [name, raw] of [["TabCocina", tab], ["PanelCocina", panel]]) {
     assert.ok(/wordBreak:"break-word"/.test(nota[1]), "la nota lunga va a capo");
   });
 
+  ck(`${name}: riga PROPRIA per gli ingredienti rimossi`, () => {
+    assert.ok(/formatItemRemovedLabel/.test(src), "importa/usa formatItemRemovedLabel");
+    assert.ok(/const removedLabel\s*=\s*formatItemRemovedLabel\(it\)/.test(src), "removedLabel derivato");
+    const blk = /\{removedLabel && \(([\s\S]{0,600}?)\)\}/.exec(src);
+    assert.ok(blk, "blocco {removedLabel && (...)}");
+    // terzo stile: né l'arancione degli extra né il rosso della nota
+    assert.ok(!/#FF6B00/.test(blk[1]), "non riusa lo stile degli extra");
+    assert.ok(/#7F1D1D/.test(blk[1]), "stile proprio");
+    assert.ok(/\{removedLabel\}/.test(blk[1]), "renderizza l'etichetta");
+  });
+
   ck(`${name}: Bebidas/Postres — la nota NON sostituisce il nome prodotto`, () => {
     assert.ok(
       !/\{varSub \? varSub : `\$\{nomeProdotto\}\$\{sizeInfo\}`\}/.test(src),
