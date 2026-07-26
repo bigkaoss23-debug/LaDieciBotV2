@@ -21,6 +21,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useOpenServiceController } from './service/useOpenServiceController';
 import OpenServiceConfirmation from './service/OpenServiceConfirmation';
+import { describeCloseoutKind } from '../utils/closeoutServiceKind';
 
 const money = (value) => `${(Number(value) || 0).toFixed(2)} €`;
 
@@ -62,12 +63,20 @@ export default function CurrentNightCloseoutPage({ onBack, role, actor, onServic
     return () => { liveRef.current = false; open.dispose(); };
   }, [load]);
 
+  // Derived from the loaded contract only — never from the clock, businessDate
+  // or the silent-ensure session (which describes the CURRENT service, not
+  // necessarily the one being reported here).
+  const kind = describeCloseoutKind(data);
+
   return (
     <main style={{ minHeight: '100vh', background: '#080808', color: '#fff', padding: 20, fontFamily: "'DM Sans',sans-serif" }}>
       <button onClick={onBack} style={button}>← Servicio</button>
       <section style={{ maxWidth: 980, margin: '28px auto' }}>
-        <p style={{ color: '#f97316', fontWeight: 800, letterSpacing: 2 }}>SERVICIO ACTUAL</p>
-        <h1>Cierre del servicio</h1>
+        {/* S2-7D6C2 — which service this report is about comes ONLY from
+            closeout.serviceKind. Before `data` exists there is nothing to
+            claim, so the neutral wording stands. */}
+        <p data-testid="closeout-eyebrow" style={{ color: '#f97316', fontWeight: 800, letterSpacing: 2 }}>{kind.eyebrow}</p>
+        <h1 data-testid="closeout-title">{kind.title}</h1>
         {error && <p role="alert" data-testid="closeout-error" style={{ color: '#ffb4b4' }}>{error}</p>}
         {!data && !error && <p>Cargando…</p>}
         {data && !data.available && (

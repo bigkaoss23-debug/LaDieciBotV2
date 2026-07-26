@@ -218,6 +218,20 @@ describe('the manual open-service controller is now an exceptional recovery path
     expect(C).not.toMatch(/classifyOpenAttempt|openingRef|const openService =/);
   });
 
+  // S2-7D6C2 — the closeout says WHICH service it reports, from the contract only.
+  test('the closeout kind comes from closeout.serviceKind and nothing else', () => {
+    const C = code(CLOSEOUT);
+    expect(C).toMatch(/describeCloseoutKind\(data\)/);
+    // never the clock, never a date/status inference, never the ensure session
+    expect(C).not.toMatch(/new Date\(\)|Date\.now\(|getHours\(/);
+    expect(C).not.toMatch(/serviceKind[\s\S]{0,60}(businessDate|status)/);
+    expect(C).not.toMatch(/useSilentServiceEnsure|ensuredStatusLabel/);
+    // the title/eyebrow are rendered from the helper, not hardcoded literals
+    expect(C).toMatch(/\{kind\.eyebrow\}/);
+    expect(C).toMatch(/\{kind\.title\}/);
+    expect(C).not.toMatch(/>SERVICIO ACTUAL</);
+  });
+
   test('the closeout page is now the ONLY mount point for the manual controller — the gate does not duplicate it', () => {
     expect(code(CLOSEOUT)).toMatch(/useOpenServiceController\(\{/);
     expect(code(CLOSEOUT)).toMatch(/<OpenServiceConfirmation/);
