@@ -1,11 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useReducer } from 'react';
 import { C, tot, useWidth, EXTRAS_DULCES, calcTotale, pizzaLabel, esDulce, findExtra } from '../constants';
 import { useMenuData } from '../menu/useMenuData';
 // NB: canEditExtras is deliberately NOT used here. This modal has never gated the
 // extras button by product type (it renders for every item), and introducing that gate
 // would be a behaviour change beyond this port's scope.
 import { extrasForProduct } from '../menu/menuAdapter';
-import { DRAFT_NO_PERSIST, DRAFT_NOTICE } from '../draftGuard';
+// S2-7D4E-A — same canonical lifecycle as NuevoPedidoModal. This modal no longer
+// knows draft mode exists; the gateway returns a typed result.
+import {
+  submissionReducer, initialSubmissionState, runSubmission, PHASE, ACTION, isBusy,
+} from '../order/submissionLifecycle';
+import { submitOrderPayload } from '../order/persistenceGateway';
 import Chip from './ui/Chip';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 import { ZONE_DELIVERY, zonaBadgeStyle } from '../zones';
@@ -89,6 +94,53 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
     return () => { if (geocodeTimer.current) clearTimeout(geocodeTimer.current); };
   // eslint-disable-next-line
   }, [direccion, zonaManuale]);
+
+  // S2-7D4E-A — same canonical lifecycle as NuevoPedidoModal, so both modals
+  // report a blocked/failed save the same way instead of each inventing one.
+  const [submission, dispatchSubmission] = useReducer(submissionReducer, initialSubmissionState);
+  const savingRef = useRef(false);
+  const submitLock = useRef({
+    acquire: () => { if (savingRef.current) return false; savingRef.current = true; return true; },
+    release: () => { savingRef.current = false; },
+  }).current;
+  const submissionBusy = isBusy(submission);
+
+  const buildSavePayload = () => ({
+    ...orden, items, nota, hora,
+    ...(isDelivery ? {
+      // Step 2 anti-cerotto: solo input operatore. Il backend
+      // (modificaOrdine → resolveDeliveryFields) ri-risolve zona/durata
+      // server-side se cambia indirizzo e IGNORA i campi geo/durata del client.
+      direccion: direccion || null,
+      zona: zonaManuale ? (zonaInfo?.zona?.id || null) : null,
+      zona_lat: null,
+      zona_lon: null,
+      zona_manuale: zonaManuale,
+      durata_andata_min:    null,
+      durata_google_min:    null,
+      durata_haversine_min: null,
+      geo_source:           null
+    } : {})
+  });
+
+  const handleSave = async () => {
+    await runSubmission({
+      lock: submitLock,
+      dispatch: dispatchSubmission,
+      buildSnapshot: buildSavePayload,
+      validate: (snap) => (snap.items && snap.items.length > 0)
+        ? null
+        : { code: "empty_order", message: "El pedido no puede quedarse sin productos." },
+      persist: (snap) => submitOrderPayload(snap, { persist: () => onSave(snap) }),
+    });
+  };
+
+  // Only a successful save clears the lifecycle; blocked/error keep the modal
+  // open with the edited items intact so nothing the operator did is lost.
+  useEffect(() => {
+    if (submission.phase !== PHASE.SUCCESS) return;
+    dispatchSubmission({ type: ACTION.RESET });
+  }, [submission.phase]); // eslint-disable-line
 
   const [subCat, setSubCat] = useState("Pizza a tu gusto"); // custom pizza sub-view
   const [showIngPanel, setShowIngPanel] = useState(null);
@@ -389,37 +441,46 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                 style={{width:95,background:C.carbone,border:`1px solid ${C.fumo}`,
                   borderRadius:8,color:C.bianco,padding:"8px 8px",fontSize:13}}/>
             </div>
+            {/* S2-7D4E-A — single in-modal result surface (same contract as
+                NuevoPedidoModal). No native alert for save feedback. */}
+            {submission.feedback && (
+              <div
+                key={submission.feedbackSeq}
+                data-testid="submission-feedback"
+                data-tone={submission.feedback.tone}
+                data-code={submission.feedback.code}
+                role="status"
+                aria-live="polite"
+                style={{
+                  marginBottom:8, padding:"9px 12px", borderRadius:9, fontSize:12.5,
+                  fontWeight:700, lineHeight:1.35, whiteSpace:"pre-line",
+                  background: submission.feedback.tone==="error" ? "rgba(232,52,28,0.14)"
+                    : submission.feedback.tone==="warn" ? "rgba(251,191,36,0.14)"
+                    : "rgba(59,130,246,0.14)",
+                  border:`1.5px solid ${submission.feedback.tone==="error" ? "#E8341C"
+                    : submission.feedback.tone==="warn" ? "#fbbf24" : "#3B82F6"}`,
+                  color: submission.feedback.tone==="error" ? "#FCA5A5"
+                    : submission.feedback.tone==="warn" ? "#fbbf24" : "#93C5FD",
+                }}>
+                {submission.feedback.message}
+              </div>
+            )}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
                 <div style={{color:C.grigio,fontSize:11}}>Total</div>
                 <div style={{color:C.verde,fontWeight:800,fontSize:20,
                   fontFamily:"'DM Mono',monospace"}}>{total}€</div>
               </div>
-              <button onClick={()=>{ if (DRAFT_NO_PERSIST) { window.alert(DRAFT_NOTICE); return; } return onSave({
-                  ...orden, items, nota, hora,
-                  ...(isDelivery ? {
-                    // Step 2 anti-cerotto: solo input operatore. Il backend
-                    // (modificaOrdine → resolveDeliveryFields) ri-risolve zona/
-                    // durata server-side se cambia indirizzo e IGNORA i campi
-                    // geo/durata del client. Inviamo `zona` solo come override
-                    // manuale esplicito; i derivati restano null.
-                    direccion: direccion || null,
-                    zona: zonaManuale ? (zonaInfo?.zona?.id || null) : null,
-                    zona_lat: null,
-                    zona_lon: null,
-                    zona_manuale: zonaManuale,
-                    durata_andata_min:    null,
-                    durata_google_min:    null,
-                    durata_haversine_min: null,
-                    geo_source:           null
-                  } : {})
-                }); }}
-                disabled={items.length===0}
-                style={{background:items.length>0?C.rosso:C.fumo,
-                  color:items.length>0?"#fff":C.grigio,border:"none",
+              <button onClick={handleSave}
+                data-phase={submission.phase}
+                disabled={items.length===0 || submissionBusy}
+                style={{background:(items.length>0 && !submissionBusy)?C.rosso:C.fumo,
+                  color:(items.length>0 && !submissionBusy)?"#fff":C.grigio,border:"none",
                   borderRadius:11,padding:"13px 22px",fontWeight:800,fontSize:14,
-                  boxShadow:items.length>0?`0 4px 14px ${C.rosso}55`:"none"}}>
-                ✅ Salva modifiche
+                  boxShadow:(items.length>0 && !submissionBusy)?`0 4px 14px ${C.rosso}55`:"none"}}>
+                {submission.phase === PHASE.SUBMITTING ? "Guardando…"
+                  : submission.phase === PHASE.ERROR ? "↻ Reintentar"
+                  : "✅ Salva modifiche"}
               </button>
             </div>
           </div>

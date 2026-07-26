@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useReducer } from 'react';
 import { C, genId, MENU, INGREDIENTI, calcTotale, DELIVERY_FEE, aplicarDescuento } from '../constants';
 import { api, sb } from '../api';
 import { assegnaZonaDaKeyword, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, BUFFER_OPS_DRIVER_MIN } from '../zones';
@@ -12,7 +12,13 @@ import DireccionInlinePanel from './DireccionInlinePanel';
 import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
 import { getKitchenCapacityStatus } from '../core/kitchen/capacity';
-import { DRAFT_NO_PERSIST, DRAFT_NOTICE } from '../draftGuard';
+// S2-7D4E-A — the modal no longer reads the draft flag. Draft blocking is a
+// property of the persistence gateway, surfaced as a typed result.
+import {
+  submissionReducer, initialSubmissionState, runSubmission,
+  PHASE, ACTION, isBusy, attemptOwnsForm,
+} from '../order/submissionLifecycle';
+import { submitOrderPayload } from '../order/persistenceGateway';
 
 // A1 (NUEVO_PEDIDO_DEFAULT_HORA): parser puro "HH:MM" → minuti, SOLO per
 // confrontare la hora attiva con l'earliest fattibile fornito dal backend.
@@ -442,8 +448,25 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // click producono lo stesso reqId e l'idempotency backend (creaOrdine)
   // riconosce il duplicato anche se la guardia frontend dovesse fallire.
   const submittingRef = useRef(false);
-  const [submitting, setSubmitting] = useState(false);
   const reqIdRef = useRef(null);
+
+  // S2-7D4E-A — ONE submission state. `submitting` as a standalone boolean is
+  // gone: "busy" is now derived from the lifecycle phase, so button, feedback and
+  // control flow can never disagree about what the attempt is doing.
+  const [submission, dispatchSubmission] = useReducer(submissionReducer, initialSubmissionState);
+
+  // Synchronous double-click lock. It must be a ref, not state: React state
+  // updates are async and a fast second click would slip through before re-render.
+  const submitLock = useRef({
+    acquire: () => {
+      if (submittingRef.current) return false;
+      submittingRef.current = true;
+      return true;
+    },
+    release: () => { submittingRef.current = false; },
+  }).current;
+
+  const submissionBusy = isBusy(submission);
 
   // ── Reset ────────────────────────────────────────────────────────────────
   const reset = () => {
@@ -462,64 +485,90 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setRitiroInmediato(false);
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
     submittingRef.current = false;
-    setSubmitting(false);
     reqIdRef.current = null;
   };
 
   // ── Confirm ──────────────────────────────────────────────────────────────
+  // S2-7D4E-A — the click no longer contains the flow. It hands the attempt to
+  // ONE canonical lifecycle (src/order/submissionLifecycle.js), which guarantees
+  // every exit path produces a visible state. The previous version was a chain
+  // of early returns, so a click could legitimately end in nothing at all.
+  //
+  // Business protections are preserved verbatim — planner gate, closing time,
+  // distant time — but they are now steps of the lifecycle rather than silent
+  // returns, and their answers feed the state machine explicitly.
   const handleConfirm = async () => {
-    if (submittingRef.current || !ok) return;
-    // S2-7D4D-FIX1 — draft build: intercept the FINAL mutation control before any
-    // work is done, and say so in the operator's language. The api layer would
-    // refuse anyway; stopping here means the operator gets an explanation instead
-    // of a generic failure. Inert unless REACT_APP_DRAFT_NO_PERSIST === "true".
-    if (DRAFT_NO_PERSIST) { window.alert(DRAFT_NOTICE); return; }
-    // Difesa in profondità (CONFIRMAR_GATING_01): anche se il bottone è disabled
-    // quando il planner blocca, blocchiamo qui pure il submit programmatico.
-    if (plannerBlocksConfirm) return;
-    const horaMin = horaToMinStrict(hora);
-    if (horaMin == null) {
-      window.alert(CLOSING_TIME_ERROR);
-      return;
-    }
-    const cierreOverride = horaMin > CLOSING_TIME_MIN;
-    if (cierreOverride) {
-      const okFueraHorario = window.confirm(
-        `Pedido fuera de horario (${hora}). ¿Forzar igualmente?\n\n` +
-        `Se guardará marcado como ${CLOSING_TIME_OVERRIDE_MARKER}.`
-      );
-      if (!okFueraHorario) return;
-    }
-    // Freno a mano UX (Bug Z3, 17/05/2026): se hora è > 90 min nel futuro,
-    // chiedi conferma esplicita. Cattura digitazioni accidentali (es. 23:43
-    // invece di 21:30) o button click sbagliati prima che inquinino la coda.
-    if (hora && /^\d{1,2}:\d{2}$/.test(hora)) {
-      const [hh, mm] = hora.split(":").map(Number);
-      const horaMinFuture = hh * 60 + mm;
-      const now = new Date();
-      const nowMin = now.getHours() * 60 + now.getMinutes();
-      const deltaMin = horaMinFuture - nowMin;
-      // Solo se nel futuro lontano nello stesso "giorno logico" (non gestiamo
-      // wrap a giorno dopo — orari tipo 24:02 hanno deltaMin negativo o assurdo
-      // e cadono fuori da questo controllo che è OK: sono casi rari da non bloccare qui).
-      if (deltaMin > 90 && deltaMin < 12 * 60) {
-        const h = Math.floor(deltaMin / 60);
-        const m = deltaMin % 60;
-        const dStr = h > 0 ? `${h}h${String(m).padStart(2,"0")}` : `${m} min`;
-        const intensity = deltaMin > 120 ? "⚠️⚠️ HORA MUY LEJANA" : "⚠️ ATENCIÓN";
-        const ok2 = window.confirm(
-          `${intensity} — Hora pedido: ${hora}\n` +
-          `Está ${dStr} en el futuro.\n\n` +
-          `Confirma SOLO si el cliente la pidió EXPLÍCITAMENTE.\n` +
-          `En caso de duda → CANCELA y verifica con el cliente.`
-        );
-        if (!ok2) return;
-      }
-    }
-    // Attiva il guard SOLO dopo l'eventuale confirm dialog: se l'operatore
-    // ha annullato la future-hora, NON bloccare il modal.
-    submittingRef.current = true;
-    setSubmitting(true);
+    await runSubmission({
+      lock: submitLock,
+      dispatch: dispatchSubmission,
+
+      // 2. immutable snapshot — what we validate is exactly what we submit, and
+      //    it cannot be rewritten by a background timing effect mid-attempt.
+      buildSnapshot: () => ({ hora, tipoConsegna, items, nombre: nombre.trim(), tel, at: Date.now() }),
+
+      // 4. required fields + a parseable time
+      validate: (snap) => {
+        if (!ok) return { code: "incomplete", message: "Faltan datos del pedido." };
+        if (horaToMinStrict(snap.hora) == null) {
+          return { code: "closing_time", message: CLOSING_TIME_ERROR };
+        }
+        return null;
+      },
+
+      // 5. planner gate (CONFIRMAR_GATING_01) — same condition as the disabled
+      //    button, kept as defence in depth against a programmatic submit.
+      checkBlocking: () => plannerBlocksConfirm
+        ? { code: "planner_blocked", message: confirmBlockReason || "El planner bloquea esta hora." }
+        : null,
+
+      // 6. business confirmations, unchanged in meaning
+      collectConfirmations: (snap) => {
+        const qs = [];
+        const horaMin = horaToMinStrict(snap.hora);
+        if (horaMin != null && horaMin > CLOSING_TIME_MIN) {
+          qs.push({
+            code: "outside_hours",
+            message:
+              `Pedido fuera de horario (${snap.hora}). ¿Forzar igualmente?\n\n` +
+              `Se guardará marcado como ${CLOSING_TIME_OVERRIDE_MARKER}.`,
+            rejectMessage: "Pedido fuera de horario cancelado.",
+          });
+        }
+        if (snap.hora && /^\d{1,2}:\d{2}$/.test(snap.hora)) {
+          const [hh, mm] = snap.hora.split(":").map(Number);
+          const now = new Date();
+          const deltaMin = (hh * 60 + mm) - (now.getHours() * 60 + now.getMinutes());
+          if (deltaMin > 90 && deltaMin < 12 * 60) {
+            const h = Math.floor(deltaMin / 60), m = deltaMin % 60;
+            const dStr = h > 0 ? `${h}h${String(m).padStart(2, "0")}` : `${m} min`;
+            qs.push({
+              code: "distant_time",
+              message:
+                `${deltaMin > 120 ? "⚠️⚠️ HORA MUY LEJANA" : "⚠️ ATENCIÓN"} — Hora pedido: ${snap.hora}\n` +
+                `Está ${dStr} en el futuro.\n\n` +
+                `Confirma SOLO si el cliente la pidió EXPLÍCITAMENTE.\n` +
+                `En caso de duda → CANCELA y verifica con el cliente.`,
+              rejectMessage: "Hora lejana cancelada. Revisa la hora con el cliente.",
+            });
+          }
+        }
+        return qs;
+      },
+      // Native confirm is retained ONLY for these two destructive-ish questions
+      // (unchanged operator habit); its answer is fed back into the machine.
+      askConfirmation: async (q) => window.confirm(q.message),
+
+      // 8. the single persistence boundary. This handler does not know whether
+      //    the build persists; the gateway decides and returns a typed result.
+      persist: (snap) => submitOrderPayload(snap, { persist: () => buildAndSendOrder(snap) }),
+    });
+  };
+
+  // The actual write, extracted so the lifecycle owns the flow and this owns
+  // only the payload. Behaviour in normal mode is unchanged.
+  const buildAndSendOrder = async (snap) => {
+    const horaMin = horaToMinStrict(snap.hora);
+    const cierreOverride = horaMin != null && horaMin > CLOSING_TIME_MIN;
     const telFinal = tel.trim() || (canal === "BANCO" ? "BARRA-" + Date.now().toString(36).toUpperCase().slice(-4) : "");
 
     // Se l'operatore ha attivato la stellina e non c'è già un clienteId,
@@ -568,7 +617,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       cliente_id: cidFinale || null,
       canal: canal === "WA" ? "WA" : canal === "BANCO" ? "BANCO" : "MANUAL",
       items: items.map(i => ({ ...i })),
-      nota: notaFinale, hora, ts: Date.now(), estado: "POR_CONFIRMAR",
+      // hora comes from the ATTEMPT SNAPSHOT, not from live state: what the
+      // operator confirmed is what gets sent, even if a recommendation arrived
+      // between the click and this line.
+      nota: notaFinale, hora: snap.hora, ts: Date.now(), estado: "POR_CONFIRMAR",
       tipo_consegna: tipoConsegna,
       direccion: tipoConsegna === "DOMICILIO" ? direccion.trim() : null,
       direccion_note: tipoConsegna === "DOMICILIO" ? (direccionNote.trim() || null) : null,
@@ -599,8 +651,20 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     });
     // saveGeoCache rimosso — il backend resolver salva automaticamente in cache
     // quando geocoda con successo (Google/Nominatim/Photon). Una sola fonte di scrittura.
-    reset();
+    //
+    // NB: reset() is NOT called here any more. Cleanup belongs to the SUCCESS
+    // outcome of the lifecycle (see the effect below), so it happens exactly once
+    // and never on a blocked or failed attempt — which is what kept the operator's
+    // work safe in draft mode.
   };
+
+  // SUCCESS is the only outcome that clears the form. BLOCKED and ERROR keep the
+  // modal open with the order intact so the operator can retry or keep editing.
+  useEffect(() => {
+    if (submission.phase !== PHASE.SUCCESS) return;
+    reset();
+    dispatchSubmission({ type: ACTION.RESET });
+  }, [submission.phase]); // eslint-disable-line
 
   const handleClose = () => { reset(); onClose(); };
 
@@ -1099,13 +1163,17 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     // Precedencia: recommended_hora (pizza-ready) → hora_proposta (fallback si el
     // planner aún no respondió). Preserva A1: recommended_hora ya es >= mínimo
     // cocina, así que el default nunca queda por debajo del earliest factible.
+    // S2-7D4E-A — TIME OWNERSHIP: while an attempt owns the form, a background
+    // recommendation must not rewrite the time the operator just confirmed. This
+    // is why the clock appeared to "jump because of the click".
+    if (attemptOwnsForm(submission)) return;
     const recDom = plannerPreview?.recommendation?.recommended_hora || null;
     let firstAvailable = recDom || backendTiming.hora_proposta || null;
     if (!firstAvailable || firstAvailable === hora) return;
     horaCustom.current = false;
     setForzaHora(false);
     setHora(firstAvailable);
-  }, [visible, tipoConsegna, backendTiming, plannerPreview, horaTouchedByOperator, hora]);
+  }, [visible, tipoConsegna, backendTiming, plannerPreview, horaTouchedByOperator, hora, submission]);
 
   // A1 (NUEVO_PEDIDO_DEFAULT_HORA): RITIRO — aggancia il DEFAULT (ora NON toccata
   // dall'operatore) all'earliest fattibile (backendTiming.earliest_hora = now +
@@ -1118,6 +1186,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // non interviene più (il warning torna legittimo).
   useEffect(() => {
     if (!visible || horaTouchedByOperator || tipoConsegna === "DOMICILIO") return;
+    // S2-7D4E-A — same time-ownership rule as the DOMICILIO clamp above.
+    if (attemptOwnsForm(submission)) return;
     const minEarliest = hhmmToMin(backendTiming?.earliest_hora || null);
     if (minEarliest == null) return;
     const curMin = hhmmToMin(hora);
@@ -1125,7 +1195,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       horaCustom.current = false;
       setHora(backendTiming.earliest_hora);
     }
-  }, [visible, tipoConsegna, backendTiming, horaTouchedByOperator, hora]);
+  }, [visible, tipoConsegna, backendTiming, horaTouchedByOperator, hora, submission]);
 
   // Prefill quando il modal si apre
   useEffect(() => {
@@ -2109,9 +2179,50 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               </>)}
             </div>
 
-            <button className="np-confirm" onClick={handleConfirm} disabled={!canConfirmOrder || submitting}
-              style={(!canConfirmOrder || submitting) ? undefined : { boxShadow: "0 6px 20px rgba(33,143,77,0.4)" }}>
-              {submitting ? "Confirmando…" : "✓ Confirmar pedido"}
+            {/* S2-7D4E-A — SINGLE in-modal result surface. One element, keyed by a
+                sequence number, so pressing Confirmar repeatedly refreshes this
+                banner instead of stacking dialogs. Replaces window.alert for all
+                submission feedback: an alert is invisible wherever native dialogs
+                are suppressed, which is exactly how "Confirmar does nothing" was
+                experienced. */}
+            {submission.feedback && (
+              <div
+                key={submission.feedbackSeq}
+                data-testid="submission-feedback"
+                data-tone={submission.feedback.tone}
+                data-code={submission.feedback.code}
+                role="status"
+                aria-live="polite"
+                style={{
+                  width: "100%", marginBottom: 8, padding: "10px 12px", borderRadius: 10,
+                  fontSize: 13, fontWeight: 700, lineHeight: 1.35, whiteSpace: "pre-line",
+                  background:
+                    submission.feedback.tone === "error" ? "rgba(232,52,28,0.14)"
+                    : submission.feedback.tone === "warn" ? "rgba(251,191,36,0.14)"
+                    : "rgba(59,130,246,0.14)",
+                  border: `1.5px solid ${
+                    submission.feedback.tone === "error" ? "#E8341C"
+                    : submission.feedback.tone === "warn" ? "#fbbf24"
+                    : "#3B82F6"}`,
+                  color:
+                    submission.feedback.tone === "error" ? "#FCA5A5"
+                    : submission.feedback.tone === "warn" ? "#fbbf24"
+                    : "#93C5FD",
+                }}>
+                {submission.feedback.message}
+              </div>
+            )}
+
+            {/* Green means "valid and ready to confirm" — never "already saved".
+                While an attempt runs the action is disabled and shows progress. */}
+            <button className="np-confirm" onClick={handleConfirm} disabled={!canConfirmOrder || submissionBusy}
+              data-phase={submission.phase}
+              style={(!canConfirmOrder || submissionBusy) ? undefined : { boxShadow: "0 6px 20px rgba(33,143,77,0.4)" }}>
+              {submission.phase === PHASE.SUBMITTING ? "Guardando…"
+                : submission.phase === PHASE.VALIDATING ? "Comprobando…"
+                : submission.phase === PHASE.REQUIRES_CONFIRMATION ? "Esperando confirmación…"
+                : submission.phase === PHASE.ERROR ? "↻ Reintentar"
+                : "✓ Confirmar pedido"}
             </button>
           </footer>
         </div>
