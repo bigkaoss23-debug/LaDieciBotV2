@@ -1,83 +1,58 @@
 // ===============================================================
-// ServiceStateGate.jsx — S2-7D5, shared-controller refactor S2-7D5B
+// ServiceStateGate.jsx — S2-7D5, shared-controller refactor S2-7D5B,
+// silent ensure S2-7D6C
 //
 // THE service-state gate for the operational surface.
 //
-// The design gap the recovered S2-6A UI never closed: its only "Abrir nuevo
-// servicio" button lived inside the closeout page, so an operator entering
-// Servicio saw a fully normal order-entry screen that could not possibly save —
-// every insert dies on the DB trigger NO_OPEN_SERVICE_SESSION. This component
-// makes the shift state the FIRST thing the operator meets.
+// S2-7D5's gap: its only "Abrir nuevo servicio" button lived inside the
+// closeout page, so an operator entering Servicio saw a fully normal
+// order-entry screen that could not possibly save. S2-7D5B centralized the
+// button behind one guarded confirm-then-open flow, but it was still a MANUAL
+// action every operator had to perform on every shift.
 //
-// Three states, no fourth:
-//   loading  → a clear waiting surface, never a half-usable Servicio
-//   open     → the real Servicio, plus one restrained persistent status line
-//   closed   → a landing that explains why, and offers the only open control
+// S2-7D6C removes that manual step entirely. An authorized admin/operator
+// entering Servicio silently calls ensureCurrentServiceSession — idempotent,
+// so the second operator of a shift reuses the first one's session — and the
+// operational shell simply opens. There is no confirmation, no success modal:
+// created:true and created:false render identically. Manual opening
+// (useOpenServiceController + OpenServiceConfirmation) still exists, entirely
+// unchanged, but is reachable only from the closeout page now — an
+// exceptional, deliberate, audited recovery action, never this gate's normal
+// path. See "Ver cierre del servicio" below for the one place this gate still
+// points there.
 //
-// S2-7D5B: the opening itself is NOT implemented here. It lives in
-// useOpenServiceController + OpenServiceConfirmation, shared with the closeout
-// page, so there is exactly one guarded path to an open shift.
+// Four states:
+//   ensuring/retrying → a clear waiting surface, never a half-usable Servicio
+//   ready             → the real Servicio, plus one restrained status line
+//   exception         → the backend's typed reason, mapped to natural Spanish
+//                        — never a locally invented schedule/session decision
 // ===============================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api';
-import { isRider } from '../utils/adminRbac';
-import {
-  SERVICE_PHASE, classifyServiceState, serviceOpenLabel, closedServiceReason,
-} from '../utils/serviceSessionState';
-import { useOpenServiceController } from './service/useOpenServiceController';
-import OpenServiceConfirmation, {
-  Row, identityGrid, fmtDate, fmtTime, roleLabelOf, primaryBtn, ghostBtn,
-} from './service/OpenServiceConfirmation';
-
-const useNow = () => {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const i = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(i);
-  }, []);
-  return now;
-};
+import { useEffect, useRef } from 'react';
+import { useSilentServiceEnsure, ENSURE_PHASE } from '../hooks/useSilentServiceEnsure';
+import { ensuredStatusLabel } from '../utils/serviceEnsureOutcome';
+import ServiceExceptionPanel from './service/ServiceExceptionPanel';
 
 export default function ServiceStateGate({ role, actor, onCloseout, children }) {
-  const [state, setState] = useState({ phase: SERVICE_PHASE.LOADING });
-  const liveRef = useRef(true);
-  const now = useNow();
+  const ensure = useSilentServiceEnsure({ role });
+  const { phase, session, exception, retry, recheckSilently } = ensure;
+  const recheckRef = useRef(recheckSilently);
+  recheckRef.current = recheckSilently;
 
-  const refresh = useCallback(async () => {
-    const res = await api.getCurrentServiceCloseout();
-    const next = classifyServiceState(res);
-    if (liveRef.current) setState(next);
-    return next;
-  }, []);
-
-  // One shared controller: role gate, confirmation, synchronous lock, typed
-  // classifier and post-open verification all live there.
-  const open = useOpenServiceController({
-    role,
-    onOpened: (verified) => { if (liveRef.current) setState(verified); },
-  });
-
+  // A write refused with NO_OPEN_SERVICE_SESSION means the shift closed under
+  // us (the operational rollover, or another operator's close). Silently
+  // re-ensure rather than keep pretending — this never flips the visible
+  // phase away from READY unless the outcome actually changed, so an
+  // in-progress order on screen is not disturbed by a background check that
+  // comes back the same.
   useEffect(() => {
-    liveRef.current = true;
-    refresh().catch(() => {
-      if (liveRef.current) {
-        setState({ phase: SERVICE_PHASE.ERROR, message: 'No se pudo leer el estado del servicio.' });
-      }
-    });
-    return () => { liveRef.current = false; open.dispose(); };
-  }, [refresh]);
-
-  // A write refused with NO_OPEN_SERVICE_SESSION means the shift closed under us
-  // (the 23:50 cron, or another operator). Re-read rather than keep pretending.
-  useEffect(() => {
-    const onLost = () => { refresh().catch(() => {}); };
+    const onLost = () => { recheckRef.current(); };
     window.addEventListener('ld-service-session-lost', onLost);
     return () => window.removeEventListener('ld-service-session-lost', onLost);
-  }, [refresh]);
+  }, []);
 
-  // ── open → the real Servicio, with one restrained status line ──────────────
-  if (state.phase === SERVICE_PHASE.OPEN) {
+  // ── ready → the real Servicio, with one restrained status line ─────────────
+  if (phase === ENSURE_PHASE.READY) {
     return (
       <>
         <div
@@ -89,75 +64,35 @@ export default function ServiceStateGate({ role, actor, onCloseout, children }) 
             fontSize: 11, fontWeight: 700, letterSpacing: 0.3, pointerEvents: 'none',
             whiteSpace: 'nowrap',
           }}>
-          {serviceOpenLabel(state)}
+          {ensuredStatusLabel(session)}
         </div>
         {children}
       </>
     );
   }
 
-  if (state.phase === SERVICE_PHASE.LOADING) {
+  // ── exception → the typed backend reason, never a normal opening screen ───
+  if (phase === ENSURE_PHASE.EXCEPTION) {
     return (
-      <main data-testid="service-gate-loading" style={shell}>
-        <div style={{ ...panel, maxWidth: 520, textAlign: 'center' }}>
-          <p style={eyebrow}>SERVICIO</p>
-          <h1 style={{ fontSize: 22, margin: '4px 0 10px' }}>Comprobando el estado del servicio…</h1>
-          <p style={{ color: '#9a9a9a', fontSize: 14, margin: 0 }}>
-            Un momento: los pedidos solo pueden crearse con un servicio abierto.
-          </p>
-        </div>
-      </main>
+      <ServiceExceptionPanel
+        role={role} actor={actor} exception={exception}
+        retrying={false} onRetry={retry} onCloseout={onCloseout}
+      />
     );
   }
 
-  // ── closed / error → the landing. No order-entry surface is exposed here. ──
+  // ── ensuring / retrying / idle → a clear waiting surface ───────────────────
   return (
-    <main data-testid="service-closed-landing" style={shell}>
-      <section style={{ ...panel, maxWidth: 560, width: '100%' }}>
+    <main data-testid="service-gate-loading" style={shell}>
+      <div style={{ ...panel, maxWidth: 520, textAlign: 'center' }}>
         <p style={eyebrow}>SERVICIO</p>
-        <h1 data-testid="service-closed-title" style={{ fontSize: 26, margin: '4px 0 6px' }}>
-          {state.phase === SERVICE_PHASE.ERROR ? 'Estado del servicio no disponible' : closedServiceReason(state)}
+        <h1 style={{ fontSize: 22, margin: '4px 0 10px' }}>
+          {phase === ENSURE_PHASE.RETRYING ? 'Reintentando…' : 'Comprobando el estado del servicio…'}
         </h1>
-        <p style={{ color: '#a5a5a5', fontSize: 14, lineHeight: 1.6, margin: '0 0 18px' }}>
-          {state.phase === SERVICE_PHASE.ERROR
-            ? (state.message || 'No se pudo leer el estado del servicio.')
-            : 'Los pedidos quedan vinculados a un servicio. Mientras no haya un servicio abierto no se puede crear ningún pedido.'}
+        <p style={{ color: '#9a9a9a', fontSize: 14, margin: 0 }}>
+          Un momento: los pedidos solo pueden crearse con un servicio abierto.
         </p>
-
-        <dl data-testid="service-identity" style={identityGrid}>
-          <Row k="Usuario" v={actor || '—'} />
-          <Row k="Rol" v={roleLabelOf(role)} />
-          <Row k="Fecha" v={fmtDate(now)} />
-          <Row k="Hora" v={fmtTime(now)} />
-          {state.businessDate ? <Row k="Último servicio" v={`${state.businessDate} · ${state.status}`} /> : null}
-        </dl>
-
-        {isRider(role) && (
-          <p data-testid="service-rider-notice" style={{ color: '#fbbf24', fontSize: 13, marginTop: 18 }}>
-            El reparto no abre el servicio. Avisa a un operador.
-          </p>
-        )}
-
-        {open.mayOpen && !open.confirming && (
-          <div style={{ display: 'flex', gap: 10, marginTop: 22, flexWrap: 'wrap' }}>
-            <button data-testid="open-service-btn" onClick={open.requestOpen} style={primaryBtn}>
-              Abrir servicio
-            </button>
-            <button onClick={() => refresh()} style={ghostBtn}>Actualizar estado</button>
-            {onCloseout && (
-              <button data-testid="landing-closeout-btn" onClick={onCloseout} style={ghostBtn}>Cierre del servicio</button>
-            )}
-          </div>
-        )}
-
-        {open.mayOpen && open.confirming && (
-          <OpenServiceConfirmation
-            actor={actor} role={role}
-            opening={open.opening} error={open.error}
-            onConfirm={open.confirm} onCancel={open.cancel}
-          />
-        )}
-      </section>
+      </div>
     </main>
   );
 }

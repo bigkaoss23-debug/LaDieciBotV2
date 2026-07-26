@@ -339,6 +339,13 @@ const api = {
   // Opens THE next service session. Takes no arguments by design: the backend
   // derives actor from the verified token and business_date in Europe/Madrid.
   openServiceSession: () => proxyPost({ action: "openServiceSession" }),
+  // S2-7D6C — the SILENT path, called on every authorized entry into Servicio.
+  // Idempotent: a second operator of the same shift reuses the first one's
+  // session. Takes no arguments — same reason as openServiceSession, and this
+  // is a genuine mutation (it may create a session row), so it is NOT added to
+  // draftGuard's read-only allowlist: a no-persist draft build must still
+  // refuse it before any network call, exactly like openServiceSession.
+  ensureCurrentServiceSession: () => proxyPost({ action: "ensureCurrentServiceSession" }),
 
   upsertCliente: function(data) {
     return proxyPost({ action: "upsertCliente", ...data });

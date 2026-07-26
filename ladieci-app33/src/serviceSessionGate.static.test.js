@@ -1,16 +1,24 @@
 // S2-7D5 — static contract for the recovered service-session UI.
+// S2-7D6C — silent ensure replaces the manual confirm-then-open landing as the
+// NORMAL entry path. The manual controller (useOpenServiceController +
+// OpenServiceConfirmation) is untouched code, but is now mounted ONLY by the
+// closeout page, as an explicit, secondary, admin/operator-only recovery
+// affordance — never by the gate itself.
 //
 // This project has no @testing-library, so component behaviour that cannot be
 // expressed as a pure function is pinned at the source level, the same way the
 // boot-routing and modal-submission contracts are. The DECISIONS themselves are
-// unit-tested in utils/openServiceFlow.test.js and utils/serviceSessionState.test.js;
-// what follows proves the components are wired to them and that nothing forbidden
-// was reintroduced with the port.
+// unit-tested in utils/serviceEnsureFlow.test.js, utils/serviceEnsureOutcome.test.js
+// and utils/openServiceFlow.test.js; what follows proves the components are
+// wired to them and that nothing forbidden was reintroduced with the port.
 const fs = require('fs');
 const path = require('path');
 
 const read = (p) => fs.readFileSync(path.join(__dirname, p), 'utf8');
 const GATE = read('components/ServiceStateGate.jsx');
+const EXCEPTION_PANEL = read('components/service/ServiceExceptionPanel.jsx');
+const HOOK = read('hooks/useSilentServiceEnsure.js');
+const FLOW = read('utils/serviceEnsureFlow.js');
 const APP = read('App.jsx');
 const API = read('api.js');
 const SERVICIO = read('components/ServicioPage.jsx');
@@ -28,6 +36,9 @@ const code = (src) => src
   .join('\n');
 
 const GATE_C = code(GATE);
+const EXCEPTION_PANEL_C = code(EXCEPTION_PANEL);
+const HOOK_C = code(HOOK);
+const FLOW_C = code(FLOW);
 // App.jsx is asserted RAW: it contains JSX comment blocks and regex literals that
 // the line-based stripper mangles. None of the App assertions below can be
 // satisfied by comment text, so stripping buys nothing here.
@@ -36,7 +47,7 @@ const API_C = code(API);
 const SERVICIO_C = code(SERVICIO);
 
 describe('api — service session rides the CURRENT Auth V2 proxy', () => {
-  test('both actions exist and go through proxyGet/proxyPost', () => {
+  test('both legacy actions exist and go through proxyGet/proxyPost', () => {
     expect(API_C).toMatch(/getCurrentServiceCloseout:\s*\(\)\s*=>\s*proxyGet\("getCurrentServiceCloseout"\)/);
     expect(API_C).toMatch(/openServiceSession:\s*\(\)\s*=>\s*proxyPost\(\{\s*action:\s*"openServiceSession"\s*\}\)/);
   });
@@ -46,9 +57,16 @@ describe('api — service session rides the CURRENT Auth V2 proxy', () => {
     expect(line).not.toMatch(/serviceSessionId|sessionId|businessDate|p_opened_by/);
   });
 
+  // S2-7D6C — the silent action.
+  test('ensureCurrentServiceSession exists, goes through proxyPost, and takes NO arguments', () => {
+    expect(API_C).toMatch(/ensureCurrentServiceSession:\s*\(\)\s*=>\s*proxyPost\(\{\s*action:\s*"ensureCurrentServiceSession"\s*\}\)/);
+    const line = API_C.split('\n').find((l) => l.includes('ensureCurrentServiceSession:'));
+    expect(line).not.toMatch(/serviceKind|sessionId|businessDate|p_opened_by/);
+  });
+
   // Phase 3 boundary: no legacy auth may come back with the port.
   test('no legacy /api/auth, plaintext PIN or localStorage credential is reintroduced', () => {
-    for (const src of [GATE_C, code(CLOSEOUT), API_C]) {
+    for (const src of [GATE_C, code(CLOSEOUT), API_C, EXCEPTION_PANEL_C, HOOK_C, FLOW_C]) {
       expect(src).not.toMatch(/["']\/api\/auth["']/);
       expect(src).not.toMatch(/X-Api-Key/);
       expect(src).not.toMatch(/localStorage\.setItem\(\s*["']ld_/);
@@ -57,59 +75,137 @@ describe('api — service session rides the CURRENT Auth V2 proxy', () => {
   });
 });
 
-describe('the gate is the service-state landing (Phase 4)', () => {
-  test('it renders exactly three surfaces: loading, open, closed/error', () => {
+describe('the gate silently ensures a session on entry (S2-7D6C)', () => {
+  test('it renders exactly two surfaces of its own: loading and open — exceptions are delegated', () => {
     expect(GATE_C).toMatch(/data-testid="service-gate-loading"/);
     expect(GATE_C).toMatch(/data-testid="service-open-status"/);
-    expect(GATE_C).toMatch(/data-testid="service-closed-landing"/);
+    // no normal "closed landing" surface is invented here anymore
+    expect(GATE_C).not.toMatch(/data-testid="service-closed-landing"/);
+    expect(GATE_C).toMatch(/<ServiceExceptionPanel/);
   });
 
-  test('children (the real Servicio) render ONLY under the open phase', () => {
-    const openBranch = GATE_C.slice(GATE_C.indexOf('SERVICE_PHASE.OPEN)'));
-    expect(openBranch).toMatch(/\{children\}/);
+  test('children (the real Servicio) render ONLY under ENSURE_PHASE.READY', () => {
+    const readyBranch = GATE_C.slice(GATE_C.indexOf('ENSURE_PHASE.READY)'));
+    expect(readyBranch).toMatch(/\{children\}/);
     // there is exactly one place children are rendered
     expect(GATE_C.match(/\{children\}/g)).toHaveLength(1);
   });
 
-  test('the closed landing states the rule and shows verified identity', () => {
-    expect(GATE_C).toMatch(/data-testid="service-identity"/);
-    expect(GATE_C).toMatch(/Usuario/);
-    expect(GATE_C).toMatch(/Rol/);
-    // The headline comes from the unit-tested reason helper, not a literal here.
-    expect(GATE_C).toMatch(/closedServiceReason\(state\)/);
-    expect(read('utils/serviceSessionState.js')).toMatch(/No hay un servicio abierto/);
-    expect(GATE).toMatch(/no se puede crear ningún pedido/);
+  test('the gate calls useSilentServiceEnsure, never the manual controller', () => {
+    expect(GATE_C).toMatch(/useSilentServiceEnsure\(\{\s*role\s*\}\)/);
+    expect(GATE_C).not.toMatch(/useOpenServiceController/);
+    expect(GATE_C).not.toMatch(/OpenServiceConfirmation/);
+    expect(GATE_C).not.toMatch(/api\.openServiceSession/);
+    expect(GATE_C).not.toMatch(/api\.ensureCurrentServiceSession/); // goes through the hook, not a direct call
   });
 
-  test('the open control is gated on canOpenService, so a rider never sees it', () => {
-    // the gate asks the shared controller; the role rule itself lives there
-    expect(GATE_C).toMatch(/open\.mayOpen && !open\.confirming/);
-    expect(GATE_C).toMatch(/open\.mayOpen && open\.confirming/);
-    expect(code(CONTROLLER)).toMatch(/const mayOpen = canOpenService\(role\)/);
-    expect(GATE_C).toMatch(/data-testid="service-rider-notice"/);
+  test('no confirmation, no success UI: a normal ready render shows only the status pill', () => {
+    expect(GATE_C).not.toMatch(/¿Quieres abrir|Confirmar y abrir|Abrir servicio/i);
+    expect(GATE_C).not.toMatch(/window\.(alert|confirm)/);
+  });
+
+  test('the status pill uses ensuredStatusLabel(session) — never a browser-clock-derived label', () => {
+    expect(GATE_C).toMatch(/ensuredStatusLabel\(session\)/);
+    expect(GATE_C).not.toMatch(/new Date\(\)\.getHours/);
+  });
+
+  test('a role that may not open (rider, unknown) never sees a normal shell — the hook fails it closed', () => {
+    // the role rule lives in serviceEnsureFlow.js, not re-derived in the gate
+    expect(FLOW_C).toMatch(/canOpenService\(role\)/);
+    expect(FLOW_C).toMatch(/if\s*\(!canOpenService\(role\)\)/);
+    expect(EXCEPTION_PANEL_C).toMatch(/data-testid="service-rider-notice"/);
+    expect(EXCEPTION_PANEL_C).toMatch(/isRider\(role\)/);
   });
 
   test('no session selector is invented anywhere', () => {
-    for (const src of [GATE_C, code(CLOSEOUT)]) {
+    for (const src of [GATE_C, code(CLOSEOUT), EXCEPTION_PANEL_C]) {
       expect(src).not.toMatch(/serviceSessionId\s*[:=]|sessionId\s*[:=]/);
       expect(src).not.toMatch(/<select/i);
     }
   });
 
-  test('the gate re-reads the state when a write reports the shift was lost', () => {
+  test('a lost mid-shift session triggers a SILENT recheck, not the visible retry/loading phase', () => {
     expect(GATE_C).toMatch(/ld-service-session-lost/);
+    expect(GATE_C).toMatch(/recheckSilently/);
   });
 });
 
-// ── S2-7D5B — ONE guarded opening path, shared by both entry points ─────────
-describe('the shared open-service controller', () => {
+describe('useSilentServiceEnsure / serviceEnsureFlow — the state machine (S2-7D6C)', () => {
+  test('the five required phases exist, named clearly', () => {
+    for (const p of ['IDLE', 'ENSURING', 'READY', 'EXCEPTION', 'RETRYING']) {
+      expect(HOOK_C).toMatch(new RegExp(`${p}:`));
+    }
+  });
+
+  test('exactly ONE shared in-flight ensure exists at module scope — every mount funnels through it', () => {
+    expect(HOOK_C).toMatch(/createSharedEnsure/);
+    expect(FLOW_C).toMatch(/export function createSharedEnsure/);
+    // the module-level singleton, not one per hook call
+    expect(HOOK_C).toMatch(/^const sharedEnsure = createSharedEnsure\(/m);
+  });
+
+  test('retry and the initial mount both go through the same run(), never a second code path', () => {
+    expect(HOOK_C).toMatch(/const retry = useCallback\(\(\) => \{ run\(ENSURE_PHASE\.RETRYING\); \}/);
+    expect(HOOK_C.match(/attemptSilentEnsure/g).length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('recheckSilently never sets a visible loading phase — it only reacts to the settled outcome', () => {
+    const recheck = HOOK_C.slice(HOOK_C.indexOf('const recheckSilently'));
+    expect(recheck).toMatch(/run\(null\)/);
+  });
+
+  test('client input never substitutes for the backend verdict: no local schedule/window logic', () => {
+    for (const src of [HOOK_C, FLOW_C, GATE_C]) {
+      expect(src).not.toMatch(/PRANZO_WINDOW|SERA_WINDOW|BETWEEN_SERVICES\s*=|getHours\(\)\s*[<>]=/);
+    }
+  });
+});
+
+describe('serviceEnsureOutcome — every backend outcome is mapped, none invented (S2-7D6C)', () => {
+  const OUTCOME = read('utils/serviceEnsureOutcome.js');
+  test('every documented typed code from the backend contract is present', () => {
+    for (const c of [
+      'BETWEEN_SERVICES', 'AFTER_ORDER_CUTOFF', 'OUTSIDE_WINDOWS',
+      'SERVICE_ALREADY_COMPLETED_TODAY', 'LUNCH_SESSION_STILL_ACTIVE',
+      'OTHER_SERVICE_STILL_ACTIVE', 'SERVICE_SESSION_CLOSING', 'INVALID_ACTOR',
+    ]) {
+      expect(OUTCOME).toContain(`'${c}'`);
+    }
+  });
+  test('created:true and created:false both classify to the SAME ALLOWED kind', () => {
+    expect(OUTCOME).toMatch(/if \(res\.success === true\)/);
+    expect(OUTCOME).not.toMatch(/created\s*===\s*true[\s\S]{0,80}kind:\s*['"]?CREATED_ALLOWED/);
+  });
+});
+
+describe('ServiceExceptionPanel — natural Spanish, no raw codes, retry gated correctly (S2-7D6C)', () => {
+  test('title and message come from the classifier, never a literal per-code string here', () => {
+    expect(EXCEPTION_PANEL_C).toMatch(/exception\.title/);
+    expect(EXCEPTION_PANEL_C).toMatch(/exception\.message/);
+    expect(EXCEPTION_PANEL_C).not.toMatch(/BETWEEN_SERVICES|LUNCH_SESSION_STILL_ACTIVE|AFTER_ORDER_CUTOFF/);
+  });
+  test('retry is gated by exceptionAllowsRetry, the closeout link by exceptionShowsCloseoutLink', () => {
+    expect(EXCEPTION_PANEL_C).toMatch(/exceptionAllowsRetry\(kind\)/);
+    expect(EXCEPTION_PANEL_C).toMatch(/exceptionShowsCloseoutLink\(kind\)/);
+  });
+  test('no requests of its own, no window dialogs', () => {
+    expect(EXCEPTION_PANEL_C).not.toMatch(/api\.|fetch\(/);
+    expect(EXCEPTION_PANEL_C).not.toMatch(/window\.(alert|confirm)/);
+  });
+  test('the identity grid is the same shared building block as the manual confirmation', () => {
+    expect(EXCEPTION_PANEL_C).toMatch(/import \{ Row, identityGrid, fmtDate, fmtTime, roleLabelOf/);
+  });
+});
+
+// ── S2-7D5B — the manual recovery path, now closeout-only (S2-7D6C) ─────────
+describe('the manual open-service controller is now an exceptional recovery path only', () => {
   const CTRL = code(CONTROLLER);
   const CONF = code(CONFIRM);
 
   test('the controller is the ONLY caller of api.openServiceSession', () => {
     expect(CTRL).toMatch(/api\.openServiceSession\(\)/);
-    // every other component must go through it
-    for (const src of [GATE_C, code(CLOSEOUT), SERVICIO_C, code(MODAL), APP_C]) {
+    // every other component must go through it (or not open the service at all)
+    for (const src of [GATE_C, code(CLOSEOUT), SERVICIO_C, code(MODAL), APP_C, EXCEPTION_PANEL_C, HOOK_C, FLOW_C]) {
       expect(src).not.toMatch(/api\.openServiceSession/);
     }
   });
@@ -122,22 +218,23 @@ describe('the shared open-service controller', () => {
     expect(C).not.toMatch(/classifyOpenAttempt|openingRef|const openService =/);
   });
 
-  test('both entry points mount the same controller and the same confirmation', () => {
-    for (const src of [GATE_C, code(CLOSEOUT)]) {
-      expect(src).toMatch(/useOpenServiceController\(\{/);
-      expect(src).toMatch(/<OpenServiceConfirmation/);
-      expect(src).toMatch(/open\.requestOpen/);
-      expect(src).toMatch(/onConfirm=\{open\.confirm\}/);
-      expect(src).toMatch(/onCancel=\{open\.cancel\}/);
-      expect(src).toMatch(/open\.mayOpen/);
-    }
+  test('the closeout page is now the ONLY mount point for the manual controller — the gate does not duplicate it', () => {
+    expect(code(CLOSEOUT)).toMatch(/useOpenServiceController\(\{/);
+    expect(code(CLOSEOUT)).toMatch(/<OpenServiceConfirmation/);
+    expect(code(CLOSEOUT)).toMatch(/open\.requestOpen/);
+    expect(code(CLOSEOUT)).toMatch(/onConfirm=\{open\.confirm\}/);
+    expect(code(CLOSEOUT)).toMatch(/onCancel=\{open\.cancel\}/);
+    expect(code(CLOSEOUT)).toMatch(/open\.mayOpen/);
+    // the gate mounts neither
+    expect(GATE_C).not.toMatch(/useOpenServiceController\(\{/);
+    expect(GATE_C).not.toMatch(/<OpenServiceConfirmation/);
   });
 
-  test('the opening logic is not duplicated: one lock, one flow, one classifier', () => {
+  test('the opening logic is not duplicated: one lock, one flow, one classifier — untouched', () => {
     expect(CTRL).toMatch(/createAttemptLock/);
     expect(CTRL).toMatch(/runOpenServiceAttempt/);
     expect(CTRL).toMatch(/lockRef\.current\.busy/);
-    for (const src of [GATE_C, code(CLOSEOUT)]) {
+    for (const src of [GATE_C, code(CLOSEOUT), HOOK_C, FLOW_C]) {
       expect(src).not.toMatch(/createAttemptLock|runOpenServiceAttempt/);
     }
   });
@@ -210,14 +307,24 @@ describe('closeout routing (Phase 6)', () => {
     expect(SERVICIO).toMatch(/Cierre del servicio/);
   });
 
-  test('the principal open path is the landing, not the closeout page', () => {
-    // the closeout keeps an open affordance, but through the shared guarded path
-    expect(code(CLOSEOUT)).toMatch(/open\.mayOpen && !open\.confirming/);
+  test('the principal entry path is silent ensure, not a button-driven landing (S2-7D6C)', () => {
+    // the gate itself offers no manual "abrir servicio" affordance anymore
+    expect(GATE_C).not.toMatch(/data-testid="open-service-btn"/);
+    expect(GATE_C).not.toMatch(/data-testid="landing-closeout-btn"/);
+    // the manual recovery keeps its (unique) affordance, but only on the closeout page
     expect(code(CLOSEOUT)).toMatch(/data-testid="closeout-open-btn"/);
-    expect(GATE_C).toMatch(/data-testid="open-service-btn"/);
-    // and a verified open from Cierre returns the operator to Servicio
+    // and a verified manual open from Cierre still returns the operator to Servicio,
+    // where the silent gate re-ensures on the next mount
     expect(code(CLOSEOUT)).toMatch(/onServiceOpened/);
     expect(APP_C).toMatch(/onServiceOpened=\{\(\)=>setScreen\("servicio"\)\}/);
+  });
+
+  test('the exception panel offers "Ver cierre del servicio" as its own escape hatch, never a duplicate confirm flow', () => {
+    expect(EXCEPTION_PANEL_C).toMatch(/data-testid="service-exception-closeout-btn"/);
+    // it imports shared presentational pieces (Row/identityGrid/...) from that
+    // file, but never renders <OpenServiceConfirmation> or mounts the hook
+    expect(EXCEPTION_PANEL_C).not.toMatch(/<OpenServiceConfirmation/);
+    expect(EXCEPTION_PANEL_C).not.toMatch(/useOpenServiceController\(/);
   });
 });
 
@@ -251,9 +358,11 @@ describe('NO_OPEN_SERVICE_SESSION guidance (Phase 8)', () => {
     expect(SERVICIO_C).toMatch(/NO_OPEN_SERVICE_SESSION_MESSAGE/);
   });
 
-  test('order submission never opens the service by itself', () => {
+  test('order submission never opens or ensures the service by itself', () => {
     expect(SERVICIO_C).not.toMatch(/openServiceSession/);
+    expect(SERVICIO_C).not.toMatch(/ensureCurrentServiceSession/);
     expect(code(MODAL)).not.toMatch(/openServiceSession/);
+    expect(code(MODAL)).not.toMatch(/ensureCurrentServiceSession/);
   });
 
   test('the error is rethrown so the EXISTING lifecycle renders it', () => {
@@ -279,6 +388,8 @@ describe('the accepted submission lifecycle at 5062329 is untouched', () => {
     expect(code(MODAL)).toMatch(/submitOrderPayload\(snap, \{ persist: \(\) => buildAndSendOrder\(snap\) \}\)/);
     // the gate must not import the order lifecycle: they are separate concerns
     expect(GATE_C).not.toMatch(/submissionLifecycle|persistenceGateway/);
+    expect(HOOK_C).not.toMatch(/submissionLifecycle|persistenceGateway/);
+    expect(FLOW_C).not.toMatch(/submissionLifecycle|persistenceGateway/);
   });
 
   test('SUCCESS remains the only outcome that clears the form', () => {
