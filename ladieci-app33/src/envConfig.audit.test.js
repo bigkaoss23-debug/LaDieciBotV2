@@ -8,6 +8,11 @@ const path = require('path');
 
 const read = (rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8');
 
+// Rimuove commenti /* */ e // per poter asserire su ciò che il file ESEGUE,
+// non su ciò che documenta. Usato solo dove il commento cita i simboli vietati.
+const stripComments = (s) =>
+  s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
 describe('ENV_SPLIT_V1_08 fail-closed config', () => {
   test('functions/api.js: usa il resolver e fa fail-closed (no default prod inline)', () => {
     const s = read('../netlify/functions/api.js');
@@ -19,14 +24,27 @@ describe('ENV_SPLIT_V1_08 fail-closed config', () => {
     expect(s).not.toMatch(/ladiecibot-production\.up\.railway\.app/);
   });
 
-  test('functions/auth.js: usa il resolver e fa fail-closed (no ref prod inline)', () => {
-    const s = read('../netlify/functions/auth.js');
-    expect(s).toMatch(/require\(['"]\.\/_env['"]\)/);
-    expect(s).toMatch(/resolveSupabase/);
-    expect(s).toMatch(/CONFIG_ERROR/);
-    expect(s).toMatch(/respond\(503/);
-    // il ref Supabase prod NON deve più stare in auth.js
-    expect(s).not.toMatch(/wnswassgfuuivmfwjxsf/);
+  // S2-7D2 — auth.js è stato RITIRATO (commit d668a4b): il login operativo è passato
+  // alla rotta canonica Auth V2 su Railway. Il contratto qui non è più "usa il resolver
+  // e fa fail-closed", ma il suo superset: la function NON legge affatto config, NON
+  // confronta PIN, NON può più emettere token, e risponde 410 su ogni metodo (POST
+  // incluso). Il guard è quindi più forte di prima, non più debole.
+  test('functions/auth.js: stub ritirato fail-closed (nessuna config, nessun token)', () => {
+    // Il commento di ritiro CITA i simboli vietati (APP_PIN, token...) per spiegare cosa
+    // è stato rimosso: le asserzioni vanno fatte sul CODICE, non sulla prosa.
+    const code = stripComments(read('../netlify/functions/auth.js'));
+    // 410 Gone, nessun ramo può tornare 200 con un token
+    expect(code).toMatch(/statusCode:\s*410/);
+    expect(code).not.toMatch(/statusCode:\s*200/);
+    // non legge NESSUNA config né segreto (né via resolver né inline)
+    expect(code).not.toMatch(/require\(['"]\.\/_env['"]\)/);
+    expect(code).not.toMatch(/resolveSupabase/);
+    expect(code).not.toMatch(/process\.env\./);
+    expect(code).not.toMatch(/APP_PIN|REPARTIDOR_PIN/);
+    // non può firmare/emettere credenziali
+    expect(code).not.toMatch(/jsonwebtoken|jwt\.sign|createHmac/);
+    // il ref Supabase prod NON deve stare in auth.js
+    expect(code).not.toMatch(/wnswassgfuuivmfwjxsf/);
   });
 
   test('functions/_env.js: il fallback prod è gated da SITE_ID di produzione', () => {
