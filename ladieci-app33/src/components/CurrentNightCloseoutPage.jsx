@@ -9,20 +9,24 @@
 // It keeps the recovered "Abrir nuevo servicio" affordance for the case where an
 // admin lands here directly, but it is NOT the principal open path any more:
 // that is the closed-service landing in Servicio (ServiceStateGate).
+//
+// S2-7D5B — this page used to call api.openServiceSession() straight from the
+// click handler: no confirmation, no actor recap, no lock, no verification. That
+// was a second, unguarded way to open a real shift. It now mounts the SAME
+// controller and the SAME confirmation surface as the landing, and it does not
+// import `api.openServiceSession` at all.
 // ===============================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import { OPEN_OUTCOME, OPEN_UNVERIFIED_MESSAGE, classifyOpenAttempt } from '../utils/openServiceOutcome';
-import { SERVICE_PHASE, classifyServiceState } from '../utils/serviceSessionState';
+import { useOpenServiceController } from './service/useOpenServiceController';
+import OpenServiceConfirmation from './service/OpenServiceConfirmation';
 
 const money = (value) => `${(Number(value) || 0).toFixed(2)} €`;
 
-export default function CurrentNightCloseoutPage({ onBack, canOpen = false }) {
+export default function CurrentNightCloseoutPage({ onBack, role, actor, onServiceOpened }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  const [opening, setOpening] = useState(false);
-  const openingRef = useRef(false);
   const liveRef = useRef(true);
 
   const load = useCallback(async () => {
@@ -39,29 +43,24 @@ export default function CurrentNightCloseoutPage({ onBack, canOpen = false }) {
     }
   }, []);
 
+  // The SHARED controller — identical gate, confirmation, lock, classifier and
+  // post-open verification as the Servicio landing. This page never calls
+  // api.openServiceSession itself.
+  const open = useOpenServiceController({
+    role,
+    onOpened: () => {
+      load();
+      // After a VERIFIED open, the operator belongs in Servicio, not on a
+      // closeout report for a service that has just started.
+      if (onServiceOpened) onServiceOpened();
+    },
+  });
+
   useEffect(() => {
     liveRef.current = true;
     load();
-    return () => { liveRef.current = false; };
+    return () => { liveRef.current = false; open.dispose(); };
   }, [load]);
-
-  const openService = async () => {
-    if (openingRef.current) return;
-    openingRef.current = true;
-    setOpening(true);
-    setError('');
-    try {
-      const outcome = classifyOpenAttempt(await api.openServiceSession());
-      if (outcome.kind !== OPEN_OUTCOME.VERIFY) { setError(outcome.message); return; }
-      const res = await load();
-      if (classifyServiceState(res).phase !== SERVICE_PHASE.OPEN) setError(OPEN_UNVERIFIED_MESSAGE);
-    } catch (_) {
-      setError('Error de red al abrir el servicio. No se abrió nada.');
-    } finally {
-      openingRef.current = false;
-      if (liveRef.current) setOpening(false);
-    }
-  };
 
   return (
     <main style={{ minHeight: '100vh', background: '#080808', color: '#fff', padding: 20, fontFamily: "'DM Sans',sans-serif" }}>
@@ -74,11 +73,18 @@ export default function CurrentNightCloseoutPage({ onBack, canOpen = false }) {
         {data && !data.available && (
           <div style={panel}>
             No hay un servicio abierto o recién cerrado.
-            {canOpen && (
-              <button data-testid="closeout-open-btn" disabled={opening} onClick={openService}
-                style={{ ...button, display: 'block', marginTop: 14, opacity: opening ? 0.55 : 1 }}>
-                {opening ? 'Abriendo…' : 'Abrir nuevo servicio'}
+            {open.mayOpen && !open.confirming && (
+              <button data-testid="closeout-open-btn" onClick={open.requestOpen}
+                style={{ ...button, display: 'block', marginTop: 14 }}>
+                Abrir nuevo servicio
               </button>
+            )}
+            {open.mayOpen && open.confirming && (
+              <OpenServiceConfirmation
+                actor={actor} role={role}
+                opening={open.opening} error={open.error}
+                onConfirm={open.confirm} onCancel={open.cancel}
+              />
             )}
           </div>
         )}

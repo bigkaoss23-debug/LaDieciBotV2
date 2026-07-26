@@ -12,7 +12,7 @@ import EconBotPage from './components/EconBotPage';
 import ServicioPage from './components/ServicioPage';
 import ServiceStateGate from './components/ServiceStateGate';
 import CurrentNightCloseoutPage from './components/CurrentNightCloseoutPage';
-import { canAccessCurrentCloseout, canOpenService } from './utils/adminRbac';
+import { canAccessCurrentCloseout } from './utils/adminRbac';
 import EconomiaPage from './components/EconomiaPage';
 import RepartidorPage from './components/repartidor/RepartidorPage';
 import ShadowPreviewPanel from './components/ShadowPreviewPanel';
@@ -454,7 +454,8 @@ export default function App({ skipSplash = false } = {}) {
       )}
       {screen==="closeout" && canAccessCurrentCloseout(auth.getRole()) && (
         <CurrentNightCloseoutPage onBack={()=>setScreen("servicio")}
-            canOpen={canOpenService(auth.getRole())}/>
+            role={auth.getRole()} actor={auth.getActor()}
+            onServiceOpened={()=>setScreen("servicio")}/>
       )}
       {screen==="economia" && <EconomiaPage onBack={()=>setScreen("home")}/>}
       {screen==="repartidor" && <RepartidorPage
