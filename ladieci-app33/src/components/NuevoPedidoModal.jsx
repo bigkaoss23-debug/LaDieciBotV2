@@ -612,7 +612,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         ? crypto.randomUUID()
         : ("req-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10));
     }
-    onConfirm({
+    // S2-7D5: the result of onConfirm is RETURNED, so the persistence gateway
+    // awaits the real write instead of assuming it succeeded. A typed throw from
+    // the caller (e.g. NO_OPEN_SERVICE_SESSION) therefore becomes a normal ERROR
+    // outcome of the SAME canonical lifecycle — no second state machine — and
+    // the modal stays open with the operator's order intact.
+    return onConfirm({
       id: genId(), client_req_id: reqIdRef.current, nombre: nombre.trim(), tel: telFinal,
       cliente_id: cidFinale || null,
       canal: canal === "WA" ? "WA" : canal === "BANCO" ? "BANCO" : "MANUAL",

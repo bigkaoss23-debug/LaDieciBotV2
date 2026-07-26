@@ -10,6 +10,9 @@ import Home from './components/Home';
 import EconBotPage from './components/EconBotPage';
 
 import ServicioPage from './components/ServicioPage';
+import ServiceStateGate from './components/ServiceStateGate';
+import CurrentNightCloseoutPage from './components/CurrentNightCloseoutPage';
+import { canAccessCurrentCloseout, canOpenService } from './utils/adminRbac';
 import EconomiaPage from './components/EconomiaPage';
 import RepartidorPage from './components/repartidor/RepartidorPage';
 import ShadowPreviewPanel from './components/ShadowPreviewPanel';
@@ -66,6 +69,7 @@ export default function App({ skipSplash = false } = {}) {
     // Deep-link interno/admin NASCOSTO: /shadow-preview → vista read-only del planner.
     // Protetto dal PIN come /servizio, NON linkato da nessuna vista operatore.
     const dest  = path === 'servizio'          ? 'servicio'
+                : path === 'cierre'            ? 'closeout'
                 : path === 'shadow-preview'    ? 'shadowpreview'
                 : path === 'premium-proposals' ? 'premiumproposalslab'
                 : 'econbot';
@@ -88,6 +92,15 @@ export default function App({ skipSplash = false } = {}) {
     if (screen !== 'booting') return;
     postSplashAction.current();
   }, [screen]);
+
+  // S2-7D5 — role gate on the closeout surface, including via the /cierre deep
+  // link. Frontend defense in depth: Railway remains the authority (the action
+  // is refused there for a rider regardless of what this renders).
+  useEffect(() => {
+    if (screen !== 'closeout') return;
+    if (canAccessCurrentCloseout(auth.getRole())) return;
+    setScreen(startedAtRepartidor.current ? 'repartidor' : 'home');
+  }, [screen, pinUnlocked]);
 
   const withPin = (action) => {
     if (pinUnlocked && auth.isAuthenticated()) { action(); return; }
@@ -425,11 +438,24 @@ export default function App({ skipSplash = false } = {}) {
           onBotIA={()=>{ setSugModal(true); }}
           onBack={()=>setScreen("home")}
           pendingSug={pendingSug}/>}
-      {screen==="servicio" && <ServicioPage onBack={()=>setScreen("home")}
-          ordenes={ordenes} setOrdenes={setOrdenes}
-          waMsgs={waMsgs} setWaMsgs={setWaMsgs} notify={notify} syncStatus={syncStatus}
-          convConfermata={convConfermata}
-          pendingPatches={pendingPatches}/>}
+      {/* S2-7D5 — the operational surface is gated on the service session. With no
+          open shift the gate renders the closed-service landing instead of an
+          order-entry screen whose every write the DB trigger would refuse. */}
+      {screen==="servicio" && (
+        <ServiceStateGate role={auth.getRole()} actor={auth.getActor()}
+            onCloseout={canAccessCurrentCloseout(auth.getRole()) ? ()=>setScreen("closeout") : null}>
+          <ServicioPage onBack={()=>setScreen("home")}
+            onCloseout={canAccessCurrentCloseout(auth.getRole()) ? ()=>setScreen("closeout") : null}
+            ordenes={ordenes} setOrdenes={setOrdenes}
+            waMsgs={waMsgs} setWaMsgs={setWaMsgs} notify={notify} syncStatus={syncStatus}
+            convConfermata={convConfermata}
+            pendingPatches={pendingPatches}/>
+        </ServiceStateGate>
+      )}
+      {screen==="closeout" && canAccessCurrentCloseout(auth.getRole()) && (
+        <CurrentNightCloseoutPage onBack={()=>setScreen("servicio")}
+            canOpen={canOpenService(auth.getRole())}/>
+      )}
       {screen==="economia" && <EconomiaPage onBack={()=>setScreen("home")}/>}
       {screen==="repartidor" && <RepartidorPage
           ordenes={ordenes}

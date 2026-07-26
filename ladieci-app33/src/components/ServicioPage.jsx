@@ -3,6 +3,8 @@ import { C, useWidth, blockedTels, MAX_PIZZE_ORA, LOGO_RED_SRC, genId, tot, calc
 import { sb, api, auth } from '../api';
 import { BACKEND_BASE_URL } from '../utils/backendBase';
 import { parseEstadoTerminalError } from '../utils/orderModifyError';
+import { classifyCloseOutcome } from '../utils/closeServiceOutcome';
+import { isNoOpenServiceSession, NO_OPEN_SERVICE_SESSION_MESSAGE, NO_OPEN_SERVICE_SESSION_CODE } from '../utils/serviceSessionError';
 import Suoni from '../sounds';
 import TabWA from './wa/TabWA';
 import TabManual from './ordenes/TabManual';
@@ -35,7 +37,7 @@ const LiveTime = () => {
 };
 
 // ─── SERVICIO PAGE ────────────────────────────────────
-const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncStatus,convConfermata=[],pendingPatches}) => {
+const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncStatus,convConfermata=[],pendingPatches}) => {
   const observeOrderTransition = (action, id, to, metadata) => {
     const current = ordenes.find(o => o.id === id);
     logTransition({
@@ -226,25 +228,38 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   };
 
   const handleChiudiConferma = async (deleteAttivi) => {
-    setChiudiModal(null);
+    // S2-6A3E (recovered) — do NOT dismiss the modal yet: only a real success may
+    // navigate away. Mark it submitting and clear any previous error so the
+    // operator sees progress in place.
+    setChiudiModal(m => m ? { ...m, submitting: true, error: null } : m);
     notify("🌙 Cerrando servicio...", C.giallo);
     // Backend atomico: lock → calcola summary → scrivi storico completo →
-    // verifica → cancella ordenes/conv/wa_msgs. Niente più finestra cieca client-side:
-    // se il backend dice success, il DB è pulito; il WebSocket porterà gli eventi.
+    // verifica → cancella ordenes/conv/wa_msgs. Il client non deve MAI presumere il
+    // successo: solo success:true chiude la vista; success:false resta un fallimento.
     try {
       const res = await api.get("chiudiServizio", deleteAttivi ? { deleteAttivi: "true" } : {});
-      if (res?.skipped) {
-        notify("ℹ️ Servicio già chiuso oggi", C.giallo);
-      } else if (res?.success) {
+      const outcome = classifyCloseOutcome(res);
+      if (outcome.kind === "success") {
         const s = res.summary || {};
         const eur = n => `${(Number(n)||0).toFixed(0)}€`;
+        setChiudiModal(null);
         notify(`✅ ${s.n_ordini || 0} ordini · ${eur(s.cassa_totale)} archiviati`, C.verde);
+        if (onCloseout) onCloseout();
+      } else if (outcome.kind === "skipped") {
+        setChiudiModal(null);
+        notify("ℹ️ Servicio ya cerrado hoy", C.giallo);
+        if (onCloseout) onCloseout();
       } else {
-        notify(`❌ Chiusura fallita: ${res?.error || "errore"}`, C.rosso);
-        console.error("chiudiServizio:", res);
+        // HTTP 200 but success:false → application failure (22:00 guard, active
+        // rider trip, verify_failed…). Keep the modal open and show the reason in
+        // place; the service stays open and the operator can retry or cancel.
+        setChiudiModal(m => m ? { ...m, submitting: false, error: outcome.message } : m);
+        notify(`❌ ${outcome.message}`, C.rosso);
+        console.error("chiudiServizio:", res?.error);
       }
     } catch(err) {
-      notify("❌ Errore di rete chiusura serata", C.rosso);
+      setChiudiModal(m => m ? { ...m, submitting: false, error: "Error de red al cerrar el servicio. El servicio sigue abierto." } : m);
+      notify("❌ Error de red al cerrar el servicio", C.rosso);
       console.error(err);
     }
   };
@@ -411,7 +426,24 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       console.error("createOrden failed, rolling back:", err);
       setOrdenes(p=>p.filter(x=>x.id!==o.id));
       try { Suoni.errore(); } catch(_){}
+      // S2-7D5 — the ONE domain refusal that deserves its own words. The DB
+      // trigger raises NO_OPEN_SERVICE_SESSION and the backend wraps it as
+      // "errore DB", which tells the operator nothing actionable. Re-read the
+      // shift state so the surface behind the modal becomes the closed-service
+      // landing, and rethrow a typed error: the modal's canonical submission
+      // lifecycle turns it into the single in-modal feedback banner, keeps the
+      // modal open and leaves the operator's order untouched.
+      if (isNoOpenServiceSession(err)) {
+        notify("❌ No hay un servicio abierto", "#E8341C");
+        try { window.dispatchEvent(new Event("ld-service-session-lost")); } catch(_){}
+        const typed = new Error(NO_OPEN_SERVICE_SESSION_MESSAGE);
+        typed.code = NO_OPEN_SERVICE_SESSION_CODE;
+        throw typed;
+      }
       notify("❌ Error al guardar — vuelve a crear el pedido", "#E8341C");
+      const failed = new Error("No se pudo guardar el pedido. Inténtalo de nuevo.");
+      failed.code = "create_order_failed";
+      throw failed;
     }
   };
   const waConfirm = useCallback(async (id,items,hora,nombre,tel,nuovaHora) => {
@@ -1393,6 +1425,15 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
           cursor:"pointer",whiteSpace:"nowrap",transition:"all .18s ease"}}>
           🌙
         </button>
+        {onCloseout && (
+          <button data-testid="servicio-closeout-btn" onClick={onCloseout}
+            title="Cierre del servicio" aria-label="Cierre del servicio" style={{
+            flexShrink:0,background:"rgba(249,115,22,.14)",border:"1px solid rgba(249,115,22,.45)",
+            borderRadius:16,padding:"16px 12px",color:"#fb923c",fontWeight:800,
+            fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>
+            Cierre
+          </button>
+        )}
         <button onClick={()=>{ setPinChange({tipo:"operador",step:1,viejo:"",nuevo:"",confirm:"",error:"",ok:false,loading:false}); setShowCambioPin(true); }} style={{
           flexShrink:0,
           background:"rgba(255,255,255,0.07)",
@@ -1478,29 +1519,39 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
                 </div>
               )}
 
+              {/* Errore di chiusura — fallimento applicativo (success:false), persistente.
+                  Il servizio resta aperto; l'operatore vede il motivo e può riprovare. */}
+              {chiudiModal.error && (
+                <div data-testid="close-error" style={{background:"rgba(192,57,43,0.14)",border:"1px solid rgba(192,57,43,0.5)",borderRadius:12,padding:"12px 16px",marginBottom:16}}>
+                  <div style={{color:"#ff6b6b",fontWeight:800,fontSize:13,marginBottom:4}}>❌ No se cerró el servicio</div>
+                  <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>{chiudiModal.error}</div>
+                  <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,marginTop:6}}>El servicio sigue abierto.</div>
+                </div>
+              )}
+
               {/* Bottoni */}
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",flexDirection:"column",gap:8,opacity:chiudiModal.submitting?0.6:1,pointerEvents:chiudiModal.submitting?"none":"auto"}}>
                 {chiudiModal.attivi.length > 0 && (
-                  <button onClick={()=>handleChiudiConferma(true)} style={{
+                  <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma(true)} style={{
                     background:"rgba(192,57,43,0.85)",border:"1.5px solid rgba(192,57,43,0.8)",
                     borderRadius:12,padding:"13px 16px",color:"#fff",fontWeight:800,
                     fontSize:13,cursor:"pointer",width:"100%"}}>
                     🗑️ Eliminar todo (incluso mensajes activos)
                   </button>
                 )}
-                <button onClick={()=>handleChiudiConferma(false)} style={{
+                <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma(false)} style={{
                   background: chiudiModal.attivi.length > 0 ? "rgba(46,213,115,0.15)" : "rgba(192,57,43,0.85)",
                   border: chiudiModal.attivi.length > 0 ? "1.5px solid rgba(46,213,115,0.4)" : "1.5px solid rgba(192,57,43,0.8)",
                   borderRadius:12,padding:"13px 16px",
                   color: chiudiModal.attivi.length > 0 ? "#2ed573" : "#fff",
                   fontWeight:800,fontSize:13,cursor:"pointer",width:"100%"}}>
-                  {chiudiModal.attivi.length > 0 ? "✅ Cerrar servicio (dejar mensajes activos)" : "✅ Confirmar — cerrar servicio"}
+                  {chiudiModal.submitting ? "Cerrando…" : (chiudiModal.attivi.length > 0 ? "✅ Cerrar servicio (dejar mensajes activos)" : "✅ Confirmar — cerrar servicio")}
                 </button>
-                <button onClick={()=>setChiudiModal(null)} style={{
+                <button disabled={chiudiModal.submitting} onClick={()=>setChiudiModal(null)} style={{
                   background:"transparent",border:"1px solid rgba(255,255,255,0.12)",
                   borderRadius:12,padding:"11px 16px",color:"rgba(255,255,255,0.4)",
                   fontWeight:600,fontSize:13,cursor:"pointer",width:"100%"}}>
-                  Annulla
+                  {chiudiModal.error ? "Cerrar aviso" : "Annulla"}
                 </button>
               </div>
             </>)}
@@ -1510,7 +1561,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
 
       {/* Modals */}
       <NuevoPedidoModal visible={showNuevo} onClose={()=>{setShowNuevo(false);setPrefillCliente(null);}}
-        onConfirm={o=>{addOrden(o);setShowNuevo(false);setPrefillCliente(null);}}
+        onConfirm={async o=>{ await addOrden(o); setShowNuevo(false); setPrefillCliente(null); }}
         prefill={prefillCliente} ordenes={ordenes}/>
       {ordenModifica&&<ModificaOrdenModal orden={{
         ...ordenModifica,

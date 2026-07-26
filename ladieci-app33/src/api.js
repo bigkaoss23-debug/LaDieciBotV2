@@ -325,6 +325,21 @@ const api = {
   getMenu: async function() {
     return proxyGet("getMenu");
   },
+
+  // ── S2-7D5 — service session (operational shift) ───────────────
+  // Both actions ride the CURRENT Auth V2 chain: proxyGet/proxyPost attach the
+  // operational bearer via proxyHeaders() and funnel 401/403 into the canonical
+  // operational logout. No legacy /api/auth call, no plaintext PIN, no
+  // localStorage credential, and no X-Api-Key is reintroduced here.
+  //
+  // Current-night reconciliation only. The backend chooses the Madrid service
+  // date; this contract intentionally accepts no date, range or service id —
+  // the client never selects a session (docs/SERVICE_SESSION_IDENTITY.md).
+  getCurrentServiceCloseout: () => proxyGet("getCurrentServiceCloseout"),
+  // Opens THE next service session. Takes no arguments by design: the backend
+  // derives actor from the verified token and business_date in Europe/Madrid.
+  openServiceSession: () => proxyPost({ action: "openServiceSession" }),
+
   upsertCliente: function(data) {
     return proxyPost({ action: "upsertCliente", ...data });
   },
