@@ -5,6 +5,7 @@ import { sb } from '../../api';
 import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
+import { isPaymentFailure, describePaymentFailure } from '../../utils/paymentOutcome';
 
 // Helpers tempi: hora consegna ↔ horaForno (= partenza driver = uscita pizza forno)
 const _tm = (t) => { if (!t) return null; const [h,m] = t.split(":").map(Number); return h*60+m; };
@@ -1148,7 +1149,27 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     setLoadingId(ordine.id);
     setOrdenes(prev => prev.map(o => o.id === ordine.id ? { ...o, estado: ORDER_STATES.RETIRADO, hora_entrega: Date.now() } : o));
     try {
-      await api.marcarEntregado(ordine.id, true, ordine, "manual");
+      // S2-7D6E2 — "Driver volvió" è un override OPERATIVO, non un incasso. Prima
+      // mandava cobrado:true con metodo_pago:"manual": "manual" non è un metodo di
+      // pagamento, quindi non produceva alcun evento nel ledger, ma la colonna cobrado
+      // veniva scritta lo stesso — esattamente lo stato #723 (RETIRADO + cobrado + zero
+      // eventi). Ora non si dichiara nessun pagamento e la risposta viene controllata.
+      const res = await api.marcarEntregado(ordine.id, false, ordine, "");
+      if (isPaymentFailure(res)) {
+        const { message } = describePaymentFailure(res);
+        logRollback({
+          component: "TabEntregas",
+          action: "handleForzaEntregado.refused",
+          orderId: ordine.id,
+          from: ORDER_STATES.RETIRADO,
+          to: ordine?.estado,
+          metadata: { reason: "backend refused; order did not move" },
+        });
+        setOrdenes(prev => prev.map(o => o.id === ordine.id ? { ...o, estado: ordine.estado, hora_entrega: ordine.hora_entrega } : o));
+        if (notify) notify("❌ " + message, "#EF4444");
+        setLoadingId(null);
+        return;
+      }
       // Controlla se era l'ultimo
       const rimanenti = entregas.filter(o => [ORDER_STATES.LISTO, ORDER_STATES.EN_ENTREGA].includes(o.estado) && o.id !== ordine.id);
       if (rimanenti.length === 0) await api.chiudiGiro();

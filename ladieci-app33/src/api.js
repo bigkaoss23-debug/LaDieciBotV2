@@ -486,11 +486,14 @@ const api = {
   marcarEnEntrega: function(id) {
     return proxyPost({ action:'marcarEnEntrega', id });
   },
-  marcarEntregado: function(id, cobrado, _ordenData, metodo_pago) {
+  // S2-7D6E2 — `cobrado` NON viaggia più sul filo. Il client non dichiara un incasso:
+  // lo registra il ledger lato server (order_financial_events) e solo lui scrive la
+  // colonna. Il parametro resta nella firma per non toccare i call site esistenti, ma
+  // è ignorato di proposito — il backend non lo legge più.
+  marcarEntregado: function(id, _cobradoIgnorato, _ordenData, metodo_pago) {
     return proxyPost({
       action: 'marcarEntregado',
       id,
-      cobrado: cobrado !== false,
       metodo_pago: metodo_pago || ""
     });
   },

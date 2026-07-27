@@ -5,6 +5,7 @@ import { calcTotale } from '../../constants';
 import { applyUiOffset } from '../../utils/uiOffset';
 import Suoni from '../../sounds';
 import { ORDER_STATES, isCompletedState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
+import { isPaymentFailure, describePaymentFailure } from '../../utils/paymentOutcome';
 
 const mapsUrl = (dir) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((dir || "") + " Roquetas de Mar")}`;
@@ -578,7 +579,27 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
     setLoading(id);
     setOrdLocal(prev => prev.map(o => o.id === id ? { ...o, estado: ORDER_STATES.RETIRADO, hora_entrega: Date.now() } : o));
     try {
-      await api.marcarEntregado(id, true, orden, metodo_pago || "");
+      // S2-7D6E2 — un cobro che non è arrivato al ledger NON deve mai leggersi come
+      // successo. `proxyPost` non lancia mai: su un 409 restituisce {_ok:false}, quindi il
+      // vecchio `await` senza controllo faceva cadere il rifiuto nel ramo di successo — il
+      // rider vedeva "💵 Entregado — Efectivo" con zero righe in order_financial_events.
+      // Su rifiuto il backend NON transisce l'ordine: si annulla l'update ottimistico.
+      const res = await api.marcarEntregado(id, true, orden, metodo_pago || "");
+      if (isPaymentFailure(res)) {
+        const { message } = describePaymentFailure(res);
+        logRollback({
+          component: "RepartidorPage",
+          action: "handleEntregado.paymentRefused",
+          orderId: id,
+          from: ORDER_STATES.RETIRADO,
+          to: orden?.estado,
+          metadata: { reason: "backend refused the collection; order did not move" },
+        });
+        setOrdLocal(ordenes);
+        if (notify) notify("❌ " + message, "#EF4444");
+        setLoading(null);
+        return;
+      }
 
       // Ultimo Entregado del giro → calcola rientro e salva log
       const rimanenti = ordLocal.filter(o => [ORDER_STATES.LISTO, ORDER_STATES.EN_ENTREGA].includes(o.estado) && o.id !== id);
