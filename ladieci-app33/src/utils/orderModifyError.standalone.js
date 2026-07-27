@@ -1,6 +1,6 @@
 // Test puro di parseEstadoTerminalError.
 // Node puro, no Jest, no rete, no DB, no .env.
-// Esecuzione: node ladieci-app33/src/utils/orderModifyError.test.js
+// Esecuzione: node ladieci-app33/src/utils/orderModifyError.standalone.js
 
 const { parseEstadoTerminalError } = require("./orderModifyError");
 

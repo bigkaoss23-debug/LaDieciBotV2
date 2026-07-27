@@ -1,6 +1,6 @@
 // Test puro di deleteReconcile (riconciliazione delete ordini, root cause #001).
 // Node puro, no Jest, no rete, no DB.
-// Esecuzione: node ladieci-app33/src/utils/deleteReconcile.test.js
+// Esecuzione: node ladieci-app33/src/utils/deleteReconcile.standalone.js
 
 const { DELETE_PATCH_TTL_MS, isDeleteConfirmed, shouldHideDeleted } = require("./deleteReconcile");
 

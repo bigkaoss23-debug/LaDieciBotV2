@@ -1,6 +1,6 @@
 // Test pura della logica MOD-3 badge "MODIFICADO".
 // Node puro, no Jest, no rete, no DB, no .env.
-// Esecuzione: node ladieci-app33/src/utils/orderModBadge.test.js
+// Esecuzione: node ladieci-app33/src/utils/orderModBadge.standalone.js
 
 const { isModifiedAfterCocina } = require("./orderModBadge");
 

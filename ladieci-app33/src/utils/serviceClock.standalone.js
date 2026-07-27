@@ -1,6 +1,6 @@
 // Test puro di serviceClock (orarioToMs service-day-aware).
 // Node puro, no Jest, no rete, no DB.
-// Esecuzione: node ladieci-app33/src/utils/serviceClock.test.js
+// Esecuzione: node ladieci-app33/src/utils/serviceClock.standalone.js
 //
 // BUG-COCINA-COUNTDOWN-SERVICE-DAY-00XX-01: forno_out 00:xx non deve mostrare
 // countdown negativo enorme / falso TARDE quando Cocina è aperta di giorno/sera.
