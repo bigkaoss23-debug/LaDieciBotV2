@@ -67,7 +67,12 @@ const sumLedgerWindow = (ledgerByDay, predicate) => {
   return { pagamenti, collected };
 };
 
-const aggrega = (righe, ledgerByDay) => {
+// S2-7D6E4 — `ledgerReady` must be the EXPLICIT status flag (ledgerStatus === "ready"),
+// never inferred from ledgerByDay being non-empty: a ledger call that succeeds with zero
+// sessions in range is a legitimate "confirmed zero", and must be told apart from
+// "still loading" / "failed" — both of which must show NO money figure at all, not a
+// row-based guess and not a silent 0.
+const aggrega = (righe, ledgerByDay, ledgerReady) => {
   if(!righe || righe.length === 0) return null;
 
   // Backend v7 manda oggetti con chiavi — normalizza gestisce entrambi i casi
@@ -285,16 +290,15 @@ const aggrega = (righe, ledgerByDay) => {
     Object.keys(b).forEach(k => { b[k].incasso = Math.round(b[k].incasso * 100) / 100; });
   });
 
-  // S2-7D6E3 — replace the metodo_pago-bucketed money figures with the ledger-derived
-  // ones whenever ledger data is available. Falls back to the row-based numbers above
-  // only when ledgerByDay has nothing for that window (e.g. still loading, or a day
-  // predating the service_sessions rollout) — never silently trusts metodo_pago again.
+  // S2-7D6E4 — the row-based incassoTot/pagamenti/etc. computed above are NEVER shown:
+  // they exist only so non-money fields (countOrdini, canali, consegne, prodotti) stay
+  // available immediately. Every money field is ledger-or-null — no row-based fallback.
   const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
-  const hasLedger = ledgerByDay && Object.keys(ledgerByDay).length > 0;
-  let finalIncassoTot = incassoTot, finalIncassoOggi = incassoOggi, finalIncassoSett = incassoSett, finalIncassoMese = incassoMese;
-  let finalPagamenti = pagamenti, finalPagamentiOggi = pagamentiOggi, finalPagamentiSett = pagamentiSett, finalPagamentiMese = pagamentiMese;
-  let finalGiorniDettaglio = giorniDettaglio;
-  if (hasLedger) {
+  let finalIncassoTot = null, finalIncassoOggi = null, finalIncassoSett = null, finalIncassoMese = null;
+  let finalPagamenti = null, finalPagamentiOggi = null, finalPagamentiSett = null, finalPagamentiMese = null;
+  let finalGiorniDettaglio = giorniDettaglio.map(d => ({ ...d, incasso: null }));
+  let finalTicketMedio = null;
+  if (ledgerReady) {
     const wTot  = sumLedgerWindow(ledgerByDay, () => true);
     const wOggi = sumLedgerWindow(ledgerByDay, (dt) => dt.getTime() === todayMidnight.getTime());
     const wSett = sumLedgerWindow(ledgerByDay, (dt) => (now - dt.getTime()) < settMs);
@@ -305,12 +309,13 @@ const aggrega = (righe, ledgerByDay) => {
     finalIncassoMese = wMese.collected; finalPagamentiMese = wMese.pagamenti;
     finalGiorniDettaglio = giorniDettaglio.map(d => {
       const entry = ledgerByDay[d.data];
-      return entry ? { ...d, incasso: entry.totals?.collected ?? d.incasso } : d;
+      // A day with no ledger entry means the ledger genuinely found no session for it
+      // (ready, confirmed zero) — never the row-based guess computed above.
+      return { ...d, incasso: entry ? (entry.totals?.collected ?? 0) : 0 };
     });
+    // ticketMedio must divide the SAME total the page displays as incassoTot.
+    finalTicketMedio = countOrdini > 0 ? finalIncassoTot / countOrdini : 0;
   }
-  // ticketMedio must divide the SAME total the page displays as incassoTot — recomputed
-  // here (not at its original row-based declaration) so it never drifts from finalIncassoTot.
-  const finalTicketMedio = countOrdini > 0 ? finalIncassoTot / countOrdini : 0;
 
   return {
     incassoTot: finalIncassoTot, incassoOggi: finalIncassoOggi, incassoSett: finalIncassoSett, incassoMese: finalIncassoMese,
@@ -385,10 +390,12 @@ const fechaKeyOf = (r) => {
   return "";
 };
 
-// S2-7D6E3 — `ledgerEntry` (optional) is ledgerByDay[selectedDay], i.e. this SAME day's
-// ledger-derived {paymentTotals, totals}. When present, it replaces the metodo_pago-
-// bucketed incasso/pagamenti below — see the comment on aggrega() above for why.
-const buildCajaStats = (rows, ledgerEntry) => {
+// S2-7D6E4 — `ledgerEntry` is ledgerByDay[selectedDay] (may be undefined even when
+// ready — a day with no session). `ledgerReady` must be the explicit status flag: only
+// when true does this function emit a money value at all (0 if `ledgerEntry` is absent,
+// meaning the ledger confirms no activity that day — never the row-based total below,
+// which exists solely to keep non-money fields available before the ledger resolves).
+const buildCajaStats = (rows, ledgerEntry, ledgerReady) => {
   const lista = Array.isArray(rows) ? rows : [];
   let incasso = 0;
   let pizzeTot = 0;
@@ -432,23 +439,25 @@ const buildCajaStats = (rows, ledgerEntry) => {
   Object.keys(pagamenti).forEach(k => { pagamenti[k].incasso = Math.round(pagamenti[k].incasso*100)/100; });
   const prodotti=Object.values(prodMap).sort((a,b)=>b.q-a.q);
 
-  let finalIncasso = Math.round(incasso*100)/100;
-  let finalPagamenti = pagamenti;
-  if (ledgerEntry) {
-    const pt = ledgerEntry.paymentTotals || {};
+  let finalIncasso = null;
+  let finalPagamenti = null;
+  let finalTicketMedio = null;
+  if (ledgerReady) {
+    const pt = (ledgerEntry && ledgerEntry.paymentTotals) || {};
     finalPagamenti = {
       efectivo:        {incasso: pt.efectivo||0, count: pagamenti.efectivo.count},
       tarjeta:         {incasso: pt.tarjeta||0,  count: pagamenti.tarjeta.count},
       bizum:           {incasso: pt.bizum||0,    count: pagamenti.bizum.count},
       no_especificado: {incasso: pt.other||0,    count: pagamenti.no_especificado.count},
     };
-    finalIncasso = Math.round((ledgerEntry.totals?.collected || 0) * 100) / 100;
+    finalIncasso = Math.round(((ledgerEntry && ledgerEntry.totals?.collected) || 0) * 100) / 100;
+    finalTicketMedio = lista.length>0 ? Math.round((finalIncasso/lista.length)*100)/100 : 0;
   }
 
   return {
     incasso: finalIncasso,
     countOrdini: lista.length,
-    ticketMedio: lista.length>0?Math.round((finalIncasso/lista.length)*100)/100:0,
+    ticketMedio: finalTicketMedio,
     prodotti, canali, consegne, pizzeTot, bevandeTot, pagamenti: finalPagamenti
   };
 };
@@ -539,25 +548,44 @@ const EconomiaPage = ({onBack}) => {
   const [deliveryLogs, setDeliveryLogs] = useState(null);
   const [deliveryLoad, setDeliveryLoad] = useState(false);
   // S2-7D6E3 — ledgerByDay: businessDate -> {paymentTotals, totals}, from the ONE
-  // ledger-based money source (order_financial_events via aggregate()). {} while loading —
-  // aggrega()/buildCajaStats() fall back to the row-based numbers until this arrives.
+  // ledger-based money source (order_financial_events via aggregate()).
+  // ledgerStatus is the ONLY thing allowed to gate whether a money figure renders:
+  // "loading" and "error" must NEVER show a metodo_pago-derived number — the row-based
+  // aggregation functions below only compute real values when this is "ready".
   const [ledgerByDay, setLedgerByDay] = useState({});
+  const [ledgerStatus, setLedgerStatus] = useState("loading"); // "loading" | "error" | "ready"
+  const [ledgerRetryTick, setLedgerRetryTick] = useState(0);
+  const retryLedger = () => setLedgerRetryTick(t => t + 1);
 
   // Carica il resumen ledger (Economía's ONE money source) — finestra ~35 giorni,
   // sufficiente a coprire hoy/semana/mes. Autenticato (Auth V2 proxy), MAI anon key.
   useEffect(() => {
+    let cancelled = false;
+    setLedgerStatus("loading");
     const hasta = isoLocal();
     const desdeDt = new Date(); desdeDt.setDate(desdeDt.getDate() - 35);
     const desde = isoLocal(desdeDt);
     api.getEconomiaLedger(desde, hasta)
       .then(r => {
-        if (!r || r.error || !Array.isArray(r.porGiorno)) { console.warn("[Economia] ledger fetch failed:", r?.error); return; }
+        if (cancelled) return;
+        if (!r || r.error || !Array.isArray(r.porGiorno)) {
+          console.warn("[Economia] ledger fetch failed:", r?.error);
+          setLedgerStatus("error");
+          return;
+        }
         const byDay = {};
         r.porGiorno.forEach(d => { if (d?.businessDate) byDay[d.businessDate] = d; });
         setLedgerByDay(byDay);
+        setLedgerStatus("ready");
       })
-      .catch(e => console.warn("[Economia] ledger fetch error:", e?.message || e));
-  }, [refresh]);
+      .catch(e => {
+        if (cancelled) return;
+        console.warn("[Economia] ledger fetch error:", e?.message || e);
+        setLedgerStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, [refresh, ledgerRetryTick]);
+  const ledgerReady = ledgerStatus === "ready";
 
   // Fetch delivery_logs on-demand quando si apre il modal Delivery
   useEffect(() => {
@@ -629,12 +657,23 @@ const EconomiaPage = ({onBack}) => {
       });
   }, [periodo, refresh]);
 
-  // Aggrega — se già pre-aggregato dal backend usa direttamente
+  // Aggrega — se già pre-aggregato dal backend, i campi monetari passano comunque dal
+  // gate del ledger: mai un'eccezione che lasci passare un numero metodo_pago-based.
   const a = useMemo(() => {
     if(!rawData) return null;
-    if(rawData._preAggregated) return rawData._preAggregated;
-    return aggrega(rawData, ledgerByDay);
-  }, [rawData, ledgerByDay]);
+    if(rawData._preAggregated) {
+      const pre = rawData._preAggregated;
+      if (!ledgerReady) {
+        return { ...pre, incassoTot: null, incassoOggi: null, incassoSett: null, incassoMese: null,
+          ticketMedio: null, pagamenti: null, pagamentiOggi: null, pagamentiSett: null, pagamentiMese: null,
+          giorniDettaglio: (pre.giorniDettaglio || []).map(d => ({ ...d, incasso: null })) };
+      }
+      const wTot  = sumLedgerWindow(ledgerByDay, () => true);
+      return { ...pre, incassoTot: wTot.collected, pagamenti: wTot.pagamenti,
+        ticketMedio: pre.countOrdini > 0 ? wTot.collected / pre.countOrdini : 0 };
+    }
+    return aggrega(rawData, ledgerByDay, ledgerReady);
+  }, [rawData, ledgerByDay, ledgerReady]);
 
   const oggiIso = isoLocal();
 
@@ -644,16 +683,16 @@ const EconomiaPage = ({onBack}) => {
       if(d?.data) byData[d.data] = {...d};
     });
     if(serataData && serataData.countOrdini > 0) {
-      const prev = byData[oggiIso] || {data: oggiIso, incasso: 0, ordini: 0, pizze: 0, bevande: 0, consegne: 0};
-      const ledgerToday = ledgerByDay[oggiIso];
+      const prev = byData[oggiIso] || {data: oggiIso, incasso: null, ordini: 0, pizze: 0, bevande: 0, consegne: 0};
       byData[oggiIso] = {
         ...prev,
         data: oggiIso,
-        // S2-7D6E3 — incasso is NEVER Math.max'd against serataData.incasso: that figure
-        // is a metodo_pago bucket over live rows (the exact bug this task fixes). Order
-        // counts are a fine Math.max (whichever source has caught up further tonight),
-        // but money uses the ledger when available, never "whichever number is bigger".
-        incasso: ledgerToday ? (ledgerToday.totals?.collected || 0) : (prev.incasso || 0),
+        // S2-7D6E4 — incasso is NEVER Math.max'd against serataData.incasso (a metodo_pago
+        // bucket over live rows) and NEVER coalesced to 0 while the ledger isn't ready:
+        // null here means "no confirmed figure yet", not zero. Order counts are a fine
+        // Math.max (whichever source has caught up further tonight) — those aren't a
+        // money claim.
+        incasso: ledgerReady ? (ledgerByDay[oggiIso]?.totals?.collected || 0) : null,
         ordini: Math.max(prev.ordini || 0, serataData.countOrdini || 0),
         pizze: Math.max(prev.pizze || 0, serataData.pizzeTot || 0),
         bevande: Math.max(prev.bevande || 0, serataData.bevandeTot || 0),
@@ -664,7 +703,7 @@ const EconomiaPage = ({onBack}) => {
       .filter(d => d?.data)
       .sort((x,y)=>String(y.data).localeCompare(String(x.data)))
       .slice(0,7);
-  }, [a, serataData, oggiIso, ledgerByDay]);
+  }, [a, serataData, oggiIso, ledgerByDay, ledgerReady]);
 
   useEffect(() => {
     if(periodo !== "serata") return;
@@ -687,8 +726,8 @@ const EconomiaPage = ({onBack}) => {
 
   const cajaDiaSeleccionadaKey = diaCajaSeleccionado || diasCaja[0]?.data || oggiIso;
   const cajaDiaData = useMemo(
-    () => buildCajaStats(ordenesCajaDia, ledgerByDay[cajaDiaSeleccionadaKey]),
-    [ordenesCajaDia, ledgerByDay, cajaDiaSeleccionadaKey]
+    () => buildCajaStats(ordenesCajaDia, ledgerByDay[cajaDiaSeleccionadaKey], ledgerReady),
+    [ordenesCajaDia, ledgerByDay, cajaDiaSeleccionadaKey, ledgerReady]
   );
   const cajaFechaLabel = fmtFechaLarga(diaCajaSeleccionado || diasCaja[0]?.data || oggiIso);
   const topClientes = useMemo(() => buildTopClientes(Array.isArray(rawData) ? rawData : []), [rawData]);
@@ -742,31 +781,35 @@ const EconomiaPage = ({onBack}) => {
     const prodotti=Object.values(prodMap).sort((a,b)=>b.q-a.q);
     Object.keys(pagamenti).forEach(k => { pagamenti[k].incasso = Math.round(pagamenti[k].incasso*100)/100; });
 
-    // S2-7D6E3 — same ledger override as aggrega()/buildCajaStats(): this day's real
-    // collected total, not a metodo_pago bucket over raw rows.
-    let finalIncasso = Math.round(incasso*100)/100;
-    let finalPagamenti = pagamenti;
-    const ledgerEntry = ledgerByDay[giornoFiltro];
-    if (ledgerEntry) {
-      const pt = ledgerEntry.paymentTotals || {};
+    // S2-7D6E4 — same ledger gate as aggrega()/buildCajaStats(): no money value at all
+    // unless the ledger is ready; the row-based `incasso`/`pagamenti` above exist only to
+    // keep this scope's non-money fields (prodotti/canali/consegne/pizzeTot/bevandeTot)
+    // available regardless of ledger status.
+    let finalIncasso = null;
+    let finalPagamenti = null;
+    let finalTicketMedio = null;
+    if (ledgerReady) {
+      const ledgerEntry = ledgerByDay[giornoFiltro];
+      const pt = (ledgerEntry && ledgerEntry.paymentTotals) || {};
       finalPagamenti = {
         efectivo:        {incasso: pt.efectivo||0, count: pagamenti.efectivo.count},
         tarjeta:         {incasso: pt.tarjeta||0,  count: pagamenti.tarjeta.count},
         bizum:           {incasso: pt.bizum||0,    count: pagamenti.bizum.count},
         no_especificado: {incasso: pt.other||0,    count: pagamenti.no_especificado.count},
       };
-      finalIncasso = Math.round((ledgerEntry.totals?.collected || 0) * 100) / 100;
+      finalIncasso = Math.round(((ledgerEntry && ledgerEntry.totals?.collected) || 0) * 100) / 100;
+      finalTicketMedio = filtrate.length>0 ? Math.round((finalIncasso/filtrate.length)*100)/100 : 0;
     }
 
     return {
       incasso: finalIncasso,
       countOrdini: filtrate.length,
-      ticketMedio: filtrate.length>0?Math.round((finalIncasso/filtrate.length)*100)/100:0,
+      ticketMedio: finalTicketMedio,
       prodotti, canali, consegne, pizzeTot, bevandeTot, pagamenti: finalPagamenti
     };
-  }, [giornoFiltro, rawData, ledgerByDay]);
+  }, [giornoFiltro, rawData, ledgerByDay, ledgerReady]);
 
-  const incasso = !a ? 0
+  const incasso = !a ? null
     : periodo==="sett" ? a.incassoSett
     : periodo==="mese" ? a.incassoMese
     : a.incassoTot;
@@ -811,8 +854,10 @@ const EconomiaPage = ({onBack}) => {
       return {
         contesto: "caja",
         etichetta: cajaFechaLabel,
-        ventas:    cajaDiaData.incasso || 0,
-        ticket:    cajaDiaData.ticketMedio || 0,
+        // S2-7D6E4 — ventas/ticket are NEVER `|| 0`'d: null (ledger not ready) must stay
+        // null all the way to render, or a loading/error state would silently show "0€".
+        ventas:    cajaDiaData.incasso,
+        ticket:    cajaDiaData.ticketMedio,
         pedidos:   cajaDiaData.countOrdini || 0,
         pizzas:    cajaDiaData.pizzeTot || 0,
         bebidas:   cajaDiaData.bevandeTot || 0,
@@ -830,8 +875,8 @@ const EconomiaPage = ({onBack}) => {
       return {
         contesto: "giorno",
         etichetta: `del ${giornoFiltro.split("-").reverse().join("/")}`,
-        ventas:    aGiorno.incasso || 0,
-        ticket:    aGiorno.ticketMedio || 0,
+        ventas:    aGiorno.incasso,
+        ticket:    aGiorno.ticketMedio,
         pedidos:   aGiorno.countOrdini || 0,
         pizzas:    aGiorno.pizzeTot || 0,
         bebidas:   aGiorno.bevandeTot || 0,
@@ -855,8 +900,8 @@ const EconomiaPage = ({onBack}) => {
         etichetta: periodo==="sett" ? "de la semana"
                  : periodo==="mese" ? "del mes"
                  : "total",
-        ventas:    incasso || 0,
-        ticket:    a.ticketMedio || 0,
+        ventas:    incasso,
+        ticket:    a.ticketMedio,
         pedidos:   a.countOrdini || 0,
         pizzas:    pizze.reduce((s,p)=>s+p.q,0),
         bebidas:   bevande.reduce((s,p)=>s+p.q,0),
@@ -1306,7 +1351,7 @@ const EconomiaPage = ({onBack}) => {
               </div>
             </div>
             <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
-              {(diasCaja.length > 0 ? diasCaja : [{data: oggiIso, incasso: serataData?.incasso || 0, ordini: serataData?.countOrdini || 0}]).map(d=>{
+              {(diasCaja.length > 0 ? diasCaja : [{data: oggiIso, incasso: null, ordini: serataData?.countOrdini || 0}]).map(d=>{
                 const attivo = (diaCajaSeleccionado || diasCaja[0]?.data || oggiIso) === d.data;
                 return (
                   <button key={d.data} onClick={()=>setDiaCajaSeleccionado(d.data)} style={{
@@ -1322,7 +1367,9 @@ const EconomiaPage = ({onBack}) => {
                   }}>
                     <span>{fmtGiorno(d.data)}</span>
                     <span style={{opacity:.7,fontSize:10,fontWeight:600}}>
-                      {d.ordini || 0} ped · {Number(d.incasso || 0).toFixed(0)}€
+                      {/* S2-7D6E4 — d.incasso is null while the ledger is loading/failed:
+                          never coalesce to 0, show a neutral placeholder instead. */}
+                      {d.ordini || 0} ped · {d.incasso == null ? "···" : `${Number(d.incasso).toFixed(0)}€`}
                     </span>
                   </button>
                 );
@@ -2063,19 +2110,57 @@ const EconomiaPage = ({onBack}) => {
             );
           }
           // ── Griglia KPI ──
+          // S2-7D6E4 — money figures (Ventas/Ticket medio) are gated on ledgerStatus,
+          // independently of the row-data isLoad/errMsg checks above: rows can be ready
+          // while the ledger is still loading or has failed, and the two must never be
+          // conflated. Never fmtEur(null) — that would print "0€", exactly the
+          // temporarily-false value this gate exists to prevent.
           const fmtEur = (n,dec=0) => `${Number(n||0).toFixed(dec)}€`;
+          const ledgerNotReady = ledgerStatus !== "ready";
+          const moneyValue = (n, dec) => ledgerStatus === "error" ? "⚠"
+            : ledgerStatus === "loading" ? "···"
+            : fmtEur(n, dec);
           return (
             <>
+              {ledgerNotReady && (
+                <div style={{...glassCard, padding:"12px 16px", marginBottom:10,
+                  borderColor: ledgerStatus==="error" ? "rgba(232,52,28,0.35)" : "rgba(255,255,255,0.10)",
+                  display:"flex", alignItems:"center", gap:12}}>
+                  {shimmerLine}
+                  {ledgerStatus === "loading" ? (
+                    <>
+                      <div style={{fontSize:20,animation:"pulse 1.5s infinite"}}>💶</div>
+                      <div style={{color:"rgba(255,255,255,0.5)",fontSize:13,flex:1}}>
+                        Cargando importes contables (ledger)…
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{fontSize:20}}>⚠</div>
+                      <div style={{color:C.rosso,fontWeight:700,fontSize:13,flex:1}}>
+                        No se pudieron cargar los importes contables. Los datos de caja no son fiables.
+                      </div>
+                      <button onClick={retryLedger} style={{
+                        background:"rgba(232,52,28,0.15)", border:"1px solid rgba(232,52,28,0.5)",
+                        color:"#fff", borderRadius:10, padding:"7px 14px",
+                        fontSize:12, fontWeight:800, cursor:"pointer", flexShrink:0
+                      }}>↻ Reintentar</button>
+                    </>
+                  )}
+                </div>
+              )}
               <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:14}}>
                 <KpiCard label="Ventas" icon="💶" color={C.verde}
-                  value={fmtEur(vista.ventas)}
+                  value={moneyValue(vista.ventas)}
                   sub={periodo==="serata"?"del día":vista.etichetta}
-                  delta={vista.contesto==="aggregata" ? delta?.ventas : null}
+                  delta={(!ledgerNotReady && vista.contesto==="aggregata") ? delta?.ventas : null}
+                  disabled={ledgerNotReady}
                   onClick={()=>setModalAperto("ventas")}/>
                 <KpiCard label="Ticket medio" icon="🎯" color={C.blu}
-                  value={fmtEur(vista.ticket,1)}
+                  value={moneyValue(vista.ticket,1)}
                   sub="por pedido"
-                  delta={vista.contesto==="aggregata" ? delta?.ticket : null}
+                  delta={(!ledgerNotReady && vista.contesto==="aggregata") ? delta?.ticket : null}
+                  disabled={ledgerNotReady}
                   onClick={()=>setModalAperto("ticket")}/>
                 <KpiCard label="Pedidos" icon="📦" color={C.giallo}
                   value={vista.pedidos}
@@ -2137,6 +2222,17 @@ const EconomiaPage = ({onBack}) => {
 
         // ── VENTAS ──
         if (modalAperto === "ventas") {
+          // S2-7D6E4 — defensive: the KpiCard that opens this modal is disabled unless
+          // the ledger is ready, but guard here too rather than ever compute fmtEur(null).
+          if (ledgerStatus !== "ready") {
+            return (
+              <Modal titolo="Ventas" sub={titoloCtx} icona="💶" color={C.verde} onClose={closeM}>
+                <div style={{color:"rgba(255,255,255,0.5)",fontSize:13,textAlign:"center",padding:"20px 0"}}>
+                  {ledgerStatus === "error" ? "⚠ No se pudieron cargar los importes contables." : "Cargando importes contables…"}
+                </div>
+              </Modal>
+            );
+          }
           const pag = vista.pagamenti || {};
           const totalPag = Object.values(pag).reduce((s,p)=>s+(p.incasso||0),0);
           const PAG_ROWS = [
@@ -2166,6 +2262,16 @@ const EconomiaPage = ({onBack}) => {
 
         // ── TICKET MEDIO ──
         if (modalAperto === "ticket") {
+          // S2-7D6E4 — same defensive guard as the "ventas" modal above.
+          if (ledgerStatus !== "ready") {
+            return (
+              <Modal titolo="Ticket medio" sub={titoloCtx} icona="🎯" color={C.blu} onClose={closeM}>
+                <div style={{color:"rgba(255,255,255,0.5)",fontSize:13,textAlign:"center",padding:"20px 0"}}>
+                  {ledgerStatus === "error" ? "⚠ No se pudieron cargar los importes contables." : "Cargando importes contables…"}
+                </div>
+              </Modal>
+            );
+          }
           // Calcola distribuzione da rawData filtrato per contesto
           const allOrds = (() => {
             if (vista.contesto === "caja") return ordenesCajaDia;
