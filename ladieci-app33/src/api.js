@@ -336,6 +336,17 @@ const api = {
   // date; this contract intentionally accepts no date, range or service id —
   // the client never selects a session (docs/SERVICE_SESSION_IDENTITY.md).
   getCurrentServiceCloseout: () => proxyGet("getCurrentServiceCloseout"),
+  // S2-7D6E3 — Economía's ONE money source: ledger-derived (order_financial_events, via
+  // the SAME aggregate() the live closeout and serata_summary use) payment totals per
+  // service-session-day, NOT a metodo_pago bucket over raw storico/ordenes rows. Rides
+  // the Auth V2 proxy chain (admin-only backend action), never the anon Supabase key.
+  // desde/hasta are optional YYYY-MM-DD (inclusive).
+  getEconomiaLedger: (desde, hasta) => {
+    const params = {};
+    if (desde) params.desde = desde;
+    if (hasta) params.hasta = hasta;
+    return proxyGet("getEconomiaLedger", params);
+  },
   // Opens THE next service session. Takes no arguments by design: the backend
   // derives actor from the verified token and business_date in Europe/Madrid.
   openServiceSession: () => proxyPost({ action: "openServiceSession" }),
