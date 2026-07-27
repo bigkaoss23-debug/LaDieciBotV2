@@ -21,6 +21,8 @@ import { DevHeartbeatSender } from './components/DevPresence';
 import OpsHealthBadge from './components/OpsHealthBadge';
 import OperationalMenu from './components/OperationalMenu';
 import { operationalLogout, registerOperationalTeardown } from './operationalSession';
+import { isPrintPreviewEnabled } from './featureFlags';
+import TicketPreview from './printing/components/TicketPreview';
 
 export default function App({ skipSplash = false } = {}) {
   // ─── Deep link via URL path (affidabile su tutti i device/iOS/Safari) ──────
@@ -72,6 +74,7 @@ export default function App({ skipSplash = false } = {}) {
                 : path === 'cierre'            ? 'closeout'
                 : path === 'shadow-preview'    ? 'shadowpreview'
                 : path === 'premium-proposals' ? 'premiumproposalslab'
+                : path === 'print-preview' && isPrintPreviewEnabled() ? 'printpreview'
                 : 'econbot';
     const go    = () => setScreen(dest);
     if (auth.isAuthenticated()) {
@@ -470,6 +473,7 @@ export default function App({ skipSplash = false } = {}) {
           via deep-link nascosto /premium-proposals (dietro PIN), flag
           REACT_APP_PREMIUM_PROPOSALS default OFF, nessun bottone operatore. */}
       {screen==="premiumproposalslab" && <PremiumProposalsLabPanel onBack={()=>setScreen("home")}/>}
+      {screen==="printpreview" && isPrintPreviewEnabled() && <TicketPreview onBack={()=>setScreen("home")}/>}
 
       {/* ─── Modal PIN — si apre quando si clicca Servicio/Economía/Bot ─── */}
       {showPin && (

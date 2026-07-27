@@ -17,3 +17,14 @@ export function isPremiumProposalsEnabled() {
     return false;
   }
 }
+
+const STAGING_SUPABASE_URL = "https://tdikhfeinufaahagmpjz.supabase.co";
+
+export function isPrintPreviewEnabled() {
+  try {
+    return process.env.NODE_ENV === "development"
+      || process.env.REACT_APP_SUPABASE_URL === STAGING_SUPABASE_URL;
+  } catch (_) {
+    return false;
+  }
+}

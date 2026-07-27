@@ -1,0 +1,76 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`renderers golden customer 58 1`] = `
+"  LA DIECI — ENTORNO DE PRUEBA
+          PEDIDO #111
+15/01/2026, 20:00
+BANCO · RITIRO
+--------------------------------
+1×  Margarita de          9.00 €
+prueba
+Precio unitario: 9.00 €
+--------------------------------
+Subtotal                  9.00 €
+Entrega                   0.00 €
+                    TOTAL 9.00 €
+Pago: TARJETA
+Estado: PAGADO
+--------------------------------
+  Gracias por elegir La Dieci
+
+
+
+"
+`;
+
+exports[`renderers golden customer 80 1`] = `
+"          LA DIECI — ENTORNO DE PRUEBA
+                  PEDIDO #111
+15/01/2026, 20:00
+BANCO · RITIRO
+------------------------------------------------
+1×   Margarita de prueba                9.00 €
+Precio unitario: 9.00 €
+------------------------------------------------
+Subtotal                                  9.00 €
+Entrega                                   0.00 €
+                                    TOTAL 9.00 €
+Pago: TARJETA
+Estado: PAGADO
+------------------------------------------------
+          Gracias por elegir La Dieci
+
+
+
+
+"
+`;
+
+exports[`renderers golden kitchen 58 1`] = `
+"              #101
+         BANCO · RITIRO
+Pedido 19:00 · Prometido 20:20
+REVISIÓN 1
+--------------------------------
+1 × Margarita de prueba
+--------------------------------
+
+
+
+"
+`;
+
+exports[`renderers golden kitchen 80 1`] = `
+"                      #101
+                 BANCO · RITIRO
+Pedido 19:00 · Prometido 20:20
+REVISIÓN 1
+------------------------------------------------
+1 × Margarita de prueba
+------------------------------------------------
+
+
+
+
+"
+`;

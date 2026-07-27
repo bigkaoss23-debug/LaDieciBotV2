@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import AccountApp from './components/account/AccountApp';
 import Splash from './components/Splash';
+import { isPrintPreviewEnabled } from './featureFlags';
+import TicketPreview from './printing/components/TicketPreview';
 import {
   SURFACE,
   resolveSurface,
@@ -74,4 +76,6 @@ function Boot() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<Boot />);
+const isIsolatedPrintPreview = window.location.pathname.replace(/\/+$/, "").toLowerCase() === "/print-preview"
+  && isPrintPreviewEnabled();
+root.render(isIsolatedPrintPreview ? <TicketPreview onBack={() => { window.location.href = "/"; }} /> : <Boot />);

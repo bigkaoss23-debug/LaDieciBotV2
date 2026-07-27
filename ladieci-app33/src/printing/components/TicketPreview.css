@@ -1,0 +1,18 @@
+.print-preview-page{min-height:100vh;background:#111827;color:#f9fafb;padding:24px;font-family:Inter,system-ui,sans-serif}
+.print-preview-header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;max-width:1500px;margin:auto}
+.print-preview-header h1{margin:8px 0 4px}.print-preview-header p{margin:0;color:#9ca3af}
+.print-preview-warning{display:inline-block;background:#fbbf24;color:#111827;padding:6px 10px;border-radius:6px;font-weight:900;letter-spacing:.06em}
+.print-preview-page button,.print-preview-page select{border:1px solid #4b5563;border-radius:8px;background:#1f2937;color:#fff;padding:9px 11px;font:inherit}
+.print-preview-page button{cursor:pointer;font-weight:800}.print-preview-page button:disabled{opacity:.5;cursor:wait}
+.print-preview-controls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;max-width:1500px;margin:24px auto}
+.print-preview-controls label{display:grid;gap:5px;color:#d1d5db;font-size:13px;font-weight:700}
+.print-preview-status{padding:9px 13px;border-radius:999px;background:#374151;font-family:ui-monospace,monospace}
+.print-preview-status.is-printed{background:#14532d}.print-preview-status.is-failed{background:#7f1d1d}.print-preview-status.is-unknown{background:#78350f}
+.print-preview-grid{display:grid;grid-template-columns:minmax(360px,.8fr) repeat(2,minmax(360px,1fr));gap:20px;max-width:1500px;margin:auto}
+.print-preview-grid article{min-width:0}.print-preview-grid h2{font-size:17px}
+.ticket-paper,.ticket-json{box-sizing:border-box;overflow:auto;white-space:pre-wrap;word-break:break-word;border-radius:8px}
+.ticket-paper{margin:0 auto;background:#fff;color:#111;padding:20px;font:600 15px/1.35 "Courier New",monospace;box-shadow:0 12px 40px #0008}
+.ticket-paper.paper-58{width:330px}.ticket-paper.paper-80{width:470px}
+.ticket-json{max-height:75vh;background:#030712;border:1px solid #374151;padding:16px;color:#d1fae5;font:12px/1.45 ui-monospace,monospace}
+@media(max-width:1450px) and (min-width:1151px){.print-preview-grid{grid-template-columns:minmax(500px,.85fr) minmax(0,1.15fr)}.print-preview-grid article:nth-child(3){grid-column:1/-1}}
+@media(max-width:1150px){.print-preview-grid{grid-template-columns:1fr}.ticket-json{max-height:500px}}
