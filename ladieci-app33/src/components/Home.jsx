@@ -122,7 +122,7 @@ const Home = ({ onServizio, onEconBot }) => {
       }} />
 
       <div style={{ zIndex: 2, display: "flex", flexDirection: "column", gap: 16, width: "100%", maxWidth: 460 }}>
-        {card("Servizio", IconServizio, hovS, () => setHovS(true), () => setHovS(false), onServizio)}
+        {card("Servicio", IconServizio, hovS, () => setHovS(true), () => setHovS(false), onServizio)}
         {card("Economia & Bot", IconEconomia, hovE, () => setHovE(true), () => setHovE(false), onEconBot)}
       </div>
 

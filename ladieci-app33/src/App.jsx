@@ -457,6 +457,7 @@ export default function App({ skipSplash = false } = {}) {
       )}
       {screen==="closeout" && canAccessCurrentCloseout(auth.getRole()) && (
         <CurrentNightCloseoutPage onBack={()=>setScreen("servicio")}
+            onReturnHome={()=>setScreen("home")}
             role={auth.getRole()} actor={auth.getActor()}
             onServiceOpened={()=>setScreen("servicio")}/>
       )}

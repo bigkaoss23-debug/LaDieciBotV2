@@ -1,18 +1,20 @@
 import { describeCloseoutKind } from './closeoutServiceKind';
 
 describe('closeout service kind — from the contract only', () => {
-  test('PRANZO gets lunch wording and keeps the backend token', () => {
+  test('PRANZO gets lunch wording; the backend token stays an internal discriminant, never rendered', () => {
     const d = describeCloseoutKind({ serviceKind: 'PRANZO' });
     expect(d.kind).toBe('PRANZO');
     expect(d.title).toBe('Cierre de la comida');
-    expect(d.eyebrow).toBe('SERVICIO · PRANZO');
+    expect(d.eyebrow).toBe('SERVICIO · MEDIODÍA');
+    expect(d.eyebrow).not.toMatch(/PRANZO/);
   });
 
-  test('SERA gets evening wording and keeps the backend token', () => {
+  test('SERA gets evening wording; the backend token stays an internal discriminant, never rendered', () => {
     const d = describeCloseoutKind({ serviceKind: 'SERA' });
     expect(d.kind).toBe('SERA');
     expect(d.title).toBe('Cierre de la cena');
-    expect(d.eyebrow).toBe('SERVICIO · SERA');
+    expect(d.eyebrow).toBe('SERVICIO · NOCHE');
+    expect(d.eyebrow).not.toMatch(/\bSERA\b/);
   });
 
   test('lunch and dinner never share wording', () => {

@@ -52,6 +52,52 @@ describe('classifyEnsureAttempt — every documented typed non-success code', ()
     expect(o.message.length).toBeGreaterThan(0);
     // No raw backend code ever leaks into the human message.
     expect(o.message).not.toMatch(new RegExp(code));
+    // Never the internal PRANZO/SERA/service_kind vocabulary, in any code path.
+    expect(o.title).not.toMatch(/PRANZO|SERA/);
+    expect(o.message).not.toMatch(/PRANZO|SERA/);
+  });
+});
+
+describe('classifyEnsureAttempt — a still-open OTHER-kind session grants operational access (S2-7D6E)', () => {
+  test('LUNCH_SESSION_STILL_ACTIVE with an open session -> ALLOWED, not an exception', () => {
+    const res = {
+      success: false, code: 'LUNCH_SESSION_STILL_ACTIVE',
+      session: { id: 'uuid-3', serviceKind: 'PRANZO', businessDate: '2026-07-27', status: 'open', openedAt: '2026-07-27T12:00:00.000' },
+      scheduleState: 'SERA_WINDOW', businessDate: '2026-07-27', _status: 409, _ok: false,
+    };
+    const o = classifyEnsureAttempt(res);
+    expect(o.kind).toBe(ENSURE_OUTCOME.ALLOWED);
+    expect(o.created).toBe(false);
+    expect(o.code).toBe('LUNCH_SESSION_STILL_ACTIVE');
+    expect(o.session.status).toBe('open');
+  });
+
+  test('OTHER_SERVICE_STILL_ACTIVE with an open session -> ALLOWED, not an exception', () => {
+    const res = {
+      success: false, code: 'OTHER_SERVICE_STILL_ACTIVE',
+      session: { id: 'uuid-4', serviceKind: 'SERA', businessDate: '2026-07-27', status: 'open', openedAt: '2026-07-27T20:00:00.000' },
+      scheduleState: 'PRANZO_WINDOW', businessDate: '2026-07-27', _status: 409, _ok: false,
+    };
+    const o = classifyEnsureAttempt(res);
+    expect(o.kind).toBe(ENSURE_OUTCOME.ALLOWED);
+    expect(o.session.status).toBe('open');
+  });
+
+  test('LUNCH_SESSION_STILL_ACTIVE with a CLOSING session stays an exception (nothing to operate on yet)', () => {
+    const res = {
+      success: false, code: 'LUNCH_SESSION_STILL_ACTIVE',
+      session: { id: 'uuid-5', serviceKind: 'PRANZO', businessDate: '2026-07-27', status: 'closing', openedAt: '2026-07-27T12:00:00.000' },
+      scheduleState: 'SERA_WINDOW', businessDate: '2026-07-27', _status: 409, _ok: false,
+    };
+    const o = classifyEnsureAttempt(res);
+    expect(o.kind).toBe('LUNCH_SESSION_STILL_ACTIVE');
+    expect(o.title).not.toMatch(/PRANZO|SERA/);
+  });
+
+  test('LUNCH_SESSION_STILL_ACTIVE with no session at all stays an exception (defensive: nothing to hand the operator)', () => {
+    const res = { success: false, code: 'LUNCH_SESSION_STILL_ACTIVE', session: null, scheduleState: 'SERA_WINDOW', businessDate: '2026-07-27', _status: 409, _ok: false };
+    const o = classifyEnsureAttempt(res);
+    expect(o.kind).toBe('LUNCH_SESSION_STILL_ACTIVE');
   });
 });
 
@@ -104,19 +150,23 @@ describe('exceptionShowsCloseoutLink — only where a human action there could r
   });
 });
 
-describe('ensuredStatusLabel — sourced ONLY from the backend session, never the browser clock', () => {
-  test('PRANZO', () => {
-    expect(ensuredStatusLabel(PRANZO_CREATED.session)).toBe('PRANZO · Abierto · 2026-07-26 · 08:05');
+describe('ensuredStatusLabel — sourced ONLY from the backend session, never the browser clock, never PRANZO/SERA to the operator', () => {
+  test('PRANZO renders as "Servicio de mediodía"', () => {
+    expect(ensuredStatusLabel(PRANZO_CREATED.session)).toBe('Servicio de mediodía · Abierto · 2026-07-26 · 08:05');
   });
-  test('SERA', () => {
-    expect(ensuredStatusLabel(SERA_REUSED.session)).toBe('SERA · Abierto · 2026-07-26 · 20:00');
+  test('SERA renders as "Servicio de noche"', () => {
+    expect(ensuredStatusLabel(SERA_REUSED.session)).toBe('Servicio de noche · Abierto · 2026-07-26 · 20:00');
   });
   test('no session at all renders empty, never a guessed label', () => {
     expect(ensuredStatusLabel(null)).toBe('');
   });
   test('a legacy/kindless session still renders a generic label, not "serata"', () => {
     const label = ensuredStatusLabel({ serviceKind: null, businessDate: '2026-07-26', openedAt: null });
-    expect(label).toBe('Servicio abierto · 2026-07-26');
+    expect(label).toBe('Servicio · Abierto · 2026-07-26');
     expect(label).not.toMatch(/serata/i);
+  });
+  test('never leaks the raw PRANZO/SERA token, whatever the session', () => {
+    expect(ensuredStatusLabel(PRANZO_CREATED.session)).not.toMatch(/PRANZO/);
+    expect(ensuredStatusLabel(SERA_REUSED.session)).not.toMatch(/SERA/);
   });
 });

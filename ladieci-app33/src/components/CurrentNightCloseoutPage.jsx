@@ -25,7 +25,7 @@ import { describeCloseoutKind } from '../utils/closeoutServiceKind';
 
 const money = (value) => `${(Number(value) || 0).toFixed(2)} €`;
 
-export default function CurrentNightCloseoutPage({ onBack, role, actor, onServiceOpened }) {
+export default function CurrentNightCloseoutPage({ onBack, onReturnHome, role, actor, onServiceOpened }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const liveRef = useRef(true);
@@ -70,7 +70,15 @@ export default function CurrentNightCloseoutPage({ onBack, role, actor, onServic
 
   return (
     <main style={{ minHeight: '100vh', background: '#080808', color: '#fff', padding: 20, fontFamily: "'DM Sans',sans-serif" }}>
-      <button onClick={onBack} style={button}>← Servicio</button>
+      {/* S2-7D6E — a CLOSED session's report is a dead end by design: going "back" into
+          Servicio would remount the gate, re-run ensure, and land right back here — the
+          reported loop. Only a genuinely still-open/closing session (or no session at
+          all) makes "← Servicio" a real place to return to. */}
+      {data && data.status === 'closed' ? (
+        <button onClick={onReturnHome} data-testid="closeout-home-btn" style={button}>Volver al menú principal</button>
+      ) : (
+        <button onClick={onBack} data-testid="closeout-back-btn" style={button}>← Servicio</button>
+      )}
       <section style={{ maxWidth: 980, margin: '28px auto' }}>
         {/* S2-7D6C2 — which service this report is about comes ONLY from
             closeout.serviceKind. Before `data` exists there is nothing to

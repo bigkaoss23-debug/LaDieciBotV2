@@ -50,8 +50,13 @@ export const EXCEPTION_TITLE = Object.freeze({
   [ENSURE_OUTCOME.AFTER_ORDER_CUTOFF]: 'No hay un servicio disponible ahora mismo',
   [ENSURE_OUTCOME.OUTSIDE_WINDOWS]: 'No hay un servicio disponible ahora mismo',
   [ENSURE_OUTCOME.SERVICE_ALREADY_COMPLETED_TODAY]: 'El servicio de hoy ya se ha completado',
-  [ENSURE_OUTCOME.LUNCH_SESSION_STILL_ACTIVE]: 'El almuerzo (PRANZO) sigue abierto',
-  [ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE]: 'Hay un conflicto de servicio activo',
+  // S2-7D6E — reached only in the residual sub-case where the still-open other-kind
+  // session is itself mid-close (status 'closing'); a genuinely open one now resolves
+  // to normal operational access (see classifyEnsureAttempt) and never shows this at
+  // all. Copy matches SERVICE_SESSION_CLOSING on purpose: from here it is the same
+  // situation. Never names PRANZO/SERA/service_kind to the operator.
+  [ENSURE_OUTCOME.LUNCH_SESSION_STILL_ACTIVE]: 'El servicio anterior se está cerrando',
+  [ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE]: 'El servicio anterior se está cerrando',
   [ENSURE_OUTCOME.SERVICE_SESSION_CLOSING]: 'El servicio se está cerrando',
   [ENSURE_OUTCOME.INVALID_ACTOR]: 'Usuario no verificado',
   [ENSURE_OUTCOME.DENIED]: 'Acceso no autorizado',
@@ -64,8 +69,8 @@ export const EXCEPTION_MESSAGE = Object.freeze({
   [ENSURE_OUTCOME.AFTER_ORDER_CUTOFF]: 'Fuera del horario de servicio. Vuelve a intentarlo cuando abra el próximo servicio.',
   [ENSURE_OUTCOME.OUTSIDE_WINDOWS]: 'Fuera del horario de servicio. Vuelve a intentarlo cuando abra el próximo servicio.',
   [ENSURE_OUTCOME.SERVICE_ALREADY_COMPLETED_TODAY]: 'Ya no se puede volver a abrir. Vuelve mañana.',
-  [ENSURE_OUTCOME.LUNCH_SESSION_STILL_ACTIVE]: 'Antes de abrir la cena hay que cerrar el servicio de almuerzo.',
-  [ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE]: 'Otro servicio está activo y no puede abrirse encima. Revisa el cierre del servicio.',
+  [ENSURE_OUTCOME.LUNCH_SESSION_STILL_ACTIVE]: 'Espera unos segundos a que termine el cierre e inténtalo de nuevo.',
+  [ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE]: 'Espera unos segundos a que termine el cierre e inténtalo de nuevo.',
   [ENSURE_OUTCOME.SERVICE_SESSION_CLOSING]: 'Espera a que termine el cierre en curso e inténtalo de nuevo.',
   [ENSURE_OUTCOME.INVALID_ACTOR]: 'Tu usuario no se pudo verificar para abrir el servicio. Contacta con el administrador.',
   [ENSURE_OUTCOME.DENIED]: 'No tienes permiso para acceder al servicio.',
@@ -124,17 +129,44 @@ export function classifyEnsureAttempt(res) {
   if (res.draftBlocked === true || res._status === 0) return domainOutcome(ENSURE_OUTCOME.NETWORK, res);
 
   const code = res.code;
+
+  // S2-7D6E — a still-open OTHER-kind session is not a dead end. The backend
+  // refused to open a NEW session over it (protecting the ledger split
+  // between the two services), but it handed back the session that IS open.
+  // The operator belongs in the normal operational surface for THAT session
+  // — reachable, Entregas included — never routed straight to a report page
+  // with no way back. Brand-new intake for the wrong kind stays
+  // independently blocked server-side by orderIntakePolicy's
+  // SERVICE_KIND_MISMATCH, so this cannot let a dinner order land in a
+  // lingering lunch session. Only when the backend could not hand back an
+  // actually-open session (e.g. it is itself mid-close) does this remain an
+  // exception — see domainOutcome below.
+  if ((code === ENSURE_OUTCOME.LUNCH_SESSION_STILL_ACTIVE || code === ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE)
+      && res.session && res.session.status === 'open') {
+    return Object.freeze({
+      kind: ENSURE_OUTCOME.ALLOWED,
+      created: false,
+      code,
+      session: res.session,
+    });
+  }
+
   if (code && SCHEDULE_OR_SESSION_CODES.has(code)) return domainOutcome(code, res);
 
   return domainOutcome(ENSURE_OUTCOME.UNKNOWN, res);
 }
 
-// "PRANZO · Abierto · 2026-07-26 · 12:05" / "SERA · Abierto · 2026-07-26 · 20:03"
-// — the kind and business date come ONLY from the backend session, never from
-// the browser clock.
+// User-facing service labels. Never PRANZO/SERA/service_kind — those are
+// internal tokens; the operator only ever reads "de mediodía" / "de noche".
+const KIND_LABEL = Object.freeze({ PRANZO: 'Servicio de mediodía', SERA: 'Servicio de noche' });
+
+// "Servicio de mediodía · Abierto · 2026-07-26 · 12:05" — the kind and
+// business date come ONLY from the backend session, never from the browser
+// clock.
 export function ensuredStatusLabel(session) {
   if (!session) return '';
-  const parts = [session.serviceKind ? `${session.serviceKind} · Abierto` : 'Servicio abierto'];
+  const label = (session.serviceKind && KIND_LABEL[session.serviceKind]) || 'Servicio';
+  const parts = [`${label} · Abierto`];
   if (session.businessDate) parts.push(String(session.businessDate));
   if (session.openedAt) {
     const d = new Date(session.openedAt);

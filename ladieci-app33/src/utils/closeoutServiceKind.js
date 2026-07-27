@@ -20,12 +20,13 @@
 
 export const SERVICE_KIND = Object.freeze({ PRANZO: 'PRANZO', SERA: 'SERA' });
 
-// The backend token stays visible, matching the status pill the operator
-// already reads in Servicio (ensuredStatusLabel). The titles are the Spanish
-// operator-facing wording for the same thing.
+// S2-7D6E — the backend token (`kind`) is kept as an internal discriminant only;
+// it is never rendered. `eyebrow`/`title`/`noun` are the only fields this page
+// paints on screen, and they use the same "mediodía"/"noche" vocabulary as the
+// Servicio status pill (ensuredStatusLabel) — never the raw PRANZO/SERA word.
 const PRESENTATION = Object.freeze({
-  PRANZO: Object.freeze({ kind: 'PRANZO', eyebrow: 'SERVICIO · PRANZO', title: 'Cierre de la comida', noun: 'la comida' }),
-  SERA: Object.freeze({ kind: 'SERA', eyebrow: 'SERVICIO · SERA', title: 'Cierre de la cena', noun: 'la cena' }),
+  PRANZO: Object.freeze({ kind: 'PRANZO', eyebrow: 'SERVICIO · MEDIODÍA', title: 'Cierre de la comida', noun: 'la comida' }),
+  SERA: Object.freeze({ kind: 'SERA', eyebrow: 'SERVICIO · NOCHE', title: 'Cierre de la cena', noun: 'la cena' }),
 });
 
 const NEUTRAL = Object.freeze({ kind: null, eyebrow: 'SERVICIO ACTUAL', title: 'Cierre del servicio', noun: 'el servicio' });
