@@ -585,6 +585,27 @@ const api = {
   // form → auth_set_actor_pin_v2). It had no callers.
   getAppPin: async function() { return "server-side"; },
 
+  // ── S2-7D6E4 — in-app PIN management (step-up gated) ────────────
+  // List of canonical actors for the PIN-management picker. Admin-only on the backend
+  // (legacyActionRoles); operator/rider get ROLE_FORBIDDEN.
+  getAuthActors: function() { return proxyGet("getAuthActors"); },
+  // Step-up confirmation: the ALREADY-authenticated admin re-enters their own PIN. On
+  // success the backend returns a short-lived, session-bound proof — never a boolean.
+  // actor/role/session_version are never sent: the backend takes them from the verified
+  // Auth V2 bearer this call already carries.
+  verifyOwnPin: function(pin) {
+    return proxyPost({ action: "verifyOwnPin", pin });
+  },
+  // Changes ANY actor's PIN. Requires the step-up proof from verifyOwnPin; the backend
+  // rejects the call outright without one. `confirmation` is only meaningful (and only
+  // sent) when targetActor is "owner" — the deliberate explicit phrase the SQL contract
+  // requires for a self-change, never auto-supplied by this client.
+  setActorPin: function({ targetActor, newPin, stepUpProof, confirmation }) {
+    const body = { action: "setActorPin", targetActor, newPin, stepUpProof };
+    if (confirmation !== undefined) body.confirmation = confirmation;
+    return proxyPost(body);
+  },
+
   // ── Storico/serata: letture pesanti aggregate ──────────────────
   getStorico: async function() {
     const rows = await sb.select("storico", "order=ts.desc&limit=500");

@@ -118,6 +118,43 @@ export function operationalLogout() {
   //    pre-cutover localStorage copy). ld-account-auth is NOT in that set.
   try { auth.clear(); } catch (_) { /* noop */ }
   try { sessionStorage.removeItem(CALLBACK_DONE_KEY); } catch (_) { /* noop */ }
+  // 3) S2-7D6E4 — a step-up confirmation is scoped to THIS operational session. Any
+  //    logout (manual, idle, or a 401/403 from the backend) must drop it immediately —
+  //    it must never survive into whatever session comes next on this tab.
+  clearPinStepUp();
+}
+
+// ── S2-7D6E4 — PIN-management step-up proof ─────────────────────────────────
+// Held in a plain module variable ONLY — never sessionStorage, never localStorage, never a
+// cookie. A page reload already re-shows the operational PIN screen (the operational token
+// itself lives in sessionStorage, but this proof deliberately does not follow that pattern:
+// it is even shorter-lived and single-purpose, so losing it on reload is the correct,
+// unsurprising behaviour — the admin just confirms again).
+let pinStepUpProof = null;
+let pinStepUpExpiresAt = 0; // epoch ms; client-side bookkeeping only — the backend's own
+                             // signed expiry inside the proof is the real enforcement.
+
+// Called once, right after a successful verifyOwnPin, with the proof and the
+// backend-reported TTL (seconds).
+export function setPinStepUp(proof, ttlSeconds) {
+  if (typeof proof !== 'string' || proof.length === 0) { clearPinStepUp(); return; }
+  pinStepUpProof = proof;
+  const ttlMs = Math.max(0, Number(ttlSeconds) || 0) * 1000;
+  pinStepUpExpiresAt = Date.now() + ttlMs;
+}
+
+// Returns the current proof, or null if none exists or the client-side bookkeeping says it
+// has expired (the caller must still handle a backend-side rejection — this is not the
+// source of truth, just avoids sending a proof this tab already knows is stale).
+export function getPinStepUp() {
+  if (!pinStepUpProof) return null;
+  if (Date.now() >= pinStepUpExpiresAt) { clearPinStepUp(); return null; }
+  return pinStepUpProof;
+}
+
+export function clearPinStepUp() {
+  pinStepUpProof = null;
+  pinStepUpExpiresAt = 0;
 }
 
 // Spanish labels for the verified Auth V2 identity. Derived from the token/response only.
