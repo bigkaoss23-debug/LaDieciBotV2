@@ -11,7 +11,14 @@
 .customer-ticket-print-sheet.paper-58{width:58mm;min-width:300px}.customer-ticket-print-sheet.paper-80{width:80mm;min-width:420px}
 .customer-ticket-error{margin:24px;padding:16px;border:1px solid #ef4444;border-radius:10px;background:#450a0a;color:#fecaca}
 .customer-ticket-actions{border-top:1px solid rgba(255,255,255,.1)}.customer-ticket-actions button{padding:11px 18px;font-weight:800}.customer-ticket-cancel{background:#292929}.customer-ticket-confirm{border-color:#dc2626;background:#dc2626}.customer-ticket-actions button:disabled,.customer-ticket-close:disabled{opacity:.5;cursor:wait}
-@media(max-width:640px){.customer-ticket-modal{padding:8px}.customer-ticket-panel{max-height:98vh}.customer-ticket-print-sheet{transform:scale(.9);transform-origin:top center;margin-bottom:-5%}}
+@media(max-width:640px){
+  .customer-ticket-modal{padding:8px}
+  .customer-ticket-panel{max-height:98vh;min-width:0;overflow-x:auto;overflow-y:hidden}
+  .customer-ticket-header,.customer-ticket-toolbar,.customer-ticket-actions{position:sticky;left:0;z-index:1;box-sizing:border-box;flex-wrap:wrap;min-width:100%;gap:8px;padding:10px 12px}
+  .customer-ticket-toolbar label,.customer-ticket-status{min-width:0;max-width:100%}
+  .customer-ticket-print-sheet{margin:8px;transform:none}
+  .customer-ticket-print-sheet.paper-80{align-self:flex-start}
+}
 @media print{
   @page{margin:0}
   body.customer-ticket-print-open> *:not(.customer-ticket-modal){display:none!important}
