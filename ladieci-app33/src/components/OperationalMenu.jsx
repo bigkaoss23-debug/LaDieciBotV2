@@ -145,6 +145,7 @@ function PinManagementFlow({ onClose, onLogout }) {
         <StepUpView
           onCancel={onClose}
           onVerified={() => setView('manage')}
+          onReauthRequired={() => { clearPinStepUp(); onLogout(); }}
         />
       )}
       {view === 'manage' && (
@@ -158,7 +159,7 @@ function PinManagementFlow({ onClose, onLogout }) {
   );
 }
 
-function StepUpView({ onCancel, onVerified }) {
+function StepUpView({ onCancel, onVerified, onReauthRequired }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -188,6 +189,13 @@ function StepUpView({ onCancel, onVerified }) {
     if (res && res.error === 'LOCKED') {
       const secs = Number(res.retryAfterSec) || 0;
       setError(secs > 0 ? `Demasiados intentos. Espera ${secs}s e inténtalo de nuevo.` : 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.');
+      return;
+    }
+    if (res && res.error === 'REAUTH_REQUIRED') {
+      // This session predates the per-login session id PIN management now requires — there
+      // is no weaker fallback. The only fix is a fresh login, so we take it immediately
+      // rather than leaving the admin stuck re-entering a PIN that can never succeed here.
+      onReauthRequired();
       return;
     }
     setError('PIN incorrecto.');
