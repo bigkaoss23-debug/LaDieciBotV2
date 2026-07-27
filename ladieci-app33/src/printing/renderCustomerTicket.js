@@ -1,4 +1,5 @@
 import { TICKET_TYPES, assertTicketSnapshot } from "./contracts";
+import { CUSTOMER_TICKET_BUSINESS_PROFILE } from "./businessProfile";
 import { getLayoutProfile, wrapText } from "./layoutProfiles";
 import { columnsBlock, createTicketDocument, cutBlock, feedBlock, separatorBlock, textBlock } from "./ticketDocument";
 
@@ -11,6 +12,9 @@ export function renderCustomerTicket(snapshot) {
   const pricing = snapshot.customer.pricing;
   const blocks = [
     textBlock(snapshot.customer.location_name, { align: "center", emphasis: "bold", size: "large" }),
+    textBlock(CUSTOMER_TICKET_BUSINESS_PROFILE.document_label, { align: "center", emphasis: "bold" }),
+    textBlock(CUSTOMER_TICKET_BUSINESS_PROFILE.non_fiscal_label, { align: "center", emphasis: "bold" }),
+    separatorBlock(profile.separator),
     textBlock(`PEDIDO #${snapshot.order.order_number}`, { align: "center", emphasis: "bold", size: "large" }),
     textBlock(new Date(snapshot.order.ordered_at).toLocaleString(snapshot.locale, {
       timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
@@ -40,10 +44,6 @@ export function renderCustomerTicket(snapshot) {
   blocks.push(textBlock(`TOTAL ${euro(pricing.total)}`, { align: "right", emphasis: "bold", size: "large" }));
   blocks.push(textBlock(`Pago: ${snapshot.customer.payment.method || "—"}`));
   blocks.push(textBlock(`Estado: ${snapshot.customer.payment.status}`, { emphasis: "bold" }));
-  const mayShowAddress = snapshot.privacy.permitted_sections.includes("customer_delivery_address");
-  if (snapshot.order.fulfilment_type === "DOMICILIO" && mayShowAddress && snapshot.delivery.customer_delivery_data.address) {
-    blocks.push(textBlock(`Dirección: ${snapshot.delivery.customer_delivery_data.address}`));
-  }
   snapshot.delivery.delivery_notes.forEach((note) => blocks.push(textBlock(`Nota entrega: ${note}`)));
   blocks.push(separatorBlock(profile.separator), textBlock(snapshot.customer.final_message, { align: "center" }));
   blocks.push(feedBlock(profile.finalFeedLines), cutBlock(profile.cutMode));

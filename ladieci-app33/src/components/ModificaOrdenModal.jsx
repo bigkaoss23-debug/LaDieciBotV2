@@ -15,6 +15,7 @@ import Chip from './ui/Chip';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 import { ZONE_DELIVERY, zonaBadgeStyle } from '../zones';
 import { api } from '../api';
+import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrintModal';
 
 const ModificaOrdenModal = ({orden, onClose, onSave}) => {
   // Normalizza items: può essere array, stringa JSON, o undefined
@@ -35,6 +36,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
   const { MENU, CATS, INGREDIENTI } = useMenuData();
   const resolveExtra = (name) => (INGREDIENTI || []).find(g => g.n === name) || findExtra(name);
   const [items, setItems] = useState(()=>parseItems(orden.items));
+  const [showCustomerTicket, setShowCustomerTicket] = useState(false);
   const [nota,  setNota]  = useState(String(orden.nota||""));
   const [hora,  setHora]  = useState(String(orden.hora||""));
   const [cat,   setCat]   = useState("Pizzas");
@@ -465,12 +467,20 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                 {submission.feedback.message}
               </div>
             )}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
               <div>
                 <div style={{color:C.grigio,fontSize:11}}>Total</div>
                 <div style={{color:C.verde,fontWeight:800,fontSize:20,
                   fontFamily:"'DM Mono',monospace"}}>{total}€</div>
               </div>
+              {!!String(orden.id ?? "").trim() && !orden._temp && parseItems(orden.items).length > 0 && (
+                <button type="button" onClick={() => setShowCustomerTicket(true)}
+                  style={{background:"rgba(255,255,255,.08)",color:C.bianco,
+                    border:`1px solid ${C.fumo}`,borderRadius:11,padding:"13px 16px",
+                    fontWeight:800,fontSize:13}}>
+                  🖨 Imprimir ticket
+                </button>
+              )}
               <button onClick={handleSave}
                 data-phase={submission.phase}
                 disabled={items.length===0 || submissionBusy}
@@ -486,6 +496,9 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
           </div>
         </div>
       </div>
+      {showCustomerTicket && (
+        <CustomerTicketPrintModal order={orden} onClose={() => setShowCustomerTicket(false)} />
+      )}
     </div>
   );
 };

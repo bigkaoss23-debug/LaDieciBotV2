@@ -1,5 +1,8 @@
 import { MOCK_PRINT_STATUSES, PAPER_WIDTHS, TICKET_DOCUMENT_VERSION, TICKET_SNAPSHOT_VERSION, TICKET_TYPES, assertPaperWidth, assertTicketSnapshot, assertTicketType } from "./contracts";
 import { createMockPrinterAdapter, MOCK_OUTCOMES } from "./adapters/mockPrinterAdapter";
+import { BROWSER_PRINT_OUTCOMES, createBrowserPrintAdapter } from "./adapters/browserPrintAdapter";
+import { CUSTOMER_TICKET_BUSINESS_PROFILE } from "./businessProfile";
+import { createCustomerTicket } from "./createCustomerTicket";
 import { getPrintFixture, PRINT_ORDER_FIXTURES } from "./fixtures/orders";
 import { buildPrintIdempotencyKey } from "./idempotency";
 import { wrapText } from "./layoutProfiles";
@@ -85,6 +88,63 @@ describe("normalization", () => {
     });
     expect(snapshot.customer.pricing).toMatchObject({ discount: 1, delivery_fee: 3, total: 28 });
     expect(snapshot.customer.payment).toMatchObject({ method: "tarjeta", status: "PAGADO" });
+  });
+});
+
+describe("manual customer ticket", () => {
+  test("uses the non-fiscal profile, defaults to 58 mm and omits delivery PII", () => {
+    const order = {
+      ...getPrintFixture("04").order,
+      id: "#customer-1",
+      tel: "PHONE-MUST-NOT-PRINT",
+      direccion: "ADDRESS-MUST-NOT-PRINT",
+      direccion_note: "Tocar el timbre lateral",
+    };
+    const { snapshot, document } = createCustomerTicket(order, {
+      createdAt: order.snapshot_created_at,
+    });
+    const text = ticketDocumentToPlainText(document);
+    expect(snapshot.paper_width).toBe(58);
+    expect(text).toContain(CUSTOMER_TICKET_BUSINESS_PROFILE.document_label);
+    expect(text).toContain(CUSTOMER_TICKET_BUSINESS_PROFILE.non_fiscal_label);
+    expect(snapshot.customer.final_message).toBe(CUSTOMER_TICKET_BUSINESS_PROFILE.footer_message);
+    expect(snapshot.delivery.delivery_notes).toContain("Tocar el timbre lateral");
+    expect(JSON.stringify({ snapshot, document, text })).not.toMatch(/PHONE-MUST-NOT-PRINT|ADDRESS-MUST-NOT-PRINT/);
+  });
+
+  test("supports 80 mm and rejects temporary orders", () => {
+    const order = getPrintFixture("01").order;
+    expect(createCustomerTicket(order, {
+      paperWidth: 80,
+      createdAt: order.snapshot_created_at,
+    }).snapshot.paper_width).toBe(80);
+    expect(() => createCustomerTicket({ ...order, _temp: true }, {
+      createdAt: order.snapshot_created_at,
+    })).toThrow("persisted");
+  });
+});
+
+describe("browser print adapter", () => {
+  test("opens only one concurrent dialog and never claims a successful print", async () => {
+    let release;
+    const pendingPrint = new Promise((resolve) => { release = resolve; });
+    const printFunction = jest.fn(() => pendingPrint);
+    const adapter = createBrowserPrintAdapter({ printFunction });
+    const first = adapter.print();
+    const second = await adapter.print();
+    expect(second).toMatchObject({ status: BROWSER_PRINT_OUTCOMES.FAILED, ok: false });
+    expect(printFunction).toHaveBeenCalledTimes(1);
+    release();
+    expect(await first).toMatchObject({ status: BROWSER_PRINT_OUTCOMES.USER_OUTCOME_UNKNOWN, ok: false });
+  });
+
+  test("fails closed when the browser dialog throws", async () => {
+    const adapter = createBrowserPrintAdapter({ printFunction: () => { throw new Error("blocked"); } });
+    await expect(adapter.print()).resolves.toMatchObject({
+      status: BROWSER_PRINT_OUTCOMES.FAILED,
+      ok: false,
+      error_code: "PRINT_DIALOG_FAILED",
+    });
   });
 });
 

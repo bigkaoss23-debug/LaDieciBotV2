@@ -15,11 +15,20 @@ function collect(directory) {
 collect(printingRoot);
 
 test("printing production code contains no network or hardware access", () => {
-  const source = sourceFiles.map((file) => fs.readFileSync(file, "utf8")).join("\n");
+  const browserAdapter = path.join(printingRoot, "adapters", "browserPrintAdapter.js");
+  const source = sourceFiles.filter((file) => file !== browserAdapter)
+    .map((file) => fs.readFileSync(file, "utf8")).join("\n");
   [
     /\bfetch\s*\(/, /\bXMLHttpRequest\b/, /\bWebSocket\b/, /\baxios\b/,
     /navigator\.(usb|bluetooth)/, /\bwindow\.print\s*\(/, /\bsupabase\b/i,
   ].forEach((pattern) => expect(source).not.toMatch(pattern));
+  const adapterSource = fs.readFileSync(browserAdapter, "utf8");
+  expect(adapterSource).toContain("window.print()");
+  [
+    /\bfetch\s*\(/, /\bXMLHttpRequest\b/, /\bWebSocket\b/, /\baxios\b/,
+    /navigator\.(usb|bluetooth)/, /\bsupabase\b/i, /\blocalStorage\b/,
+  ].forEach((pattern) => expect(adapterSource).not.toMatch(pattern));
+  expect(adapterSource).not.toMatch(/\bprinted\b/i);
 });
 
 test("the preview deep link bypasses operational boot only behind the staging/dev gate", () => {

@@ -7,6 +7,7 @@ import {
   deepFreeze,
 } from "./contracts";
 import { getItemExtraDisplays, getItemRemovedDisplays, resolveItemNote } from "../menu/itemDisplay";
+import { CUSTOMER_TICKET_BUSINESS_PROFILE } from "./businessProfile";
 
 const nonEmpty = (value, field, required = true) => {
   const normalized = String(value ?? "").trim().replace(/\s+/g, " ");
@@ -107,7 +108,10 @@ export function normalizeOrderForTicket(rawOrder, options = {}) {
     throw new TypeError("rawOrder must be an object");
   }
   const ticketType = assertTicketType(options.ticketType ?? rawOrder.ticket_type ?? TICKET_TYPES.KITCHEN);
-  const paperWidth = assertPaperWidth(options.paperWidth ?? rawOrder.paper_width ?? 80);
+  const defaultPaperWidth = ticketType === TICKET_TYPES.CUSTOMER
+    ? CUSTOMER_TICKET_BUSINESS_PROFILE.default_paper_width
+    : 80;
+  const paperWidth = assertPaperWidth(options.paperWidth ?? rawOrder.paper_width ?? defaultPaperWidth);
   const orderRevision = positiveInteger(options.orderRevision ?? rawOrder.order_revision, "order_revision");
   const createdAt = nonEmpty(options.createdAt ?? rawOrder.snapshot_created_at, "created_at");
   if (Number.isNaN(Date.parse(createdAt))) throw new TypeError("created_at must be an ISO date");

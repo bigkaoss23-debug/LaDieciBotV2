@@ -2,6 +2,9 @@
 
 exports[`renderers golden customer 58 1`] = `
 "  LA DIECI — ENTORNO DE PRUEBA
+        COPIA DEL PEDIDO
+     NO VÁLIDA COMO FACTURA
+--------------------------------
           PEDIDO #111
 15/01/2026, 20:00
 BANCO · RITIRO
@@ -25,6 +28,9 @@ Estado: PAGADO
 
 exports[`renderers golden customer 80 1`] = `
 "          LA DIECI — ENTORNO DE PRUEBA
+                COPIA DEL PEDIDO
+             NO VÁLIDA COMO FACTURA
+------------------------------------------------
                   PEDIDO #111
 15/01/2026, 20:00
 BANCO · RITIRO
