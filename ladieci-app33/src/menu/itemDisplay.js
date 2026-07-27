@@ -143,6 +143,37 @@ export function clearItemManualNote(item) {
   return setItemManualNote(item, "");
 }
 
+// Product-name hierarchy for persisted order snapshots.
+//
+// The accepted snapshot owns both labels:
+//   - classicName is the real/classic product name;
+//   - fantasyName (or the historical `n`) is the artistic name.
+//
+// `sub` is deliberately excluded: across historical and canonical shapes it can
+// contain operator notes or extras, not a product name. This resolver performs
+// no catalogue lookup and never fabricates a missing label.
+export function resolveItemProductNames(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return { primary: "", secondary: "" };
+  }
+
+  const clean = (value) => value == null ? "" : String(value).trim();
+  const realName = clean(item.classicName)
+    || clean(item.realName)
+    || clean(item.productName)
+    || clean(item.nombre);
+  const artisticName = clean(item.fantasyName)
+    || clean(item.n)
+    || clean(item.name);
+  const primary = realName || artisticName;
+  const secondary = artisticName
+    && artisticName.localeCompare(primary, undefined, { sensitivity: "base" }) !== 0
+    ? artisticName
+    : "";
+
+  return { primary, secondary };
+}
+
 // The structured EXTRAS/supplements of a NORMAL (non-Custom) item, for the
 // operational extras chip in Cocina / order rows. Source precedence:
 //   1. structured `extras[]` (canonical) — accepted saved name + per-unit qty

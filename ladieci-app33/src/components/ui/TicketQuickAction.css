@@ -1,0 +1,34 @@
+.ticket-quick-action {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 10px;
+  background: #24272b;
+  color: #f4f4f4;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ticket-quick-action:hover:not(:disabled) {
+  background: #30343a;
+  border-color: rgba(255, 255, 255, 0.38);
+}
+
+.ticket-quick-action:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.ticket-quick-action:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.ticket-quick-action--compact {
+  min-height: 44px;
+  padding-inline: 12px;
+  font-size: 0.9rem;
+}

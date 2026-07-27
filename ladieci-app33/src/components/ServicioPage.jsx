@@ -15,7 +15,9 @@ import PanelCocina from './cocina/PanelCocina';
 import TabEntregas from './entregas/TabEntregas';
 import NuevoPedidoModal from './NuevoPedidoModal';
 import ModificaOrdenModal from './ModificaOrdenModal';
+import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrintModal';
 import Badge from './ui/Badge';
+import OperationalSuccessSplash from './ui/OperationalSuccessSplash';
 import DevPresence from './DevPresence';
 import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isTerminalState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
 import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
@@ -113,6 +115,8 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const [goToPedidosSignal, setGoToPedidosSignal] = useState(0);
   const [goToPreguntasSignal, setGoToPreguntasSignal] = useState(0);
   const [ordenModifica, setOrdenModifica] = useState(null);
+  const [ticketOrder, setTicketOrder] = useState(null);
+  const [successSplash, setSuccessSplash] = useState(null);
   const [aiForza, setAiForza] = useState("BASIC");
   const [chiudiModal, setChiudiModal] = useState(null); // null | { completati, attivi, loading, step }
   const headerWidth = useWidth();
@@ -347,18 +351,28 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
 
   const confirmaOrdine = async (id) => {
     if (!beginAction(id)) return;
+    const orden = ordenes.find(o => o.id === id);
     try {
-      notify("✅ " + id + " → Cocina");
-      const orden = ordenes.find(o => o.id === id);
       const intent = buildEnCocinaTransition(orden, {
         component: "ServicioPage",
         action: "confirmaOrdine",
       });
       logTransition(intent);
       await optimisticOrden(id, { estado: ORDER_STATES.EN_COCINA }, async () => {
-        try { await api.updateEstado(id, ORDER_STATES.EN_COCINA); }
-        catch(err) { console.error("confirmaOrdine error:", err); }
+        const res = await api.updateEstado(id, ORDER_STATES.EN_COCINA);
+        if (!res || res._ok === false || res.error || res.success === false) {
+          throw new Error(res?.error || "updateEstado failed");
+        }
       });
+      setSuccessSplash({
+        title: "¡Pedido enviado a cocina!",
+        subtitle: null,
+        nextTab: null,
+      });
+    } catch(err) {
+      console.error("confirmaOrdine error:", err);
+      setOrdenes(p=>p.map(o=>o.id===id?{...o,estado:orden?.estado}:o));
+      notify("❌ Error al enviar a Cocina", C.rosso);
     } finally { endAction(id); }
   };
 
@@ -414,14 +428,21 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     setOrdenes(p=>[{...o, _temp:true},...p]);
     const canalLabel = o.canal==="BANCO" ? "Barra" : "Tel";
     notify("✅ " + canalLabel + " (guardando…)");
-    if (o.canal==="MANUAL") setTab("manual");
-    else if (o.canal==="BANCO") setTab("banco");
+    if (o.canal==="BANCO") setTab("banco");
     try {
       // STRICT: throw se Railway non risponde con un id valido. L'idempotency
       // key (o.client_req_id) protegge da duplicati in caso di retry.
       const res = await api.createOrden(o);
+      if (!res?.id) throw new Error("createOrden returned no persisted id");
       setOrdenes(p=>p.map(x=>x.id===o.id?{...x,id:res.id,_temp:false}:x));
       notify("✅ " + res.id + " → " + canalLabel);
+      if (o.canal==="MANUAL") {
+        setSuccessSplash({
+          title: "¡Pedido confirmado!",
+          subtitle: "Listo para cocina.",
+          nextTab: "manual",
+        });
+      }
     } catch(err) {
       // ROLLBACK: l'ordine fantasma viene rimosso dallo state. Il pizzaiolo
       // NON deve vedere ordini senza backing DB. Vedi audit CL4SBU del 14/05/2026.
@@ -1048,9 +1069,9 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         setGoToPreguntasSignal(s => s+1);
       }}
     />;
-    if(tab==="manual") return <TabManual ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
+    if(tab==="manual") return <TabManual ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} onOpenTicket={setTicketOrder} vipIds={vipIds} loadingIds={loadingIds}/>;
     if(tab==="banco")  return <TabBanco  ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
-    if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} loadingIds={loadingIds}
+    if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} loadingIds={loadingIds}
       vipIds={vipIds}
       waMsgs={waMsgs}
       onCambiaPago={async (id, nuovoMetodo) => {
@@ -1599,6 +1620,17 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         })()
       }}
         onClose={()=>setOrdenModifica(null)} onSave={modificaOrden}/>}
+      {ticketOrder&&<CustomerTicketPrintModal order={ticketOrder} onClose={()=>setTicketOrder(null)}/>}
+      {successSplash&&<OperationalSuccessSplash
+        title={successSplash.title}
+        subtitle={successSplash.subtitle}
+        duration={900}
+        onComplete={()=>{
+          const nextTab = successSplash.nextTab;
+          setSuccessSplash(null);
+          if (nextTab) setTab(nextTab);
+        }}
+      />}
 
       {/* Pannello cucina — overlay light mode */}
       {showCocina&&<PanelCocina

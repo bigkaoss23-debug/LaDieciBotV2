@@ -3,9 +3,16 @@ import { C, tot, MAX_PIZZE_ORA, MENU, calcTotale, aplicarDescuento } from '../..
 import Chip from '../ui/Chip';
 import Badge from '../ui/Badge';
 import DescuentoInput from '../ui/DescuentoInput';
+import TicketQuickAction from '../ui/TicketQuickAction';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
 import { orarioToMs } from '../../utils/serviceClock';
+import {
+  formatItemExtrasLabel,
+  formatItemRemovedLabel,
+  resolveItemNote,
+  resolveItemProductNames,
+} from '../../menu/itemDisplay';
 
 const isPizzaItem = (it) => {
   if (!it || !it.n) return false;
@@ -16,7 +23,7 @@ const isPizzaItem = (it) => {
   return true;
 };
 
-const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds}) => {
+const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds}) => {
   const [pendingPago,      setPendingPago]      = useState(null);
   const [filterPago,       setFilterPago]       = useState("todos");
   const [pendingCambioPago, setPendingCambioPago] = useState(null); // id ordine in modifica
@@ -79,10 +86,10 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                 ...cardStyle,
                 borderRadius:16,
                 padding:"16px 18px",
-                display:"flex",alignItems:"center",gap:14,
+                display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",
                 cursor: isDone && onViewChat ? "pointer" : "default",
               }}>
-              <div style={{flex:1}}>
+              <div style={{flex:"1 1 240px",minWidth:0}}>
                 {/* Riga 1: ID + Nome + Badge */}
                 <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
                   <span style={{fontFamily:"'DM Mono',monospace",fontWeight:700,
@@ -123,12 +130,25 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                 </div>
                 {/* Riga 2: Items */}
                 <div style={{fontSize:13,marginBottom:6,display:"flex",flexDirection:"column",gap:3}}>
-                  {cleanItems.map((it,idx)=>(
-                    <span key={idx} style={{color:"rgba(255,255,255,0.92)",fontWeight:500}}>
-                      {it.e} {it.q}× {it.n}
-                      {it.sub && <span style={{color:"#FFD580",fontWeight:700}}> — {it.sub}</span>}
-                    </span>
-                  ))}
+                  {cleanItems.map((it,idx)=>{
+                    const names = resolveItemProductNames(it);
+                    const extrasLabel = formatItemExtrasLabel(it);
+                    const removedLabel = formatItemRemovedLabel(it);
+                    const note = resolveItemNote(it);
+                    return (
+                      <span key={idx} style={{color:"rgba(255,255,255,0.92)",fontWeight:500}}>
+                        <span>{it.e} {it.q}× {names.primary}</span>
+                        {names.secondary && (
+                          <span style={{display:"block",paddingLeft:20,color:"rgba(255,255,255,0.68)",fontSize:12}}>
+                            {names.secondary}
+                          </span>
+                        )}
+                        {extrasLabel && <span style={{display:"block",paddingLeft:20,color:"#FDBA74",fontWeight:700}}>+ {extrasLabel}</span>}
+                        {removedLabel && <span style={{display:"block",paddingLeft:20,color:"#FCA5A5",fontWeight:700}}>{removedLabel}</span>}
+                        {note && <span style={{display:"block",paddingLeft:20,color:"#FDE68A",fontWeight:700}}>📝 {note}</span>}
+                      </span>
+                    );
+                  })}
                   {o.tipo_consegna==="DOMICILIO" && (
                     <span style={{color:"rgba(255,255,255,0.92)",fontWeight:500}}>🛵 1× Entrega a domicilio</span>
                   )}
@@ -206,9 +226,10 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                 o.tipo_consegna === "DOMICILIO" ? (
                   /* Delivery — completamento gestito dal driver su RepartidorPage */
                   <div style={{
-                    display:"flex", flexDirection:"column", alignItems:"center",
-                    gap:6, flexShrink:0
+                    display:"flex", flexDirection:"column", alignItems:"stretch",
+                    gap:6, flex:"1 1 220px", minWidth:0, maxWidth:"100%"
                   }}>
+                    <TicketQuickAction order={o} onOpenTicket={onOpenTicket} variant="compact" />
                     <div style={{
                       background:"rgba(249,115,22,0.12)",
                       border:"1.5px solid rgba(249,115,22,0.40)",
@@ -242,7 +263,7 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                     ); })()}
                   </div>
                 ) : o.ya_pagado ? (
-                  <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,alignItems:"stretch"}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:8,flex:"1 1 220px",minWidth:0,maxWidth:"100%",alignItems:"stretch"}}>
                     {o.estado === ORDER_STATES.LISTO && onVolverACocina && (() => { const vBusy = loadingIds.has(o.id); return (
                       <button
                         onClick={e=>{ e.stopPropagation(); if (vBusy) return; handleVolverACocina(o); }}
@@ -258,13 +279,15 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                         {vBusy ? "Volviendo…" : "↩ Volver a cocina"}
                       </button>
                     ); })()}
+                    <div style={{display:"flex",gap:8,alignItems:"center",justifyContent:"flex-end",flexWrap:"wrap",width:"100%"}}>
+                    <TicketQuickAction order={o} onOpenTicket={onOpenTicket} variant="compact" />
                     {(() => { const busy = loadingIds.has(o.id); return (
                     <button
                       onClick={e=>{ e.stopPropagation(); if (busy) return; handleRetirado(o, o.metodo_pago); }}
                       disabled={busy}
                       style={{
                         background: busy ? `${C.verde}55` : C.verde, color:"#fff", border:"none",
-                        borderRadius:11,padding:"13px 20px",fontWeight:800,fontSize:14,
+                        borderRadius:11,padding:"13px 20px",minHeight:44,fontWeight:800,fontSize:14,
                         boxShadow: busy ? "none" : `0 4px 14px ${C.verde}44`,
                         cursor: busy ? "wait" : "pointer",
                         opacity: busy ? 0.7 : 1,
@@ -272,6 +295,7 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                       {busy ? "Confirmando…" : "🛍 Retirado"}
                     </button>
                     ); })()}
+                    </div>
                   </div>
                 ) : pendingPago === o.id ? (
                   (() => {
@@ -333,7 +357,7 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                     );
                   })()
                 ) : (
-                  <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,alignItems:"stretch"}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:8,flex:"1 1 220px",minWidth:0,maxWidth:"100%",alignItems:"stretch"}}>
                     {o.estado === ORDER_STATES.LISTO && onVolverACocina && (() => { const vBusy = loadingIds.has(o.id); return (
                       <button
                         onClick={e=>{ e.stopPropagation(); if (vBusy) return; handleVolverACocina(o); }}
@@ -349,15 +373,18 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                         {vBusy ? "Volviendo…" : "↩ Volver a cocina"}
                       </button>
                     ); })()}
-                    <button
-                      onClick={e=>{e.stopPropagation();setPendingPago(o.id);}}
-                      style={{
-                        background:C.verde,color:"#fff",border:"none",
-                        borderRadius:11,padding:"13px 20px",fontWeight:800,fontSize:14,
-                        boxShadow:`0 4px 14px ${C.verde}44`,cursor:"pointer",
-                      }}>
-                      🛍 Retirado
-                    </button>
+                    <div style={{display:"flex",gap:8,alignItems:"center",justifyContent:"flex-end",flexWrap:"wrap",width:"100%"}}>
+                      <TicketQuickAction order={o} onOpenTicket={onOpenTicket} variant="compact" />
+                      <button
+                        onClick={e=>{e.stopPropagation();setPendingPago(o.id);}}
+                        style={{
+                          background:C.verde,color:"#fff",border:"none",
+                          borderRadius:11,padding:"13px 20px",minHeight:44,fontWeight:800,fontSize:14,
+                          boxShadow:`0 4px 14px ${C.verde}44`,cursor:"pointer",
+                        }}>
+                        🛍 Retirado
+                      </button>
+                    </div>
                   </div>
                 )
               )}

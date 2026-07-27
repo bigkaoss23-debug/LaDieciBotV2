@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { C, tot, calcTotale, DELIVERY_FEE } from '../../constants';
 import Chip from '../ui/Chip';
+import TicketQuickAction from '../ui/TicketQuickAction';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
+import {
+  formatItemExtrasLabel,
+  formatItemRemovedLabel,
+  resolveItemNote,
+  resolveItemProductNames,
+} from '../../menu/itemDisplay';
 
-const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, vipIds, loadingIds = new Set()}) => {
+const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, onOpenTicket, vipIds, loadingIds = new Set()}) => {
   const busy = loadingIds.has(o.id);
   const isVip = !!(o.cliente_id && vipIds && vipIds.has && vipIds.has(o.cliente_id));
   const [confirmDel, setConfirmDel] = useState(false);
@@ -140,12 +147,25 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
       <span style={{marginLeft:"auto",background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.28)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:600}}>✏️ Editar</span>
     </div>
     <div style={{fontSize:13,marginBottom:7,display:"flex",flexDirection:"column",gap:2,lineHeight:1.5}}>
-      {safeItems.map((it,idx)=>(
-        <span key={idx} style={{color:s.items}}>
-          {it.e||""} {it.q}× {it.n}
-          {it.sub&&<span style={{color:"#FCA5A5",fontWeight:700}}> — {it.sub}</span>}
-        </span>
-      ))}
+      {safeItems.map((it,idx)=>{
+        const names = resolveItemProductNames(it);
+        const extrasLabel = formatItemExtrasLabel(it);
+        const removedLabel = formatItemRemovedLabel(it);
+        const note = resolveItemNote(it);
+        return (
+          <span key={idx} style={{color:s.items}}>
+            <span>{it.e||""} {it.q}× {names.primary}</span>
+            {names.secondary && (
+              <span style={{display:"block",paddingLeft:20,color:"rgba(255,255,255,0.62)",fontSize:12}}>
+                {names.secondary}
+              </span>
+            )}
+            {extrasLabel && <span style={{display:"block",paddingLeft:20,color:"#FDBA74",fontWeight:700}}>+ {extrasLabel}</span>}
+            {removedLabel && <span style={{display:"block",paddingLeft:20,color:"#FCA5A5",fontWeight:700}}>{removedLabel}</span>}
+            {note && <span style={{display:"block",paddingLeft:20,color:"#FDE68A",fontWeight:700}}>📝 {note}</span>}
+          </span>
+        );
+      })}
       {o.tipo_consegna==="DOMICILIO" && (
         <span style={{color:s.items}}>🛵 1× Entrega a domicilio</span>
       )}
@@ -198,8 +218,12 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
             l'id è ancora client-side, updateEstado fallirebbe contro un id sconosciuto
             al backend e dopo il reassign dell'id il patch ottimistico resterebbe orfano,
             facendo rimbalzare l'ordine in tab Telefono al primo refetch.) ── */}
-    {onConfirm && estado === ORDER_STATES.POR_CONFIRMAR && (
-      <div style={{marginTop:8,display:"flex",justifyContent:"flex-end"}} onClick={e=>e.stopPropagation()}>
+    {(onOpenTicket || (onConfirm && estado === ORDER_STATES.POR_CONFIRMAR)) && (
+      <div style={{marginTop:8,display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+        {onOpenTicket && (
+          <TicketQuickAction order={{...o,items:safeItems}} onOpenTicket={onOpenTicket} variant="compact" />
+        )}
+        {onConfirm && estado === ORDER_STATES.POR_CONFIRMAR && (
         <button
           onClick={()=>{ if (!o._temp && !busy) onConfirm(o.id); }}
           disabled={!!o._temp || busy}
@@ -217,6 +241,7 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
             opacity: (o._temp || busy) ? 0.6 : 1,
             display:"flex", alignItems:"center", gap:6
           }}>{o._temp ? "⏳ Guardando…" : (busy ? "Confirmando…" : "🚀 A Cocina")}</button>
+        )}
       </div>
     )}
     {/* ── Cestino elimina ── */}
