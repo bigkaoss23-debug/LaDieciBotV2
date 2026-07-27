@@ -19,6 +19,8 @@ import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
 import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isTerminalState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
 import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
+// S2-7D6E — a collection is only successful when the ledger says so.
+import { isPaymentFailure, describePaymentFailure } from '../utils/paymentOutcome';
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -813,13 +815,20 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
 
     try {
       const res = await api.updateEstado(id, ORDER_STATES.RETIRADO, metodo_pago || "", descuento);
-      if (!res || res.error) {
-        notify("❌ Errore — riprova", C.rosso);
+      // S2-7D6E — a collection that did not reach the ledger must NEVER read as success.
+      // The old check (`!res || res.error`) missed the case that actually bit us: proxyPost
+      // never throws and returns {_ok:false} on a non-2xx, so an HTTP error with an empty
+      // body was reported to the operator as "🛍 Retirado — Buon appetito!" while nothing
+      // had been collected. The backend now answers 409 with a typed code when the payment
+      // is refused, and leaves the order exactly where it was — so retrying is safe.
+      if (isPaymentFailure(res)) {
+        const { message } = describePaymentFailure(res);
+        notify("❌ " + message, C.rosso);
         return;
       }
-      // Il backend cascade in cambiaStato("RETIRADO") aggiorna estado + metodo_pago +
-      // cobrado + hora_entrega + eventuale descuento (totale ricalcolato), e marca
-      // conv→ritirata + wa_msgs→COMPLETATO atomicamente.
+      // Il backend registra il pagamento nel ledger (order_mark_paid) PRIMA di transire, e
+      // solo dopo la cascade in cambiaStato("RETIRADO") aggiorna estado + hora_entrega +
+      // eventuale descuento (totale ricalcolato), e marca conv→ritirata + wa_msgs→COMPLETATO.
       // Update ottimistico: il backend è autoritativo sul totale finale — il polling lo riallinea.
       setOrdenes(prev => prev.map(o => o.id === id ? {...o, estado:ORDER_STATES.RETIRADO, metodo_pago} : o));
       if (orden && orden.canal === "WA" && telNorm) {
@@ -1055,9 +1064,26 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
             nuovoMetodo,
           },
         });
+        // S2-7D6E — this handler used to have NO in-flight guard, wrote the new method
+        // optimistically and NEVER rolled it back, and swallowed every failure into a
+        // console.error. The operator saw the badge change and believed the till had been
+        // corrected even when nothing reached the backend. It now behaves like every other
+        // mutation: guarded against double clicks, rolled back on failure, and audible.
+        if (!beginAction(id)) return;
+        const prevMetodo = (ordenes.find(o => o.id === id) || {}).metodo_pago;
         setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: nuovoMetodo} : o));
-        try { await api.updateEstado(id, ORDER_STATES.RETIRADO, nuovoMetodo); }
-        catch(err) { console.error("cambiaPago:", err); }
+        try {
+          const res = await api.updateEstado(id, ORDER_STATES.RETIRADO, nuovoMetodo);
+          if (isPaymentFailure(res)) {
+            setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: prevMetodo} : o));
+            const { message } = describePaymentFailure(res);
+            notify("❌ " + message, C.rosso);
+          }
+        } catch(err) {
+          console.error("cambiaPago:", err);
+          setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: prevMetodo} : o));
+          notify("❌ Error de red — el método de pago no se ha cambiado.", C.rosso);
+        } finally { endAction(id); }
       }}
       onViewChat={(waId) => {
         const msg = waMsgs.find(m => String(m.wa_id||m.tel||"").replace("+","") === String(waId||"").replace("+",""));
