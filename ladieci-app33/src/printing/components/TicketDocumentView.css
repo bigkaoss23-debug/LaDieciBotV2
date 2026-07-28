@@ -1,0 +1,41 @@
+.ticket-document{box-sizing:border-box;max-width:100%;height:auto;background:#fff;color:#111;font-family:"Courier New",ui-monospace,monospace;font-weight:600;line-height:1.25;overflow-x:hidden;overflow-wrap:anywhere;word-break:break-word}
+.ticket-document.paper-58{--ticket-paper-width:58mm;--ticket-font-size:9px;width:58mm;padding:3mm}
+.ticket-document.paper-80{--ticket-paper-width:80mm;--ticket-font-size:10px;width:80mm;padding:3mm}
+.ticket-document{font-size:var(--ticket-font-size)}
+.ticket-document-text{min-width:0;max-width:100%;white-space:pre-wrap;break-inside:avoid;page-break-inside:avoid}
+.ticket-document .align-center{text-align:center}.ticket-document .align-right{text-align:right}.ticket-document .align-left{text-align:left}
+.ticket-document .emphasis-bold{font-weight:900}
+.ticket-document .size-large{font-size:1.18em;line-height:1.15}.ticket-document .size-xlarge{font-size:1.55em;line-height:1.1}
+.ticket-document .role-secondary{font-size:.9em;font-weight:500;color:#444}
+.ticket-document .role-detail{padding-left:1.5em;font-size:.92em}
+.ticket-document .role-money{white-space:nowrap;overflow-wrap:normal;word-break:normal}
+.ticket-document .role-footer-small{font-size:.78em;font-weight:500}
+.ticket-document-columns{display:grid;align-items:start;column-gap:1ch;min-width:0;max-width:100%;break-inside:avoid;page-break-inside:avoid}
+.ticket-document-columns>span{min-width:0;overflow-wrap:anywhere}
+.ticket-document-separator{margin:.35em 0;border-top:1px dashed currentColor}
+.ticket-document-feed{height:calc(var(--ticket-feed-lines,1) * 1.25em)}
+@media print{
+  @page{margin:0}
+  html,body{margin:0!important;padding:0!important;background:#fff!important}
+  body.customer-ticket-print-open> *:not(.customer-ticket-modal){display:none!important}
+  body.customer-ticket-print-open *{visibility:hidden!important}
+  body.customer-ticket-print-open .customer-ticket-print-sheet,
+  body.customer-ticket-print-open .customer-ticket-print-sheet *{visibility:visible!important}
+  body.customer-ticket-print-open .customer-ticket-print-sheet{
+    position:absolute;left:0;top:0;display:block!important;box-sizing:border-box!important;
+    min-width:0!important;max-width:none!important;width:var(--ticket-paper-width,58mm)!important;
+    height:auto!important;min-height:0!important;margin:0!important;padding:3mm!important;
+    border:0!important;border-radius:0!important;box-shadow:none!important;transform:none!important;
+    background:#fff!important;color:#000!important;overflow:visible!important;
+    break-inside:avoid-page;page-break-inside:avoid;print-color-adjust:economy;-webkit-print-color-adjust:economy
+  }
+  body.customer-ticket-print-open .customer-ticket-print-sheet.paper-58{--ticket-paper-width:58mm}
+  body.customer-ticket-print-open .customer-ticket-print-sheet.paper-80{--ticket-paper-width:80mm}
+  body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-text,
+  body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-columns{
+    break-inside:avoid;page-break-inside:avoid
+  }
+  body.customer-ticket-print-open .customer-ticket-print-sheet .role-money{
+    white-space:nowrap!important;overflow-wrap:normal!important;word-break:normal!important
+  }
+}

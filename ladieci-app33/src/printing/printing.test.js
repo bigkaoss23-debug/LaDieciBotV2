@@ -81,7 +81,7 @@ describe("normalization", () => {
       ticketType: TICKET_TYPES.CUSTOMER, paperWidth: 80,
       orderRevision: 1, createdAt: base.snapshot_created_at,
     });
-    expect(snapshot.order).toMatchObject({ order_number: "#723", ordered_at: "2026-01-15T19:00:00.000Z" });
+    expect(snapshot.order).toMatchObject({ order_number: "723", ordered_at: "2026-01-15T19:00:00.000Z" });
     expect(snapshot.customer.items[0]).toMatchObject({
       quantity: 2, extras: ["Bufala ×2"], removed_ingredients: ["Cebolla"],
       notes: ["Muy hecha"], unit_price: 13, line_total: 26,
@@ -108,8 +108,8 @@ describe("manual customer ticket", () => {
     expect(text).toContain(CUSTOMER_TICKET_BUSINESS_PROFILE.document_label);
     expect(text).toContain(CUSTOMER_TICKET_BUSINESS_PROFILE.non_fiscal_label);
     expect(snapshot.customer.final_message).toBe(CUSTOMER_TICKET_BUSINESS_PROFILE.footer_message);
-    expect(snapshot.delivery.delivery_notes).toContain("Tocar el timbre lateral");
-    expect(JSON.stringify({ snapshot, document, text })).not.toMatch(/PHONE-MUST-NOT-PRINT|ADDRESS-MUST-NOT-PRINT/);
+    expect(snapshot.delivery.delivery_notes).toEqual([]);
+    expect(JSON.stringify({ snapshot, document, text })).not.toMatch(/PHONE-MUST-NOT-PRINT|ADDRESS-MUST-NOT-PRINT|Tocar el timbre lateral/);
   });
 
   test("supports 80 mm and rejects temporary orders", () => {

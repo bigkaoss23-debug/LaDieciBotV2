@@ -8,6 +8,7 @@ import {
 } from "./contracts";
 import { getItemExtraDisplays, getItemRemovedDisplays, resolveItemNote } from "../menu/itemDisplay";
 import { CUSTOMER_TICKET_BUSINESS_PROFILE } from "./businessProfile";
+import { resolveServiceOrderNumber } from "./orderNumber";
 
 const nonEmpty = (value, field, required = true) => {
   const normalized = String(value ?? "").trim().replace(/\s+/g, " ");
@@ -88,9 +89,17 @@ function normalizeItem(item, index, includePrices) {
   const extras = canonicalExtras.length ? canonicalExtras : list(item.extras ?? item.extra);
   const canonicalRemovals = getItemRemovedDisplays(item);
   const note = resolveItemNote(item);
+  const artisticName = optionalText(item.fantasyName ?? item.n ?? item.name);
+  const classicName = optionalText(item.classicName ?? item.realName ?? item.productName ?? item.nombre);
+  const primaryName = artisticName || classicName;
+  const secondaryName = classicName && classicName.localeCompare(primaryName, undefined, { sensitivity: "base" }) !== 0
+    ? classicName
+    : null;
   return {
     quantity,
-    name: nonEmpty(item.name ?? item.n, `items[${index}].name`),
+    name: nonEmpty(primaryName, `items[${index}].name`),
+    primary_name: nonEmpty(primaryName, `items[${index}].primary_name`),
+    secondary_name: secondaryName,
     extras,
     removed_ingredients: canonicalRemovals.length
       ? canonicalRemovals
@@ -141,7 +150,7 @@ export function normalizeOrderForTicket(rawOrder, options = {}) {
       is_reprint: Boolean(options.isReprint ?? rawOrder.is_reprint),
     },
     order: {
-      order_number: nonEmpty(rawOrder.order_number ?? rawOrder.id ?? rawOrder.order_id, "order.order_number"),
+      order_number: nonEmpty(resolveServiceOrderNumber(rawOrder), "order.order_number"),
       channel: normalizeChannel(rawOrder.channel ?? rawOrder.canal),
       fulfilment_type: fulfilmentType,
       table_number: optionalText(rawOrder.table_number),
@@ -159,6 +168,8 @@ export function normalizeOrderForTicket(rawOrder, options = {}) {
     },
     customer: {
       location_name: nonEmpty(rawOrder.location_name ?? "LA DIECI", "customer.location_name"),
+      display_name: optionalText(rawOrder.customer_display_name),
+      masked_phone: optionalText(rawOrder.customer_masked_phone),
       items: isKitchenTicket ? [] : customerItems,
       pricing: {
         subtotal: isKitchenTicket ? null : money(pricing.subtotal, "pricing.subtotal"),
@@ -176,7 +187,9 @@ export function normalizeOrderForTicket(rawOrder, options = {}) {
     delivery: {
       zone: optionalText(rawOrder.delivery?.zone ?? rawOrder.zona),
       promised_at: optionalText(rawOrder.delivery?.promised_at ?? rawOrder.promised_at ?? rawOrder.hora),
-      delivery_notes: list(rawOrder.delivery?.delivery_notes ?? rawOrder.direccion_note),
+      delivery_notes: isKitchenTicket
+        ? list(rawOrder.delivery?.delivery_notes ?? rawOrder.direccion_note)
+        : [],
       customer_delivery_data: {
         address: isKitchenTicket ? null : optionalText(rawOrder.delivery?.customer_delivery_data?.address ?? rawOrder.direccion),
         phone: isKitchenTicket ? null : optionalText(rawOrder.delivery?.customer_delivery_data?.phone ?? rawOrder.tel),

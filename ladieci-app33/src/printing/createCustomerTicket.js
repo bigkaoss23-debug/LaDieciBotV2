@@ -2,6 +2,7 @@ import { CUSTOMER_TICKET_BUSINESS_PROFILE } from "./businessProfile";
 import { TICKET_TYPES } from "./contracts";
 import { normalizeOrderForTicket } from "./normalizeOrderForTicket";
 import { renderTicketDocument } from "./renderTicketDocument";
+import { maskCustomerName, maskCustomerPhone } from "./privacy";
 
 const requiredText = (value, field) => {
   const text = String(value ?? "").trim();
@@ -21,12 +22,16 @@ export function createCustomerTicket(order, options = {}) {
     ...order,
     location_name: CUSTOMER_TICKET_BUSINESS_PROFILE.business_name,
     final_message: CUSTOMER_TICKET_BUSINESS_PROFILE.footer_message,
+    customer_display_name: maskCustomerName(order.nombre ?? order.customer_name),
+    customer_masked_phone: maskCustomerPhone(order.tel ?? order.phone),
     // The normal customer copy never carries delivery PII, even if a caller
     // accidentally forwards a permissive privacy section from another flow.
     tel: null,
     direccion: null,
+    direccion_note: null,
     delivery: order.delivery ? {
       ...order.delivery,
+      delivery_notes: [],
       customer_delivery_data: { address: null, phone: null },
     } : undefined,
     privacy: {

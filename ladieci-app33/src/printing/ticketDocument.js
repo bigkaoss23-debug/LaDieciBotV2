@@ -12,6 +12,7 @@ export const textBlock = (value, options = {}) => ({
   align: options.align || "left",
   emphasis: options.emphasis || "normal",
   size: options.size || "normal",
+  role: options.role || null,
 });
 
 export const columnsBlock = (columns) => ({
@@ -21,6 +22,7 @@ export const columnsBlock = (columns) => ({
     width: column.width,
     align: column.align || "left",
     emphasis: column.emphasis || "normal",
+    role: column.role || null,
   })),
 });
 

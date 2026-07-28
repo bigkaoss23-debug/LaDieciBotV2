@@ -3,23 +3,22 @@
 exports[`renderers golden customer 58 1`] = `
 "  LA DIECI — ENTORNO DE PRUEBA
         COPIA DEL PEDIDO
-     NO VÁLIDA COMO FACTURA
 --------------------------------
           PEDIDO #111
 15/01/2026, 20:00
-BANCO · RITIRO
+             RITIRO
+          Canal: BANCO
 --------------------------------
-1×  Margarita de          9.00 €
+1×  Margarita de          9,00 €
 prueba
-Precio unitario: 9.00 €
 --------------------------------
-Subtotal                  9.00 €
-Entrega                   0.00 €
-                    TOTAL 9.00 €
+Subtotal                  9,00 €
+                    TOTAL 9,00 €
 Pago: TARJETA
 Estado: PAGADO
 --------------------------------
   Gracias por elegir La Dieci
+     NO VÁLIDA COMO FACTURA
 
 
 
@@ -29,22 +28,21 @@ Estado: PAGADO
 exports[`renderers golden customer 80 1`] = `
 "          LA DIECI — ENTORNO DE PRUEBA
                 COPIA DEL PEDIDO
-             NO VÁLIDA COMO FACTURA
 ------------------------------------------------
                   PEDIDO #111
 15/01/2026, 20:00
-BANCO · RITIRO
+                     RITIRO
+                  Canal: BANCO
 ------------------------------------------------
-1×   Margarita de prueba                9.00 €
-Precio unitario: 9.00 €
+1×   Margarita de prueba                9,00 €
 ------------------------------------------------
-Subtotal                                  9.00 €
-Entrega                                   0.00 €
-                                    TOTAL 9.00 €
+Subtotal                                  9,00 €
+                                    TOTAL 9,00 €
 Pago: TARJETA
 Estado: PAGADO
 ------------------------------------------------
           Gracias por elegir La Dieci
+             NO VÁLIDA COMO FACTURA
 
 
 

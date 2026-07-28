@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { createBrowserPrintAdapter, BROWSER_PRINT_OUTCOMES } from "../adapters/browserPrintAdapter";
 import { CUSTOMER_TICKET_BUSINESS_PROFILE } from "../businessProfile";
 import { createCustomerTicket } from "../createCustomerTicket";
-import { ticketDocumentToPlainText } from "../renderTicketDocument";
+import TicketDocumentView from "./TicketDocumentView";
 import "./CustomerTicketPrintModal.css";
 
 const STATUS_COPY = Object.freeze({
@@ -26,7 +26,7 @@ export default function CustomerTicketPrintModal({ order, onClose }) {
   const prepared = useMemo(() => {
     try {
       const result = createCustomerTicket(order, { paperWidth, createdAt });
-      return { ...result, text: ticketDocumentToPlainText(result.document), error: null };
+      return { ...result, error: null };
     } catch (caught) {
       return { error: caught };
     }
@@ -91,7 +91,7 @@ export default function CustomerTicketPrintModal({ order, onClose }) {
         {error ? (
           <div className="customer-ticket-error" role="alert">{error}</div>
         ) : (
-          <pre className={`customer-ticket-print-sheet paper-${paperWidth}`}>{prepared.text}</pre>
+          <TicketDocumentView document={prepared.document} className="customer-ticket-print-sheet" />
         )}
 
         <footer className="customer-ticket-actions">

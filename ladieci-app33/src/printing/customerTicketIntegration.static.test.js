@@ -4,8 +4,9 @@ const path = require("path");
 const srcRoot = path.join(__dirname, "..");
 const orderModalPath = path.join(srcRoot, "components", "ModificaOrdenModal.jsx");
 const printModalPath = path.join(__dirname, "components", "CustomerTicketPrintModal.jsx");
-const printCssPath = path.join(__dirname, "components", "CustomerTicketPrintModal.css");
+const printCssPath = path.join(__dirname, "components", "TicketDocumentView.css");
 const browserAdapterPath = path.join(__dirname, "adapters", "browserPrintAdapter.js");
+const semanticViewPath = path.join(__dirname, "components", "TicketDocumentView.jsx");
 
 const read = (file) => fs.readFileSync(file, "utf8");
 
@@ -39,4 +40,15 @@ test("print CSS hides application chrome and prints only the selected 58/80 mm s
   expect(printRules).toContain(".customer-ticket-print-sheet");
   expect(printRules).toContain(".customer-ticket-print-sheet.paper-58{--ticket-paper-width:58mm}");
   expect(printRules).toContain(".customer-ticket-print-sheet.paper-80{--ticket-paper-width:80mm}");
+});
+
+test("preview and print share the semantic TicketDocument renderer", () => {
+  const modalSource = read(printModalPath);
+  const previewSource = read(path.join(__dirname, "components", "TicketPreview.jsx"));
+  const semanticSource = read(semanticViewPath);
+
+  expect(modalSource).toContain('<TicketDocumentView document={prepared.document}');
+  expect(previewSource).toContain('<TicketDocumentView document={document}');
+  expect(semanticSource).toContain("block.type === \"columns\"");
+  expect(semanticSource).toContain("block.type === \"separator\"");
 });

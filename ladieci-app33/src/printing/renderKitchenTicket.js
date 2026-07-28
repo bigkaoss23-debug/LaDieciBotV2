@@ -1,6 +1,7 @@
 import { TICKET_TYPES, assertTicketSnapshot } from "./contracts";
 import { getLayoutProfile } from "./layoutProfiles";
 import { createTicketDocument, cutBlock, feedBlock, separatorBlock, textBlock } from "./ticketDocument";
+import { formatServiceOrderNumber } from "./orderNumber";
 
 const LABELS = {
   [TICKET_TYPES.KITCHEN_DELTA]: "SOLO ARTÍCULOS NUEVOS",
@@ -24,7 +25,7 @@ export function renderKitchenTicket(snapshot) {
   if (marker) blocks.push(textBlock(marker, { align: "center", emphasis: "bold", size: "large" }));
   if (snapshot.print.is_reprint) blocks.push(textBlock(`REIMPRESIÓN · COPIA ${snapshot.print.copy_number}`, { align: "center", emphasis: "bold" }));
   blocks.push(
-    textBlock(`#${snapshot.order.order_number}`, { align: "center", emphasis: "bold", size: profile.orderNumberSize }),
+    textBlock(formatServiceOrderNumber(snapshot.order.order_number), { align: "center", emphasis: "bold", size: profile.orderNumberSize }),
     textBlock(`${snapshot.order.channel} · ${snapshot.order.fulfilment_type}`, { align: "center", emphasis: "bold" }),
     textBlock(`Pedido ${time(snapshot.order.ordered_at)} · Prometido ${time(snapshot.order.promised_at)}`),
   );

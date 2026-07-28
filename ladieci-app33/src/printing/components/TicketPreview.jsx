@@ -2,8 +2,10 @@ import { useMemo, useState } from "react";
 import { TICKET_TYPES } from "../contracts";
 import { PRINT_ORDER_FIXTURES, getPrintFixture } from "../fixtures/orders";
 import { normalizeOrderForTicket } from "../normalizeOrderForTicket";
-import { renderTicketDocument, ticketDocumentToPlainText } from "../renderTicketDocument";
+import { renderTicketDocument } from "../renderTicketDocument";
+import { createCustomerTicket } from "../createCustomerTicket";
 import { createMockPrinterAdapter, MOCK_OUTCOMES } from "../adapters/mockPrinterAdapter";
+import TicketDocumentView from "./TicketDocumentView";
 import "./TicketPreview.css";
 
 const initialTypeForFixture = (id) => id === "13" ? TICKET_TYPES.KITCHEN_DELTA
@@ -11,23 +13,44 @@ const initialTypeForFixture = (id) => id === "13" ? TICKET_TYPES.KITCHEN_DELTA
   : id === "15" ? TICKET_TYPES.CANCELLATION
   : TICKET_TYPES.KITCHEN;
 
+const previewParams = new URLSearchParams(window.location.search);
+const requestedFixture = previewParams.get("fixture");
+const requestedType = previewParams.get("type");
+const requestedPaper = Number(previewParams.get("paper"));
+const initialFixtureId = PRINT_ORDER_FIXTURES.some(({ id }) => id === requestedFixture) ? requestedFixture : "11";
+const initialTicketType = Object.values(TICKET_TYPES).includes(requestedType) ? requestedType : TICKET_TYPES.CUSTOMER;
+const initialPaperWidth = [58, 80].includes(requestedPaper) ? requestedPaper : 58;
+const previewServiceOrderNumber = previewParams.get("order") || "1";
+
 export default function TicketPreview({ onBack }) {
-  const [fixtureId, setFixtureId] = useState("01");
-  const [ticketType, setTicketType] = useState(TICKET_TYPES.KITCHEN);
-  const [paperWidth, setPaperWidth] = useState(80);
+  const [fixtureId, setFixtureId] = useState(initialFixtureId);
+  const [ticketType, setTicketType] = useState(initialTicketType);
+  const [paperWidth, setPaperWidth] = useState(initialPaperWidth);
   const [mockOutcome, setMockOutcome] = useState(MOCK_OUTCOMES.SUCCESS);
   const [mockStatus, setMockStatus] = useState("preview_ready");
   const [pending, setPending] = useState(false);
 
-  const { snapshot, document, text } = useMemo(() => {
+  const { snapshot, document } = useMemo(() => {
     const selected = getPrintFixture(fixtureId);
+    if (ticketType === TICKET_TYPES.CUSTOMER) {
+      return createCustomerTicket({
+        ...selected.order,
+        service_order_number: previewServiceOrderNumber,
+      }, {
+        paperWidth,
+        createdAt: selected.order.snapshot_created_at,
+        orderRevision: selected.order.order_revision,
+        isReprint: fixtureId === "16",
+        copyNumber: fixtureId === "16" ? 2 : 1,
+      });
+    }
     const normalized = normalizeOrderForTicket(selected.order, {
       ticketType, paperWidth, orderRevision: selected.order.order_revision,
       createdAt: selected.order.snapshot_created_at,
       isReprint: fixtureId === "16", copyNumber: fixtureId === "16" ? 2 : 1,
     });
     const rendered = renderTicketDocument(normalized);
-    return { snapshot: normalized, document: rendered, text: ticketDocumentToPlainText(rendered) };
+    return { snapshot: normalized, document: rendered };
   }, [fixtureId, paperWidth, ticketType]);
 
   const selectFixture = (event) => {
@@ -84,7 +107,7 @@ export default function TicketPreview({ onBack }) {
       <section className="print-preview-grid">
         <article>
           <h2>Ticket {ticketType === TICKET_TYPES.CUSTOMER ? "cliente" : "Cocina"}</h2>
-          <pre className={`ticket-paper paper-${paperWidth}`}>{text}</pre>
+          <TicketDocumentView document={document} className="ticket-paper" />
         </article>
         <article>
           <h2>TicketDocument</h2>
