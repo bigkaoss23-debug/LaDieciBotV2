@@ -117,16 +117,29 @@ async function openStepUp(container) {
   await flush();
 }
 
-test('wrong PIN shows an inline error on the pad and stays in the modal', async () => {
+test('wrong PIN shows an inline error on the pad and stays in the modal — real staging defect, now fixed', async () => {
+  // S2-7D6E6 — this is the exact shape the real backend returned during the rider smoke
+  // (HTTP 401, body {ok:false, error:"PIN_INCORRECTO"}) that used to force a full logout
+  // before this component ever saw the response. api.js itself no longer does that (see
+  // apiAuthLogoutScope.test.js); this test pins the component-level contract: same modal
+  // instance, empty pad, owner still authenticated (onLogout never called).
   api.verifyOwnPin.mockResolvedValue({ ok: false, error: 'PIN_INCORRECTO', _ok: true, _status: 401 });
-  const { container, root } = await mount();
+  const { container, root, onLogout } = await mount();
   await openStepUp(container);
   pressDigits(container, '284917563');
   click(findByText(container, 'Confirmar'));
   await flush();
   expect(container.textContent).toMatch(/PIN incorrecto/);
-  expect(container.querySelector('select')).toBeNull();
+  expect(container.querySelector('select')).toBeNull(); // still on step-up, not actor-list
+  // The pad pads its dot count up to the 6..12 login range even when empty (see
+  // PinPad.test.js "dot count grows past minLength"), so "emptied" means exactly 6 dots —
+  // not 9, the length of the PIN just rejected.
+  expect(container.querySelectorAll('[data-testid="pinpad-dots"] > div').length).toBe(6);
   expect(getPinStepUp()).toBeNull();
+  expect(onLogout).not.toHaveBeenCalled(); // owner stays authenticated — the "Impostazioni" menu stays reachable
+  // The step-up modal (and thus the pad) is still mounted — a real logout would have
+  // unmounted the whole OperationalMenu tree (it returns null when !authed).
+  expect(container.querySelectorAll('[data-testid="pinpad-dots"]').length).toBe(1);
   unmount(container, root);
 });
 
@@ -142,18 +155,28 @@ test('a locked owner shows a lockout-specific message, not the generic one', asy
   unmount(container, root);
 });
 
-test('a session with no per-login sid gets a clear re-authentication prompt and is logged out', async () => {
+test('a session with no per-login sid shows a clear message THEN logs out — never silently', async () => {
   // Backend contract: a token signed before the sid fix has no way to ever obtain or use a
   // step-up proof. The distinct REAUTH_REQUIRED code (never the generic "PIN incorrecto")
-  // must be surfaced clearly and the only fix — a fresh login — must be forced immediately.
+  // must be surfaced clearly — the operator must SEE why before the forced logout, same
+  // 1.4s explain-then-act pattern as the save-failure re-ask below — never an instant,
+  // unexplained kick-out.
+  jest.useFakeTimers();
   api.verifyOwnPin.mockResolvedValue({ ok: false, error: 'REAUTH_REQUIRED', _ok: true, _status: 401 });
   const { container, root, onLogout } = await mount();
   await openStepUp(container);
   pressDigits(container, '284917563');
   click(findByText(container, 'Confirmar'));
   await flush();
+
+  expect(container.textContent).toMatch(/Por seguridad, vuelve a iniciar sesión para gestionar los PIN\./);
+  expect(onLogout).not.toHaveBeenCalled(); // not yet — the message must be readable first
+
+  act(() => { jest.advanceTimersByTime(1500); });
+  await flush();
   expect(onLogout).toHaveBeenCalledTimes(1);
   expect(getPinStepUp()).toBeNull();
+  jest.useRealTimers();
   unmount(container, root);
 });
 

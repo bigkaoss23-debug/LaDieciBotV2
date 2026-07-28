@@ -119,7 +119,10 @@ describe('9-10. stale/inactive responses clear only operational state', () => {
   test('a 401 clears operational state and never the account session', () => {
     // S2-7D3: 401/403 now routes through THE canonical operational logout (which clears the
     // token AND tears down realtime/polling) instead of only dropping the token inline.
-    expect(API).toMatch(/res\.status === 401 \|\| res\.status === 403.*onOperationalUnauthorized\(\)/s);
+    // S2-7D6E6: the trigger is no longer the raw status — it's the semantic decision
+    // function, which reads the response body's error CODE before ever deciding (a wrong
+    // step-up PIN also answers 401 and must NOT clear the session).
+    expect(API).toMatch(/shouldInvalidateOperationalSession\(res\.status.*onOperationalUnauthorized\(\)/s);
     expect(API).toMatch(/function onOperationalUnauthorized[\s\S]*auth\.clear\(\)/);
     // clear() touches only ld_* operational keys
     const clearBody = API.slice(API.indexOf('clear() {'), API.indexOf('async login('));

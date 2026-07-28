@@ -164,9 +164,14 @@ describe('canonical logout', () => {
     expect(API).toMatch(/dispatchEvent\(new Event\("ld-operational-unauthorized"\)\)/);
   });
 
-  test('401 AND 403 both funnel into it', () => {
-    const hits = API.match(/res\.status === 401 \|\| res\.status === 403/g) || [];
+  test('401 AND 403 both funnel into it, via the semantic error-code decision (S2-7D6E6)', () => {
+    // Status alone can no longer trigger the logout directly — a wrong step-up PIN also
+    // answers 401 and must NOT log out (see apiAuthLogoutScope.test.js). Both proxyGet and
+    // proxyPost route the decision through shouldInvalidateOperationalSession(status, code).
+    const hits = API.match(/shouldInvalidateOperationalSession\(res\.status/g) || [];
     expect(hits.length).toBe(2);
+    expect(API).toMatch(/function shouldInvalidateOperationalSession\(status, errorCode\)/);
+    expect(API).toMatch(/if \(status !== 401 && status !== 403\) return false;/);
   });
 
   test('realtime + polling are torn down before the token is dropped', () => {

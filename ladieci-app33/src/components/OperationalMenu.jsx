@@ -198,9 +198,11 @@ function StepUpView({ onCancel, onVerified, onReauthRequired }) {
     }
     if (res && res.error === 'REAUTH_REQUIRED') {
       // This session predates the per-login session id PIN management now requires — there
-      // is no weaker fallback. The only fix is a fresh login, so we take it immediately
-      // rather than leaving the admin stuck re-entering a PIN that can never succeed here.
-      onReauthRequired();
+      // is no weaker fallback. Show WHY before the forced logout actually happens (same
+      // pattern as ManageActorsView's own save-failure re-ask below) — a controlled logout
+      // must never read as a silent, unexplained kick-out.
+      setError('Por seguridad, vuelve a iniciar sesión para gestionar los PIN.');
+      setTimeout(() => onReauthRequired(), 1400);
       return;
     }
     setError('PIN incorrecto.');

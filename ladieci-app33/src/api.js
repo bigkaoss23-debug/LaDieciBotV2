@@ -204,6 +204,47 @@ function onOperationalUnauthorized() {
   try { window.dispatchEvent(new Event("ld-operational-unauthorized")); } catch (e) {}
 }
 
+// S2-7D6E6 — real staging defect: a wrong step-up PIN (verifyOwnPin -> 401 PIN_INCORRECTO)
+// was force-logging the operator out, because the transport layer treated EVERY 401/403 as
+// proof the operational Bearer itself was dead. It is not: legacyAuthGuard.js and the
+// admin-only gate for verifyOwnPin/setActorPin (index.js) both return 401/403 for perfectly
+// normal, in-band DOMAIN answers too (wrong PIN, locked, insufficient role, a legacy
+// pre-sid session). The status code alone can never distinguish "your token is unusable"
+// from "here is a typed answer to the thing you asked" — only the error CODE inside the
+// body can. So: always read the JSON body first, then decide from the code, never the
+// status alone. This applies globally (every proxyGet/proxyPost caller), not a per-action
+// exception — a ROLE_FORBIDDEN 403 on ANY legacy action is exactly as harmless as it is here.
+//
+// Reconstructed exhaustively from the backend guards (src/auth/legacyAuthGuard.js,
+// index.js verifyOwnPin/setActorPin branches) — not guessed:
+//   MISSING_TOKEN / INVALID_TOKEN / SESSION_STALE / INACTIVE_OR_UNKNOWN_ACTOR (401, guard) —
+//     the Bearer itself cannot be used again; only a fresh login fixes it.
+//   REAUTH_REQUIRED (401, verifyOwnPin only) — a legacy session signed before the per-login
+//     sid existed; it can never mint or use a step-up proof, by design, no weaker fallback.
+// Everything else that happens to carry 401/403 is a domain answer the caller already
+// renders inline: PIN_INCORRECTO, LOCKED (429, not even in this set), BAD_REQUEST (400),
+// UNAVAILABLE (503), admin_action_failed (400), ROLE_FORBIDDEN (403, from the guard's own
+// per-action role check OR the verifyOwnPin/setActorPin admin-only gate).
+const SESSION_INVALID_CODES = Object.freeze(new Set([
+  "MISSING_TOKEN", "INVALID_TOKEN", "SESSION_STALE", "INACTIVE_OR_UNKNOWN_ACTOR",
+  "REAUTH_REQUIRED",
+]));
+
+// Pure, exported for direct testing. `errorCode` is the backend's `error` field from the
+// (already-parsed) JSON body — never inferred from status alone.
+function shouldInvalidateOperationalSession(status, errorCode) {
+  if (status !== 401 && status !== 403) return false;
+  return SESSION_INVALID_CODES.has(errorCode);
+}
+
+// S2-7D6E6 — module-level in-flight locks for the two admin PIN-management calls (see
+// api.verifyOwnPin/setActorPin below). Deliberately NOT per-component-instance state: a
+// stray duplicate mount, a double-fired DOM event, or a second click that lands before
+// React's next render disables the button all share this SAME lock, so at most one real
+// request for each ever leaves the browser regardless of what caused the second attempt.
+let verifyOwnPinInFlight = null;
+let setActorPinInFlight = null;
+
 // ═══ PROXY HELPERS — Railway via Netlify Function con JWT ═══
 function proxyHeaders() {
   return {
@@ -218,8 +259,12 @@ async function proxyGet(action, params) {
     const qs = Object.entries(Object.assign({action}, p))
       .map(function(e){ return e[0]+'='+encodeURIComponent(e[1]); }).join('&');
     const res = await fetch(PROXY_URL+'?'+qs, { cache: "no-store", headers: proxyHeaders() });
-    if (res.status === 401 || res.status === 403) { onOperationalUnauthorized(); return { error: "sesión expirada" }; }
-    return await res.json();
+    let json;
+    try { json = await res.json(); } catch { json = null; }
+    if (shouldInvalidateOperationalSession(res.status, json && json.error)) {
+      onOperationalUnauthorized(); return { error: "sesión expirada", _status: res.status };
+    }
+    return json || {};
   } catch(err) { console.error('API GET error:', err); return { error: err.toString() }; }
 }
 
@@ -236,11 +281,13 @@ async function proxyPost(body) {
     const res = await fetch(PROXY_URL, {
       method: 'POST', headers: proxyHeaders(), body: JSON.stringify(body)
     });
-    if (res.status === 401 || res.status === 403) { onOperationalUnauthorized(); return { error: "sesión expirada", _status: 401 }; }
     // Annota _status e _ok per i chiamanti che vogliono distinguere errori HTTP
     // dai successi. Manteniamo il body originale per backwards compat.
     let json;
     try { json = await res.json(); } catch { json = {}; }
+    if (shouldInvalidateOperationalSession(res.status, json && json.error)) {
+      onOperationalUnauthorized(); return { error: "sesión expirada", _status: res.status };
+    }
     return { ...json, _status: res.status, _ok: res.ok };
   } catch(err) {
     console.error('API POST error:', err);
@@ -593,17 +640,31 @@ const api = {
   // success the backend returns a short-lived, session-bound proof — never a boolean.
   // actor/role/session_version are never sent: the backend takes them from the verified
   // Auth V2 bearer this call already carries.
+  // S2-7D6E6 — a rejected step-up PIN (PIN_INCORRECTO/LOCKED/...) is a normal domain
+  // answer, not proof the operator's own operational session is dead: proxyPost now
+  // decides from the parsed body's error CODE (shouldInvalidateOperationalSession), so
+  // StepUpView's own 401/403 branching renders it inline instead of being force-logged-out
+  // before it ever sees the response. Deduped: however many callers ask "verify this PIN"
+  // in quick succession — a double click, a stray duplicate event — AT MOST ONE real
+  // verifyOwnPin request is ever in flight, exactly like createSharedEnsure in
+  // serviceEnsureFlow.js dedupes ensureCurrentServiceSession for the same reason.
   verifyOwnPin: function(pin) {
-    return proxyPost({ action: "verifyOwnPin", pin });
+    if (verifyOwnPinInFlight) return verifyOwnPinInFlight;
+    verifyOwnPinInFlight = proxyPost({ action: "verifyOwnPin", pin })
+      .finally(() => { verifyOwnPinInFlight = null; });
+    return verifyOwnPinInFlight;
   },
   // Changes ANY actor's PIN. Requires the step-up proof from verifyOwnPin; the backend
   // rejects the call outright without one. `confirmation` is only meaningful (and only
   // sent) when targetActor is "owner" — the deliberate explicit phrase the SQL contract
-  // requires for a self-change, never auto-supplied by this client.
+  // requires for a self-change, never auto-supplied by this client. Same in-flight dedupe
+  // as verifyOwnPin, same reason: a save must never fire twice from one gesture.
   setActorPin: function({ targetActor, newPin, stepUpProof, confirmation }) {
+    if (setActorPinInFlight) return setActorPinInFlight;
     const body = { action: "setActorPin", targetActor, newPin, stepUpProof };
     if (confirmation !== undefined) body.confirmation = confirmation;
-    return proxyPost(body);
+    setActorPinInFlight = proxyPost(body).finally(() => { setActorPinInFlight = null; });
+    return setActorPinInFlight;
   },
 
   // ── Storico/serata: letture pesanti aggregate ──────────────────
@@ -808,4 +869,4 @@ const api = {
 const API_URL = PROXY_URL;
 const RAILWAY_API_KEY = ""; // legacy export, non più usato
 
-export { sb, api, auth, SUPABASE_URL, SUPABASE_KEY, API_URL, RAILWAY_API_KEY };
+export { sb, api, auth, SUPABASE_URL, SUPABASE_KEY, API_URL, RAILWAY_API_KEY, shouldInvalidateOperationalSession };
