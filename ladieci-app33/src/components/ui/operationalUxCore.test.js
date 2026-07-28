@@ -97,7 +97,7 @@ describe("OperationalSuccessSplash", () => {
     view.unmount();
   });
 
-  test("standalone success stays visible at 950 ms and completes once at 1000 ms", () => {
+  test("optimistic success is immediate, visible at 1400 ms and completes once at 1500 ms", () => {
     const onComplete = jest.fn();
     const view = mount(
       <OperationalSuccessSplash
@@ -113,10 +113,10 @@ describe("OperationalSuccessSplash", () => {
     expect(status.textContent).toContain("¡Pedido confirmado!");
     expect(status.textContent).toContain("Listo para cocina.");
     expect(status.querySelector("button")).toBeNull();
-    act(() => jest.advanceTimersByTime(950));
+    act(() => jest.advanceTimersByTime(1400));
     expect(onComplete).not.toHaveBeenCalled();
     expect(document.body.querySelector('[role="status"]')).toBeTruthy();
-    act(() => jest.advanceTimersByTime(50));
+    act(() => jest.advanceTimersByTime(100));
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(document.body.querySelector('[role="status"]')).toBeNull();
     act(() => jest.advanceTimersByTime(50));
@@ -125,7 +125,7 @@ describe("OperationalSuccessSplash", () => {
     view.unmount();
   });
 
-  test("a backend success at 200 ms keeps the transaction through 1000 ms total", () => {
+  test("a backend success at 200 ms keeps the transaction through 1500 ms total", () => {
     const onComplete = jest.fn();
     const view = mount(
       <OperationalSuccessSplash
@@ -146,7 +146,7 @@ describe("OperationalSuccessSplash", () => {
       />
     ));
     expect(document.body.querySelector('[role="status"]').textContent).toContain("Pedido confirmado");
-    act(() => jest.advanceTimersByTime(799));
+    act(() => jest.advanceTimersByTime(1299));
     expect(document.body.querySelector('[role="status"]')).toBeTruthy();
     expect(onComplete).not.toHaveBeenCalled();
     act(() => jest.advanceTimersByTime(1));
@@ -155,7 +155,7 @@ describe("OperationalSuccessSplash", () => {
     view.unmount();
   });
 
-  test("a backend slower than one second remains pending until resolution", () => {
+  test("a backend slower than 1500 ms remains pending until resolution", () => {
     const onComplete = jest.fn();
     const view = mount(
       <OperationalSuccessSplash
@@ -165,7 +165,7 @@ describe("OperationalSuccessSplash", () => {
         onComplete={onComplete}
       />
     );
-    act(() => jest.advanceTimersByTime(1200));
+    act(() => jest.advanceTimersByTime(1700));
     expect(document.body.querySelector('[role="status"]').textContent).toContain("Enviando a cocina…");
     expect(onComplete).not.toHaveBeenCalled();
     act(() => view.root.render(
@@ -209,11 +209,11 @@ describe("OperationalSuccessSplash", () => {
     const latestDone = jest.fn();
     const view = mount(<OperationalSuccessSplash title="Stable" onComplete={firstDone} />);
 
-    act(() => jest.advanceTimersByTime(600));
+    act(() => jest.advanceTimersByTime(1000));
     act(() => view.root.render(<OperationalSuccessSplash title="Stable" onComplete={latestDone} />));
-    act(() => jest.advanceTimersByTime(350));
+    act(() => jest.advanceTimersByTime(400));
     expect(document.body.querySelector('[role="status"]')).toBeTruthy();
-    act(() => jest.advanceTimersByTime(50));
+    act(() => jest.advanceTimersByTime(100));
 
     expect(firstDone).not.toHaveBeenCalled();
     expect(latestDone).toHaveBeenCalledTimes(1);

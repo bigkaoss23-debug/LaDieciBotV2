@@ -1,4 +1,4 @@
-export const OPERATIONAL_TRANSACTION_MIN_DURATION_MS = 1000;
+export const OPERATIONAL_TRANSACTION_MIN_DURATION_MS = 1500;
 
 export const operationalFeedback = ({
   phase,

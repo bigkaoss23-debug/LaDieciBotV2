@@ -85,7 +85,7 @@ describe("click-based operational transaction", () => {
     expect(feedback[0]).toMatchObject({ phase: "success", startedAt: 100 });
   });
 
-  test("shared minimum is one second", () => {
-    expect(OPERATIONAL_TRANSACTION_MIN_DURATION_MS).toBe(1000);
+  test("shared optimistic feedback duration is 1500 ms", () => {
+    expect(OPERATIONAL_TRANSACTION_MIN_DURATION_MS).toBe(1500);
   });
 });
