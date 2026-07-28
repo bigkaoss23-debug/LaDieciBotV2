@@ -72,13 +72,34 @@ describe("OperationalSuccessSplash", () => {
     jest.useRealTimers();
   });
 
-  test("uses a status portal, has no buttons, and auto-completes once", () => {
+  test("pending uses a status portal, has no buttons, and never auto-completes", () => {
     const onComplete = jest.fn();
     const view = mount(
       <OperationalSuccessSplash
+        phase="pending"
+        title="Confirmando pedido…"
+        onComplete={onComplete}
+      />
+    );
+    const status = document.body.querySelector('[role="status"]');
+    expect(status).toBeTruthy();
+    expect(status.textContent).toContain("Confirmando pedido…");
+    expect(status.textContent).not.toContain("✓");
+    expect(status.querySelector("button")).toBeNull();
+    act(() => jest.advanceTimersByTime(5000));
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(document.body.querySelector('[role="status"]')).toBeTruthy();
+    view.unmount();
+  });
+
+  test("success auto-completes once at 300 ms, not before 250 ms", () => {
+    const onComplete = jest.fn();
+    const view = mount(
+      <OperationalSuccessSplash
+        phase="success"
         title="¡Pedido confirmado!"
         subtitle="Listo para cocina."
-        duration={900}
+        duration={300}
         onComplete={onComplete}
       />
     );
@@ -87,7 +108,10 @@ describe("OperationalSuccessSplash", () => {
     expect(status.textContent).toContain("¡Pedido confirmado!");
     expect(status.textContent).toContain("Listo para cocina.");
     expect(status.querySelector("button")).toBeNull();
-    act(() => jest.advanceTimersByTime(900));
+    act(() => jest.advanceTimersByTime(249));
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(document.body.querySelector('[role="status"]')).toBeTruthy();
+    act(() => jest.advanceTimersByTime(51));
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(document.body.querySelector('[role="status"]')).toBeNull();
     view.unmount();
@@ -95,20 +119,20 @@ describe("OperationalSuccessSplash", () => {
 
   test("cleans its timer on unmount", () => {
     const onComplete = jest.fn();
-    const view = mount(<OperationalSuccessSplash title="OK" duration={900} onComplete={onComplete} />);
+    const view = mount(<OperationalSuccessSplash title="OK" duration={300} onComplete={onComplete} />);
     view.unmount();
-    act(() => jest.advanceTimersByTime(900));
+    act(() => jest.advanceTimersByTime(350));
     expect(onComplete).not.toHaveBeenCalled();
   });
 
   test("a concurrent splash replaces the previous one without false completion", () => {
     const firstDone = jest.fn();
     const secondDone = jest.fn();
-    const first = mount(<OperationalSuccessSplash title="First" duration={900} onComplete={firstDone} />);
-    const second = mount(<OperationalSuccessSplash title="Second" duration={900} onComplete={secondDone} />);
+    const first = mount(<OperationalSuccessSplash title="First" duration={300} onComplete={firstDone} />);
+    const second = mount(<OperationalSuccessSplash title="Second" duration={300} onComplete={secondDone} />);
     expect(document.body.querySelectorAll('[role="status"]')).toHaveLength(1);
     expect(document.body.querySelector('[role="status"]').textContent).toContain("Second");
-    act(() => jest.advanceTimersByTime(900));
+    act(() => jest.advanceTimersByTime(300));
     expect(firstDone).not.toHaveBeenCalled();
     expect(secondDone).toHaveBeenCalledTimes(1);
     first.unmount();

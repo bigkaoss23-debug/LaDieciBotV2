@@ -352,26 +352,34 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const confirmaOrdine = async (id) => {
     if (!beginAction(id)) return;
     const orden = ordenes.find(o => o.id === id);
+    setSuccessSplash({
+      phase: "pending",
+      title: "Enviando a cocina…",
+      subtitle: null,
+    });
     try {
+      await new Promise(resolve => {
+        if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
+        else resolve();
+      });
       const intent = buildEnCocinaTransition(orden, {
         component: "ServicioPage",
         action: "confirmaOrdine",
       });
       logTransition(intent);
-      await optimisticOrden(id, { estado: ORDER_STATES.EN_COCINA }, async () => {
-        const res = await api.updateEstado(id, ORDER_STATES.EN_COCINA);
-        if (!res || res._ok === false || res.error || res.success === false) {
-          throw new Error(res?.error || "updateEstado failed");
-        }
-      });
+      const res = await api.updateEstado(id, ORDER_STATES.EN_COCINA);
+      if (!res || res._ok === false || res.error || res.success === false) {
+        throw new Error(res?.error || "updateEstado failed");
+      }
+      setOrdenes(p=>p.map(o=>o.id===id?{...o,estado:ORDER_STATES.EN_COCINA}:o));
       setSuccessSplash({
+        phase: "success",
         title: "¡Pedido enviado a cocina!",
         subtitle: null,
-        nextTab: null,
       });
     } catch(err) {
+      setSuccessSplash(null);
       console.error("confirmaOrdine error:", err);
-      setOrdenes(p=>p.map(o=>o.id===id?{...o,estado:orden?.estado}:o));
       notify("❌ Error al enviar a Cocina", C.rosso);
     } finally { endAction(id); }
   };
@@ -425,11 +433,24 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       action: "addOrden",
     });
     logOrderCreation(creationIntent);
+    if (o.canal==="MANUAL") {
+      setSuccessSplash({
+        phase: "pending",
+        title: "Confirmando pedido…",
+        subtitle: null,
+      });
+    }
     setOrdenes(p=>[{...o, _temp:true},...p]);
     const canalLabel = o.canal==="BANCO" ? "Barra" : "Tel";
     notify("✅ " + canalLabel + " (guardando…)");
     if (o.canal==="BANCO") setTab("banco");
     try {
+      if (o.canal==="MANUAL") {
+        await new Promise(resolve => {
+          if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
+          else resolve();
+        });
+      }
       // STRICT: throw se Railway non risponde con un id valido. L'idempotency
       // key (o.client_req_id) protegge da duplicati in caso di retry.
       const res = await api.createOrden(o);
@@ -437,13 +458,15 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       setOrdenes(p=>p.map(x=>x.id===o.id?{...x,id:res.id,_temp:false}:x));
       notify("✅ " + res.id + " → " + canalLabel);
       if (o.canal==="MANUAL") {
+        setTab("manual");
         setSuccessSplash({
+          phase: "success",
           title: "¡Pedido confirmado!",
           subtitle: "Listo para cocina.",
-          nextTab: "manual",
         });
       }
     } catch(err) {
+      if (o.canal==="MANUAL") setSuccessSplash(null);
       // ROLLBACK: l'ordine fantasma viene rimosso dallo state. Il pizzaiolo
       // NON deve vedere ordini senza backing DB. Vedi audit CL4SBU del 14/05/2026.
       console.error("createOrden failed, rolling back:", err);
@@ -1622,13 +1645,12 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         onClose={()=>setOrdenModifica(null)} onSave={modificaOrden}/>}
       {ticketOrder&&<CustomerTicketPrintModal order={ticketOrder} onClose={()=>setTicketOrder(null)}/>}
       {successSplash&&<OperationalSuccessSplash
+        phase={successSplash.phase}
         title={successSplash.title}
         subtitle={successSplash.subtitle}
-        duration={900}
+        duration={300}
         onComplete={()=>{
-          const nextTab = successSplash.nextTab;
           setSuccessSplash(null);
-          if (nextTab) setTab(nextTab);
         }}
       />}
 
