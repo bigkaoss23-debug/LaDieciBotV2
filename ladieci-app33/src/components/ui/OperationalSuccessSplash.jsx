@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./OperationalSuccessSplash.css";
+import { OPERATIONAL_TRANSACTION_MIN_DURATION_MS } from "../../order/operationalTransaction";
 
 let activeSplash = null;
 
-export const OPERATIONAL_SUCCESS_DURATION_MS = 500;
+export const OPERATIONAL_SUCCESS_DURATION_MS = OPERATIONAL_TRANSACTION_MIN_DURATION_MS;
 
 export default function OperationalSuccessSplash({
   phase = "success",
@@ -12,15 +13,20 @@ export default function OperationalSuccessSplash({
   subtitle,
   optionalSubtitle,
   duration = OPERATIONAL_SUCCESS_DURATION_MS,
+  startedAt = null,
   onComplete,
 }) {
   const owner = useRef(Symbol("operational-success-splash"));
   const completed = useRef(false);
   const onCompleteRef = useRef(onComplete);
   const [active, setActive] = useState(true);
-  const safeDuration = Number.isFinite(Number(duration))
+  const minimumDuration = Number.isFinite(Number(duration))
     ? Math.max(0, Number(duration))
     : OPERATIONAL_SUCCESS_DURATION_MS;
+  const elapsed = startedAt !== null && startedAt !== undefined && Number.isFinite(Number(startedAt))
+    ? Math.max(0, Date.now() - Number(startedAt))
+    : 0;
+  const safeDuration = Math.max(0, minimumDuration - elapsed);
   const isPending = phase === "pending";
   const secondaryText = subtitle ?? optionalSubtitle;
 

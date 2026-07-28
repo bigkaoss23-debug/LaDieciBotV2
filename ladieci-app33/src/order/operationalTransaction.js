@@ -1,0 +1,50 @@
+export const OPERATIONAL_TRANSACTION_MIN_DURATION_MS = 1000;
+
+export const operationalFeedback = ({
+  phase,
+  title,
+  startedAt,
+  minDuration = OPERATIONAL_TRANSACTION_MIN_DURATION_MS,
+}) => ({
+  phase,
+  title,
+  subtitle: null,
+  startedAt,
+  minDuration,
+});
+
+export async function runOperationalTransaction({
+  now = Date.now,
+  pendingTitle,
+  successTitle,
+  beforeRequest,
+  publishFeedback,
+  request,
+  onSuccess,
+  onFailure,
+}) {
+  const startedAt = now();
+  const shouldContinue = beforeRequest?.(startedAt);
+  if (shouldContinue === false) return { skipped: true };
+
+  publishFeedback(operationalFeedback({
+    phase: "pending",
+    title: pendingTitle,
+    startedAt,
+  }));
+
+  try {
+    const response = await request();
+    await onSuccess?.(response);
+    publishFeedback(operationalFeedback({
+      phase: "success",
+      title: successTitle,
+      startedAt,
+    }));
+    return { skipped: false, response, startedAt };
+  } catch (error) {
+    publishFeedback(null);
+    await onFailure?.(error);
+    throw error;
+  }
+}

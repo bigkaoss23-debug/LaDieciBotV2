@@ -24,6 +24,7 @@ import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
 // S2-7D6E — a collection is only successful when the ledger says so.
 import { isPaymentFailure, describePaymentFailure } from '../utils/paymentOutcome';
 import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
+import { runOperationalTransaction } from '../order/operationalTransaction';
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -355,27 +356,39 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     if (!beginAction(id)) return;
     const orden = ordenes.find(o => o.id === id);
     try {
-      const intent = buildEnCocinaTransition(orden, {
-        component: "ServicioPage",
-        action: "confirmaOrdine",
-      });
-      logTransition(intent);
-      const res = await api.updateEstado(id, ORDER_STATES.EN_COCINA);
-      if (!res || res._ok === false || res.error || res.success === false) {
-        throw new Error(res?.error || "updateEstado failed");
-      }
-      setOrdenes(p=>p.map(o=>o.id===id?{...o,estado:ORDER_STATES.EN_COCINA}:o));
-      creationQueue.updateConfirmed(id, { estado: ORDER_STATES.EN_COCINA });
-      setSuccessSplash({
-        phase: "success",
-        title: "¡Pedido enviado a cocina!",
-        subtitle: null,
+      await runOperationalTransaction({
+        pendingTitle: "Enviando a cocina…",
+        successTitle: "Pedido enviado a cocina",
+        beforeRequest: () => {
+          const intent = buildEnCocinaTransition(orden, {
+            component: "ServicioPage",
+            action: "confirmaOrdine",
+          });
+          logTransition(intent);
+        },
+        publishFeedback: setSuccessSplash,
+        request: async () => {
+          const res = await api.updateEstado(id, ORDER_STATES.EN_COCINA);
+          if (!res || res._ok === false || res.error || res.success === false) {
+            throw new Error(res?.error || "updateEstado failed");
+          }
+          return res;
+        },
+        onSuccess: () => {
+          setOrdenes(p=>p.map(o=>o.id===id?{...o,estado:ORDER_STATES.EN_COCINA}:o));
+          creationQueue.updateConfirmed(id, { estado: ORDER_STATES.EN_COCINA });
+          endAction(id);
+        },
+        onFailure: (err) => {
+          console.error("confirmaOrdine error:", err);
+          notify("❌ Error al enviar a Cocina", C.rosso);
+        },
       });
     } catch(err) {
-      setSuccessSplash(null);
-      console.error("confirmaOrdine error:", err);
-      notify("❌ Error al enviar a Cocina", C.rosso);
-    } finally { endAction(id); }
+      // onFailure already restored the truthful local state and reported once.
+    } finally {
+      endAction(id);
+    }
   };
 
   const forzaEntrega = async (id) => {
@@ -420,68 +433,70 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   };
 
   const addOrden  = async (o) => {
-    const creationIntent = buildOperatorOrderCreationIntent(o, {
+    const snapshot = {
+      ...o,
+      items: Array.isArray(o.items) ? o.items.map(item => ({ ...item })) : o.items,
+    };
+    const creationIntent = buildOperatorOrderCreationIntent(snapshot, {
       component: "ServicioPage",
       action: "addOrden",
     });
     logOrderCreation(creationIntent);
-    const requestId = String(o.client_req_id || "");
-    const pending = creationQueue.begin(o);
-    if (!pending) return;
-    if (o.canal==="MANUAL") {
-      setTab("manual");
-      setPrefillCliente(null);
-      setShowNuevo(false);
-    }
-    const canalLabel = o.canal==="BANCO" ? "Barra" : "Tel";
-    notify("✅ " + canalLabel + " (guardando…)");
-    if (o.canal==="BANCO") setTab("banco");
-    try {
-      const res = await api.createOrden(o);
-      if (!res?.id || res._ok === false || res.error || res.success === false) {
-        throw new Error(res?.error || "createOrden returned no persisted id");
-      }
-      const persisted = { ...o, ...res, id: res.id, _temp: false };
-      creationQueue.confirm(requestId, persisted);
-      setOrdenes(prev => prev.some(x => x.id === res.id)
-        ? prev.map(x => x.id === res.id ? { ...x, ...persisted } : x)
-        : [persisted, ...prev]);
-      notify("✅ " + res.id + " → " + canalLabel);
-      if (o.canal==="MANUAL") {
-        setSuccessSplash({
-          phase: "success",
-          title: "¡Pedido confirmado!",
-          subtitle: "Listo para cocina.",
-        });
-      }
-    } catch(err) {
-      console.error("createOrden failed, rolling back:", err);
-      creationQueue.fail(requestId);
-      try { Suoni.errore(); } catch(_){}
-      // S2-7D5 — the ONE domain refusal that deserves its own words. The DB
-      // trigger raises NO_OPEN_SERVICE_SESSION and the backend wraps it as
-      // "errore DB", which tells the operator nothing actionable. Re-read the
-      // shift state so the surface behind the modal becomes the closed-service
-      // landing, and rethrow a typed error: the modal's canonical submission
-      // lifecycle turns it into the single in-modal feedback banner, keeps the
-      // modal open and leaves the operator's order untouched.
-      if (isNoOpenServiceSession(err)) {
-        try { window.dispatchEvent(new Event("ld-service-session-lost")); } catch(_){}
-      }
-      setPrefillCliente({
-        ...o,
-        items: Array.isArray(o.items) ? o.items.map(item => ({ ...item })) : o.items,
-      });
-      setShowNuevo(true);
-      if (isNoOpenServiceSession(err)) {
-        const typed = new Error("No se pudo confirmar el pedido.");
-        typed.code = NO_OPEN_SERVICE_SESSION_CODE;
-        throw typed;
-      }
-      const failed = new Error("No se pudo confirmar el pedido.");
-      failed.code = "create_order_failed";
-      throw failed;
-    }
+    const requestId = String(snapshot.client_req_id || "");
+    const canalLabel = snapshot.canal==="BANCO" ? "Barra" : "Tel";
+    return runOperationalTransaction({
+      pendingTitle: "Guardando pedido…",
+      successTitle: "Pedido confirmado",
+      beforeRequest: () => {
+        const pending = creationQueue.begin(snapshot);
+        if (!pending) return false;
+        if (snapshot.canal==="MANUAL") {
+          setTab("manual");
+          setPrefillCliente(null);
+          setShowNuevo(false);
+        } else if (snapshot.canal==="BANCO") {
+          setTab("banco");
+          notify("✅ " + canalLabel + " (guardando…)");
+        }
+        return true;
+      },
+      publishFeedback: (feedback) => {
+        if (snapshot.canal==="MANUAL") setSuccessSplash(feedback);
+      },
+      request: async () => {
+        const res = await api.createOrden(snapshot);
+        if (!res?.id || res._ok === false || res.error || res.success === false) {
+          throw new Error(res?.error || "createOrden returned no persisted id");
+        }
+        return res;
+      },
+      onSuccess: (res) => {
+        const persisted = { ...snapshot, ...res, id: res.id, _temp: false };
+        creationQueue.confirm(requestId, persisted);
+        setOrdenes(prev => prev.some(x => x.id === res.id)
+          ? prev.map(x => x.id === res.id ? { ...x, ...persisted } : x)
+          : [persisted, ...prev]);
+        if (snapshot.canal==="BANCO") notify("✅ " + res.id + " → " + canalLabel);
+      },
+      onFailure: (err) => {
+        console.error("createOrden failed, rolling back:", err);
+        creationQueue.fail(requestId);
+        try { Suoni.errore(); } catch(_){}
+        if (isNoOpenServiceSession(err)) {
+          try { window.dispatchEvent(new Event("ld-service-session-lost")); } catch(_){}
+        }
+        setPrefillCliente(snapshot);
+        setShowNuevo(true);
+        if (isNoOpenServiceSession(err)) {
+          const typed = new Error("No se pudo confirmar el pedido.");
+          typed.code = NO_OPEN_SERVICE_SESSION_CODE;
+          throw typed;
+        }
+        const failed = new Error("No se pudo confirmar el pedido.");
+        failed.code = "create_order_failed";
+        throw failed;
+      },
+    });
   };
   const waConfirm = useCallback(async (id,items,hora,nombre,tel,nuovaHora) => {
     if (!id || waConfirmInflightRef.current.has(id)) return;
@@ -1639,7 +1654,8 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         phase={successSplash.phase}
         title={successSplash.title}
         subtitle={successSplash.subtitle}
-        duration={OPERATIONAL_SUCCESS_DURATION_MS}
+        duration={successSplash.minDuration || OPERATIONAL_SUCCESS_DURATION_MS}
+        startedAt={successSplash.startedAt}
         onComplete={()=>{
           setSuccessSplash(null);
         }}

@@ -68,7 +68,10 @@ describe("TicketQuickAction", () => {
 });
 
 describe("OperationalSuccessSplash", () => {
-  beforeEach(() => jest.useFakeTimers());
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(0);
+  });
   afterEach(() => {
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
@@ -94,7 +97,7 @@ describe("OperationalSuccessSplash", () => {
     view.unmount();
   });
 
-  test("success stays visible at 450 ms and completes once at 500 ms", () => {
+  test("standalone success stays visible at 950 ms and completes once at 1000 ms", () => {
     const onComplete = jest.fn();
     const view = mount(
       <OperationalSuccessSplash
@@ -110,7 +113,7 @@ describe("OperationalSuccessSplash", () => {
     expect(status.textContent).toContain("¡Pedido confirmado!");
     expect(status.textContent).toContain("Listo para cocina.");
     expect(status.querySelector("button")).toBeNull();
-    act(() => jest.advanceTimersByTime(450));
+    act(() => jest.advanceTimersByTime(950));
     expect(onComplete).not.toHaveBeenCalled();
     expect(document.body.querySelector('[role="status"]')).toBeTruthy();
     act(() => jest.advanceTimersByTime(50));
@@ -119,6 +122,63 @@ describe("OperationalSuccessSplash", () => {
     act(() => jest.advanceTimersByTime(50));
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(document.body.querySelector('[role="status"]')).toBeNull();
+    view.unmount();
+  });
+
+  test("a backend success at 200 ms keeps the transaction through 1000 ms total", () => {
+    const onComplete = jest.fn();
+    const view = mount(
+      <OperationalSuccessSplash
+        phase="pending"
+        title="Guardando pedido…"
+        startedAt={0}
+        onComplete={onComplete}
+      />
+    );
+    expect(document.body.querySelector('[role="status"]').textContent).toContain("Guardando pedido…");
+    act(() => jest.advanceTimersByTime(200));
+    act(() => view.root.render(
+      <OperationalSuccessSplash
+        phase="success"
+        title="Pedido confirmado"
+        startedAt={0}
+        onComplete={onComplete}
+      />
+    ));
+    expect(document.body.querySelector('[role="status"]').textContent).toContain("Pedido confirmado");
+    act(() => jest.advanceTimersByTime(799));
+    expect(document.body.querySelector('[role="status"]')).toBeTruthy();
+    expect(onComplete).not.toHaveBeenCalled();
+    act(() => jest.advanceTimersByTime(1));
+    expect(document.body.querySelector('[role="status"]')).toBeNull();
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  test("a backend slower than one second remains pending until resolution", () => {
+    const onComplete = jest.fn();
+    const view = mount(
+      <OperationalSuccessSplash
+        phase="pending"
+        title="Enviando a cocina…"
+        startedAt={0}
+        onComplete={onComplete}
+      />
+    );
+    act(() => jest.advanceTimersByTime(1200));
+    expect(document.body.querySelector('[role="status"]').textContent).toContain("Enviando a cocina…");
+    expect(onComplete).not.toHaveBeenCalled();
+    act(() => view.root.render(
+      <OperationalSuccessSplash
+        phase="success"
+        title="Pedido enviado a cocina"
+        startedAt={0}
+        onComplete={onComplete}
+      />
+    ));
+    expect(document.body.querySelector('[role="status"]').textContent).toContain("Pedido enviado a cocina");
+    act(() => jest.runOnlyPendingTimers());
+    expect(onComplete).toHaveBeenCalledTimes(1);
     view.unmount();
   });
 
@@ -149,9 +209,9 @@ describe("OperationalSuccessSplash", () => {
     const latestDone = jest.fn();
     const view = mount(<OperationalSuccessSplash title="Stable" onComplete={firstDone} />);
 
-    act(() => jest.advanceTimersByTime(300));
+    act(() => jest.advanceTimersByTime(600));
     act(() => view.root.render(<OperationalSuccessSplash title="Stable" onComplete={latestDone} />));
-    act(() => jest.advanceTimersByTime(150));
+    act(() => jest.advanceTimersByTime(350));
     expect(document.body.querySelector('[role="status"]')).toBeTruthy();
     act(() => jest.advanceTimersByTime(50));
 
