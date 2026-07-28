@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>DEV ONLY — Calibración física 58 mm</title>
+  <style>
+    @page { size: 58mm auto; margin: 0; }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      width: 58mm;
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #000;
+      font-family: "Courier New", monospace;
+    }
+    .sheet {
+      position: relative;
+      width: 58mm;
+      min-width: 58mm;
+      max-width: 58mm;
+      padding: 3mm 5mm;
+      margin: 0;
+      transform: none;
+      overflow: visible;
+    }
+    .reference {
+      position: relative;
+      width: 48mm;
+      min-height: 80mm;
+      border: .25mm solid #000;
+      overflow: hidden;
+    }
+    .reference::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 24mm;
+      border-left: .2mm dashed #000;
+    }
+    .safe-marker {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: .25mm;
+      background: #000;
+    }
+    .safe-marker.left { left: 0; }
+    .safe-marker.right { right: 0; }
+    .ruler {
+      position: relative;
+      width: 40mm;
+      height: 5mm;
+      margin: 2mm auto;
+      border-bottom: .25mm solid #000;
+      background: repeating-linear-gradient(90deg,#000 0 .2mm,transparent .2mm 10mm);
+    }
+    .ruler-labels { display: flex; justify-content: space-between; padding: 0 3.8mm; font-size: 7px; }
+    .logo { display: block; width: 20mm; height: auto; margin: 2mm auto 1mm; image-rendering: pixelated; }
+    .samples { position: relative; padding: 2mm; text-align: center; }
+    .base { font-size: 9px; line-height: 1.25; }
+    .large { font-size: 10.62px; line-height: 1.15; font-weight: 900; white-space: nowrap; }
+    .xlarge { font-size: 13.95px; line-height: 1.1; font-weight: 900; white-space: nowrap; }
+    .money { display: flex; justify-content: space-between; white-space: nowrap; }
+    @media screen {
+      body { background: #ddd; }
+      .sheet { background: #fff; }
+    }
+    @media print {
+      html, body, .sheet { width: 58mm !important; margin: 0 !important; padding-left: 0 !important; padding-right: 0 !important; }
+      .sheet { padding: 3mm 5mm !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="sheet" aria-label="Hoja de calibración física 58 mm">
+    <section class="reference">
+      <span class="safe-marker left"></span>
+      <span class="safe-marker right"></span>
+      <img class="logo" src="../../public/printing/la-dieci-thermal-logo.png" alt="La Dieci">
+      <div class="ruler" aria-label="Regla con marcas cada 10 mm"></div>
+      <div class="ruler-labels"><span>0</span><span>10</span><span>20</span><span>30</span><span>40 mm</span></div>
+      <div class="samples">
+        <div class="base">Texto base 9 px · 203 dpi</div>
+        <div class="large">TOTAL 12,50 €</div>
+        <div class="xlarge">PEDIDO #001</div>
+        <div class="money base"><span>1× Margarita</span><span>9,00 €</span></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

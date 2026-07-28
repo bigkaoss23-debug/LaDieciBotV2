@@ -13,6 +13,7 @@ const viewCss = read("components/TicketDocumentView.css");
 const modalCss = read("components/CustomerTicketPrintModal.css");
 const previewSource = read("components/TicketPreview.jsx");
 const modalSource = read("components/CustomerTicketPrintModal.jsx");
+const calibrationSource = fs.readFileSync(path.join(__dirname, "../../scripts/calibration/58mm-print-calibration.html"), "utf8");
 const createdAt = "2026-01-15T19:05:00.000Z";
 
 describe("customer ticket print-ready CSS", () => {
@@ -23,8 +24,8 @@ describe("customer ticket print-ready CSS", () => {
     expect(modalCss).not.toMatch(/@media print/);
   });
 
-  test("defines safe 58/80 mm paper, dynamic height and horizontal containment", () => {
-    expect(viewCss).toMatch(/paper-58[^}]*width:58mm[^}]*padding:3mm/);
+  test("defines the approved 58 mm paper with a centered 48 mm safe content width", () => {
+    expect(viewCss).toMatch(/paper-58[^}]*--ticket-content-width:48mm[^}]*width:58mm[^}]*padding:3mm 5mm/);
     expect(viewCss).toMatch(/paper-80[^}]*width:80mm[^}]*padding:3mm/);
     expect(viewCss).toMatch(/height:auto/);
     expect(viewCss).toMatch(/overflow-x:hidden/);
@@ -36,6 +37,36 @@ describe("customer ticket print-ready CSS", () => {
     expect(viewCss).toMatch(/body\.customer-ticket-print-open> \*:not\(\.customer-ticket-modal\)\{display:none!important\}/);
     expect(viewCss).toMatch(/background:#fff!important;color:#000!important/);
     expect(viewCss).toMatch(/\.role-money\{[\s\S]*white-space:nowrap!important/);
+  });
+
+  test("locks physical print to unscaled 58 mm geometry independently of the preview", () => {
+    const printRules = viewCss.slice(viewCss.indexOf("@media print"));
+    expect(printRules).toContain("@page{size:58mm auto;margin:0}");
+    expect(printRules).toMatch(/html,body\{[^}]*width:58mm!important[^}]*margin:0!important[^}]*padding:0!important/);
+    expect(printRules).toMatch(/customer-ticket-modal,[\s\S]*customer-ticket-panel\{[^}]*position:static!important[^}]*width:58mm!important[^}]*transform:none!important/);
+    expect(printRules).toMatch(/customer-ticket-print-sheet\{[^}]*width:58mm!important[^}]*padding:3mm 5mm!important/);
+    expect(printRules).toMatch(/customer-ticket-print-sheet\{[^}]*position:static!important[^}]*transform:none!important/);
+    expect(printRules).not.toMatch(/\bzoom\s*:/);
+    expect(modalCss).not.toMatch(/@media print|zoom\s*:/);
+    expect(previewSource).toContain('<TicketDocumentView document={document}');
+    expect(modalSource).toContain('<TicketDocumentView document={prepared.document}');
+  });
+
+  test("keeps product text wrappable while protecting monetary values and rows", () => {
+    expect(viewCss).toMatch(/ticket-document-columns\{[^}]*break-inside:avoid/);
+    expect(viewCss).toMatch(/ticket-document-columns>span\{[^}]*overflow-wrap:anywhere/);
+    expect(viewCss).toMatch(/role-money\{white-space:nowrap;overflow-wrap:normal;word-break:normal\}/);
+    expect(viewCss).toMatch(/@media print[\s\S]*role-money\{[\s\S]*white-space:nowrap!important/);
+  });
+
+  test("provides a development-only calibration sheet outside the production UI bundle", () => {
+    expect(calibrationSource).toContain("@page { size: 58mm auto; margin: 0; }");
+    expect(calibrationSource).toMatch(/\.reference\s*\{[^}]*width: 48mm/);
+    expect(calibrationSource).toContain("left: 24mm");
+    expect(calibrationSource).toContain("10 mm");
+    expect(calibrationSource).toContain("width: 20mm");
+    expect(previewSource).not.toContain("58mm-print-calibration");
+    expect(modalSource).not.toContain("58mm-print-calibration");
   });
 
   test("uses the exact thermal PNG at the same 20 mm size in preview and physical print", () => {
