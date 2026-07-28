@@ -16,7 +16,7 @@ const STATUS_COPY = Object.freeze({
 });
 
 export default function CustomerTicketPrintModal({ order, onClose }) {
-  const [paperWidth, setPaperWidth] = useState(CUSTOMER_TICKET_BUSINESS_PROFILE.default_paper_width);
+  const paperWidth = CUSTOMER_TICKET_BUSINESS_PROFILE.default_paper_width;
   const [status, setStatus] = useState("preparing");
   const [error, setError] = useState("");
   const [createdAt] = useState(() => new Date().toISOString());
@@ -76,13 +76,7 @@ export default function CustomerTicketPrintModal({ order, onClose }) {
         </header>
 
         <div className="customer-ticket-toolbar">
-          <label>
-            Papel
-            <select value={paperWidth} onChange={(event) => setPaperWidth(Number(event.target.value))} disabled={busy}>
-              <option value={58}>58 mm</option>
-              <option value={80}>80 mm</option>
-            </select>
-          </label>
+          <strong>Papel: 58 mm fijo</strong>
           <output className={`customer-ticket-status is-${status}`} aria-live="polite">
             {STATUS_COPY[status]}
           </output>

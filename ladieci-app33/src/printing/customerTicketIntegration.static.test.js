@@ -31,15 +31,20 @@ test("window.print is isolated in the browser adapter and the UI never claims su
   expect(adapterSource).not.toMatch(/\bprinted\b/i);
 });
 
-test("print CSS hides application chrome and prints only the selected 58/80 mm sheet", () => {
+test("print CSS hides application chrome and locks the customer sheet to 58 mm", () => {
   const source = read(printCssPath);
   const printRules = source.slice(source.indexOf("@media print"));
 
   expect(printRules).toContain("body.customer-ticket-print-open> *:not(.customer-ticket-modal){display:none!important}");
   expect(printRules).toContain("body.customer-ticket-print-open *{visibility:hidden!important}");
+  expect(printRules).toContain("body.customer-ticket-print-open .customer-ticket-modal,");
+  expect(printRules).toContain("position:static!important");
   expect(printRules).toContain(".customer-ticket-print-sheet");
-  expect(printRules).toContain(".customer-ticket-print-sheet.paper-58{--ticket-paper-width:58mm}");
-  expect(printRules).toContain(".customer-ticket-print-sheet.paper-80{--ticket-paper-width:80mm}");
+  expect(printRules).toContain("@page{size:58mm auto;margin:0}");
+  expect(printRules).toContain("width:58mm!important");
+  expect(printRules).toContain("padding:3mm 5mm!important");
+  expect(printRules).toContain(".customer-ticket-print-sheet.paper-58{--ticket-paper-width:58mm;--ticket-content-width:48mm}");
+  expect(printRules).not.toContain(".customer-ticket-print-sheet.paper-80");
 });
 
 test("preview and print share the semantic TicketDocument renderer", () => {

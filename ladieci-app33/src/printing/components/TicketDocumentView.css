@@ -1,5 +1,6 @@
-.ticket-document{box-sizing:border-box;max-width:100%;height:auto;background:#fff;color:#111;font-family:"Courier New",ui-monospace,monospace;font-weight:600;line-height:1.25;overflow-x:hidden;overflow-wrap:anywhere;word-break:break-word}
-.ticket-document.paper-58{--ticket-paper-width:58mm;--ticket-font-size:9px;width:58mm;padding:3mm}
+.ticket-document,.ticket-document *{box-sizing:border-box}
+.ticket-document{max-width:100%;height:auto;background:#fff;color:#111;font-family:"Courier New",ui-monospace,monospace;font-weight:600;line-height:1.25;overflow-x:hidden;overflow-wrap:anywhere;word-break:break-word}
+.ticket-document.paper-58{--ticket-paper-width:58mm;--ticket-content-width:48mm;--ticket-font-size:9px;width:58mm;padding:3mm 5mm}
 .ticket-document.paper-80{--ticket-paper-width:80mm;--ticket-font-size:10px;width:80mm;padding:3mm}
 .ticket-document{font-size:var(--ticket-font-size)}
 .ticket-document-image{display:flex;max-width:100%;align-items:center;justify-content:center;break-inside:avoid;page-break-inside:avoid}
@@ -18,22 +19,35 @@
 .ticket-document-separator{margin:.35em 0;border-top:1px dashed currentColor}
 .ticket-document-feed{height:calc(var(--ticket-feed-lines,1) * 1.25em)}
 @media print{
-  @page{margin:0}
-  html,body{margin:0!important;padding:0!important;background:#fff!important}
+  @page{size:58mm auto;margin:0}
+  html,body{box-sizing:border-box!important;width:58mm!important;min-width:58mm!important;max-width:58mm!important;margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important}
+  body.customer-ticket-print-open,body.customer-ticket-print-open *{box-sizing:border-box!important}
   body.customer-ticket-print-open> *:not(.customer-ticket-modal){display:none!important}
   body.customer-ticket-print-open *{visibility:hidden!important}
+  body.customer-ticket-print-open .customer-ticket-modal,
+  body.customer-ticket-print-open .customer-ticket-panel{
+    position:static!important;inset:auto!important;display:block!important;
+    box-sizing:border-box!important;width:58mm!important;min-width:58mm!important;max-width:58mm!important;
+    height:auto!important;min-height:0!important;max-height:none!important;margin:0!important;padding:0!important;
+    border:0!important;border-radius:0!important;background:#fff!important;box-shadow:none!important;
+    transform:none!important;overflow:visible!important
+  }
+  body.customer-ticket-print-open .customer-ticket-backdrop,
+  body.customer-ticket-print-open .customer-ticket-header,
+  body.customer-ticket-print-open .customer-ticket-toolbar,
+  body.customer-ticket-print-open .customer-ticket-actions{display:none!important}
   body.customer-ticket-print-open .customer-ticket-print-sheet,
   body.customer-ticket-print-open .customer-ticket-print-sheet *{visibility:visible!important}
   body.customer-ticket-print-open .customer-ticket-print-sheet{
-    position:absolute;left:0;top:0;display:block!important;box-sizing:border-box!important;
-    min-width:0!important;max-width:none!important;width:var(--ticket-paper-width,58mm)!important;
-    height:auto!important;min-height:0!important;margin:0!important;padding:3mm!important;
+    position:static!important;left:auto!important;top:auto!important;display:block!important;box-sizing:border-box!important;
+    min-width:58mm!important;max-width:58mm!important;width:58mm!important;
+    height:auto!important;min-height:0!important;margin:0!important;padding:3mm 5mm!important;
     border:0!important;border-radius:0!important;box-shadow:none!important;transform:none!important;
+    font-size:9px!important;line-height:1.25!important;
     background:#fff!important;color:#000!important;overflow:visible!important;
     break-inside:avoid-page;page-break-inside:avoid;print-color-adjust:economy;-webkit-print-color-adjust:economy
   }
-  body.customer-ticket-print-open .customer-ticket-print-sheet.paper-58{--ticket-paper-width:58mm}
-  body.customer-ticket-print-open .customer-ticket-print-sheet.paper-80{--ticket-paper-width:80mm}
+  body.customer-ticket-print-open .customer-ticket-print-sheet.paper-58{--ticket-paper-width:58mm;--ticket-content-width:48mm}
   body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-text,
   body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-columns,
   body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-image{
