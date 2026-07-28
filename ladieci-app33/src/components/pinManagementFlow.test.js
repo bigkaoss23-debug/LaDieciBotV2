@@ -143,6 +143,52 @@ test('wrong PIN shows an inline error on the pad and stays in the modal — real
   unmount(container, root);
 });
 
+test('the Confirmar button on step-up is double-click protected — exactly one verifyOwnPin call', async () => {
+  // S2-7D6E4-FOLLOWUP — regression guard for a staging observation of "three POST rows in
+  // ~30ms" for a single Confirmar press. The ONE existing rapid-click regression in this
+  // file (see 'the save button is double-click protected' below) only ever covered
+  // Guardar/setActorPin, never Confirmar/verifyOwnPin — this was the actual gap. A real
+  // browser harness (production build + real api.js/proxyPost/fetch + a local counting
+  // server, staging code untouched) proved the current code already sends exactly one
+  // request per gesture, under single click, rapid re-clicks, click+Enter, and synchronous
+  // same-tick triple-click, thanks to the synchronous `busyRef` guard in
+  // StepUpView.submit() (checked/set BEFORE the await, released only in `finally`). This
+  // test pins that behavior at the component level so it can never silently regress.
+  let resolveCall;
+  api.verifyOwnPin.mockReturnValue(new Promise((res) => { resolveCall = res; }));
+  const { container, root } = await mount();
+  await openStepUp(container);
+  pressDigits(container, '284917563');
+  const confirmBtn = findByText(container, 'Confirmar');
+  click(confirmBtn);
+  click(confirmBtn);
+  click(confirmBtn);
+  await flush();
+  expect(api.verifyOwnPin).toHaveBeenCalledTimes(1);
+  await act(async () => { resolveCall({ ok: false, error: 'PIN_INCORRECTO', _ok: true, _status: 401 }); });
+  unmount(container, root);
+});
+
+test('under React.StrictMode double-invocation, a single Confirmar click still sends exactly one request', async () => {
+  // The real app (src/index.js) never wraps in <React.StrictMode> (verified by reading the
+  // file directly), so this can never fire in production — but pinning it here means the
+  // guard is proven robust to StrictMode's deliberate double-render/double-effect behavior
+  // if that ever changes, rather than relying on an absence that lives outside this file.
+  api.verifyOwnPin.mockResolvedValue({ ok: false, error: 'PIN_INCORRECTO', _ok: true, _status: 401 });
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(<React.StrictMode><OperationalMenu onLogout={jest.fn()} /></React.StrictMode>);
+  });
+  await openStepUp(container);
+  pressDigits(container, '284917563');
+  click(findByText(container, 'Confirmar'));
+  await flush();
+  expect(api.verifyOwnPin).toHaveBeenCalledTimes(1);
+  unmount(container, root);
+});
+
 test('a locked owner shows a lockout-specific message, not the generic one', async () => {
   api.verifyOwnPin.mockResolvedValue({ ok: false, error: 'LOCKED', retryAfterSec: 37, _ok: true, _status: 429 });
   const { container, root } = await mount();
