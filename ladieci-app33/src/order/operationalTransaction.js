@@ -17,6 +17,7 @@ export async function runOperationalTransaction({
   now = Date.now,
   startedAt: existingStartedAt,
   pendingAlreadyPublished = false,
+  optimisticTitle = null,
   pendingTitle,
   successTitle,
   beforeRequest,
@@ -31,8 +32,8 @@ export async function runOperationalTransaction({
     if (shouldContinue === false) return { skipped: true };
 
     publishFeedback(operationalFeedback({
-      phase: "pending",
-      title: pendingTitle,
+      phase: optimisticTitle ? "success" : "pending",
+      title: optimisticTitle || pendingTitle,
       startedAt,
     }));
   }
@@ -40,11 +41,13 @@ export async function runOperationalTransaction({
   try {
     const response = await request();
     await onSuccess?.(response);
-    publishFeedback(operationalFeedback({
-      phase: "success",
-      title: successTitle,
-      startedAt,
-    }));
+    if (!optimisticTitle) {
+      publishFeedback(operationalFeedback({
+        phase: "success",
+        title: successTitle,
+        startedAt,
+      }));
+    }
     return { skipped: false, response, startedAt };
   } catch (error) {
     publishFeedback(null);

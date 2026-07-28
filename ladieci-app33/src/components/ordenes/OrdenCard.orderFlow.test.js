@@ -71,4 +71,24 @@ describe("OrdenCard async order flow", () => {
     expect(button.disabled).toBe(true);
     view.unmount();
   });
+
+  test("Ticket keeps its grid slot when A Cocina is unavailable", () => {
+    const pending = mount();
+    const pendingGrid = pending.container.querySelector("[data-order-action-grid]");
+    expect(pendingGrid.style.display).toBe("grid");
+    expect(pendingGrid.querySelector(".ticket-quick-action")).toBeTruthy();
+    expect(pendingGrid.querySelector("[data-order-action-placeholder]")).toBeNull();
+    pending.unmount();
+
+    const cocina = mount({ o: { ...base, estado: "EN_COCINA" } });
+    const cocinaGrid = cocina.container.querySelector("[data-order-action-grid]");
+    const placeholder = cocinaGrid.querySelector("[data-order-action-placeholder]");
+    expect(cocinaGrid.querySelector(".ticket-quick-action")).toBeTruthy();
+    expect(placeholder).toBeTruthy();
+    expect(placeholder.getAttribute("aria-hidden")).toBe("true");
+    expect(placeholder.tabIndex).toBe(-1);
+    expect(placeholder.style.pointerEvents).toBe("none");
+    expect(placeholder.style.visibility).toBe("hidden");
+    cocina.unmount();
+  });
 });

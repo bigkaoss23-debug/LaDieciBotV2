@@ -103,7 +103,7 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
     backdropFilter:"blur(28px) saturate(1.8)",
     WebkitBackdropFilter:"blur(28px) saturate(1.8)",
     border: hasAlert ? "2px solid #E8341C" : zonaColore ? `3px solid ${zonaColore}` : s.border,
-    borderRadius:18,padding:"14px 18px",cursor:"pointer",
+    borderRadius:18,padding:"14px 18px",cursor:(isSaving || busy) ? "default" : "pointer",
     boxShadow: hasAlert
       ? `0 0 18px #E8341C88, ${s.glow}`
       : zonaColore
@@ -212,7 +212,7 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
             border: `1px solid rgba(249,115,22,${busy ? 0.15 : 0.30})`,
             borderRadius:9, padding:"5px 14px",
             fontWeight:700, fontSize:12,
-            cursor: busy ? "wait" : "pointer",
+            cursor: busy ? "default" : "pointer",
             opacity: busy ? 0.7 : 1,
             display:"flex", alignItems:"center", gap:5
         }}>{busy ? "Forzando…" : "🛵 Forzar entrega"}</button>
@@ -222,8 +222,20 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
             l'id è ancora client-side, updateEstado fallirebbe contro un id sconosciuto
             al backend e dopo il reassign dell'id il patch ottimistico resterebbe orfano,
             facendo rimbalzare l'ordine in tab Telefono al primo refetch.) ── */}
-    {!isSaving && (onOpenTicket || (onConfirm && estado === ORDER_STATES.POR_CONFIRMAR)) && (
-      <div style={{marginTop:8,display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+    {!isSaving && (onOpenTicket || onConfirm) && (
+      <div
+        data-order-action-grid
+        style={{
+          marginTop:8,
+          display:"grid",
+          gridTemplateColumns:"minmax(0,auto) minmax(132px,auto)",
+          justifyContent:"end",
+          alignItems:"center",
+          gap:8,
+          cursor:"default",
+        }}
+        onClick={e=>e.stopPropagation()}
+      >
         {onOpenTicket && (
           <TicketQuickAction order={{...o,items:safeItems}} onOpenTicket={onOpenTicket} variant="compact" />
         )}
@@ -241,10 +253,22 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
             borderRadius:10, padding:"8px 20px",
             fontWeight:800, fontSize:13, letterSpacing:.3,
             boxShadow: (o._temp || busy) ? "none" : "0 2px 10px rgba(251,146,60,0.25)",
-            cursor: (o._temp || busy) ? "wait" : "pointer",
+            cursor: (o._temp || busy) ? "default" : "pointer",
             opacity: (o._temp || busy) ? 0.6 : 1,
             display:"flex", alignItems:"center", gap:6
           }}>{o._temp ? "⏳ Guardando…" : (busy ? "Enviando a cocina…" : "🚀 A Cocina")}</button>
+        )}
+        {!(onConfirm && estado === ORDER_STATES.POR_CONFIRMAR) && (
+          <span
+            data-order-action-placeholder
+            aria-hidden="true"
+            style={{
+              minHeight:44,
+              visibility:"hidden",
+              pointerEvents:"none",
+              cursor:"default",
+            }}
+          />
         )}
       </div>
     )}

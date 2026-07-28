@@ -10,8 +10,8 @@ describe("instant order feedback integration", () => {
     const end = source.indexOf("const modificaOrden", start);
     const block = source.slice(start, end);
 
-    expect(block).toContain('pendingTitle: "Guardando pedido…"');
-    expect(block).toContain('successTitle: "Pedido confirmado"');
+    expect(block).toContain('optimisticTitle: "¡Pedido confirmado!"');
+    expect(block).not.toContain('pendingTitle: "Guardando pedido…"');
     expect(block).toContain("creationQueue.begin(snapshot)");
     expect(block.indexOf('setTab("manual")')).toBeLessThan(block.indexOf("await api.createOrden(snapshot)"));
     expect(block.indexOf("setShowNuevo(false)")).toBeLessThan(block.indexOf("await api.createOrden(snapshot)"));
@@ -30,7 +30,7 @@ describe("instant order feedback integration", () => {
     expect(block.indexOf("onTransactionStart?.(orderAttempt)"))
       .toBeLessThan(block.indexOf("await api.upsertCliente"));
     expect(source).toContain("onTransactionStart={startCreateTransaction}");
-    expect(source).toContain('title: "Guardando pedido…"');
+    expect(source).toContain('title: "¡Pedido confirmado!"');
   });
 
   test("A Cocina publishes pending before request and updates locally only after valid success", () => {
@@ -38,8 +38,8 @@ describe("instant order feedback integration", () => {
     const end = source.indexOf("const forzaEntrega", start);
     const block = source.slice(start, end);
 
-    expect(block).toContain('pendingTitle: "Enviando a cocina…"');
-    expect(block).toContain('successTitle: "Pedido enviado a cocina"');
+    expect(block).toContain('optimisticTitle: "¡Pedido enviado a cocina!"');
+    expect(block).not.toContain('pendingTitle: "Enviando a cocina…"');
     expect(block.match(/api\.updateEstado/g)).toHaveLength(1);
     expect(block).toContain("res._ok === false");
     expect(block.indexOf("setOrdenes")).toBeGreaterThan(block.indexOf("res._ok === false"));

@@ -358,8 +358,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     const orden = ordenes.find(o => o.id === id);
     try {
       await runOperationalTransaction({
-        pendingTitle: "Enviando a cocina…",
-        successTitle: "Pedido enviado a cocina",
+        optimisticTitle: "¡Pedido enviado a cocina!",
         beforeRequest: () => {
           const intent = buildEnCocinaTransition(orden, {
             component: "ServicioPage",
@@ -448,8 +447,8 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       setPrefillCliente(null);
       setShowNuevo(false);
       setSuccessSplash({
-        phase: "pending",
-        title: "Guardando pedido…",
+        phase: "success",
+        title: "¡Pedido confirmado!",
         subtitle: null,
         startedAt,
         minDuration: OPERATIONAL_SUCCESS_DURATION_MS,
@@ -475,8 +474,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     return runOperationalTransaction({
       startedAt: transactionStartedAt,
       pendingAlreadyPublished: transactionAlreadyStarted,
-      pendingTitle: "Guardando pedido…",
-      successTitle: "Pedido confirmado",
+      optimisticTitle: "¡Pedido confirmado!",
       beforeRequest: () => {
         const pending = creationQueue.begin(snapshot);
         if (!pending) return false;

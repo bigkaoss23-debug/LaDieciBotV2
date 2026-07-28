@@ -12,24 +12,23 @@ const deferred = () => {
 
 describe("click-based operational transaction", () => {
   test.each([
-    ["Confirmar", "Guardando pedido…", "Pedido confirmado"],
-    ["A Cocina", "Enviando a cocina…", "Pedido enviado a cocina"],
-  ])("%s publishes pending synchronously before the request resolves", async (
-    _label, pendingTitle, successTitle
+    ["Confirmar", "¡Pedido confirmado!"],
+    ["A Cocina", "¡Pedido enviado a cocina!"],
+  ])("%s publishes exactly one optimistic message before the request resolves", async (
+    _label, optimisticTitle
   ) => {
     const backend = deferred();
     const events = [];
     const transaction = runOperationalTransaction({
       now: () => 100,
-      pendingTitle,
-      successTitle,
+      optimisticTitle,
       beforeRequest: () => {
         events.push("snapshot");
         events.push("modal-closed");
         events.push("tel-active");
         events.push("pending-card");
       },
-      publishFeedback: (feedback) => events.push(feedback?.phase || "cleared"),
+      publishFeedback: (feedback) => events.push(feedback?.title || "cleared"),
       request: () => {
         events.push("request-started");
         return backend.promise;
@@ -39,14 +38,16 @@ describe("click-based operational transaction", () => {
 
     expect(events).toEqual([
       "snapshot", "modal-closed", "tel-active", "pending-card",
-      "pending", "request-started",
+      optimisticTitle, "request-started",
     ]);
-    expect(events).not.toContain("success");
+    expect(events).not.toContain("Guardando pedido…");
+    expect(events).not.toContain("Enviando a cocina…");
 
     backend.resolve({ id: "persisted", serviceOrderNumber: 1 });
     await transaction;
     expect(events.indexOf("actionable-card-render-requested"))
-      .toBeLessThan(events.indexOf("success"));
+      .toBeGreaterThan(events.indexOf("request-started"));
+    expect(events.filter(event => event === optimisticTitle)).toHaveLength(1);
   });
 
   test("failure clears pending and restores the form without false success", async () => {
