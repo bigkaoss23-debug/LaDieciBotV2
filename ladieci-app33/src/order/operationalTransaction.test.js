@@ -66,6 +66,24 @@ describe("click-based operational transaction", () => {
     expect(events).not.toContain("success");
   });
 
+  test("continues a modal-started transaction without restarting its timestamp", async () => {
+    const feedback = [];
+    const result = await runOperationalTransaction({
+      now: () => 900,
+      startedAt: 100,
+      pendingAlreadyPublished: true,
+      pendingTitle: "Guardando pedido…",
+      successTitle: "Pedido confirmado",
+      beforeRequest: () => { throw new Error("must not restart"); },
+      publishFeedback: (value) => feedback.push(value),
+      request: async () => ({ id: "persisted" }),
+    });
+
+    expect(result.startedAt).toBe(100);
+    expect(feedback).toHaveLength(1);
+    expect(feedback[0]).toMatchObject({ phase: "success", startedAt: 100 });
+  });
+
   test("shared minimum is one second", () => {
     expect(OPERATIONAL_TRANSACTION_MIN_DURATION_MS).toBe(1000);
   });

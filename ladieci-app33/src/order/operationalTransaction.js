@@ -15,6 +15,8 @@ export const operationalFeedback = ({
 
 export async function runOperationalTransaction({
   now = Date.now,
+  startedAt: existingStartedAt,
+  pendingAlreadyPublished = false,
   pendingTitle,
   successTitle,
   beforeRequest,
@@ -23,15 +25,17 @@ export async function runOperationalTransaction({
   onSuccess,
   onFailure,
 }) {
-  const startedAt = now();
-  const shouldContinue = beforeRequest?.(startedAt);
-  if (shouldContinue === false) return { skipped: true };
+  const startedAt = existingStartedAt ?? now();
+  if (!pendingAlreadyPublished) {
+    const shouldContinue = beforeRequest?.(startedAt);
+    if (shouldContinue === false) return { skipped: true };
 
-  publishFeedback(operationalFeedback({
-    phase: "pending",
-    title: pendingTitle,
-    startedAt,
-  }));
+    publishFeedback(operationalFeedback({
+      phase: "pending",
+      title: pendingTitle,
+      startedAt,
+    }));
+  }
 
   try {
     const response = await request();

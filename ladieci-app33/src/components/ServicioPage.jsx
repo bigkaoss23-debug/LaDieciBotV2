@@ -120,6 +120,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const [ticketOrder, setTicketOrder] = useState(null);
   const [successSplash, setSuccessSplash] = useState(null);
   const creationQueue = useOrderCreationQueue(ordenes);
+  const creationTransactionRef = useRef(new Map());
   const [aiForza, setAiForza] = useState("BASIC");
   const [chiudiModal, setChiudiModal] = useState(null); // null | { completati, attivi, loading, step }
   const headerWidth = useWidth();
@@ -432,6 +433,31 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     endAction(id);
   };
 
+  const startCreateTransaction = (o) => {
+    const snapshot = {
+      ...o,
+      items: Array.isArray(o.items) ? o.items.map(item => ({ ...item })) : o.items,
+    };
+    const pending = creationQueue.begin(snapshot);
+    if (!pending) return false;
+    const requestId = String(snapshot.client_req_id || "");
+    const startedAt = Date.now();
+    creationTransactionRef.current.set(requestId, startedAt);
+    if (snapshot.canal === "MANUAL") {
+      setTab("manual");
+      setPrefillCliente(null);
+      setShowNuevo(false);
+      setSuccessSplash({
+        phase: "pending",
+        title: "Guardando pedido…",
+        subtitle: null,
+        startedAt,
+        minDuration: OPERATIONAL_SUCCESS_DURATION_MS,
+      });
+    }
+    return true;
+  };
+
   const addOrden  = async (o) => {
     const snapshot = {
       ...o,
@@ -443,8 +469,12 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     });
     logOrderCreation(creationIntent);
     const requestId = String(snapshot.client_req_id || "");
+    const transactionStartedAt = creationTransactionRef.current.get(requestId);
+    const transactionAlreadyStarted = transactionStartedAt != null;
     const canalLabel = snapshot.canal==="BANCO" ? "Barra" : "Tel";
     return runOperationalTransaction({
+      startedAt: transactionStartedAt,
+      pendingAlreadyPublished: transactionAlreadyStarted,
       pendingTitle: "Guardando pedido…",
       successTitle: "Pedido confirmado",
       beforeRequest: () => {
@@ -477,10 +507,12 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           ? prev.map(x => x.id === res.id ? { ...x, ...persisted } : x)
           : [persisted, ...prev]);
         if (snapshot.canal==="BANCO") notify("✅ " + res.id + " → " + canalLabel);
+        creationTransactionRef.current.delete(requestId);
       },
       onFailure: (err) => {
         console.error("createOrden failed, rolling back:", err);
         creationQueue.fail(requestId);
+        creationTransactionRef.current.delete(requestId);
         try { Suoni.errore(); } catch(_){}
         if (isNoOpenServiceSession(err)) {
           try { window.dispatchEvent(new Event("ld-service-session-lost")); } catch(_){}
@@ -1637,6 +1669,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
 
       {/* Modals */}
       <NuevoPedidoModal visible={showNuevo} onClose={()=>{setShowNuevo(false);setPrefillCliente(null);}}
+        onTransactionStart={startCreateTransaction}
         onConfirm={async o=>{ await addOrden(o); }}
         prefill={prefillCliente} ordenes={ordenes}/>
       {ordenModifica&&<ModificaOrdenModal orden={{

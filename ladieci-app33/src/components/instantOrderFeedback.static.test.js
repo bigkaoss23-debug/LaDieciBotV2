@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 
 const source = fs.readFileSync(path.join(__dirname, "ServicioPage.jsx"), "utf8");
+const modalSource = fs.readFileSync(path.join(__dirname, "NuevoPedidoModal.jsx"), "utf8");
 
 describe("instant order feedback integration", () => {
   test("Confirmar pedido starts one truthful transaction before its backend await", () => {
@@ -18,6 +19,18 @@ describe("instant order feedback integration", () => {
     expect(block).toContain("creationQueue.confirm(requestId, persisted)");
     expect(block).toContain("id: res.id, _temp: false");
     expect(block).toContain("creationQueue.fail(requestId)");
+  });
+
+  test("modal starts the transaction before preferred-customer persistence", () => {
+    const start = modalSource.indexOf("const buildAndSendOrder = async");
+    const end = modalSource.indexOf("// SUCCESS is the only outcome", start);
+    const block = modalSource.slice(start, end);
+
+    expect(block).toContain("onTransactionStart?.(orderAttempt)");
+    expect(block.indexOf("onTransactionStart?.(orderAttempt)"))
+      .toBeLessThan(block.indexOf("await api.upsertCliente"));
+    expect(source).toContain("onTransactionStart={startCreateTransaction}");
+    expect(source).toContain('title: "Guardando pedido…"');
   });
 
   test("A Cocina publishes pending before request and updates locally only after valid success", () => {

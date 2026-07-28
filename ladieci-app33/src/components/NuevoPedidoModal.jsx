@@ -330,7 +330,7 @@ const PlannerStatusOverlay = ({ loading, message, onClose }) => (
   </div>
 );
 
-const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }) => {
+const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, prefill, ordenes = [] }) => {
   const [items,           setItems]           = useState([]);
   const [tel,             setTel]             = useState("");
   const [nombre,          setNombre]          = useState("");
@@ -570,6 +570,48 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     const horaMin = horaToMinStrict(snap.hora);
     const cierreOverride = horaMin != null && horaMin > CLOSING_TIME_MIN;
     const telFinal = tel.trim() || (canal === "BANCO" ? "BARRA-" + Date.now().toString(36).toUpperCase().slice(-4) : "");
+    const zonaFinaleId = tipoConsegna === "DOMICILIO"
+      ? (zonaInfo?.zona?.id || assegnaZonaDaKeyword(direccion)?.id || null)
+      : null;
+    const notaFinale = cierreOverride ? buildClosingOverrideNota(nota, hora) : nota;
+
+    // The transaction starts here, synchronously in the click call stack and
+    // before every persistence await (including the optional preferred-client
+    // upsert). The same immutable request id and local id are reused by the
+    // eventual createOrden call, so the pending card is the real attempt.
+    if (!reqIdRef.current) {
+      reqIdRef.current = (typeof crypto !== "undefined" && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : ("req-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10));
+    }
+    const localOrderId = genId();
+    const orderAttempt = {
+      id: localOrderId, client_req_id: reqIdRef.current, nombre: nombre.trim(), tel: telFinal,
+      cliente_id: clienteId || null,
+      canal: canal === "WA" ? "WA" : canal === "BANCO" ? "BANCO" : "MANUAL",
+      items: items.map(i => ({ ...i })),
+      nota: notaFinale, hora: snap.hora, ts: Date.now(), estado: "POR_CONFIRMAR",
+      tipo_consegna: tipoConsegna,
+      direccion: tipoConsegna === "DOMICILIO" ? direccion.trim() : null,
+      direccion_note: tipoConsegna === "DOMICILIO" ? (direccionNote.trim() || null) : null,
+      zona: (tipoConsegna === "DOMICILIO" && zonaManuale) ? zonaFinaleId : null,
+      zona_lat: null,
+      zona_lon: null,
+      zona_manuale: tipoConsegna === "DOMICILIO" ? zonaManuale : false,
+      durata_andata_min: null,
+      durata_google_min: null,
+      durata_haversine_min: null,
+      geo_source: null,
+      forzado: cierreOverride || (tipoConsegna === "DOMICILIO" ? forzaHora : false),
+      ya_pagado: yaPagedo,
+      metodo_pago: yaPagedo ? metodoPago : "",
+      descuento_tipo: descuentoImporte > 0 ? descuentoTipo : null,
+      descuento_valor: descuentoImporte > 0 ? descuentoValor : null,
+      pending_giro_intent: appliedGiroIntent || null,
+    };
+    if (onTransactionStart?.(orderAttempt) === false) {
+      throw new Error("order transaction already in progress");
+    }
 
     // Se l'operatore ha attivato la stellina e non c'è già un clienteId,
     // creiamo/aggiorniamo il record in `clientes` PRIMA di mandare l'ordine.
@@ -594,66 +636,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         console.warn("[upsertCliente] failed, l'ordine procede senza cliente_id:", e?.message || e);
       }
     }
-    // Step 2 anti-cerotto: usato SOLO per l'override zona manuale (input operatore).
-    // Zona/durata definitive le decide il backend in createOrden (resolveDeliveryFields).
-    const zonaFinaleId = tipoConsegna === "DOMICILIO"
-      ? (zonaInfo?.zona?.id || assegnaZonaDaKeyword(direccion)?.id || null)
-      : null;
-    const notaFinale = cierreOverride ? buildClosingOverrideNota(nota, hora) : nota;
-    // client_req_id: idempotency key. Stabile per la sessione modal corrente
-    // (generato all'apertura via useEffect su `visible`). Anche se la guardia
-    // frontend `submittingRef` dovesse fallire per qualche edge case React,
-    // rapid click producono lo stesso reqId → backend `creaOrdine` riconosce
-    // il duplicato (idempotent: true) invece di creare ordini multipli.
-    // Fallback difensivo: se per qualche motivo non è stato popolato, lo
-    // generiamo qui.
-    if (!reqIdRef.current) {
-      reqIdRef.current = (typeof crypto !== "undefined" && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : ("req-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10));
-    }
     // S2-7D5: the result of onConfirm is RETURNED, so the persistence gateway
     // awaits the real write instead of assuming it succeeded. A typed throw from
     // the caller (e.g. NO_OPEN_SERVICE_SESSION) therefore becomes a normal ERROR
     // outcome of the SAME canonical lifecycle — no second state machine — and
     // the modal stays open with the operator's order intact.
-    return onConfirm({
-      id: genId(), client_req_id: reqIdRef.current, nombre: nombre.trim(), tel: telFinal,
-      cliente_id: cidFinale || null,
-      canal: canal === "WA" ? "WA" : canal === "BANCO" ? "BANCO" : "MANUAL",
-      items: items.map(i => ({ ...i })),
-      // hora comes from the ATTEMPT SNAPSHOT, not from live state: what the
-      // operator confirmed is what gets sent, even if a recommendation arrived
-      // between the click and this line.
-      nota: notaFinale, hora: snap.hora, ts: Date.now(), estado: "POR_CONFIRMAR",
-      tipo_consegna: tipoConsegna,
-      direccion: tipoConsegna === "DOMICILIO" ? direccion.trim() : null,
-      direccion_note: tipoConsegna === "DOMICILIO" ? (direccionNote.trim() || null) : null,
-      // ── Step 2 anti-cerotto: geo/durata NON sono più fonte di verità del
-      // frontend. Il backend (createOrden → resolveDeliveryFields) ri-risolve
-      // server-side e IGNORA questi campi. Inviamo solo gli input operatore:
-      // `direccion` + flag `zona_manuale` (+ `zona` solo se override esplicito).
-      // I campi derivati restano null: il backend li popola autoritativamente.
-      zona: (tipoConsegna === "DOMICILIO" && zonaManuale) ? zonaFinaleId : null,
-      zona_lat: null,
-      zona_lon: null,
-      zona_manuale: tipoConsegna === "DOMICILIO" ? zonaManuale : false,
-      durata_andata_min:    null,
-      durata_google_min:    null,
-      durata_haversine_min: null,
-      geo_source:           null,
-      // Flag operatore: ha forzato un'hora che il sistema considerava in conflitto
-      // (driver impegnato o slot pieno). Tracciato per analytics + audit qualità.
-      forzado: cierreOverride || (tipoConsegna === "DOMICILIO" ? forzaHora : false),
-      ya_pagado: yaPagedo,
-      metodo_pago: yaPagedo ? metodoPago : "",
-      descuento_tipo:  descuentoImporte > 0 ? descuentoTipo  : null,
-      descuento_valor: descuentoImporte > 0 ? descuentoValor : null,
-      // Opzione A: intent del giro condiviso (o null en flujo legacy). El backend
-      // (creaOrdine) lo sanitiza y lo persiste como pending_giro_intent; se consume
-      // al pasar a EN_COCINA. Sin proposal giro → null → comportamiento idéntico.
-      pending_giro_intent: appliedGiroIntent || null,
-    });
+    return onConfirm({ ...orderAttempt, cliente_id: cidFinale || null });
     // saveGeoCache rimosso — il backend resolver salva automaticamente in cache
     // quando geocoda con successo (Google/Nominatim/Photon). Una sola fonte di scrittura.
     //
