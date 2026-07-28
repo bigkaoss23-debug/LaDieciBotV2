@@ -21,6 +21,8 @@ import { DevHeartbeatSender } from './components/DevPresence';
 import OpsHealthBadge from './components/OpsHealthBadge';
 import OperationalMenu from './components/OperationalMenu';
 import { operationalLogout, registerOperationalTeardown } from './operationalSession';
+import PinPad from './components/ui/PinPad';
+import { PIN_LOGIN_MIN, PIN_LOGIN_MAX } from './utils/pinLoginPolicy';
 import { isPrintPreviewEnabled } from './featureFlags';
 import TicketPreview from './printing/components/TicketPreview';
 
@@ -118,8 +120,8 @@ export default function App({ skipSplash = false } = {}) {
   // CREATION/ROTATION is exactly six digits — that rule lives in the account admin-PIN form,
   // not here. Capping this input at 6 would lock out every unrotated legacy actor and would
   // also stop an old longer PIN from ever reaching the backend to be rejected.
-  const PIN_LOGIN_MIN = 6;
-  const PIN_LOGIN_MAX = 12;
+  // S2-7D6E5 — PIN_LOGIN_MIN/MAX now live in utils/pinLoginPolicy.js, shared with the admin
+  // step-up re-confirmation (OperationalMenu.jsx), which verifies the same credential class.
 
   // ── THE canonical operational logout (S2-7D3) ─────────────────────────────
   // One path used by: the menu action, the 15-minute inactivity timeout, and every
@@ -160,13 +162,6 @@ export default function App({ skipSplash = false } = {}) {
       events.forEach((e) => window.removeEventListener(e, reset));
     };
   }, [pinUnlocked, doOperationalLogout]);
-
-  const handlePinKey = (k) => {
-    if (pinLoading) return;
-    if (k === "DEL") { setPinInput(p => p.slice(0,-1)); return; }
-    // No auto-submit: a 6-digit prefix of a longer legacy PIN must not be sent on its own.
-    if (pinInput.length < PIN_LOGIN_MAX) setPinInput(pinInput + k);
-  };
 
   const checkPin = async (pin) => {
     if (pinLoading) return;
@@ -476,101 +471,31 @@ export default function App({ skipSplash = false } = {}) {
       {screen==="premiumproposalslab" && <PremiumProposalsLabPanel onBack={()=>setScreen("home")}/>}
       {screen==="printpreview" && isPrintPreviewEnabled() && <TicketPreview onBack={()=>setScreen("home")}/>}
 
-      {/* ─── Modal PIN — si apre quando si clicca Servicio/Economía/Bot ─── */}
+      {/* ─── Modal PIN — si apre quando si clicca Servicio/Economía/Bot ───
+          S2-7D6E5 — THE canonical PinPad, shared with the admin PIN
+          management step-up/rotation screens. No <input>, no device keyboard. */}
       {showPin && (
         <div style={{
           position:"fixed", inset:0, zIndex:9999,
           background:"rgba(0,0,0,0.93)",
           display:"flex", flexDirection:"column",
-          alignItems:"center", justifyContent:"center", gap:28
+          alignItems:"center", justifyContent:"center", gap:8, padding:20
         }}>
-          {/* Titolo */}
-          <div style={{textAlign:"center"}}>
-            <div style={{fontSize:32, marginBottom:8}}>🔒</div>
-            <div style={{color:"#fff", fontWeight:800, fontSize:20, letterSpacing:1}}>
-              Código de acceso
-            </div>
-            <div style={{color:"rgba(255,255,255,0.35)", fontSize:13, marginTop:4}}>
-              Introduce el PIN del operador
-            </div>
-          </div>
-
-          {/* Puntos PIN — 6 minimo, cresce fino a 12 per i PIN legacy non ancora ruotati */}
-          <div style={{display:"flex", gap:14}}>
-            {Array.from({length: Math.max(PIN_LOGIN_MIN, pinInput.length)}, (_, i) => i).map(i => (
-              <div key={i} style={{
-                width:16, height:16, borderRadius:"50%",
-                background: i < pinInput.length
-                  ? (pinError ? "#E8341C" : "#F97316")
-                  : "rgba(255,255,255,0.15)",
-                border: `2px solid ${pinError ? "#E8341C" : i < pinInput.length ? "#F97316" : "rgba(255,255,255,0.25)"}`,
-                transition:"all .15s",
-                transform: pinError ? "scale(1.2)" : "scale(1)"
-              }}/>
-            ))}
-          </div>
-          {pinLoading && (
-            <div style={{color:"rgba(255,255,255,0.5)", fontSize:13, marginTop:-18}}>
-              Verificando…
-            </div>
-          )}
-          {pinError && !pinLoading && (
-            <div style={{color:"#E8341C", fontSize:13, fontWeight:600, marginTop:-18}}>
-              PIN incorrecto
-            </div>
-          )}
-
-          {/* Tastierino — solo numeri + cancella, auto-submit a 6 cifre */}
-          <div style={{
-            display:"grid", gridTemplateColumns:"repeat(3,1fr)",
-            gap:12, width:240
-          }}>
-            {["1","2","3","4","5","6","7","8","9","DEL","0",""].map((k, idx) => (
-              k === "" ? <div key={idx}/> :
-              <button key={k} onClick={()=>handlePinKey(k)} disabled={pinLoading} style={{
-                height:64,
-                background: k==="DEL" ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.08)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius:14,
-                color:"#fff",
-                fontSize: k==="DEL" ? 18 : 22,
-                fontWeight:700,
-                cursor: pinLoading ? "default" : "pointer",
-                opacity: pinLoading ? 0.4 : 1,
-                transition:"background .1s"
-              }}>
-                {k==="DEL" ? "⌫" : k}
-              </button>
-            ))}
-          </div>
-
-          {/* Entrar — esplicito: senza auto-submit l'operatore decide quando inviare, così
-              un PIN legacy più lungo di 6 cifre si digita per intero. */}
-          <button
-            onClick={()=>checkPin()}
-            disabled={pinLoading || pinInput.length < PIN_LOGIN_MIN}
-            style={{
-              width:240, height:52, borderRadius:14,
-              background: pinInput.length >= PIN_LOGIN_MIN && !pinLoading
-                ? "#F97316" : "rgba(255,255,255,0.08)",
-              border:"1px solid rgba(255,255,255,0.1)",
-              color: pinInput.length >= PIN_LOGIN_MIN && !pinLoading
-                ? "#fff" : "rgba(255,255,255,0.35)",
-              fontSize:16, fontWeight:800, letterSpacing:1,
-              cursor: pinLoading || pinInput.length < PIN_LOGIN_MIN ? "default" : "pointer",
-              transition:"background .15s"
-            }}>
-            Entrar
-          </button>
-
-          {/* Annulla */}
-          <button onClick={()=>{ setShowPin(false); setPendingAction(null); }} style={{
-            background:"transparent", border:"none",
-            color:"rgba(255,255,255,0.3)", fontSize:13,
-            cursor:"pointer", padding:"8px 20px"
-          }}>
-            Cancelar
-          </button>
+          <PinPad
+            icon="🔒"
+            title="Código de acceso"
+            subtitle="Introduce el PIN del operador"
+            value={pinInput}
+            onChange={setPinInput}
+            minLength={PIN_LOGIN_MIN}
+            maxLength={PIN_LOGIN_MAX}
+            loading={pinLoading}
+            loadingLabel="Verificando…"
+            error={pinError ? "PIN incorrecto" : ""}
+            submitLabel="Entrar"
+            onSubmit={()=>checkPin()}
+            onCancel={()=>{ setShowPin(false); setPendingAction(null); }}
+          />
         </div>
       )}
       {/* Modal Suggerimenti Bot — griglia riassuntiva */}

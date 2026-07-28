@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { auth, api } from '../api';
 import { describeIdentity, ACTOR_LABEL, getPinStepUp, setPinStepUp, clearPinStepUp } from '../operationalSession';
 import { PIN_LENGTH, resolvePinInput, pinInputMessage, PIN_MISMATCH_MESSAGE } from '../account/accountHelpers';
+import { PIN_LOGIN_MIN, PIN_LOGIN_MAX } from '../utils/pinLoginPolicy';
+import PinPad from './ui/PinPad';
 
 // S2-7D3 — persistent operational mini-menu.
 //
@@ -159,6 +161,9 @@ function PinManagementFlow({ onClose, onLogout }) {
   );
 }
 
+// S2-7D6E5 — the owner's OWN login PIN, re-verified through the SAME canonical PinPad and
+// the SAME 6..12 legacy-compatible range as the operational login (utils/pinLoginPolicy.js) —
+// this is literally the same credential class, so it must share the bound, not invent its own.
 function StepUpView({ onCancel, onVerified, onReauthRequired }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -169,7 +174,7 @@ function StepUpView({ onCancel, onVerified, onReauthRequired }) {
     // Synchronous double-submit guard — a fast second click must not slip through before
     // the setBusy(true) re-render lands.
     if (busyRef.current) return;
-    if (pin.length < 4) return;
+    if (pin.length < PIN_LOGIN_MIN || pin.length > PIN_LOGIN_MAX) return;
     busyRef.current = true;
     setBusy(true);
     setError('');
@@ -202,69 +207,36 @@ function StepUpView({ onCancel, onVerified, onReauthRequired }) {
   };
 
   return (
-    <div style={{ width: '100%', maxWidth: 340, textAlign: 'center' }}>
-      <div style={{ fontSize: 32, marginBottom: 8 }}>🔒</div>
-      <div style={{ color: '#fff', fontWeight: 800, fontSize: 19, letterSpacing: 0.3 }}>
-        Confirma tu identidad para gestionar los PIN
-      </div>
-      <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginTop: 6, marginBottom: 20 }}>
-        Introduce tu PIN actual de propietario/administrador
-      </div>
-
-      <input
-        type="password"
-        inputMode="numeric"
-        pattern="[0-9]*"
-        autoFocus
-        value={pin}
-        onChange={(e) => { setError(''); setPin(e.target.value.replace(/\D/g, '').slice(0, 12)); }}
-        onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-        disabled={busy}
-        style={{
-          width: '100%', height: 52, borderRadius: 12, textAlign: 'center',
-          fontSize: 22, letterSpacing: 6, fontWeight: 700,
-          background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
-          color: '#fff', marginBottom: 14,
-        }}
-      />
-
-      {busy && <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 10 }}>Verificando…</div>}
-      {!busy && error && <div style={{ color: '#E8341C', fontSize: 13, fontWeight: 600, marginBottom: 10 }}>{error}</div>}
-
-      <button
-        type="button"
-        onClick={submit}
-        disabled={busy || pin.length < 4}
-        style={{
-          width: '100%', height: 52, borderRadius: 12,
-          background: !busy && pin.length >= 4 ? '#F97316' : 'rgba(255,255,255,0.08)',
-          color: !busy && pin.length >= 4 ? '#fff' : 'rgba(255,255,255,0.35)',
-          border: '1px solid rgba(255,255,255,0.1)', fontSize: 15, fontWeight: 800,
-          cursor: busy || pin.length < 4 ? 'default' : 'pointer', marginBottom: 10,
-        }}
-      >
-        Confirmar
-      </button>
-
-      <button
-        type="button"
-        onClick={onCancel}
-        style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.35)', fontSize: 13, cursor: 'pointer', padding: '8px 20px' }}
-      >
-        Cancelar
-      </button>
-    </div>
+    <PinPad
+      icon="🔒"
+      title="Confirma tu identidad para gestionar los PIN"
+      subtitle="Introduce tu PIN actual de propietario/administrador"
+      value={pin}
+      onChange={(v) => { setError(''); setPin(v); }}
+      minLength={PIN_LOGIN_MIN}
+      maxLength={PIN_LOGIN_MAX}
+      loading={busy}
+      loadingLabel="Verificando…"
+      error={error}
+      submitLabel="Confirmar"
+      onSubmit={submit}
+      onCancel={onCancel}
+    />
   );
 }
 
+// S2-7D6E5 — new/confirm PIN entry now runs as two SEPARATE PinPad screens (never both
+// fields on one screen) — same canonical pad the login and step-up screens use, same
+// exact-PIN_LENGTH policy (accountHelpers.js), same weak/mismatch guards as before.
 function ManageActorsView({ onCancel, onNeedsStepUp, onOwnerPinChanged }) {
   const [actors, setActors] = useState(null);
   const [loadError, setLoadError] = useState('');
+  const [step, setStep] = useState('select'); // 'select' | 'newPin' | 'confirmPin'
   const [target, setTarget] = useState('');
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
   const [ownerAck, setOwnerAck] = useState(false);
-  const [error, setError] = useState('');
+  const [newPin, setNewPin] = useState('');       // committed once screen 1 validates
+  const [pinDraft, setPinDraft] = useState('');    // live value bound to whichever pad is open
+  const [pinError, setPinError] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null); // { selfChanged, actor } | null
   const busyRef = useRef(false);
@@ -282,14 +254,31 @@ function ManageActorsView({ onCancel, onNeedsStepUp, onOwnerPinChanged }) {
   }, []);
 
   const isOwnerTarget = target === 'owner';
-  const primary = resolvePinInput(newPin);
-  const confirm = resolvePinInput(confirmPin);
-  const bothComplete = newPin.length === PIN_LENGTH && confirmPin.length === PIN_LENGTH;
-  const matches = bothComplete && newPin === confirmPin;
-  const canSubmit = !!target && primary.ok && confirm.ok && matches && (!isOwnerTarget || ownerAck) && !busy;
+  const targetLabel = (ACTOR_LABEL[target] || target || '').toLowerCase();
+  const canContinueFromSelect = !!target && (!isOwnerTarget || ownerAck);
 
-  const submit = async () => {
-    if (busyRef.current || !canSubmit) return;
+  const goToNewPin = () => {
+    if (!canContinueFromSelect) return;
+    setPinDraft(''); setPinError('');
+    setStep('newPin');
+  };
+
+  const submitNewPin = () => {
+    const check = resolvePinInput(pinDraft);
+    if (!check.ok) { setPinError(pinInputMessage(check.code)); setPinDraft(''); return; }
+    setNewPin(pinDraft);
+    setPinDraft(''); setPinError('');
+    setStep('confirmPin');
+  };
+
+  const submitConfirmPin = async () => {
+    if (busyRef.current) return;
+    if (pinDraft !== newPin) {
+      // "Repeat confirmation" — the FIRST PIN is kept, only the confirm attempt resets.
+      setPinError(PIN_MISMATCH_MESSAGE);
+      setPinDraft('');
+      return;
+    }
     // The step-up proof is only valid for 10 minutes: check our own bookkeeping BEFORE
     // spending a network round-trip, so an obviously-stale confirmation asks again rather
     // than surfacing the backend's generic failure.
@@ -298,7 +287,7 @@ function ManageActorsView({ onCancel, onNeedsStepUp, onOwnerPinChanged }) {
 
     busyRef.current = true;
     setBusy(true);
-    setError('');
+    setPinError('');
     let res;
     try {
       res = await api.setActorPin({
@@ -314,12 +303,12 @@ function ManageActorsView({ onCancel, onNeedsStepUp, onOwnerPinChanged }) {
 
     if (res && res._ok !== false && res.ok === true) {
       const selfChanged = res.actor === ownActor;
-      setNewPin(''); setConfirmPin(''); setOwnerAck(false);
+      setNewPin(''); setPinDraft(''); setOwnerAck(false);
       if (selfChanged) {
         setDone({ selfChanged: true, actor: res.actor });
       } else {
         setDone({ selfChanged: false, actor: res.actor });
-        setTarget('');
+        setTarget(''); setStep('select');
       }
       return;
     }
@@ -329,18 +318,10 @@ function ManageActorsView({ onCancel, onNeedsStepUp, onOwnerPinChanged }) {
     // from the response alone — the safe default is to require a fresh confirmation rather
     // than silently retry with a proof that might already be dead.
     clearPinStepUp();
-    setError('No se pudo guardar el PIN. Vuelve a confirmar tu identidad e inténtalo de nuevo.');
-    setNewPin(''); setConfirmPin('');
+    setPinError('No se pudo guardar el PIN. Vuelve a confirmar tu identidad e inténtalo de nuevo.');
+    setNewPin(''); setPinDraft('');
     setTimeout(() => onNeedsStepUp(), 1400);
   };
-
-  const inputStyle = {
-    width: '100%', height: 48, borderRadius: 10, textAlign: 'center',
-    fontSize: 18, letterSpacing: 4, fontWeight: 700,
-    background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
-    color: '#fff', marginBottom: 10,
-  };
-  const labelStyle = { color: 'rgba(255,255,255,0.55)', fontSize: 12, marginBottom: 6, textAlign: 'left' };
 
   if (done && done.selfChanged) {
     return (
@@ -364,6 +345,52 @@ function ManageActorsView({ onCancel, onNeedsStepUp, onOwnerPinChanged }) {
     );
   }
 
+  if (step === 'newPin') {
+    return (
+      <PinPad
+        icon="🔑"
+        title={`Nuevo PIN del ${targetLabel}`}
+        subtitle={`${PIN_LENGTH} dígitos`}
+        value={pinDraft}
+        onChange={(v) => { setPinError(''); setPinDraft(v); }}
+        minLength={PIN_LENGTH}
+        maxLength={PIN_LENGTH}
+        error={pinError}
+        submitLabel="Continuar"
+        onSubmit={submitNewPin}
+        onCancel={onCancel}
+      />
+    );
+  }
+
+  if (step === 'confirmPin') {
+    return (
+      <PinPad
+        icon="🔑"
+        title="Confirma el nuevo PIN"
+        value={pinDraft}
+        onChange={(v) => { setPinError(''); setPinDraft(v); }}
+        minLength={PIN_LENGTH}
+        maxLength={PIN_LENGTH}
+        loading={busy}
+        loadingLabel="Guardando…"
+        error={pinError}
+        submitLabel="Guardar"
+        onSubmit={submitConfirmPin}
+        onCancel={onCancel}
+      />
+    );
+  }
+
+  // step === 'select'
+  const inputStyle = {
+    width: '100%', height: 48, borderRadius: 10, textAlign: 'left',
+    fontSize: 15, fontWeight: 600, appearance: 'none',
+    background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
+    color: '#fff', marginBottom: 10,
+  };
+  const labelStyle = { color: 'rgba(255,255,255,0.55)', fontSize: 12, marginBottom: 6, textAlign: 'left' };
+
   return (
     <div style={{ width: '100%', maxWidth: 360 }}>
       <div style={{ textAlign: 'center', marginBottom: 18 }}>
@@ -382,9 +409,9 @@ function ManageActorsView({ onCancel, onNeedsStepUp, onOwnerPinChanged }) {
       <div style={labelStyle}>Actor</div>
       <select
         value={target}
-        onChange={(e) => { setTarget(e.target.value); setError(''); setOwnerAck(false); }}
-        disabled={!actors || busy}
-        style={{ ...inputStyle, textAlign: 'left', letterSpacing: 'normal', fontSize: 15, fontWeight: 600, appearance: 'none' }}
+        onChange={(e) => { setTarget(e.target.value); setOwnerAck(false); }}
+        disabled={!actors}
+        style={inputStyle}
       >
         <option value="">{actors ? 'Selecciona un actor…' : 'Cargando…'}</option>
         {(actors || []).map((a) => (
@@ -394,59 +421,28 @@ function ManageActorsView({ onCancel, onNeedsStepUp, onOwnerPinChanged }) {
         ))}
       </select>
 
-      <div style={labelStyle}>Nuevo PIN ({PIN_LENGTH} dígitos)</div>
-      <input
-        type="password" inputMode="numeric" pattern="[0-9]*"
-        value={newPin}
-        onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
-        disabled={!target || busy}
-        style={inputStyle}
-      />
-      {newPin.length > 0 && !primary.ok && (
-        <div style={{ color: '#E8341C', fontSize: 12, marginTop: -6, marginBottom: 10, textAlign: 'left' }}>
-          {pinInputMessage(primary.code)}
-        </div>
-      )}
-
-      <div style={labelStyle}>Confirmar nuevo PIN</div>
-      <input
-        type="password" inputMode="numeric" pattern="[0-9]*"
-        value={confirmPin}
-        onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
-        disabled={!target || busy}
-        style={inputStyle}
-      />
-      {bothComplete && !matches && (
-        <div style={{ color: '#E8341C', fontSize: 12, marginTop: -6, marginBottom: 10, textAlign: 'left' }}>
-          {PIN_MISMATCH_MESSAGE}
-        </div>
-      )}
-
       {isOwnerTarget && (
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 4, marginBottom: 14, textAlign: 'left', cursor: 'pointer' }}>
-          <input type="checkbox" checked={ownerAck} onChange={(e) => setOwnerAck(e.target.checked)} disabled={busy} style={{ marginTop: 3 }} />
+          <input type="checkbox" checked={ownerAck} onChange={(e) => setOwnerAck(e.target.checked)} style={{ marginTop: 3 }} />
           <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>
             Entiendo que estoy cambiando el PIN del propietario y que tendré que iniciar sesión de nuevo.
           </span>
         </label>
       )}
 
-      {!busy && error && <div style={{ color: '#E8341C', fontSize: 13, fontWeight: 600, marginBottom: 10, textAlign: 'center' }}>{error}</div>}
-      {busy && <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 10, textAlign: 'center' }}>Guardando…</div>}
-
       <button
         type="button"
-        onClick={submit}
-        disabled={!canSubmit}
+        onClick={goToNewPin}
+        disabled={!canContinueFromSelect}
         style={{
           width: '100%', height: 52, borderRadius: 12,
-          background: canSubmit ? '#F97316' : 'rgba(255,255,255,0.08)',
-          color: canSubmit ? '#fff' : 'rgba(255,255,255,0.35)',
+          background: canContinueFromSelect ? '#F97316' : 'rgba(255,255,255,0.08)',
+          color: canContinueFromSelect ? '#fff' : 'rgba(255,255,255,0.35)',
           border: '1px solid rgba(255,255,255,0.1)', fontSize: 15, fontWeight: 800,
-          cursor: canSubmit ? 'pointer' : 'default', marginTop: 4, marginBottom: 10,
+          cursor: canContinueFromSelect ? 'pointer' : 'default', marginTop: 4, marginBottom: 10,
         }}
       >
-        Guardar
+        Continuar
       </button>
 
       <button

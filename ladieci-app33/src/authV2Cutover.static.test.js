@@ -158,8 +158,9 @@ describe('11-12. legacy login is dead', () => {
 
 describe('13-14. digit ranges', () => {
   test('operational login accepts 6-12 with no auto-submit', () => {
-    expect(APP).toMatch(/const PIN_LOGIN_MIN = 6;/);
-    expect(APP).toMatch(/const PIN_LOGIN_MAX = 12;/);
+    // S2-7D6E5 — the range moved to a shared module (utils/pinLoginPolicy.js) so the
+    // admin step-up re-confirmation can reuse the exact same bound; App.jsx imports it.
+    expect(APP).toMatch(/import\s*\{\s*PIN_LOGIN_MIN,\s*PIN_LOGIN_MAX\s*\}\s*from\s*['"]\.\/utils\/pinLoginPolicy['"]/);
     expect(code(APP)).not.toMatch(/next\.length === 6/);
     expect(REP).toMatch(/const REP_PIN_MIN = 6;/);
     expect(REP).toMatch(/const REP_PIN_MAX = 12;/);
