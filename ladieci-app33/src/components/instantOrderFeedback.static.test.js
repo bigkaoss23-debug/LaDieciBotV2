@@ -4,26 +4,26 @@ import path from "path";
 const source = fs.readFileSync(path.join(__dirname, "ServicioPage.jsx"), "utf8");
 
 describe("instant order feedback integration", () => {
-  test("Confirmar pedido paints pending before create and navigates under success overlay", () => {
+  test("Confirmar pedido uses the local queue instead of a full-screen network pending state", () => {
     const start = source.indexOf("const addOrden  = async");
     const end = source.indexOf("const modificaOrden", start);
     const block = source.slice(start, end);
 
-    expect(block.indexOf('title: "Confirmando pedido…"')).toBeGreaterThan(-1);
-    expect(block.indexOf('title: "Confirmando pedido…"')).toBeLessThan(block.indexOf("await api.createOrden(o)"));
-    expect(block).toContain('if (!res?.id) throw new Error("createOrden returned no persisted id")');
-    expect(block.indexOf('setTab("manual")')).toBeLessThan(block.indexOf('title: "¡Pedido confirmado!"'));
+    expect(block).not.toContain('title: "Confirmando pedido…"');
+    expect(block).toContain("creationQueue.begin(o)");
+    expect(block.indexOf('setTab("manual")')).toBeLessThan(block.indexOf("await api.createOrden(o)"));
+    expect(block).toContain("creationQueue.confirm(requestId, persisted)");
+    expect(block).toContain('title: "¡Pedido confirmado!"');
     expect(block).toContain('subtitle: "Listo para cocina."');
-    expect(block).toContain('if (o.canal==="MANUAL") setSuccessSplash(null)');
+    expect(block).toContain("creationQueue.fail(requestId)");
   });
 
-  test("A Cocina paints pending before one backend call and updates locally only after success", () => {
+  test("A Cocina has no full-screen pending and updates locally only after one valid backend response", () => {
     const start = source.indexOf("const confirmaOrdine = async");
     const end = source.indexOf("const forzaEntrega", start);
     const block = source.slice(start, end);
 
-    expect(block.indexOf('title: "Enviando a cocina…"')).toBeGreaterThan(-1);
-    expect(block.indexOf('title: "Enviando a cocina…"')).toBeLessThan(block.indexOf("await api.updateEstado"));
+    expect(block).not.toContain('phase: "pending"');
     expect(block.match(/api\.updateEstado/g)).toHaveLength(1);
     expect(block).toContain("res._ok === false");
     expect(block.indexOf("setOrdenes")).toBeGreaterThan(block.indexOf("res._ok === false"));

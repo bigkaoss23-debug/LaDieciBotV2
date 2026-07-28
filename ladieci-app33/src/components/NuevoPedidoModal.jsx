@@ -1209,6 +1209,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       if (prefill.tel)           setTel(prefill.tel);
       if (prefill.canal)         setCanal(prefill.canal);
       if (prefill.hora)          setHora(prefill.hora);
+      if (Array.isArray(prefill.items)) setItems(prefill.items.map(item => ({ ...item })));
+      if (prefill.nota)          setNota(prefill.nota);
+      if (prefill.ya_pagado)     setYaPagedo(true);
+      if (prefill.metodo_pago)   setMetodoPago(prefill.metodo_pago);
+      if (prefill.descuento_tipo) setDescuentoTipo(prefill.descuento_tipo);
+      if (Number(prefill.descuento_valor) > 0) setDescuentoValor(Number(prefill.descuento_valor));
       // tipo_consegna ora è derivato dall'indirizzo — se prefill ha un indirizzo, si attiva da solo
       if (prefill.tipo_consegna === "DOMICILIO" && prefill.direccion) setDireccion(prefill.direccion);
       if (prefill.direccion)     setDireccion(prefill.direccion);

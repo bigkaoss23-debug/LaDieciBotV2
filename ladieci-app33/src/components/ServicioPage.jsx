@@ -23,6 +23,7 @@ import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildL
 import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
 // S2-7D6E — a collection is only successful when the ledger says so.
 import { isPaymentFailure, describePaymentFailure } from '../utils/paymentOutcome';
+import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -117,6 +118,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const [ordenModifica, setOrdenModifica] = useState(null);
   const [ticketOrder, setTicketOrder] = useState(null);
   const [successSplash, setSuccessSplash] = useState(null);
+  const creationQueue = useOrderCreationQueue(ordenes);
   const [aiForza, setAiForza] = useState("BASIC");
   const [chiudiModal, setChiudiModal] = useState(null); // null | { completati, attivi, loading, step }
   const headerWidth = useWidth();
@@ -352,16 +354,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const confirmaOrdine = async (id) => {
     if (!beginAction(id)) return;
     const orden = ordenes.find(o => o.id === id);
-    setSuccessSplash({
-      phase: "pending",
-      title: "Enviando a cocina…",
-      subtitle: null,
-    });
     try {
-      await new Promise(resolve => {
-        if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
-        else resolve();
-      });
       const intent = buildEnCocinaTransition(orden, {
         component: "ServicioPage",
         action: "confirmaOrdine",
@@ -372,6 +365,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         throw new Error(res?.error || "updateEstado failed");
       }
       setOrdenes(p=>p.map(o=>o.id===id?{...o,estado:ORDER_STATES.EN_COCINA}:o));
+      creationQueue.updateConfirmed(id, { estado: ORDER_STATES.EN_COCINA });
       setSuccessSplash({
         phase: "success",
         title: "¡Pedido enviado a cocina!",
@@ -426,39 +420,34 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   };
 
   const addOrden  = async (o) => {
-    // Ottimistico: ID locale temporaneo + _temp:true → il bottone "🚀 A Cocina"
-    // resta grigio finché il backend non conferma con l'ID reale.
     const creationIntent = buildOperatorOrderCreationIntent(o, {
       component: "ServicioPage",
       action: "addOrden",
     });
     logOrderCreation(creationIntent);
+    const requestId = String(o.client_req_id || "");
+    const pending = creationQueue.begin(o);
+    if (!pending) return;
     if (o.canal==="MANUAL") {
-      setSuccessSplash({
-        phase: "pending",
-        title: "Confirmando pedido…",
-        subtitle: null,
-      });
+      setTab("manual");
+      setPrefillCliente(null);
+      setShowNuevo(false);
     }
-    setOrdenes(p=>[{...o, _temp:true},...p]);
     const canalLabel = o.canal==="BANCO" ? "Barra" : "Tel";
     notify("✅ " + canalLabel + " (guardando…)");
     if (o.canal==="BANCO") setTab("banco");
     try {
-      if (o.canal==="MANUAL") {
-        await new Promise(resolve => {
-          if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
-          else resolve();
-        });
-      }
-      // STRICT: throw se Railway non risponde con un id valido. L'idempotency
-      // key (o.client_req_id) protegge da duplicati in caso di retry.
       const res = await api.createOrden(o);
-      if (!res?.id) throw new Error("createOrden returned no persisted id");
-      setOrdenes(p=>p.map(x=>x.id===o.id?{...x,id:res.id,_temp:false}:x));
+      if (!res?.id || res._ok === false || res.error || res.success === false) {
+        throw new Error(res?.error || "createOrden returned no persisted id");
+      }
+      const persisted = { ...o, ...res, id: res.id, _temp: false };
+      creationQueue.confirm(requestId, persisted);
+      setOrdenes(prev => prev.some(x => x.id === res.id)
+        ? prev.map(x => x.id === res.id ? { ...x, ...persisted } : x)
+        : [persisted, ...prev]);
       notify("✅ " + res.id + " → " + canalLabel);
       if (o.canal==="MANUAL") {
-        setTab("manual");
         setSuccessSplash({
           phase: "success",
           title: "¡Pedido confirmado!",
@@ -466,11 +455,8 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         });
       }
     } catch(err) {
-      if (o.canal==="MANUAL") setSuccessSplash(null);
-      // ROLLBACK: l'ordine fantasma viene rimosso dallo state. Il pizzaiolo
-      // NON deve vedere ordini senza backing DB. Vedi audit CL4SBU del 14/05/2026.
       console.error("createOrden failed, rolling back:", err);
-      setOrdenes(p=>p.filter(x=>x.id!==o.id));
+      creationQueue.fail(requestId);
       try { Suoni.errore(); } catch(_){}
       // S2-7D5 — the ONE domain refusal that deserves its own words. The DB
       // trigger raises NO_OPEN_SERVICE_SESSION and the backend wraps it as
@@ -482,12 +468,20 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       if (isNoOpenServiceSession(err)) {
         notify("❌ No hay un servicio abierto", "#E8341C");
         try { window.dispatchEvent(new Event("ld-service-session-lost")); } catch(_){}
+      } else {
+        notify("❌ Error al guardar — revisa el pedido e inténtalo de nuevo", "#E8341C");
+      }
+      setPrefillCliente({
+        ...o,
+        items: Array.isArray(o.items) ? o.items.map(item => ({ ...item })) : o.items,
+      });
+      setShowNuevo(true);
+      if (isNoOpenServiceSession(err)) {
         const typed = new Error(NO_OPEN_SERVICE_SESSION_MESSAGE);
         typed.code = NO_OPEN_SERVICE_SESSION_CODE;
         throw typed;
       }
-      notify("❌ Error al guardar — vuelve a crear el pedido", "#E8341C");
-      const failed = new Error("No se pudo guardar el pedido. Inténtalo de nuevo.");
+      const failed = new Error("No se pudo confirmar el pedido.");
       failed.code = "create_order_failed";
       throw failed;
     }
@@ -1092,7 +1086,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         setGoToPreguntasSignal(s => s+1);
       }}
     />;
-    if(tab==="manual") return <TabManual ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} onOpenTicket={setTicketOrder} vipIds={vipIds} loadingIds={loadingIds}/>;
+    if(tab==="manual") return <TabManual ordenes={creationQueue.visibleOrders} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} onOpenTicket={setTicketOrder} vipIds={vipIds} loadingIds={loadingIds}/>;
     if(tab==="banco")  return <TabBanco  ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
     if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} loadingIds={loadingIds}
       vipIds={vipIds}
@@ -1631,7 +1625,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
 
       {/* Modals */}
       <NuevoPedidoModal visible={showNuevo} onClose={()=>{setShowNuevo(false);setPrefillCliente(null);}}
-        onConfirm={async o=>{ await addOrden(o); setShowNuevo(false); setPrefillCliente(null); }}
+        onConfirm={async o=>{ await addOrden(o); }}
         prefill={prefillCliente} ordenes={ordenes}/>
       {ordenModifica&&<ModificaOrdenModal orden={{
         ...ordenModifica,

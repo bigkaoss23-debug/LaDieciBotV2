@@ -13,6 +13,7 @@ import {
 
 const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, onOpenTicket, vipIds, loadingIds = new Set()}) => {
   const busy = loadingIds.has(o.id);
+  const isSaving = o._localPhase === "saving";
   const isVip = !!(o.cliente_id && vipIds && vipIds.has && vipIds.has(o.cliente_id));
   const [confirmDel, setConfirmDel] = useState(false);
   // Normalizza items — può arrivare come stringa JSON dal backend.
@@ -109,11 +110,11 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
         : s.glow,
     position:"relative",overflow:"hidden",
     opacity:s.opacity,
-  }} onClick={()=>onModifica({...o,items:safeItems})}>
+  }} onClick={()=>{ if (!isSaving && !busy) onModifica({...o,items:safeItems}); }}>
     <div style={{position:"absolute",top:0,left:"6%",right:"6%",height:1,
       background:`linear-gradient(90deg,transparent,${s.shimmer},transparent)`,pointerEvents:"none"}}/>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7,flexWrap:"wrap"}}>
-      <span style={{fontFamily:"'DM Mono',monospace",fontWeight:800,color:s.text,fontSize:16}}>{o.id}</span>
+      <span style={{fontFamily:"'DM Mono',monospace",fontWeight:800,color:s.text,fontSize:16}}>{o.id || "Nuevo"}</span>
       <span style={{color:s.text,fontWeight:700}}>
         👤 {o.nombre}
         {isVip && <span title="Cliente VIP" style={{marginLeft:4,color:"#FACC15",filter:"drop-shadow(0 0 3px rgba(250,204,21,0.6))"}}>⭐</span>}
@@ -132,7 +133,9 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
         const zona = ZONE_DELIVERY.find(z => z.id === o.zona);
         return zona ? <ZonaBadge zona={zona} size="sm" /> : null;
       })()}
-      {s.badge}
+      {isSaving
+        ? <span style={{background:"rgba(6,182,212,0.28)",color:"#67E8F9",border:"1.5px solid rgba(103,232,249,0.55)",borderRadius:20,padding:"3px 11px",fontSize:12,fontWeight:800}}>⏳ Guardando pedido…</span>
+        : s.badge}
       {o.ya_pagado && (
         <span style={{
           background: o.metodo_pago === "tarjeta" ? "rgba(37,99,235,0.30)" : "rgba(22,163,74,0.30)",
@@ -144,7 +147,7 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
         </span>
       )}
       {hasAlert&&<span style={{background:"#E8341C",color:"#fff",borderRadius:20,padding:"3px 10px",fontSize:13,fontWeight:900,animation:"livePulse 1s infinite",boxShadow:"0 0 12px #E8341Ccc",letterSpacing:.5}}>⚠️⚠️ AGGIUNTA!</span>}
-      <span style={{marginLeft:"auto",background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.28)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:600}}>✏️ Editar</span>
+      {!isSaving && <span style={{marginLeft:"auto",background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.28)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:600}}>✏️ Editar</span>}
     </div>
     <div style={{fontSize:13,marginBottom:7,display:"flex",flexDirection:"column",gap:2,lineHeight:1.5}}>
       {safeItems.map((it,idx)=>{
@@ -218,7 +221,7 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
             l'id è ancora client-side, updateEstado fallirebbe contro un id sconosciuto
             al backend e dopo il reassign dell'id il patch ottimistico resterebbe orfano,
             facendo rimbalzare l'ordine in tab Telefono al primo refetch.) ── */}
-    {(onOpenTicket || (onConfirm && estado === ORDER_STATES.POR_CONFIRMAR)) && (
+    {!isSaving && (onOpenTicket || (onConfirm && estado === ORDER_STATES.POR_CONFIRMAR)) && (
       <div style={{marginTop:8,display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
         {onOpenTicket && (
           <TicketQuickAction order={{...o,items:safeItems}} onOpenTicket={onOpenTicket} variant="compact" />
@@ -227,7 +230,7 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
         <button
           onClick={()=>{ if (!o._temp && !busy) onConfirm(o.id); }}
           disabled={!!o._temp || busy}
-          title={o._temp ? "Guardando pedido…" : (busy ? "Confirmando…" : "Mandar a cocina")}
+          title={o._temp ? "Guardando pedido…" : (busy ? "Enviando a cocina…" : "Mandar a cocina")}
           style={{
             background: (o._temp || busy)
               ? "rgba(255,255,255,0.05)"
@@ -240,12 +243,12 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
             cursor: (o._temp || busy) ? "wait" : "pointer",
             opacity: (o._temp || busy) ? 0.6 : 1,
             display:"flex", alignItems:"center", gap:6
-          }}>{o._temp ? "⏳ Guardando…" : (busy ? "Confirmando…" : "🚀 A Cocina")}</button>
+          }}>{o._temp ? "⏳ Guardando…" : (busy ? "Enviando a cocina…" : "🚀 A Cocina")}</button>
         )}
       </div>
     )}
     {/* ── Cestino elimina ── */}
-    {onElimina && (
+    {onElimina && !isSaving && (
       <div style={{marginTop:10,display:"flex",justifyContent:"flex-end"}}
         onClick={e=>e.stopPropagation()}>
         {confirmDel

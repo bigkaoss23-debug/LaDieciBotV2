@@ -40,7 +40,7 @@ const TabManual = ({ordenes, onModifica, onElimina, onConfirm, onForzarEntrega, 
             padding:"24px 0",textAlign:"center",color:"rgba(255,255,255,0.2)",fontSize:13}}>
             ✅ Sin pedidos activos
           </div>
-        : activos.map(o=><OrdenCard key={o.id} {...cardProps(o)}/>)
+        : activos.map(o=><OrdenCard key={o.id || o._localKey || o.client_req_id} {...cardProps(o)}/>)
       }
 
       {/* Consegnati — collassabili */}
