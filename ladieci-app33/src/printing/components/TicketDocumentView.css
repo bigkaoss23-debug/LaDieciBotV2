@@ -2,6 +2,9 @@
 .ticket-document.paper-58{--ticket-paper-width:58mm;--ticket-font-size:9px;width:58mm;padding:3mm}
 .ticket-document.paper-80{--ticket-paper-width:80mm;--ticket-font-size:10px;width:80mm;padding:3mm}
 .ticket-document{font-size:var(--ticket-font-size)}
+.ticket-document-image{display:flex;max-width:100%;align-items:center;justify-content:center;break-inside:avoid;page-break-inside:avoid}
+.ticket-document-image.role-business-logo{margin:0 0 1mm}
+.ticket-document-image.role-business-logo img{display:block;width:20mm;max-width:100%;height:auto;border:0;background:transparent;box-shadow:none;object-fit:contain;image-rendering:pixelated}
 .ticket-document-text{min-width:0;max-width:100%;white-space:pre-wrap;break-inside:avoid;page-break-inside:avoid}
 .ticket-document .align-center{text-align:center}.ticket-document .align-right{text-align:right}.ticket-document .align-left{text-align:left}
 .ticket-document .emphasis-bold{font-weight:900}
@@ -32,8 +35,14 @@
   body.customer-ticket-print-open .customer-ticket-print-sheet.paper-58{--ticket-paper-width:58mm}
   body.customer-ticket-print-open .customer-ticket-print-sheet.paper-80{--ticket-paper-width:80mm}
   body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-text,
-  body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-columns{
+  body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-columns,
+  body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-image{
     break-inside:avoid;page-break-inside:avoid
+  }
+  body.customer-ticket-print-open .customer-ticket-print-sheet .role-business-logo img{
+    width:20mm!important;height:auto!important;max-width:100%!important;border:0!important;
+    background:transparent!important;box-shadow:none!important;filter:none!important;
+    image-rendering:pixelated!important
   }
   body.customer-ticket-print-open .customer-ticket-print-sheet .role-money{
     white-space:nowrap!important;overflow-wrap:normal!important;word-break:normal!important

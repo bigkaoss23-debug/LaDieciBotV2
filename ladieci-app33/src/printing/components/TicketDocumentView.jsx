@@ -13,6 +13,13 @@ export default function TicketDocumentView({ document, className = "" }) {
       style={{ "--ticket-characters-per-line": profile.charactersPerLine }}
     >
       {document.blocks.map((block, index) => {
+        if (block.type === "image") {
+          return (
+            <div key={index} className={`ticket-document-image ${block.role ? `role-${block.role}` : ""}`.trim()}>
+              <img src={block.src} alt={block.alt} />
+            </div>
+          );
+        }
         if (block.type === "text") {
           return (
             <div key={index}

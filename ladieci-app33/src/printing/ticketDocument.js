@@ -26,6 +26,13 @@ export const columnsBlock = (columns) => ({
   })),
 });
 
+export const imageBlock = (src, options = {}) => ({
+  type: "image",
+  src: String(src),
+  alt: String(options.alt || ""),
+  role: options.role || null,
+});
+
 export const separatorBlock = (character = "-") => ({ type: "separator", character });
 export const feedBlock = (lines) => ({ type: "feed", lines });
 export const cutBlock = (mode = "partial") => ({ type: "cut", mode });

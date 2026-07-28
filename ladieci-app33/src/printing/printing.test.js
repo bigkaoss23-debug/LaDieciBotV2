@@ -105,7 +105,6 @@ describe("manual customer ticket", () => {
     });
     const text = ticketDocumentToPlainText(document);
     expect(snapshot.paper_width).toBe(58);
-    expect(text).toContain(CUSTOMER_TICKET_BUSINESS_PROFILE.document_label);
     expect(text).toContain(CUSTOMER_TICKET_BUSINESS_PROFILE.non_fiscal_label);
     expect(snapshot.customer.final_message).toBe(CUSTOMER_TICKET_BUSINESS_PROFILE.footer_message);
     expect(snapshot.delivery.delivery_notes).toEqual([]);

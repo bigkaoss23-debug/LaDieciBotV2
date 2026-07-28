@@ -1,9 +1,12 @@
 import fs from "fs";
 import path from "path";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { createCustomerTicket } from "./createCustomerTicket";
 import { getPrintFixture } from "./fixtures/orders";
 import { ticketDocumentToPlainText } from "./renderTicketDocument";
-import { businessHeaderLines } from "./renderCustomerTicket";
+import { businessHeaderLines, customerPaymentLine, shouldShowCustomerSubtotal } from "./renderCustomerTicket";
+import TicketDocumentView from "./components/TicketDocumentView";
 
 const read = (relative) => fs.readFileSync(path.join(__dirname, relative), "utf8");
 const viewCss = read("components/TicketDocumentView.css");
@@ -33,6 +36,22 @@ describe("customer ticket print-ready CSS", () => {
     expect(viewCss).toMatch(/body\.customer-ticket-print-open> \*:not\(\.customer-ticket-modal\)\{display:none!important\}/);
     expect(viewCss).toMatch(/background:#fff!important;color:#000!important/);
     expect(viewCss).toMatch(/\.role-money\{[\s\S]*white-space:nowrap!important/);
+  });
+
+  test("uses the exact thermal PNG at the same 20 mm size in preview and physical print", () => {
+    const logoPath = path.join(__dirname, "../../public/printing/la-dieci-thermal-logo.png");
+    const png = fs.readFileSync(logoPath);
+    expect(png.subarray(1, 4).toString("ascii")).toBe("PNG");
+    expect(png.readUInt32BE(16)).toBe(774);
+    expect(png.readUInt32BE(20)).toBe(640);
+
+    const { document } = createCustomerTicket(getPrintFixture("11").order, { createdAt, paperWidth: 58 });
+    const markup = renderToStaticMarkup(<TicketDocumentView document={document} />);
+    expect(markup).toContain('src="/printing/la-dieci-thermal-logo.png"');
+    expect(markup).toContain('alt="La Dieci"');
+    expect(markup).toMatchSnapshot();
+    expect(viewCss).toMatch(/role-business-logo img\{[^}]*width:20mm[^}]*height:auto[^}]*image-rendering:pixelated/);
+    expect(viewCss).toMatch(/@media print[\s\S]*role-business-logo img\{[^}]*width:20mm!important[^}]*height:auto!important[^}]*filter:none!important/);
   });
 });
 
@@ -89,15 +108,59 @@ describe("customer ticket print-ready content matrix", () => {
 
   test("business header supports complete and partial future configuration without blank rows", () => {
     expect(businessHeaderLines({
+      business_type: "PIZZERÍA",
       address: "Calle Ejemplo 1",
       town: "Madrid",
       phone: "+34 900 000 000",
-    })).toEqual(["Calle Ejemplo 1", "Madrid", "+34 900 000 000"]);
+    })).toEqual(["PIZZERÍA", "Calle Ejemplo 1", "Madrid", "Tel. +34 900 000 000"]);
     expect(businessHeaderLines({
+      business_type: "PIZZERÍA",
       address: "Calle Ejemplo 1",
       town: null,
       phone: "",
-    })).toEqual(["Calle Ejemplo 1"]);
+    })).toEqual(["PIZZERÍA", "Calle Ejemplo 1"]);
+  });
+
+  test("keeps products before totals and operational metadata in the minimal 58 mm order", () => {
+    const text = ticketDocumentToPlainText(make({ service_order_number: 1 }).document);
+    expect(text.indexOf("Margarita de")).toBeLessThan(text.indexOf("TOTAL"));
+    expect(text.indexOf("TOTAL")).toBeLessThan(text.indexOf("RITIRO · 20:20"));
+    expect(text.indexOf("RITIRO · 20:20")).toBeLessThan(text.indexOf("PEDIDO #001"));
+    expect(text.indexOf("PEDIDO #001")).toBeLessThan(text.indexOf("Gracias por tu pedido"));
+    expect(text).not.toMatch(/COPIA DEL PEDIDO|Canal:|Estado:|NO VÁLIDA COMO FACTURA/);
+  });
+
+  test("shows MESA only for an actual banco table order, never for a stale TEL table number", () => {
+    const table = ticketDocumentToPlainText(make({ channel: "BANCO", table_number: "T-12" }).document);
+    const tel = ticketDocumentToPlainText(make({ channel: "TEL", table_number: "B2" }).document);
+    expect(table).toContain("MESA T-12 · 20:20");
+    expect(table).not.toContain("RITIRO · 20:20");
+    expect(tel).toContain("RITIRO · 20:20");
+    expect(tel).not.toContain("MESA");
+  });
+
+  test("prints subtotal only when it adds useful information", () => {
+    expect(shouldShowCustomerSubtotal({ subtotal: 9, discount: 0, delivery_fee: 0, total: 9 })).toBe(false);
+    expect(shouldShowCustomerSubtotal({ subtotal: 9, discount: 1, delivery_fee: 0, total: 8 })).toBe(true);
+    expect(shouldShowCustomerSubtotal({ subtotal: 9, discount: 0, delivery_fee: 2.5, total: 11.5 })).toBe(true);
+    expect(shouldShowCustomerSubtotal({ subtotal: 9, discount: 0, delivery_fee: 0, total: 8 })).toBe(true);
+  });
+
+  test.each([
+    [{ status: "PENDIENTE", method: "EFECTIVO" }, "PAGO: PENDIENTE"],
+    [{ status: "PAGADO", method: "EFECTIVO" }, "PAGADO · EFECTIVO"],
+    [{ status: "PAGADO", method: "TARJETA" }, "PAGADO · TARJETA"],
+    [{ status: "PAGADO", method: "BIZUM" }, "PAGADO · BIZUM"],
+  ])("renders payment truthfully: %#", (payment, expected) => {
+    expect(customerPaymentLine(payment)).toBe(expected);
+  });
+
+  test("footer is exactly the approved three lines", () => {
+    const text = ticketDocumentToPlainText(make({}).document);
+    expect(text).toContain("Gracias por tu pedido\n");
+    expect(text).toContain("¡Hasta pronto!\n");
+    expect(text).toContain("TICKET NO FISCAL");
+    expect(text).not.toContain("NO VÁLIDA COMO FACTURA");
   });
 
   test("euro values use a non-breaking separator", () => {

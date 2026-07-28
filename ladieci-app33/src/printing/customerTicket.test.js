@@ -14,10 +14,13 @@ describe("customer ticket production flow", () => {
     const { snapshot, document } = createCustomerTicket(order, { createdAt });
     const text = ticketDocumentToPlainText(document);
     expect(snapshot.paper_width).toBe(58);
-    expect(text).toContain("LA 10 PIZZERÍA");
-    expect(text).toContain(CUSTOMER_TICKET_BUSINESS_PROFILE.document_label);
+    expect(text).toContain("PIZZERÍA");
+    expect(text).toContain("Plaza Itálica 8");
+    expect(text).toContain("Roquetas de Mar");
+    expect(text).not.toMatch(/LA 10 PIZZERÍA|LA DIECI/);
     expect(text).toContain(CUSTOMER_TICKET_BUSINESS_PROFILE.non_fiscal_label);
-    expect(text.replace(/\s+/g, " ")).toContain(CUSTOMER_TICKET_BUSINESS_PROFILE.footer_message);
+    expect(text).toContain("Gracias por tu pedido");
+    expect(text).toContain("¡Hasta pronto!");
   });
 
   test("supports 80 mm and strips address and phone from the normal copy snapshot", () => {

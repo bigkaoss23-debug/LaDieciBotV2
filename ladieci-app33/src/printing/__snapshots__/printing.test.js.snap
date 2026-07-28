@@ -1,24 +1,23 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
 exports[`renderers golden customer 58 1`] = `
-"  LA DIECI — ENTORNO DE PRUEBA
-        COPIA DEL PEDIDO
---------------------------------
-          PEDIDO #111
-15/01/2026, 20:00
-             RITIRO
-          Canal: BANCO
+"            PIZZERÍA
+        Plaza Itálica 8
+        Roquetas de Mar
 --------------------------------
 1×  Margarita de          9,00 €
 prueba
 --------------------------------
-Subtotal                  9,00 €
                     TOTAL 9,00 €
-Pago: TARJETA
-Estado: PAGADO
+PAGADO · TARJETA
 --------------------------------
-  Gracias por elegir La Dieci
-     NO VÁLIDA COMO FACTURA
+         RITIRO · 20:20
+          PEDIDO #111
+       15/01/2026, 20:00
+--------------------------------
+     Gracias por tu pedido
+         ¡Hasta pronto!
+        TICKET NO FISCAL
 
 
 
@@ -26,23 +25,22 @@ Estado: PAGADO
 `;
 
 exports[`renderers golden customer 80 1`] = `
-"          LA DIECI — ENTORNO DE PRUEBA
-                COPIA DEL PEDIDO
-------------------------------------------------
-                  PEDIDO #111
-15/01/2026, 20:00
-                     RITIRO
-                  Canal: BANCO
+"                    PIZZERÍA
+                Plaza Itálica 8
+                Roquetas de Mar
 ------------------------------------------------
 1×   Margarita de prueba                9,00 €
 ------------------------------------------------
-Subtotal                                  9,00 €
                                     TOTAL 9,00 €
-Pago: TARJETA
-Estado: PAGADO
+PAGADO · TARJETA
 ------------------------------------------------
-          Gracias por elegir La Dieci
-             NO VÁLIDA COMO FACTURA
+                 RITIRO · 20:20
+                  PEDIDO #111
+               15/01/2026, 20:00
+------------------------------------------------
+             Gracias por tu pedido
+                 ¡Hasta pronto!
+                TICKET NO FISCAL
 
 
 
