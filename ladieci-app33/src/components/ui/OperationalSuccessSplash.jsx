@@ -4,30 +4,37 @@ import "./OperationalSuccessSplash.css";
 
 let activeSplash = null;
 
+export const OPERATIONAL_SUCCESS_DURATION_MS = 500;
+
 export default function OperationalSuccessSplash({
   phase = "success",
   title,
   subtitle,
   optionalSubtitle,
-  duration = 300,
+  duration = OPERATIONAL_SUCCESS_DURATION_MS,
   onComplete,
 }) {
   const owner = useRef(Symbol("operational-success-splash"));
   const completed = useRef(false);
+  const onCompleteRef = useRef(onComplete);
   const [active, setActive] = useState(true);
   const safeDuration = Number.isFinite(Number(duration))
     ? Math.max(0, Number(duration))
-    : 300;
+    : OPERATIONAL_SUCCESS_DURATION_MS;
   const isPending = phase === "pending";
   const secondaryText = subtitle ?? optionalSubtitle;
+
+  // A parent re-render must not restart the visible 500 ms window. Keep the
+  // latest callback in a ref while the timer effect depends only on timing.
+  onCompleteRef.current = onComplete;
 
   const complete = useCallback(() => {
     if (completed.current) return;
     completed.current = true;
     setActive(false);
     if (activeSplash?.owner === owner.current) activeSplash = null;
-    if (typeof onComplete === "function") onComplete();
-  }, [onComplete]);
+    if (typeof onCompleteRef.current === "function") onCompleteRef.current();
+  }, []);
 
   useEffect(() => {
     if (activeSplash && activeSplash.owner !== owner.current) {

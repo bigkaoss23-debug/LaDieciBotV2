@@ -62,9 +62,9 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   });
   // D. cliente SOTTO il numero ordine (stacked), id dominante (mono 900 / 24)
   ck(`${name}: cliente stacked sotto id dominante`, () => {
-    assert.ok(/fontFamily:"'DM Mono',monospace",fontWeight:900,color:[^,}]+,fontSize:24,lineHeight:1\}\}>\{o\.id\}<\/div>/.test(src),
+    assert.ok(/fontFamily:"'DM Mono',monospace",fontWeight:900,color:[^,}]+,fontSize:24,lineHeight:1\}\}>\{formatOrderNumber\(o\)\}<\/div>/.test(src),
       "id dominante 24px mono");
-    assert.ok(/\{o\.id\}<\/div>\s*<div[^>]*textOverflow:"ellipsis"[^>]*>👤 \{o\.nombre\}<\/div>/.test(src),
+    assert.ok(/\{formatOrderNumber\(o\)\}<\/div>\s*<div[^>]*textOverflow:"ellipsis"[^>]*>👤 \{o\.nombre\}<\/div>/.test(src),
       "cliente nel div successivo con ellipsis");
     assert.ok(!/alignItems:"baseline"[\s\S]{0,120}?👤 \{o\.nombre\}/.test(src), "niente baseline row");
   });

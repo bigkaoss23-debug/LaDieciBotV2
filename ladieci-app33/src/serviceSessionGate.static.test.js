@@ -367,9 +367,10 @@ describe('close failure handling (Phase 7)', () => {
 });
 
 describe('NO_OPEN_SERVICE_SESSION guidance (Phase 8)', () => {
-  test('the refusal is detected and given its own words, not "errore DB"', () => {
+  test('the refusal is detected and normalized to the single submission error', () => {
     expect(SERVICIO_C).toMatch(/isNoOpenServiceSession\(err\)/);
-    expect(SERVICIO_C).toMatch(/NO_OPEN_SERVICE_SESSION_MESSAGE/);
+    expect(SERVICIO_C).toMatch(/new Error\("No se pudo confirmar el pedido\."\)/);
+    expect(SERVICIO_C).not.toMatch(/NO_OPEN_SERVICE_SESSION_MESSAGE/);
   });
 
   test('order submission never opens or ensures the service by itself', () => {

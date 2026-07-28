@@ -19,6 +19,7 @@ import {
   manualGiroSortAnchorMs,
   resolveGiroReadyBy
 } from './manualGiroCocina';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 // COCINA_CARD_PIXEL_GRID: costanti griglia visiva unica per le card Cocina.
 // RIBBON_H = altezza fissa del top slot (ribbon) uguale per delivery e retiro,
@@ -281,7 +282,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                   <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
                     {/* COCINA_CARD_PIXEL_GRID: cliente SOTTO il numero ordine (stacked).
                         Numero dominante (24, mono, 900); cliente secondario con ellipsis. */}
-                    <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:"#fff",fontSize:24,lineHeight:1}}>{o.id}</div>
+                    <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:"#fff",fontSize:24,lineHeight:1}}>{formatOrderNumber(o)}</div>
                     <div style={{fontFamily:SYS_FONT,color:"rgba(255,255,255,.82)",fontWeight:600,fontSize:14,lineHeight:1.15,marginTop:4,
                       whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {o.nombre}</div>
                     {/* COCINA_DELIVERY_CARD_COMPACT_UI: chip zona (Q2/Q5) RETIRADO de Cocina

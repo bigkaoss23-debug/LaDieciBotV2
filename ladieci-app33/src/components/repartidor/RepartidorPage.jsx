@@ -6,6 +6,7 @@ import { applyUiOffset } from '../../utils/uiOffset';
 import Suoni from '../../sounds';
 import { ORDER_STATES, isCompletedState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
 import { isPaymentFailure, describePaymentFailure } from '../../utils/paymentOutcome';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 const mapsUrl = (dir) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((dir || "") + " Roquetas de Mar")}`;
@@ -87,7 +88,7 @@ const EntregaCard = ({ orden, onSalgo, onEntregado, loading }) => {
         <span style={{
           fontFamily: "'DM Mono', monospace",
           fontWeight: 900, fontSize: 22, color: "#fff", letterSpacing: -1
-        }}>{orden.id}</span>
+        }}>{formatOrderNumber(orden)}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {orden.hora && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
@@ -838,7 +839,7 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
                             borderBottom: i < consegnati.length - 1 ? "1px solid #F3F4F6" : "none",
                             fontSize: 15, color: "#374151"
                           }}>
-                            <span style={{ fontWeight: 700 }}>{o.id} · {o.nombre}</span>
+                            <span style={{ fontWeight: 700 }}>{formatOrderNumber(o)} · {o.nombre}</span>
                             <span style={{ color: "#16A34A", fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{tot}€</span>
                           </div>
                         );

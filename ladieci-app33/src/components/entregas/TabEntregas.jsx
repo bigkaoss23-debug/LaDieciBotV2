@@ -6,6 +6,7 @@ import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
 import { isPaymentFailure, describePaymentFailure } from '../../utils/paymentOutcome';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 // Helpers tempi: hora consegna ↔ horaForno (= partenza driver = uscita pizza forno)
 const _tm = (t) => { if (!t) return null; const [h,m] = t.split(":").map(Number); return h*60+m; };
@@ -198,7 +199,7 @@ const ZonaOrderRow = ({
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{o.nombre}</span>
-          <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>{o.id}</span>
+          <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>{formatOrderNumber(o)}</span>
           {!insideGiroBlock && manualGiro && (
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 5,
@@ -740,7 +741,7 @@ const GiroTimeModal = ({ orders, warnings = [], pending, onConfirm, onCancel }) 
               <input type="radio" name="giro-hora" checked={mode === "order" && orderId === s.o.id}
                 onChange={() => { setMode("order"); setOrderId(s.o.id); setErr(""); }} />
               <span style={{ color: "#fde68a", fontWeight: 700, fontSize: 13, flex: 1 }}>
-                Salida pedido {s.o.id || s.o.nombre || "?"}
+                Salida pedido {formatOrderNumber(s.o, { fallback: s.o.nombre || "?" })}
                 <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 500 }}> · cliente {s.o.hora || "—"}</span>
               </span>
               <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, fontFamily: "'DM Mono',monospace" }}>{s.salida || "sin hora"}</span>
@@ -1223,7 +1224,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
                 borderBottom: i < consegnati.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
                 fontSize: 14, color: "rgba(255,255,255,0.8)"
               }}>
-                <span style={{ fontWeight: 700 }}>{o.id} · {o.nombre}</span>
+                <span style={{ fontWeight: 700 }}>{formatOrderNumber(o)} · {o.nombre}</span>
                 <span style={{ color: "#4ade80", fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{tot}€</span>
               </div>
             );

@@ -16,6 +16,7 @@ import PizzaCustomBuilder from './PizzaCustomBuilder';
 import { ZONE_DELIVERY, zonaBadgeStyle } from '../zones';
 import { api } from '../api';
 import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrintModal';
+import { formatOrderNumber } from '../utils/orderNumber';
 
 const ModificaOrdenModal = ({orden, onClose, onSave}) => {
   // Normalizza items: può essere array, stringa JSON, o undefined
@@ -175,7 +176,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
           display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
           <div>
             <div style={{color:C.bianco,fontWeight:800,fontSize:17}}>✏️ Modifica ordine</div>
-            <div style={{color:C.grigio,fontSize:12,marginTop:2}}>{orden.id} · {orden.nombre}</div>
+            <div style={{color:C.grigio,fontSize:12,marginTop:2}}>{formatOrderNumber(orden)} · {orden.nombre}</div>
           </div>
           <button onClick={onClose} style={{background:C.fumo,color:C.grigio,border:"none",
             borderRadius:"50%",width:32,height:32,fontSize:16,

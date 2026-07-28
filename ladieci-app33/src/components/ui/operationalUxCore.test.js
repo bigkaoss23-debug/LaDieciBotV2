@@ -1,8 +1,10 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
+import fs from "fs";
+import path from "path";
 import TicketQuickAction, { isTicketQuickActionOrderValid } from "./TicketQuickAction";
-import OperationalSuccessSplash from "./OperationalSuccessSplash";
+import OperationalSuccessSplash, { OPERATIONAL_SUCCESS_DURATION_MS } from "./OperationalSuccessSplash";
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -92,14 +94,14 @@ describe("OperationalSuccessSplash", () => {
     view.unmount();
   });
 
-  test("success auto-completes once at 300 ms, not before 250 ms", () => {
+  test("success stays visible at 450 ms and completes once at 500 ms", () => {
     const onComplete = jest.fn();
     const view = mount(
       <OperationalSuccessSplash
         phase="success"
         title="¡Pedido confirmado!"
         subtitle="Listo para cocina."
-        duration={300}
+        duration={OPERATIONAL_SUCCESS_DURATION_MS}
         onComplete={onComplete}
       />
     );
@@ -108,10 +110,13 @@ describe("OperationalSuccessSplash", () => {
     expect(status.textContent).toContain("¡Pedido confirmado!");
     expect(status.textContent).toContain("Listo para cocina.");
     expect(status.querySelector("button")).toBeNull();
-    act(() => jest.advanceTimersByTime(249));
+    act(() => jest.advanceTimersByTime(450));
     expect(onComplete).not.toHaveBeenCalled();
     expect(document.body.querySelector('[role="status"]')).toBeTruthy();
-    act(() => jest.advanceTimersByTime(51));
+    act(() => jest.advanceTimersByTime(50));
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(document.body.querySelector('[role="status"]')).toBeNull();
+    act(() => jest.advanceTimersByTime(50));
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(document.body.querySelector('[role="status"]')).toBeNull();
     view.unmount();
@@ -119,23 +124,48 @@ describe("OperationalSuccessSplash", () => {
 
   test("cleans its timer on unmount", () => {
     const onComplete = jest.fn();
-    const view = mount(<OperationalSuccessSplash title="OK" duration={300} onComplete={onComplete} />);
+    const view = mount(<OperationalSuccessSplash title="OK" onComplete={onComplete} />);
     view.unmount();
-    act(() => jest.advanceTimersByTime(350));
+    act(() => jest.advanceTimersByTime(OPERATIONAL_SUCCESS_DURATION_MS + 50));
     expect(onComplete).not.toHaveBeenCalled();
   });
 
   test("a concurrent splash replaces the previous one without false completion", () => {
     const firstDone = jest.fn();
     const secondDone = jest.fn();
-    const first = mount(<OperationalSuccessSplash title="First" duration={300} onComplete={firstDone} />);
-    const second = mount(<OperationalSuccessSplash title="Second" duration={300} onComplete={secondDone} />);
+    const first = mount(<OperationalSuccessSplash title="First" onComplete={firstDone} />);
+    const second = mount(<OperationalSuccessSplash title="Second" onComplete={secondDone} />);
     expect(document.body.querySelectorAll('[role="status"]')).toHaveLength(1);
     expect(document.body.querySelector('[role="status"]').textContent).toContain("Second");
-    act(() => jest.advanceTimersByTime(300));
+    act(() => jest.advanceTimersByTime(OPERATIONAL_SUCCESS_DURATION_MS));
     expect(firstDone).not.toHaveBeenCalled();
     expect(secondDone).toHaveBeenCalledTimes(1);
     first.unmount();
     second.unmount();
+  });
+
+  test("parent rerenders and callback identity changes do not restart the timer", () => {
+    const firstDone = jest.fn();
+    const latestDone = jest.fn();
+    const view = mount(<OperationalSuccessSplash title="Stable" onComplete={firstDone} />);
+
+    act(() => jest.advanceTimersByTime(300));
+    act(() => view.root.render(<OperationalSuccessSplash title="Stable" onComplete={latestDone} />));
+    act(() => jest.advanceTimersByTime(150));
+    expect(document.body.querySelector('[role="status"]')).toBeTruthy();
+    act(() => jest.advanceTimersByTime(50));
+
+    expect(firstDone).not.toHaveBeenCalled();
+    expect(latestDone).toHaveBeenCalledTimes(1);
+    expect(document.body.querySelector('[role="status"]')).toBeNull();
+    view.unmount();
+  });
+
+  test("reduced-motion CSS disables every splash animation", () => {
+    const css = fs.readFileSync(path.join(__dirname, "OperationalSuccessSplash.css"), "utf8");
+    const media = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(media).toContain(".operational-success-splash");
+    expect(media).toContain(".operational-success-splash__card");
+    expect(media).toContain("animation: none");
   });
 });

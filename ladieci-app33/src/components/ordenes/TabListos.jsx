@@ -6,6 +6,7 @@ import DescuentoInput from '../ui/DescuentoInput';
 import TicketQuickAction from '../ui/TicketQuickAction';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
+import { formatOrderNumber } from '../../utils/orderNumber';
 import { orarioToMs } from '../../utils/serviceClock';
 import {
   formatItemExtrasLabel,
@@ -93,7 +94,7 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                 {/* Riga 1: ID + Nome + Badge */}
                 <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
                   <span style={{fontFamily:"'DM Mono',monospace",fontWeight:700,
-                    color:"#FFFFFF",fontSize:17,textShadow:"0 1px 3px rgba(0,0,0,0.5)"}}>{o.id}</span>
+                    color:"#FFFFFF",fontSize:17,textShadow:"0 1px 3px rgba(0,0,0,0.5)"}}>{formatOrderNumber(o)}</span>
                   <span style={{color:"#FFFFFF",fontWeight:700,textShadow:"0 1px 3px rgba(0,0,0,0.4)"}}>
                     👤 {o.nombre}
                     {o.cliente_id && vipIds && vipIds.has && vipIds.has(o.cliente_id) && (

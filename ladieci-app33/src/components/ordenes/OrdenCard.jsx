@@ -10,6 +10,7 @@ import {
   resolveItemNote,
   resolveItemProductNames,
 } from '../../menu/itemDisplay';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, onOpenTicket, vipIds, loadingIds = new Set()}) => {
   const busy = loadingIds.has(o.id);
@@ -49,7 +50,7 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
       tel:    "#7DD3FC",
       ora:    "#A5B4FC",
       opacity:1,
-      badge: <span style={{background:"rgba(6,182,212,0.28)",color:"#22D3EE",border:"1.5px solid rgba(103,232,249,0.55)",borderRadius:20,padding:"3px 11px",fontSize:12,fontWeight:800}}>⏳ Confirmando</span>,
+      badge: <span style={{background:"rgba(6,182,212,0.28)",color:"#22D3EE",border:"1.5px solid rgba(103,232,249,0.55)",borderRadius:20,padding:"3px 11px",fontSize:12,fontWeight:800}}>Listo para cocina</span>,
     },
     [ORDER_STATES.EN_COCINA]: {
       bg:     "linear-gradient(145deg,rgba(29,78,216,0.78) 0%,rgba(37,99,235,0.58) 50%,rgba(17,50,160,0.72) 100%)",
@@ -114,7 +115,7 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
     <div style={{position:"absolute",top:0,left:"6%",right:"6%",height:1,
       background:`linear-gradient(90deg,transparent,${s.shimmer},transparent)`,pointerEvents:"none"}}/>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7,flexWrap:"wrap"}}>
-      <span style={{fontFamily:"'DM Mono',monospace",fontWeight:800,color:s.text,fontSize:16}}>{o.id || "Nuevo"}</span>
+      <span style={{fontFamily:"'DM Mono',monospace",fontWeight:800,color:s.text,fontSize:16}}>{o._localPhase === "saving" ? "Nuevo" : formatOrderNumber(o)}</span>
       <span style={{color:s.text,fontWeight:700}}>
         👤 {o.nombre}
         {isVip && <span title="Cliente VIP" style={{marginLeft:4,color:"#FACC15",filter:"drop-shadow(0 0 3px rgba(250,204,21,0.6))"}}>⭐</span>}

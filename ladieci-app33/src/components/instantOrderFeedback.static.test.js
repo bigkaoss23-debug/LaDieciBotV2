@@ -13,6 +13,7 @@ describe("instant order feedback integration", () => {
     expect(block).toContain("creationQueue.begin(o)");
     expect(block.indexOf('setTab("manual")')).toBeLessThan(block.indexOf("await api.createOrden(o)"));
     expect(block).toContain("creationQueue.confirm(requestId, persisted)");
+    expect(block).toContain("id: res.id, _temp: false");
     expect(block).toContain('title: "¡Pedido confirmado!"');
     expect(block).toContain('subtitle: "Listo para cocina."');
     expect(block).toContain("creationQueue.fail(requestId)");
@@ -30,16 +31,37 @@ describe("instant order feedback integration", () => {
     expect(block).toContain('title: "¡Pedido enviado a cocina!"');
     expect(block).toContain("setSuccessSplash(null)");
     expect(block).not.toContain("optimisticOrden");
+    expect(block).not.toMatch(/\b(?:loadAll|refetch|syncOrdenes)\s*\(/);
+
+    const failureBlock = block.slice(
+      block.indexOf("} catch (e) {"),
+      block.indexOf("} finally {")
+    );
+    expect(failureBlock).not.toContain("setOrdenes(");
+    expect(block).toContain("endAction(id);");
   });
 
-  test("shared wiring uses a 300 ms success duration and no deferred tab callback", () => {
+  test("shared wiring uses the one 500 ms success constant and no deferred tab callback", () => {
     const splashStart = source.indexOf("{successSplash&&<OperationalSuccessSplash");
     const splashEnd = source.indexOf("/>}", splashStart);
     const block = source.slice(splashStart, splashEnd);
 
     expect(block).toContain("phase={successSplash.phase}");
-    expect(block).toContain("duration={300}");
+    expect(block).toContain("duration={OPERATIONAL_SUCCESS_DURATION_MS}");
     expect(block).not.toContain("nextTab");
-    expect(block).not.toMatch(/duration=\\{(?:8|9|10)00\\}/);
+    expect(source).toContain("OPERATIONAL_SUCCESS_DURATION_MS");
+    expect(block).not.toMatch(/duration=\\{(?:3|8|9|10)00\\}/);
+  });
+
+  test("create failure has one operator-facing message and no duplicate notify", () => {
+    const start = source.indexOf("const addOrden  = async");
+    const end = source.indexOf("const waConfirm", start);
+    const block = source.slice(start, end);
+    const failureText = "No se pudo confirmar el pedido.";
+
+    expect(block.match(new RegExp(failureText.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&"), "g"))).toHaveLength(2);
+    const catchStart = block.indexOf("catch(err)");
+    expect(block.slice(catchStart)).not.toContain('notify("❌');
+    expect(block).toContain("setShowNuevo(true)");
   });
 });

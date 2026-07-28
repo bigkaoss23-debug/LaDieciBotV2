@@ -86,7 +86,7 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   });
   // 11. header id + cliente STACKED (cliente sotto il numero ordine — pixel grid)
   ck(`${name}: header cliente sotto il numero ordine (stacked)`, () => {
-    assert.ok(/\{o\.id\}<\/div>\s*<div[^>]*textOverflow:"ellipsis"[^>]*>👤 \{o\.nombre\}<\/div>/.test(src),
+    assert.ok(/\{formatOrderNumber\(o\)\}<\/div>\s*<div[^>]*textOverflow:"ellipsis"[^>]*>👤 \{o\.nombre\}<\/div>/.test(src),
       "id in un div e cliente nel div successivo (stacked)");
     assert.ok(!/alignItems:"baseline"[\s\S]{0,120}?👤 \{o\.nombre\}/.test(src),
       "niente baseline row attorno al cliente");

@@ -62,7 +62,7 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   // 4. número + cliente STACKED (cliente SOTTO l'id — pixel grid)
   ck(`${name}: cliente sotto il numero ordine (stacked)`, () => {
     assert.ok(
-      /\{o\.id\}<\/div>\s*<div[^>]*textOverflow:"ellipsis"[^>]*>👤 \{o\.nombre\}<\/div>/.test(src),
+      /\{formatOrderNumber\(o\)\}<\/div>\s*<div[^>]*textOverflow:"ellipsis"[^>]*>👤 \{o\.nombre\}<\/div>/.test(src),
       "id in un div e cliente nel div successivo (non più stessa riga)"
     );
     assert.ok(

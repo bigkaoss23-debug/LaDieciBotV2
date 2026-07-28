@@ -4,7 +4,7 @@ import { sb, api, auth } from '../api';
 import { BACKEND_BASE_URL } from '../utils/backendBase';
 import { parseEstadoTerminalError } from '../utils/orderModifyError';
 import { classifyCloseOutcome } from '../utils/closeServiceOutcome';
-import { isNoOpenServiceSession, NO_OPEN_SERVICE_SESSION_MESSAGE, NO_OPEN_SERVICE_SESSION_CODE } from '../utils/serviceSessionError';
+import { isNoOpenServiceSession, NO_OPEN_SERVICE_SESSION_CODE } from '../utils/serviceSessionError';
 import Suoni from '../sounds';
 import TabWA from './wa/TabWA';
 import TabManual from './ordenes/TabManual';
@@ -17,7 +17,7 @@ import NuevoPedidoModal from './NuevoPedidoModal';
 import ModificaOrdenModal from './ModificaOrdenModal';
 import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrintModal';
 import Badge from './ui/Badge';
-import OperationalSuccessSplash from './ui/OperationalSuccessSplash';
+import OperationalSuccessSplash, { OPERATIONAL_SUCCESS_DURATION_MS } from './ui/OperationalSuccessSplash';
 import DevPresence from './DevPresence';
 import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isTerminalState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
 import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
@@ -466,10 +466,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       // lifecycle turns it into the single in-modal feedback banner, keeps the
       // modal open and leaves the operator's order untouched.
       if (isNoOpenServiceSession(err)) {
-        notify("❌ No hay un servicio abierto", "#E8341C");
         try { window.dispatchEvent(new Event("ld-service-session-lost")); } catch(_){}
-      } else {
-        notify("❌ Error al guardar — revisa el pedido e inténtalo de nuevo", "#E8341C");
       }
       setPrefillCliente({
         ...o,
@@ -477,7 +474,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       });
       setShowNuevo(true);
       if (isNoOpenServiceSession(err)) {
-        const typed = new Error(NO_OPEN_SERVICE_SESSION_MESSAGE);
+        const typed = new Error("No se pudo confirmar el pedido.");
         typed.code = NO_OPEN_SERVICE_SESSION_CODE;
         throw typed;
       }
@@ -1642,7 +1639,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         phase={successSplash.phase}
         title={successSplash.title}
         subtitle={successSplash.subtitle}
-        duration={300}
+        duration={OPERATIONAL_SUCCESS_DURATION_MS}
         onComplete={()=>{
           setSuccessSplash(null);
         }}
