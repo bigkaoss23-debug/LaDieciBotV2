@@ -1,0 +1,78 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`renderers golden customer 58 1`] = `
+"            PIZZERÍA
+        Plaza Itálica 8
+        Roquetas de Mar
+--------------------------------
+1×  Margarita de          9,00 €
+prueba
+--------------------------------
+                    TOTAL 9,00 €
+PAGADO · TARJETA
+--------------------------------
+         RITIRO · 20:20
+          PEDIDO #111
+       15/01/2026, 20:00
+--------------------------------
+     Gracias por tu pedido
+         ¡Hasta pronto!
+        TICKET NO FISCAL
+
+
+
+"
+`;
+
+exports[`renderers golden customer 80 1`] = `
+"                    PIZZERÍA
+                Plaza Itálica 8
+                Roquetas de Mar
+------------------------------------------------
+1×   Margarita de prueba                9,00 €
+------------------------------------------------
+                                    TOTAL 9,00 €
+PAGADO · TARJETA
+------------------------------------------------
+                 RITIRO · 20:20
+                  PEDIDO #111
+               15/01/2026, 20:00
+------------------------------------------------
+             Gracias por tu pedido
+                 ¡Hasta pronto!
+                TICKET NO FISCAL
+
+
+
+
+"
+`;
+
+exports[`renderers golden kitchen 58 1`] = `
+"              #101
+         BANCO · RITIRO
+Pedido 19:00 · Prometido 20:20
+REVISIÓN 1
+--------------------------------
+1 × Margarita de prueba
+--------------------------------
+
+
+
+"
+`;
+
+exports[`renderers golden kitchen 80 1`] = `
+"                      #101
+                 BANCO · RITIRO
+Pedido 19:00 · Prometido 20:20
+REVISIÓN 1
+------------------------------------------------
+1 × Margarita de prueba
+------------------------------------------------
+
+
+
+
+"
+`;

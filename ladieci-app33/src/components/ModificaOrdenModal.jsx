@@ -4,6 +4,7 @@ import Chip from './ui/Chip';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 import { ZONE_DELIVERY, zonaBadgeStyle } from '../zones';
 import { api } from '../api';
+import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrintModal';
 
 const ModificaOrdenModal = ({orden, onClose, onSave}) => {
   // Normalizza items: può essere array, stringa JSON, o undefined
@@ -17,6 +18,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
     return [];
   };
   const [items, setItems] = useState(()=>parseItems(orden.items));
+  const [showCustomerTicket, setShowCustomerTicket] = useState(false);
   const [nota,  setNota]  = useState(String(orden.nota||""));
   const [hora,  setHora]  = useState(String(orden.hora||""));
   const [cat,   setCat]   = useState("Pizzas");
@@ -344,6 +346,14 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                 <div style={{color:C.verde,fontWeight:800,fontSize:20,
                   fontFamily:"'DM Mono',monospace"}}>{total}€</div>
               </div>
+              {!!String(orden.id ?? "").trim() && !orden._temp && parseItems(orden.items).length > 0 && (
+                <button type="button" onClick={() => setShowCustomerTicket(true)}
+                  style={{background:"rgba(255,255,255,.08)",color:C.bianco,
+                    border:`1px solid ${C.fumo}`,borderRadius:11,padding:"13px 16px",
+                    fontWeight:800,fontSize:13}}>
+                  🖨 Imprimir ticket
+                </button>
+              )}
               <button onClick={()=>onSave({
                   ...orden, items, nota, hora,
                   ...(isDelivery ? {
@@ -374,6 +384,9 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
           </div>
         </div>
       </div>
+      {showCustomerTicket && (
+        <CustomerTicketPrintModal order={orden} onClose={() => setShowCustomerTicket(false)} />
+      )}
     </div>
   );
 };
