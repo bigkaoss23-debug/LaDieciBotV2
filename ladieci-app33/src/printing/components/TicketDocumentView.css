@@ -1,21 +1,54 @@
-.ticket-document{box-sizing:border-box;max-width:100%;height:auto;background:#fff;color:#111;font-family:"Courier New",ui-monospace,monospace;font-weight:600;line-height:1.25;overflow-x:hidden;overflow-wrap:anywhere;word-break:break-word}
-.ticket-document.paper-58{--ticket-paper-width:58mm;--ticket-font-size:9px;width:58mm;padding:3mm}
+.ticket-document{box-sizing:border-box;max-width:100%;height:auto;background:#fff;color:#000;font-family:"Courier New",ui-monospace,monospace;font-weight:600;line-height:1.25;overflow-x:hidden;overflow-wrap:anywhere;word-break:break-word}
+/* The driver declares a 48mm printable area (Printer 58 / POS58 profile) on the
+   58mm roll, but physical test prints at browser scale 100% showed content laid
+   out at the full 48mm sits right at that edge and risks losing the rightmost
+   character (the € sign). Physical tests across a range of print scales found
+   the ticket prints clean and centered anywhere from ~90-96% - i.e. a real
+   content width of about 46mm (48mm * 0.96), centered in the 48mm page, with no
+   per-side bias. This is a native content width, not a visual scale/transform,
+   so it's identical at 100% print scale with no manual adjustment ever needed. */
+.ticket-document.paper-58{--ticket-paper-width:46mm;--ticket-font-size:9px;width:46mm;max-width:46mm;margin-left:auto;margin-right:auto;padding:1.5mm 1.5mm 4.5mm 1.5mm}
 .ticket-document.paper-80{--ticket-paper-width:80mm;--ticket-font-size:10px;width:80mm;padding:3mm}
 .ticket-document{font-size:var(--ticket-font-size)}
 .ticket-document-image{display:flex;max-width:100%;align-items:center;justify-content:center;break-inside:avoid;page-break-inside:avoid}
 .ticket-document-image.role-business-logo{margin:0 0 1mm}
-.ticket-document-image.role-business-logo img{display:block;width:20mm;max-width:100%;height:auto;border:0;background:transparent;box-shadow:none;object-fit:contain;image-rendering:pixelated}
+.ticket-document-image.role-business-logo img{display:block;width:18.4mm;max-width:100%;height:auto;border:0;background:transparent;box-shadow:none;object-fit:contain;image-rendering:pixelated}
 .ticket-document-text{min-width:0;max-width:100%;white-space:pre-wrap;break-inside:avoid;page-break-inside:avoid}
 .ticket-document .align-center{text-align:center}.ticket-document .align-right{text-align:right}.ticket-document .align-left{text-align:left}
 .ticket-document .emphasis-bold{font-weight:900}
 .ticket-document .size-large{font-size:1.18em;line-height:1.15}.ticket-document .size-xlarge{font-size:1.55em;line-height:1.1}
-.ticket-document .role-secondary{font-size:.9em;font-weight:500;color:#444}
+/* Thermal printers (203dpi) render gray as near-blank - hierarchy comes from
+   size only here, never from color or a lighter weight than the ticket base. */
+.ticket-document .role-secondary{font-size:.9em;font-weight:600;color:#000;opacity:1}
 .ticket-document .role-detail{padding-left:1.5em;font-size:.92em}
 .ticket-document .role-money{white-space:nowrap;overflow-wrap:normal;word-break:normal}
-.ticket-document .role-footer-small{font-size:.78em;font-weight:500}
+.ticket-document .role-footer-small{font-size:.78em;font-weight:600;color:#000;opacity:1}
 .ticket-document-columns{display:grid;align-items:start;column-gap:1ch;min-width:0;max-width:100%;break-inside:avoid;page-break-inside:avoid}
 .ticket-document-columns>span{min-width:0;overflow-wrap:anywhere}
+/* Override the inline character-count-proportional grid-template-columns (set from JS)
+   with a robust pattern: quantity shrinks to its content, the name column is the only
+   one allowed to shrink/wrap, and the price column is sized to its own content and
+   never squeezed - so it can never be pushed past the printable edge by a long name. */
+.ticket-document-columns:has(>span:nth-child(3)){grid-template-columns:auto minmax(0,1fr) max-content!important}
+.ticket-document-columns:not(:has(>span:nth-child(3))){grid-template-columns:minmax(0,1fr) max-content!important}
+.ticket-document-columns>span:last-child{white-space:nowrap}
 .ticket-document-separator{margin:.35em 0;border-top:1px dashed currentColor}
+/* Payment line ("PAGO: ..." / "PAGADO · ...") is the only text block matching
+   align-left + emphasis-bold + size-normal + no role, so this reliably targets
+   only the separator between payment and RETIRO/DOMICILIO, regardless of which
+   optional lines (reprint/cliente/tel) appear later in the document. */
+.ticket-document-text.align-left.emphasis-bold.size-normal + .ticket-document-separator{
+  display:none
+}
+.ticket-document-text.align-left.emphasis-bold.size-normal + .ticket-document-separator + .ticket-document-text{
+  margin-top:2mm
+}
+/* The separator before the footer is the only one immediately followed by a
+   role-secondary + align-center text block (header lines precede a columns
+   block, not text, so they never match here). */
+.ticket-document-separator + .ticket-document-text.role-secondary.align-center{
+  margin-top:1.2mm
+}
 .ticket-document-feed{height:calc(var(--ticket-feed-lines,1) * 1.25em)}
 @media print{
   @page{margin:0}
@@ -25,22 +58,33 @@
   body.customer-ticket-print-open .customer-ticket-print-sheet,
   body.customer-ticket-print-open .customer-ticket-print-sheet *{visibility:visible!important}
   body.customer-ticket-print-open .customer-ticket-print-sheet{
-    position:absolute;left:0;top:0;display:block!important;box-sizing:border-box!important;
+    /* left+right (both set) with width < page + margin:auto centers an absolutely
+       positioned element - this is what actually keeps the sheet centered on the
+       48mm printable page at native content width, no transform/scale involved. */
+    position:absolute;left:0;right:0;top:0;display:block!important;box-sizing:border-box!important;
     min-width:0!important;max-width:none!important;width:var(--ticket-paper-width,58mm)!important;
-    height:auto!important;min-height:0!important;margin:0!important;padding:3mm!important;
+    height:auto!important;min-height:0!important;margin:0 auto!important;padding:3mm!important;
     border:0!important;border-radius:0!important;box-shadow:none!important;transform:none!important;
     background:#fff!important;color:#000!important;overflow:visible!important;
     break-inside:avoid-page;page-break-inside:avoid;print-color-adjust:economy;-webkit-print-color-adjust:economy
   }
-  body.customer-ticket-print-open .customer-ticket-print-sheet.paper-58{--ticket-paper-width:58mm}
+  /* Native content width of ~46mm (48mm page * 0.96), centered, no per-side bias -
+     see the non-print .paper-58 rule above for the full physical-test rationale.
+     This is what actually governs window.print() at browser scale 100%. */
+  body.customer-ticket-print-open .customer-ticket-print-sheet.paper-58{
+    --ticket-paper-width:46mm;padding:1.5mm 1.5mm 4.5mm 1.5mm!important
+  }
   body.customer-ticket-print-open .customer-ticket-print-sheet.paper-80{--ticket-paper-width:80mm}
   body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-text,
   body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-columns,
   body.customer-ticket-print-open .customer-ticket-print-sheet .ticket-document-image{
-    break-inside:avoid;page-break-inside:avoid
+    break-inside:avoid;page-break-inside:avoid;break-before:avoid;page-break-before:avoid
   }
+  /* The 58mm/48mm profile has no natural page break (297mm of continuous roll), so
+     nothing here should ever be pushed to a page the printer doesn't continue onto. */
+  body.customer-ticket-print-open .customer-ticket-print-sheet{break-after:avoid-page;page-break-after:avoid}
   body.customer-ticket-print-open .customer-ticket-print-sheet .role-business-logo img{
-    width:20mm!important;height:auto!important;max-width:100%!important;border:0!important;
+    width:18.4mm!important;height:auto!important;max-width:100%!important;border:0!important;
     background:transparent!important;box-shadow:none!important;filter:none!important;
     image-rendering:pixelated!important
   }

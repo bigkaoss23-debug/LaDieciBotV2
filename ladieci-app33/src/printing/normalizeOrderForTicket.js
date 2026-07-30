@@ -59,14 +59,14 @@ const normalizeDate = (value, field) => {
   return date.toISOString();
 };
 
+// The customer ticket never prints the channel (see renderCustomerTicket) - it only
+// gates the MESA/table-order display, so a missing or unrecognised value must not
+// block the ticket. Fall back to MANUAL rather than throwing.
 const normalizeChannel = (value) => {
-  const channel = nonEmpty(value, "order.channel").toUpperCase();
+  const channel = String(value ?? "").trim().toUpperCase();
   const aliases = { WHATSAPP: "WA", PHONE: "TEL", TELEFONO: "TEL", BARRA: "BANCO" };
   const normalized = aliases[channel] || channel;
-  if (!["WA", "TEL", "BANCO", "MANUAL"].includes(normalized)) {
-    throw new TypeError(`Unsupported order channel: ${channel}`);
-  }
-  return normalized;
+  return ["WA", "TEL", "BANCO", "MANUAL"].includes(normalized) ? normalized : "MANUAL";
 };
 
 const normalizeFulfilment = (value) => {

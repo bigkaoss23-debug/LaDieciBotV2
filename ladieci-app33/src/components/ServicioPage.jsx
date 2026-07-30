@@ -12,6 +12,9 @@ import PanelCocina from './cocina/PanelCocina';
 import TabEntregas from './entregas/TabEntregas';
 import NuevoPedidoModal from './NuevoPedidoModal';
 import ModificaOrdenModal from './ModificaOrdenModal';
+import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrintModal';
+import OperationalSuccessSplash, { OPERATIONAL_SUCCESS_DURATION_MS } from './ui/OperationalSuccessSplash';
+import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
 import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
 import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isTerminalState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
@@ -64,6 +67,15 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   };
   const [tab,setTab] = useState("wa");
   const [loadingIds, setLoadingIds] = useState(new Set());
+  // Ticket cliente aperto dalla card ordine (TicketQuickAction). Resta null
+  // finché l'operatore non lo chiede: nessun rendering di stampa a vuoto.
+  const [ticketOrder, setTicketOrder] = useState(null);
+  // Feedback operativo a schermo intero dopo conferma/creazione ordine.
+  const [successSplash, setSuccessSplash] = useState(null);
+  // Coda di creazione ordine: deduplica per client_req_id e tiene visibile
+  // l'ordine in fase "saving"/"confirmed" finché il refetch DB non lo assorbe.
+  // NON sostituisce il rollback esistente: lo affianca.
+  const creationQueue = useOrderCreationQueue(ordenes);
   // Anti double-click guard per le mutazioni di stato ordine
   // (setListo, setRetirado, ecc.). `inFlightRef` è la guardia SYNC che blocca
   // i click ripetuti prima del re-render React; `loadingIds` (state) triggera
@@ -323,6 +335,12 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         try { await api.updateEstado(id, ORDER_STATES.EN_COCINA); }
         catch(err) { console.error("confirmaOrdine error:", err); }
       });
+      creationQueue.updateConfirmed(id, { estado: ORDER_STATES.EN_COCINA });
+      setSuccessSplash({
+        phase: "success",
+        title: "¡Pedido enviado a cocina!",
+        subtitle: null,
+      });
     } finally { endAction(id); }
   };
 
@@ -375,6 +393,10 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       action: "addOrden",
     });
     logOrderCreation(creationIntent);
+    // La coda deduplica per client_req_id: un secondo invio dello stesso
+    // ordine (doppio click / retry) viene scartato qui, non a valle.
+    const requestId = String(o.client_req_id || "");
+    if (creationQueue.begin(o) === null && requestId) return;
     setOrdenes(p=>[{...o, _temp:true},...p]);
     const canalLabel = o.canal==="BANCO" ? "Barra" : "Tel";
     notify("✅ " + canalLabel + " (guardando…)");
@@ -384,13 +406,23 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       // STRICT: throw se Railway non risponde con un id valido. L'idempotency
       // key (o.client_req_id) protegge da duplicati in caso di retry.
       const res = await api.createOrden(o);
+      if (!res?.id) throw new Error(res?.error || "createOrden returned no persisted id");
       setOrdenes(p=>p.map(x=>x.id===o.id?{...x,id:res.id,_temp:false}:x));
+      creationQueue.confirm(requestId, { ...o, ...res, id: res.id, _temp: false });
       notify("✅ " + res.id + " → " + canalLabel);
+      if (o.canal==="MANUAL") {
+        setSuccessSplash({
+          phase: "success",
+          title: "¡Pedido confirmado!",
+          subtitle: "Listo para cocina.",
+        });
+      }
     } catch(err) {
       // ROLLBACK: l'ordine fantasma viene rimosso dallo state. Il pizzaiolo
       // NON deve vedere ordini senza backing DB. Vedi audit CL4SBU del 14/05/2026.
       console.error("createOrden failed, rolling back:", err);
       setOrdenes(p=>p.filter(x=>x.id!==o.id));
+      creationQueue.fail(requestId);
       try { Suoni.errore(); } catch(_){}
       notify("❌ Error al guardar — vuelve a crear el pedido", "#E8341C");
     }
@@ -984,9 +1016,9 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         setGoToPreguntasSignal(s => s+1);
       }}
     />;
-    if(tab==="manual") return <TabManual ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
+    if(tab==="manual") return <TabManual ordenes={creationQueue.visibleOrders} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} onOpenTicket={setTicketOrder} vipIds={vipIds} loadingIds={loadingIds}/>;
     if(tab==="banco")  return <TabBanco  ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
-    if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} loadingIds={loadingIds}
+    if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} loadingIds={loadingIds}
       vipIds={vipIds}
       waMsgs={waMsgs}
       onCambiaPago={async (id, nuovoMetodo) => {
@@ -1555,6 +1587,13 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         })()
       }}
         onClose={()=>setOrdenModifica(null)} onSave={modificaOrden}/>}
+      {ticketOrder&&<CustomerTicketPrintModal order={ticketOrder} onClose={()=>setTicketOrder(null)}/>}
+      {successSplash&&<OperationalSuccessSplash
+        phase={successSplash.phase}
+        title={successSplash.title}
+        subtitle={successSplash.subtitle}
+        duration={OPERATIONAL_SUCCESS_DURATION_MS}
+        onComplete={()=>setSuccessSplash(null)}/>}
 
       {/* Pannello cucina — overlay light mode */}
       {showCocina&&<PanelCocina

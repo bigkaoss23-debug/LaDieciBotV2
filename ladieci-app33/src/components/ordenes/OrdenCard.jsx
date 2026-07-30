@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { C, tot, calcTotale, DELIVERY_FEE } from '../../constants';
 import Chip from '../ui/Chip';
+import TicketQuickAction from '../ui/TicketQuickAction';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
 import { isWaSinConversacion, isWaOrigen } from '../../utils/pedidosVisibility';
 
-const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, vipIds, loadingIds = new Set()}) => {
+const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, onOpenTicket, vipIds, loadingIds = new Set()}) => {
   const busy = loadingIds.has(o.id);
   const isVip = !!(o.cliente_id && vipIds && vipIds.has && vipIds.has(o.cliente_id));
   const [confirmDel, setConfirmDel] = useState(false);
@@ -236,6 +237,13 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
             opacity: (o._temp || busy) ? 0.6 : 1,
             display:"flex", alignItems:"center", gap:6
           }}>{o._temp ? "⏳ Guardando…" : (busy ? "Confirmando…" : "🚀 A Cocina")}</button>
+      </div>
+    )}
+    {/* ── Ticket cliente (solo su ordine già persistito: TicketQuickAction
+            si auto-nasconde se manca l'id reale o se _temp è ancora true) ── */}
+    {onOpenTicket && (
+      <div style={{marginTop:8,display:"flex",justifyContent:"flex-end"}} onClick={e=>e.stopPropagation()}>
+        <TicketQuickAction order={o} onOpenTicket={onOpenTicket} variant="compact" />
       </div>
     )}
     {/* ── Cestino elimina ── */}

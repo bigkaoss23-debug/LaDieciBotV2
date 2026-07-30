@@ -3,6 +3,7 @@ import { C, tot, MAX_PIZZE_ORA, MENU, calcTotale, aplicarDescuento } from '../..
 import Chip from '../ui/Chip';
 import Badge from '../ui/Badge';
 import DescuentoInput from '../ui/DescuentoInput';
+import TicketQuickAction from '../ui/TicketQuickAction';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
 import { orarioToMs } from '../../utils/serviceClock';
@@ -16,7 +17,7 @@ const isPizzaItem = (it) => {
   return true;
 };
 
-const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds}) => {
+const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds}) => {
   const [pendingPago,      setPendingPago]      = useState(null);
   const [filterPago,       setFilterPago]       = useState("todos");
   const [pendingCambioPago, setPendingCambioPago] = useState(null); // id ordine in modifica
@@ -209,6 +210,7 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                     display:"flex", flexDirection:"column", alignItems:"center",
                     gap:6, flexShrink:0
                   }}>
+                    <TicketQuickAction order={o} onOpenTicket={onOpenTicket} variant="compact" />
                     <div style={{
                       background:"rgba(249,115,22,0.12)",
                       border:"1.5px solid rgba(249,115,22,0.40)",
@@ -243,6 +245,7 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                   </div>
                 ) : o.ya_pagado ? (
                   <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,alignItems:"stretch"}}>
+                    <TicketQuickAction order={o} onOpenTicket={onOpenTicket} variant="compact" />
                     {o.estado === ORDER_STATES.LISTO && onVolverACocina && (() => { const vBusy = loadingIds.has(o.id); return (
                       <button
                         onClick={e=>{ e.stopPropagation(); if (vBusy) return; handleVolverACocina(o); }}
@@ -334,6 +337,7 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,loadingIds=new Set(),waMs
                   })()
                 ) : (
                   <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,alignItems:"stretch"}}>
+                    <TicketQuickAction order={o} onOpenTicket={onOpenTicket} variant="compact" />
                     {o.estado === ORDER_STATES.LISTO && onVolverACocina && (() => { const vBusy = loadingIds.has(o.id); return (
                       <button
                         onClick={e=>{ e.stopPropagation(); if (vBusy) return; handleVolverACocina(o); }}

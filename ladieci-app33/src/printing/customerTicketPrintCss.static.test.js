@@ -24,7 +24,11 @@ describe("customer ticket print-ready CSS", () => {
   });
 
   test("defines safe 58/80 mm paper, dynamic height and horizontal containment", () => {
-    expect(viewCss).toMatch(/paper-58[^}]*width:58mm[^}]*padding:3mm/);
+    // Native content width ~46mm (48mm printable page * 0.96, per physical print
+    // testing), centered with symmetric horizontal padding - no per-side bias, no
+    // scale/transform. Extra bottom padding is a thermal-feed safety margin for
+    // the footer.
+    expect(viewCss).toMatch(/paper-58[^}]*width:46mm[^}]*padding:1\.5mm 1\.5mm 4\.5mm 1\.5mm/);
     expect(viewCss).toMatch(/paper-80[^}]*width:80mm[^}]*padding:3mm/);
     expect(viewCss).toMatch(/height:auto/);
     expect(viewCss).toMatch(/overflow-x:hidden/);
@@ -50,8 +54,8 @@ describe("customer ticket print-ready CSS", () => {
     expect(markup).toContain('src="/printing/la-dieci-thermal-logo.png"');
     expect(markup).toContain('alt="La Dieci"');
     expect(markup).toMatchSnapshot();
-    expect(viewCss).toMatch(/role-business-logo img\{[^}]*width:20mm[^}]*height:auto[^}]*image-rendering:pixelated/);
-    expect(viewCss).toMatch(/@media print[\s\S]*role-business-logo img\{[^}]*width:20mm!important[^}]*height:auto!important[^}]*filter:none!important/);
+    expect(viewCss).toMatch(/role-business-logo img\{[^}]*width:18.4mm[^}]*height:auto[^}]*image-rendering:pixelated/);
+    expect(viewCss).toMatch(/@media print[\s\S]*role-business-logo img\{[^}]*width:18.4mm!important[^}]*height:auto!important[^}]*filter:none!important/);
   });
 });
 

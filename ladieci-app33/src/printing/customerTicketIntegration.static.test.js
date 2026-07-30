@@ -38,7 +38,12 @@ test("print CSS hides application chrome and prints only the selected 58/80 mm s
   expect(printRules).toContain("body.customer-ticket-print-open> *:not(.customer-ticket-modal){display:none!important}");
   expect(printRules).toContain("body.customer-ticket-print-open *{visibility:hidden!important}");
   expect(printRules).toContain(".customer-ticket-print-sheet");
-  expect(printRules).toContain(".customer-ticket-print-sheet.paper-58{--ticket-paper-width:58mm}");
+  // Il profilo 58 stampa a larghezza contenuto NATIVA ~46mm centrata nell'area
+  // stampabile da 48mm (calibrazione fisica 2026-07-29): la variabile non vale
+  // più 58mm. Il profilo 80 resta invariato.
+  expect(printRules).toMatch(
+    /\.customer-ticket-print-sheet\.paper-58\{\s*--ticket-paper-width:46mm/
+  );
   expect(printRules).toContain(".customer-ticket-print-sheet.paper-80{--ticket-paper-width:80mm}");
 });
 
