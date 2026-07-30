@@ -57,20 +57,20 @@ const useWidth = () => {
 const MENU = [
   // PIZZAS — l'ordine dell'array = numero ufficiale del menù cliente (`num`).
   //          `id` resta la chiave interna STABILE (ordini/storico la referenziano) — NON cambiarla.
-  {id:1,  num:1,  n:"El Pelusa",        sub:"Margarita Clásica",     p:12.0, cat:"Pizzas",  e:"🍕", ing:"Tomate San Marzano, Fior di latte, Albahaca",                          alg:"Gluten, Lácteos"},
-  {id:2,  num:2,  n:"Zizou",            sub:"Bufalina",              p:12.5, cat:"Pizzas",  e:"🐄", ing:"Tomate San Marzano, Mozzarella di bufala DOP, Albahaca",                alg:"Gluten, Lácteos"},
-  {id:3,  num:3,  n:"O Rei",            sub:"Marinara Clásica",      p:10.0, cat:"Pizzas",  e:"🧄", ing:"Tomate San Marzano, Ajo, Orégano, Aceitunas negras, Albahaca",          alg:"Gluten"},
-  {id:11, num:4,  n:"Il Gladiatore",    sub:"Caprichosa",            p:14.5, cat:"Pizzas",  e:"⚔️", ing:"Tomate San Marzano, Fior di latte, Champiñones, Jamón, Alcachofas, Aceitunas negras", alg:"Gluten, Lácteos"},
+  {id:1,  num:1,  n:"El Pelusa",        sub:"Margherita Classica",   p:12.0, cat:"Pizzas",  e:"🍕", ing:"Tomate San Marzano, Fior di latte, Albahaca",                          alg:"Gluten, Lácteos"},
+  {id:2,  num:2,  n:"Zizou",            sub:"Margherita di Bufala",  p:12.5, cat:"Pizzas",  e:"🐄", ing:"Tomate San Marzano, Mozzarella di bufala DOP, Albahaca",                alg:"Gluten, Lácteos"},
+  {id:3,  num:3,  n:"O Rei",            sub:"Marinara Classica",     p:10.0, cat:"Pizzas",  e:"🧄", ing:"Tomate San Marzano, Ajo, Orégano, Aceitunas negras, Albahaca",          alg:"Gluten"},
+  {id:4,  num:4,  n:"El Maestro",       sub:"Inferno",               p:13.5, cat:"Pizzas",  e:"🌶️🔥", ing:"Tomate San Marzano, Fior di latte, Gorgonzola DOP, Salami picante",   alg:"Gluten, Lácteos"},
   {id:5,  num:5,  n:"El Gaucho",        sub:"Diavola",               p:13.0, cat:"Pizzas",  e:"🌶️", ing:"Tomate San Marzano, Fior di latte, Spianata Calabra picante",           alg:"Gluten, Lácteos"},
   {id:6,  num:6,  n:"El Divino Codino", sub:"Prosciutto",            p:12.5, cat:"Pizzas",  e:"🍖", ing:"Tomate San Marzano, Fior di latte, Jamón cocido",                       alg:"Gluten, Lácteos"},
-  {id:7,  num:7,  n:"La Pulga",         sub:"Jamón y Champiñones",   p:13.0, cat:"Pizzas",  e:"🍄", ing:"Tomate San Marzano, Fior di latte, Jamón cocido, Champiñones frescos",  alg:"Gluten, Lácteos"},
-  {id:8,  num:8,  n:"Il Tulipano Nero", sub:"Cuatro Quesos",         p:14.5, cat:"Pizzas",  e:"🧀", ing:"Tomate San Marzano, Fior di latte, Gorgonzola, Provolone, Parmigiano",  alg:"Gluten, Lácteos, Huevo"},
-  {id:10, num:9,  n:"El Ultimo 10",     sub:"Atún y Cebolla",        p:14.0, cat:"Pizzas",  e:"🐟", ing:"Tomate San Marzano, Fior di latte, Atún, Cebolla morada, Aceitunas",    alg:"Gluten, Lácteos, Pescado"},
-  {id:9,  num:10, n:"El Mago de Zadar", sub:"Vegetariana",           p:14.5, cat:"Pizzas",  e:"🥦", ing:"Tomate San Marzano, Fior di latte, Pimiento, Berenjena asada, Tomates confitados, Cebolla morada", alg:"Gluten, Lácteos"},
-  {id:4,  num:11, n:"El Maestro",       sub:"Inferno",               p:13.5, cat:"Pizzas",  e:"🌶️🔥", ing:"Tomate San Marzano, Fior di latte, Gorgonzola DOP, Salami picante",   alg:"Gluten, Lácteos"},
-  {id:38, num:12, n:"La Joya",          sub:"Carbonara",            p:15.0, cat:"Pizzas",  e:"🥓", ing:"Mozzarella Fior di Latte di Sorrento, Huevo carbonara, Pancetta",            alg:"Gluten, Lácteos, Huevo"},
+  {id:7,  num:7,  n:"La Pulga",         sub:"Prosciutto e Funghi",   p:13.0, cat:"Pizzas",  e:"🍄", ing:"Tomate San Marzano, Fior di latte, Jamón cocido, Champiñones frescos",  alg:"Gluten, Lácteos"},
+  {id:8,  num:8,  n:"Il Tulipano Nero", sub:"Quattro Formaggi",      p:14.5, cat:"Pizzas",  e:"🧀", ing:"Tomate San Marzano, Fior di latte, Gorgonzola, Provolone, Parmigiano",  alg:"Gluten, Lácteos, Huevo"},
+  {id:9,  num:9,  n:"El Mago de Zadar", sub:"Vegetariana",           p:14.5, cat:"Pizzas",  e:"🥦", ing:"Tomate San Marzano, Fior di latte, Pimiento, Berenjena asada, Tomates confitados, Cebolla morada", alg:"Gluten, Lácteos"},
+  {id:10, num:10, n:"El Último 10",     sub:"Tonno e Cipolla",       p:14.0, cat:"Pizzas",  e:"🐟", ing:"Tomate San Marzano, Fior di latte, Atún, Cebolla morada, Aceitunas",    alg:"Gluten, Lácteos, Pescado"},
+  {id:11, num:11, n:"Il Gladiatore",    sub:"Capricciosa",           p:14.5, cat:"Pizzas",  e:"⚔️", ing:"Tomate San Marzano, Fior di latte, Champiñones, Jamón, Alcachofas, Aceitunas negras", alg:"Gluten, Lácteos"},
+  {id:38, num:12, n:"La Joya",          sub:"CarboDieci",            p:15.0, cat:"Pizzas",  e:"🥓", ing:"Mozzarella Fior di Latte di Sorrento, Huevo carbonara, Pancetta",            alg:"Gluten, Lácteos, Huevo"},
   {id:37, num:13, n:"Magicbox",         sub:"Parmazola",             p:16.5, cat:"Pizzas",  e:"🍃", ing:"Fior di latte, Gorgonzola DOP, Jamón de Parma, Rúcula, Parmigiano Reggiano, Tomates confitados", alg:"Gluten, Lácteos"},
-  {id:39, num:14, n:"La Pinturicchio",  sub:"La Ahumada",           p:15.0, cat:"Pizzas",  e:"🪵", ing:"Tomate San Marzano, Fior di latte, Provola ahumada, Salami Napoli, Nueces",   alg:"Gluten, Lácteos, Frutos de cáscara"},
+  {id:39, num:14, n:"Pinturicchio",     sub:"affumicata",            p:15.0, cat:"Pizzas",  e:"🪵", ing:"Tomate San Marzano, Fior di latte, Provola ahumada, Salami Napoli, Nueces",   alg:"Gluten, Lácteos, Frutos de cáscara"},
   // POSTRES
   {id:12, n:"Misu Clásico",     sub:"Tiramisú", p:5.00, cat:"Postres", e:"🍰", ing:"", alg:"Gluten, Lácteos, Huevo"},
   {id:13, n:"Misu Especial",    sub:"Tiramisú", p:6.00, cat:"Postres", e:"✨", ing:"", alg:"Gluten, Lácteos, Huevo"},
@@ -160,12 +160,13 @@ const EXTRAS_DULCES = [
 ];
 
 // Etichetta prodotto per il picker.
-// Pizza (ha `num` ufficiale): primario = "N. NOME CLÁSICO" (il cliente ordina per numero),
-//                             secondario = soprannome tra virgolette (es. «El Pelusa»).
+// Pizza (ha `num` ufficiale): primario = NOME CLÁSICO prominente, secondario = soprannome
+//   tra virgolette (es. «El Pelusa»). Il numero ufficiale NON va nel titolo: viene reso
+//   in un footer/badge dedicato in fondo alla card (vedi picker) per non rompere il layout.
 // Altri prodotti: primario = nome, secondario = sub (es. formato bottiglia).
 function pizzaLabel(p) {
   if (p && p.num) {
-    return { primary: `${p.num}. ${(p.sub || "").toUpperCase()}`, secondary: p.n ? `«${p.n}»` : "" };
+    return { primary: (p.sub || "").toUpperCase(), secondary: p.n ? `«${p.n}»` : "" };
   }
   return { primary: p ? p.n : "", secondary: p ? (p.sub || "") : "" };
 }

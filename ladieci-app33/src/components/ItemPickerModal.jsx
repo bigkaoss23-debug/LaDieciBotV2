@@ -434,6 +434,21 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                       <span style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 14, fontWeight: 800, marginTop: 2 }}>
                         {p.p.toFixed(2)}€
                       </span>
+                      {/* Footer numero ufficiale — solo pizze (p.num). Necessario perché
+                          pizzaLabel non mette più il numero nel titolo: senza questo slot
+                          il numero sparirebbe del tutto dalla card. Altezza fissa per non
+                          disallineare le card pizza rispetto ai non-pizza. */}
+                      {p.num && (
+                        <div style={{
+                          marginTop: 4, paddingTop: 5, width: "100%", height: 22,
+                          borderTop: `1px solid ${C.fumo}`,
+                          display: "flex", alignItems: "center", justifyContent: "center"
+                        }}>
+                          <span style={{ color: "#888", fontSize: 11, fontWeight: 800, letterSpacing: 0.5 }}>
+                            Nº {p.num}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

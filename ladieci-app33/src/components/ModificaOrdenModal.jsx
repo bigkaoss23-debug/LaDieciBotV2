@@ -223,6 +223,16 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                       {lbl.secondary&&<span style={{color:C.grigio,fontSize:10,fontStyle:p.num?"italic":"normal",textAlign:"center"}}>{lbl.secondary}</span>}
                       <span style={{color:s?C.avana:C.rosso,fontSize:12,fontWeight:700}}>
                         {p.p.toFixed(2)}€</span>
+                      {/* Footer numero ufficiale — vedi ItemPickerModal: il numero non è
+                          più nel titolo, quindi va reso qui o sparisce. Slot ad altezza
+                          fissa per l'allineamento delle card. */}
+                      {p.num&&(
+                        <div style={{marginTop:4,paddingTop:5,width:"100%",height:20,
+                          borderTop:`1px solid ${C.fumo}`,
+                          display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          <span style={{color:C.grigio,fontSize:10,fontWeight:800,letterSpacing:0.5}}>Nº {p.num}</span>
+                        </div>
+                      )}
                     </button>
                   );
                 })}
