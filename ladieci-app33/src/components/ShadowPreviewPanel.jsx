@@ -69,7 +69,11 @@ export default function ShadowPreviewPanel({ onBack }) {
   useEffect(() => { load(date); /* eslint-disable-next-line */ }, []);
 
   const status = preview ? metaFor(STATUS_META, preview.status, STATUS_META.ok) : null;
-  const summary = preview && preview.summary ? preview.summary : null;
+  // Oggetto vuoto, non null: il blocco Resumen più sotto legge summary.* senza
+  // guardia propria (come già fanno groups/actions con i loro fallback ad
+  // array vuoto). Un contratto valido (`version` presente) ma senza `summary`
+  // andrebbe altrimenti in crash e lascerebbe la vista admin a schermo bianco.
+  const summary = (preview && preview.summary) || {};
   const groups = preview && Array.isArray(preview.groups) ? preview.groups : [];
   const actions = preview && Array.isArray(preview.actions) ? preview.actions : [];
   const safety = preview && preview.safety ? preview.safety : null;
