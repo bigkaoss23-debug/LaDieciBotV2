@@ -76,12 +76,27 @@ describe("ModificaOrdenModal — contratto menu", () => {
 });
 
 describe("wiring portato dalla linea orfana", () => {
-  test("ServicioPage monta il modal ticket e lo splash, e usa la coda di creazione", () => {
+  test("ServicioPage monta il modal ticket e usa la coda di creazione", () => {
     expect(servicio).toContain("import CustomerTicketPrintModal");
-    expect(servicio).toContain("import OperationalSuccessSplash");
     expect(servicio).toContain("useOrderCreationQueue");
     expect(servicio).toContain("{ticketOrder&&<CustomerTicketPrintModal");
-    expect(servicio).toContain("{successSplash&&<OperationalSuccessSplash");
+  });
+
+  test("produzione: nessuno splash di conferma ordine (rimosso 2026-07-31)", () => {
+    expect(servicio).not.toContain("OperationalSuccessSplash");
+    expect(servicio).not.toContain("successSplash");
+  });
+
+  test("rimozione splash non ha toccato il guard anti-doppio-click né il rollback di errore", () => {
+    // confirmaOrdine: la guardia inFlightRef resta prima/dopo, invariata.
+    expect(servicio).toContain("if (!beginAction(id)) return;");
+    expect(servicio).toContain("creationQueue.updateConfirmed(id, { estado: ORDER_STATES.EN_COCINA });");
+    expect(servicio).toContain("} finally { endAction(id); }");
+    // addOrden: dedup per client_req_id e rollback su errore restano cablati.
+    expect(servicio).toContain("creationQueue.begin(o) === null && requestId) return");
+    expect(servicio).toContain("creationQueue.confirm(requestId,");
+    expect(servicio).toContain("creationQueue.fail(requestId)");
+    expect(servicio).toContain("ROLLBACK: l'ordine fantasma viene rimosso dallo state");
   });
 
   test("ServicioPage conserva la state machine ordini della linea Git", () => {

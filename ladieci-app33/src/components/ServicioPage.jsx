@@ -13,7 +13,6 @@ import TabEntregas from './entregas/TabEntregas';
 import NuevoPedidoModal from './NuevoPedidoModal';
 import ModificaOrdenModal from './ModificaOrdenModal';
 import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrintModal';
-import OperationalSuccessSplash, { OPERATIONAL_SUCCESS_DURATION_MS } from './ui/OperationalSuccessSplash';
 import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
 import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
@@ -71,8 +70,6 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   // Ticket cliente aperto dalla card ordine (TicketQuickAction). Resta null
   // finché l'operatore non lo chiede: nessun rendering di stampa a vuoto.
   const [ticketOrder, setTicketOrder] = useState(null);
-  // Feedback operativo a schermo intero dopo conferma/creazione ordine.
-  const [successSplash, setSuccessSplash] = useState(null);
   // Coda di creazione ordine: deduplica per client_req_id e tiene visibile
   // l'ordine in fase "saving"/"confirmed" finché il refetch DB non lo assorbe.
   // NON sostituisce il rollback esistente: lo affianca.
@@ -337,11 +334,6 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         catch(err) { console.error("confirmaOrdine error:", err); }
       });
       creationQueue.updateConfirmed(id, { estado: ORDER_STATES.EN_COCINA });
-      setSuccessSplash({
-        phase: "success",
-        title: "¡Pedido enviado a cocina!",
-        subtitle: null,
-      });
     } finally { endAction(id); }
   };
 
@@ -411,13 +403,6 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       setOrdenes(p=>p.map(x=>x.id===o.id?{...x,id:res.id,_temp:false}:x));
       creationQueue.confirm(requestId, { ...o, ...res, id: res.id, _temp: false });
       notify("✅ " + res.id + " → " + canalLabel);
-      if (o.canal==="MANUAL") {
-        setSuccessSplash({
-          phase: "success",
-          title: "¡Pedido confirmado!",
-          subtitle: "Listo para cocina.",
-        });
-      }
     } catch(err) {
       // ROLLBACK: l'ordine fantasma viene rimosso dallo state. Il pizzaiolo
       // NON deve vedere ordini senza backing DB. Vedi audit CL4SBU del 14/05/2026.
@@ -1589,12 +1574,6 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       }}
         onClose={()=>setOrdenModifica(null)} onSave={modificaOrden}/>}
       {ticketOrder&&<CustomerTicketPrintModal order={ticketOrder} onClose={()=>setTicketOrder(null)}/>}
-      {successSplash&&<OperationalSuccessSplash
-        phase={successSplash.phase}
-        title={successSplash.title}
-        subtitle={successSplash.subtitle}
-        duration={OPERATIONAL_SUCCESS_DURATION_MS}
-        onComplete={()=>setSuccessSplash(null)}/>}
 
       {/* Pannello cucina — overlay light mode */}
       {showCocina&&<PanelCocina
