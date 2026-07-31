@@ -125,7 +125,7 @@ Documenta le 5 variabili d'ambiente necessarie su Netlify.
 
 | Variabile | Valore | Note |
 |-----------|--------|------|
-| `RAILWAY_API_KEY` | `ld_92ed94d5ef63ab0327f7c61467898cf3` | Nascosta dal frontend |
+| `RAILWAY_API_KEY` | `<REDACTED — vedi env var DASHBOARD_API_KEY su Railway / RAILWAY_API_KEY su Netlify>` | Nascosta dal frontend |
 | `JWT_SECRET` | `6ceedf319066c251d3c96bc787f49282a04230f34c9b91034bcf293e15d9b436` | Firma i token |
 | `APP_PIN` | `123456` | Fallback se Supabase non risponde |
 | `REPARTIDOR_PIN` | `000000` | Fallback se Supabase non risponde |

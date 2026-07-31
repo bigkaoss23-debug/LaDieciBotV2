@@ -15,7 +15,7 @@ L'app viene usata da più operatori contemporaneamente sullo stesso browser — 
 - Webhook WhatsApp aggiornato da GAS a Railway
 - **`src/api.js` migrato** — punta a Railway, non più a GAS
 - CORS abilitato su Railway (include header `X-Api-Key`)
-- **API Key auth** su Railway (`X-Api-Key: ld_92ed94d5ef63ab0327f7c61467898cf3`) — env var `DASHBOARD_API_KEY` impostata su Railway
+- **API Key auth** su Railway (`X-Api-Key: <REDACTED — vedi env var DASHBOARD_API_KEY su Railway / RAILWAY_API_KEY su Netlify>`) — env var `DASHBOARD_API_KEY` impostata su Railway
 - **Supabase RLS** su tabella `config` — anon key non può leggere chiavi sensibili
 - Endpoint `rispondiWA`, `getConvThread` aggiunti a Railway
 - **Regola anti-invenzione** nel prompt di `interpreta()`
@@ -182,7 +182,7 @@ ladieci-bot/
 | `eliminaConversazione` | Elimina conv per wa_id |
 
 ### Autenticazione
-Tutti gli endpoint `/api` richiedono header `X-Api-Key: ld_92ed94d5ef63ab0327f7c61467898cf3`.
+Tutti gli endpoint `/api` richiedono header `X-Api-Key: <REDACTED — vedi env var DASHBOARD_API_KEY su Railway / RAILWAY_API_KEY su Netlify>`.
 Env var su Railway: `DASHBOARD_API_KEY`.
 
 ### Deploy

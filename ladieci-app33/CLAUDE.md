@@ -15,7 +15,7 @@ L'app viene usata da più operatori contemporaneamente sullo stesso browser — 
 - Webhook WhatsApp aggiornato da GAS a Railway
 - **`src/api.js` migrato** — punta a Railway, non più a GAS
 - CORS abilitato su Railway (include header `X-Api-Key`)
-- **API Key auth** su Railway (`X-Api-Key: ld_92ed94d5ef63ab0327f7c61467898cf3`) — env var `DASHBOARD_API_KEY` impostata su Railway
+- **API Key auth** su Railway (`X-Api-Key: <REDACTED — vedi env var DASHBOARD_API_KEY su Railway / RAILWAY_API_KEY su Netlify>`) — env var `DASHBOARD_API_KEY` impostata su Railway
 - **Supabase RLS** su tabella `config` — anon key non può leggere chiavi sensibili
 - Endpoint `rispondiWA`, `getConvThread` aggiunti a Railway
 - **Regola anti-invenzione** nel prompt di `interpreta()`
@@ -182,7 +182,7 @@ ladieci-bot/
 | `eliminaConversazione` | Elimina conv per wa_id |
 
 ### Autenticazione
-Tutti gli endpoint `/api` richiedono header `X-Api-Key: ld_92ed94d5ef63ab0327f7c61467898cf3`.
+Tutti gli endpoint `/api` richiedono header `X-Api-Key: <REDACTED — vedi env var DASHBOARD_API_KEY su Railway / RAILWAY_API_KEY su Netlify>`.
 Env var su Railway: `DASHBOARD_API_KEY`.
 
 ### Deploy
@@ -198,16 +198,47 @@ git push origin main   # Railway deploya automaticamente
 
 **Sito:** `magnificent-lollipop-6dff70.netlify.app`
 **Site ID:** `02bd4c7a-a50b-4964-90da-8c1af1122932`
-**Cartella locale:** `/Users/bigart/Downloads/ladieci-app33`
+
+### ⛔ UNICA SORGENTE AUTORIZZATA PER LA PRODUZIONE
+
+**Un worktree Git di questo repository. Nient'altro.**
+
+`/Users/bigart/Downloads/ladieci-app33` **NON è più una sorgente valida**: era una
+cartella non versionata, ferma al 17/05/2026, ed è la causa dimostrata della
+regressione del menu del 29/07/2026 (ha ripubblicato il catalogo pre-luglio).
+È stata messa in quarantena il 31/07/2026 come
+`_QUARANTINE-ladieci-app33-INCIDENT-20260729-DO-NOT-DEPLOY`, con il collegamento
+Netlify neutralizzato. Non ripristinarla, non ricrearla, non deployare da lì.
+Lo stesso vale per `LaDiecibotV2/ladieci-app33` e per le copie in `_wip_backups/`.
+
+### Procedura di rilascio
 
 ```bash
-npm start   # Dev locale
+cd <worktree-git>/ladieci-app33
 
-# Deploy produzione (solo con esplicito "vai / deploya" dall'utente)
-npx -y @netlify/mcp@latest --site-id 02bd4c7a-a50b-4964-90da-8c1af1122932
+npm start                 # dev locale
+
+npm run build             # OBBLIGATORIO: `npm run`, non `npx react-scripts build`.
+                          # Solo `npm run build` esegue il prebuild che genera
+                          # build/version.json. Un deploy senza version.json è
+                          # per definizione fuori processo — era la firma
+                          # dell'incidente del 29/07.
+
+./scripts/preflight-deploy.sh production 02bd4c7a-a50b-4964-90da-8c1af1122932
+                          # Rifiuta: cartelle non-Git, worktree sporco, branch
+                          # non autorizzato, version.json mancante o diverso da
+                          # HEAD, build più vecchia del commit, site id errato,
+                          # credenziali privilegiate nel bundle, source map.
+
+# Solo se il preflight esce 0 E l'utente ha dato conferma esplicita:
+DEPLOY_CONFIRM="DEPLOY PRODUZIONE ORA, CONFERMO" \
+  netlify deploy --site 02bd4c7a-a50b-4964-90da-8c1af1122932 --dir build --no-build --prod
 ```
 
-**IMPORTANTE:** Non fare mai build+deploy senza esplicito "vai / deploya" dall'utente. Costa soldi.
+**IMPORTANTE:** mai build+deploy senza esplicito "vai / deploya" dall'utente. Costa soldi.
+**Mai** `netlify deploy --prod` senza `--site` e `--dir` espliciti: senza di essi il
+target dipende dal `.netlify/state.json` della cartella corrente, ed è esattamente
+così che è nato l'incidente.
 
 ---
 
