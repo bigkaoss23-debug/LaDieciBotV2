@@ -1,3 +1,4 @@
+import { isDessertPizza } from '../../menu/dessertPizza';
 // Pure delivery scheduling engine.
 // No React, no network, no storage: all domain dependencies are passed in.
 
@@ -82,7 +83,7 @@ export function simulateDriverSchedule(orders, options = {}, deps = {}) {
     .filter(it => {
       const cat = it.cat || "Pizzas";
       if (cat === "Bebidas") return false;
-      if (cat === "Postres" && it.n !== "Pizza Nutella") return false;
+      if (cat === "Postres" && !isDessertPizza(it)) return false;
       return true;
     })
     .reduce((s, it) => s + (parseInt(it.q) || 1), 0);

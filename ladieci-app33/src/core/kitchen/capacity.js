@@ -1,3 +1,4 @@
+import { isDessertPizza } from '../../menu/dessertPizza';
 // Pure kitchen/oven capacity helpers.
 // Throughput model: the oven is the bottleneck, with about 4 pizzas every 5 minutes.
 
@@ -55,7 +56,7 @@ export function isPizzaItem(item) {
   if (!item || item.n === "Entrega a domicilio") return false;
   const cat = item.cat || "Pizzas";
   if (cat === "Bebidas") return false;
-  if (cat === "Postres" && item.n !== "Pizza Nutella") return false;
+  if (cat === "Postres" && !isDessertPizza(item)) return false;
   return true;
 }
 

@@ -6,6 +6,7 @@ import { applyUiOffset } from '../../utils/uiOffset';
 import Suoni from '../../sounds';
 import SnoozeButton from '../ui/SnoozeButton';
 import { api } from '../../api';
+import { isDessertPizza } from '../../menu/dessertPizza';
 import {
   buildManualGiroMetaById,
   formatManualGiroLabel,
@@ -62,7 +63,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
     const mi = lookupMenu(it);
     const cat = it.cat || mi?.cat || "Pizzas";
     if (cat === "Bebidas") return true;
-    if (cat === "Postres" && it.n !== "Pizza Nutella") return true;
+    if (cat === "Postres" && !isDessertPizza(it)) return true;
     return false;
   };
   const manualGiroMetaById = buildManualGiroMetaById(manualGiros);

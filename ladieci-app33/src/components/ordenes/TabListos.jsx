@@ -7,13 +7,14 @@ import TicketQuickAction from '../ui/TicketQuickAction';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
 import { orarioToMs } from '../../utils/serviceClock';
+import { isDessertPizza } from '../../menu/dessertPizza';
 
 const isPizzaItem = (it) => {
   if (!it || !it.n) return false;
   if (it.n === "Entrega a domicilio") return false;
   const cat = it.cat || "Pizzas";
   if (cat === "Bebidas") return false;
-  if (cat === "Postres" && it.n !== "Pizza Nutella") return false;
+  if (cat === "Postres" && !isDessertPizza(it)) return false;
   return true;
 };
 
@@ -486,7 +487,7 @@ const caricoTotale = (ordenes) => {
   const countItems = (items) => (items||[]).filter(it => {
     const mi = lookupMenu(it);
     const cat = it.cat || mi?.cat || "Pizzas";
-    return cat !== "Bebidas" && (cat !== "Postres" || it.n === "Pizza Nutella");
+    return cat !== "Bebidas" && (cat !== "Postres" || isDessertPizza(it));
   }).reduce((a,i) => a + (Number(i.q)||1), 0);
   // Conta solo ordini EN_COCINA — carico reale in cucina adesso
   return ordenes

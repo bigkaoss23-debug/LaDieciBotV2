@@ -87,7 +87,9 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
   const tap = (p) => setItems(prev => {
     const ex = prev.find(i=>i.id===p.id);
     if(ex) return prev.map(i=>i.id===p.id?{...i,q:i.q+1}:i);
-    return [...prev,{...p,q:1}];
+    // `sub` è il campo note/extras dell'ordine, NON il nome classico del catalogo:
+    // ereditarlo da MENU stamperebbe "Margherita Classica" come variazione.
+    return [...prev,{...p,q:1,sub:""}];
   });
   const adj = (id,d) => setItems(prev=>
     prev.map(i=>i.id===id?{...i,q:Math.max(0,i.q+d)}:i).filter(i=>i.q>0));

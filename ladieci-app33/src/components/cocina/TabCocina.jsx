@@ -7,6 +7,7 @@ import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import SnoozeButton from '../ui/SnoozeButton';
 import { ORDER_STATES } from '../../core/orders';
+import { isDessertPizza } from '../../menu/dessertPizza';
 import {
   buildManualGiroMetaById,
   formatManualGiroLabel,
@@ -142,7 +143,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
     const mi = lookupMenu(it);
     const cat = it.cat || mi?.cat || "";
     if (cat === "Bebidas") return true;
-    if (cat === "Postres" && it.n !== "Pizza Nutella") return true;
+    if (cat === "Postres" && !isDessertPizza(it)) return true;
     return false;
   };
 

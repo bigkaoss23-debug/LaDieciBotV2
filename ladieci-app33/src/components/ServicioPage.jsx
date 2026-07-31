@@ -19,6 +19,7 @@ import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
 import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isTerminalState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
 import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
+import { isDessertPizza } from '../menu/dessertPizza';
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -838,7 +839,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     if (it.n === "Entrega a domicilio") return false;
     const cat = it.cat || "Pizzas";
     if (cat === "Bebidas") return false;
-    if (cat === "Postres" && it.n !== "Pizza Nutella") return false;
+    if (cat === "Postres" && !isDessertPizza(it)) return false;
     return true;
   };
   const pizzeFatteStasera = useMemo(() => ordenes

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { C, MENU, CATS, tot, genId, INGREDIENTI, calcTotale as calcTotaleHelper } from '../../constants';
+import { C, MENU, CATS, tot, genId, INGREDIENTI, EXTRAS_DULCES, esDulce, findExtra, calcTotale as calcTotaleHelper } from '../../constants';
 import { sb, api, auth } from '../../api';
 import ItemPickerModal from '../ItemPickerModal';
 import Chip from '../ui/Chip';
@@ -600,7 +600,7 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                     counts[name]=(counts[name]||0)+1;
                   });
                   const extras=Object.entries(counts).map(([name,qty])=>{
-                    const ing=INGREDIENTI.find(g=>g.n===name);
+                    const ing=findExtra(name);
                     return{name,qty,prezzo:ing?Math.round(ing.prezzo*qty*100)/100:0,e:ing?ing.e:"➕"};
                   });
                   if(!extras.length) return null;
@@ -617,7 +617,7 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                             fontFamily:"'DM Mono',monospace"}}>+{ex.prezzo.toFixed(2)}€</span>
                           <button
                             onClick={()=>{
-                              const ing=INGREDIENTI.find(g=>g.n===ex.name);
+                              const ing=findExtra(ex.name);
                               setEditItems(prev=>prev.map((x,j)=>{
                                 if(j!==i) return x;
                                 // Rimuove una sola occorrenza di "+NomeIngrediente" dal sub
@@ -682,7 +682,7 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                   {/* Griglia ingredienti */}
                   <div style={{overflowY:"auto",padding:"12px 14px",flex:1}}>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                      {INGREDIENTI.filter(ing=>ing.prezzo>0).map(ing=>{
+                      {(esDulce(editItems[showIngPanel])?EXTRAS_DULCES:INGREDIENTI).filter(ing=>ing.prezzo>0).map(ing=>{
                         const currentSub = editItems[showIngPanel]?.sub || "";
                         const count = (currentSub.match(new RegExp(`\\+${ing.n}`, "g")) || []).length;
                         const sel = count > 0;
