@@ -158,6 +158,39 @@ if [ "$ENVIRONMENT" = "production" ]; then
   fi
 fi
 
+# ── 9. Scansione credenziali privilegiate + source map ──────────────────────
+# Nasce dall'audit del 31/07/2026: una chiave Railway privilegiata era in chiaro
+# in file .md TRACCIATI di un repository PUBBLICO. Qui diventa un blocco.
+# Le chiavi publishable/anon di Supabase sono escluse di proposito: sono
+# progettate per viaggiare nel bundle del browser.
+PRIV_PATTERNS='(ld_[a-f0-9]{20,}|sb_secret_[A-Za-z0-9]{15,}|sk-ant-[A-Za-z0-9_-]{20,}|nfp_[A-Za-z0-9]{20,}|\bEAA[A-Za-z0-9]{40,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})'
+# JWT con role=service_role: "service_role" in base64url è c2VydmljZV9yb2xl
+SVCROLE='eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]*c2VydmljZV9yb2xl[A-Za-z0-9_-]*\.'
+
+scan_hits=0
+if [ -d build ]; then
+  while IFS= read -r f; do
+    if LC_ALL=C grep -lqEI "$PRIV_PATTERNS|$SVCROLE" "$f" 2>/dev/null; then
+      fail "credenziale privilegiata nel build: $f"; scan_hits=$((scan_hits+1))
+    fi
+  done < <(find build -type f \( -name '*.js' -o -name '*.json' -o -name '*.html' -o -name '*.css' -o -name '*.map' \))
+fi
+if [ -n "$GIT_TOP" ]; then
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    if LC_ALL=C grep -lqEI "$PRIV_PATTERNS|$SVCROLE" "$f" 2>/dev/null; then
+      fail "credenziale privilegiata in file tracciato: $f"; scan_hits=$((scan_hits+1))
+    fi
+  done < <(git ls-files)
+fi
+[ "$scan_hits" -eq 0 ] && ok "scansione credenziali privilegiate: nessun riscontro"
+
+if [ -d build ] && find build -name '*.map' -type f | grep -q .; then
+  fail "source map presenti in build/ — usa GENERATE_SOURCEMAP=false o rimuovile prima del deploy"
+else
+  [ -d build ] && ok "nessuna source map nel build"
+fi
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
   printf "${GREEN}PREFLIGHT OK${NC} — %d controlli superati. Il deploy può procedere.\n" 8
