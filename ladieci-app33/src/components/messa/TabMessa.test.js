@@ -29,3 +29,10 @@ describe("Mesa closed-account boundary", () => {
     expect(source).not.toContain("sigue ocupada");
   });
 });
+
+describe("Mesa floor editor instructions", () => {
+  test("describes the actual remove interaction without inventing a red button", () => {
+    expect(source).toContain("Para quitar una, tócala y confirma.");
+    expect(source).not.toContain("usa el botón rojo");
+  });
+});
