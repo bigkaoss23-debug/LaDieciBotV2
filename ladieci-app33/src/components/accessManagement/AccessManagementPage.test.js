@@ -1,5 +1,7 @@
-// Gestión de accesos — read-only page (V3-I.1). react-dom + react-dom/test-utils, same
-// house style as src/components/pinManagementFlow.test.js — no @testing-library dependency.
+// Gestión de accesos — read-only page (V3-I.1 UX pass). react-dom + react-dom/test-utils,
+// same house style as src/components/pinManagementFlow.test.js — no @testing-library dependency.
+// Locks the restaurant-friendly contract: no raw actor ids, no "Legacy"/"Beta · En desarrollo"
+// chips, one combined status concept per row, deterministic Operador-N fallback naming.
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react-dom/test-utils';
@@ -15,6 +17,7 @@ jest.mock('../../accessManagement/accessManagementApi', () => ({
   listAccessUsers: jest.fn(),
 }));
 
+const { auth } = require('../../api');
 const { listAccessUsers } = require('../../accessManagement/accessManagementApi');
 const AccessManagementPage = require('./AccessManagementPage').default;
 
@@ -31,14 +34,24 @@ async function mount(props = {}) {
 }
 function unmount(container, root) { act(() => { root.unmount(); }); container.remove(); }
 
-const FOUR_USERS = [
-  { actor: 'owner', displayName: 'Ana', canonicalRole: 'owner', active: true, hasPin: true },
-  { actor: 'operator_primary', displayName: 'Operador Principal', canonicalRole: 'legacy_operator', active: true, hasPin: true },
-  { actor: 'operator_backup', displayName: 'Operador de Apoyo', canonicalRole: 'legacy_operator', active: false, hasPin: false },
-  { actor: 'rider', displayName: 'Luis', canonicalRole: 'rider', active: true, hasPin: true },
+// Staging-shaped fixture: legacy operators carry a migration-generated "... heredado"
+// name, the rider's displayName is just the role word — none is a real person's name.
+// operator_primary is deliberately marked inactive here (the real dataset has all four
+// active) so the Inactivo-takes-priority-over-PIN-wording rule has coverage.
+const REAL_FOUR_USERS = [
+  { actor: 'owner', displayName: 'Propietario', canonicalRole: 'owner', active: true, hasPin: true },
+  { actor: 'operator_backup', displayName: 'Operador de apoyo heredado', canonicalRole: 'legacy_operator', active: true, hasPin: true },
+  { actor: 'operator_primary', displayName: 'Operador principal heredado', canonicalRole: 'legacy_operator', active: false, hasPin: false },
+  { actor: 'rider', displayName: 'Repartidor', canonicalRole: 'rider', active: true, hasPin: true },
 ];
 
-beforeEach(() => { jest.clearAllMocks(); });
+beforeEach(() => {
+  jest.clearAllMocks();
+  // react-scripts' jest config sets resetMocks:true, which wipes a jest.fn()'s
+  // implementation (not just its call history) before every test — re-establish it
+  // explicitly rather than relying on the jest.mock() factory's initial implementation.
+  auth.getActor.mockReturnValue('owner');
+});
 
 test('shows a page-level loading state before data arrives', async () => {
   listAccessUsers.mockReturnValue(new Promise(() => {})); // never resolves in this test
@@ -47,46 +60,88 @@ test('shows a page-level loading state before data arrives', async () => {
   unmount(container, root);
 });
 
-test('four-user success: MI ACCESO shows the owner, PERSONAL shows the rest, with correct Spanish labels', async () => {
-  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: FOUR_USERS });
+test('MI ACCESO shows Propietario with no duplicate role line and no Activo/Inactivo', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
   await flush();
 
-  expect(container.textContent).toMatch(/Mi acceso/);
-  expect(container.textContent).toMatch(/Personal/);
-
-  const meCard = container.querySelector('[data-testid="access-card-owner"]');
-  expect(meCard.textContent).toMatch(/Ana/);
-  expect(meCard.textContent).toMatch(/Propietario/);
-
-  const opPrimary = container.querySelector('[data-testid="access-card-operator_primary"]');
-  const opBackup = container.querySelector('[data-testid="access-card-operator_backup"]');
-  const rider = container.querySelector('[data-testid="access-card-rider"]');
-  expect(opPrimary.textContent).toMatch(/Operador Principal/);
-  expect(opPrimary.textContent).toMatch(/Operador actual/); // legacy label, not cashier/waiter
-  expect(opPrimary.textContent).toMatch(/operator_primary/); // secondary technical id to tell the two apart
-  expect(opBackup.textContent).toMatch(/Operador de Apoyo/);
-  expect(opBackup.textContent).toMatch(/Operador actual/);
-  expect(rider.textContent).toMatch(/Luis/);
-  expect(rider.textContent).toMatch(/Repartidor/);
-
-  // owner never duplicated into PERSONAL
-  expect(container.querySelectorAll('[data-testid^="access-card-"]').length).toBe(4);
+  const ownerRow = container.querySelector('[data-testid="access-owner-row"]');
+  expect(ownerRow).toBeTruthy();
+  expect(ownerRow.textContent).toMatch(/Propietario/);
+  expect(ownerRow.textContent).toMatch(/PIN configurado/);
+  expect(ownerRow.textContent).not.toMatch(/Activo|Inactivo/);
+  // "Propietario" must appear once as the identity, not repeated as a separate role line.
+  expect((ownerRow.textContent.match(/Propietario/g) || []).length).toBe(1);
   unmount(container, root);
 });
 
-test('active/inactive and PIN configured/not-configured labels are correct per record', async () => {
-  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: FOUR_USERS });
+test('PERSONAL shows deterministic Operador N fallback labels, never raw actor ids or "Legacy"', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
   await flush();
 
-  const opBackup = container.querySelector('[data-testid="access-card-operator_backup"]');
-  expect(opBackup.textContent).toMatch(/Inactivo/);
-  expect(opBackup.textContent).toMatch(/PIN no configurado/);
+  const backup = container.querySelector('[data-testid="access-row-operator_backup"]');
+  const primary = container.querySelector('[data-testid="access-row-operator_primary"]');
+  const rider = container.querySelector('[data-testid="access-row-rider"]');
+  expect(backup.textContent).toMatch(/Operador 1/);
+  expect(primary.textContent).toMatch(/Operador 2/);
+  expect(rider.textContent).toMatch(/Operador 3/);
 
-  const rider = container.querySelector('[data-testid="access-card-rider"]');
-  expect(rider.textContent).toMatch(/Activo/);
-  expect(rider.textContent).toMatch(/PIN configurado/);
+  expect(container.textContent).not.toMatch(/operator_backup|operator_primary/); // not visible collapsed
+  expect(container.textContent).not.toMatch(/Legacy/i);
+  expect(container.textContent).not.toMatch(/Beta · En desarrollo/);
+  unmount(container, root);
+});
+
+test('collapsed staff row shows exactly one combined role+status line, no chip pile-up', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+
+  const backup = container.querySelector('[data-testid="access-row-operator_backup"]');
+  expect(backup.textContent).toMatch(/Operador actual/);
+  expect(backup.textContent).toMatch(/PIN configurado/);
+
+  const primary = container.querySelector('[data-testid="access-row-operator_primary"]'); // active:false in fixture
+  expect(primary.textContent).toMatch(/Inactivo/);
+  expect(primary.textContent).not.toMatch(/PIN no configurado/); // Inactivo takes priority, not both shown
+  unmount(container, root);
+});
+
+test('the internal actor id is not visible until the row is expanded, and is subdued detail there', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+
+  const row = container.querySelector('[data-testid="access-row-operator_backup"]');
+  expect(container.querySelector('[data-testid="access-row-detail-operator_backup"]')).toBeNull();
+  expect(row.getAttribute('aria-expanded')).toBe('false');
+
+  click(row);
+  await flush();
+  expect(row.getAttribute('aria-expanded')).toBe('true');
+  const detail = container.querySelector('[data-testid="access-row-detail-operator_backup"]');
+  expect(detail).toBeTruthy();
+  expect(detail.textContent).toMatch(/operator_backup/);
+
+  click(row); // collapses again
+  await flush();
+  expect(container.querySelector('[data-testid="access-row-detail-operator_backup"]')).toBeNull();
+  unmount(container, root);
+});
+
+test('only one row is expanded at a time', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+
+  click(container.querySelector('[data-testid="access-row-operator_backup"]'));
+  await flush();
+  click(container.querySelector('[data-testid="access-row-rider"]'));
+  await flush();
+
+  expect(container.querySelector('[data-testid="access-row-detail-operator_backup"]')).toBeNull();
+  expect(container.querySelector('[data-testid="access-row-detail-rider"]')).toBeTruthy();
   unmount(container, root);
 });
 
@@ -106,16 +161,16 @@ test('a recoverable network error shows a retry control, and retry re-fetches', 
   await flush();
   expect(container.textContent).toMatch(/Error de red/);
 
-  listAccessUsers.mockResolvedValueOnce({ kind: 'ok', status: 200, users: FOUR_USERS });
+  listAccessUsers.mockResolvedValueOnce({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   click(container.querySelector('[data-testid="access-retry-btn"]'));
   await flush();
-  expect(container.textContent).toMatch(/Mi acceso/);
+  expect(container.querySelector('[data-testid="access-owner-row"]')).toBeTruthy();
   expect(listAccessUsers).toHaveBeenCalledTimes(2);
   unmount(container, root);
 });
 
 test('refresh is a single explicit GET-only action and de-duplicates concurrent clicks', async () => {
-  listAccessUsers.mockResolvedValueOnce({ kind: 'ok', status: 200, users: FOUR_USERS });
+  listAccessUsers.mockResolvedValueOnce({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
   await flush();
   expect(listAccessUsers).toHaveBeenCalledTimes(1);
@@ -128,12 +183,12 @@ test('refresh is a single explicit GET-only action and de-duplicates concurrent 
   click(refreshBtn);
   await flush();
   expect(listAccessUsers).toHaveBeenCalledTimes(2); // the three rapid clicks collapse into one in-flight call
-  await act(async () => { resolveRefresh({ kind: 'ok', status: 200, users: FOUR_USERS }); });
+  await act(async () => { resolveRefresh({ kind: 'ok', status: 200, users: REAL_FOUR_USERS }); });
   unmount(container, root);
 });
 
 test('a failed refresh keeps the last known-good list visible and shows an inline error, not a blank page', async () => {
-  listAccessUsers.mockResolvedValueOnce({ kind: 'ok', status: 200, users: FOUR_USERS });
+  listAccessUsers.mockResolvedValueOnce({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
   await flush();
 
@@ -141,7 +196,7 @@ test('a failed refresh keeps the last known-good list visible and shows an inlin
   click(container.querySelector('[data-testid="access-refresh-btn"]'));
   await flush();
 
-  expect(container.textContent).toMatch(/Ana/); // known-good data still visible
+  expect(container.querySelector('[data-testid="access-owner-row"]')).toBeTruthy(); // known-good data still visible
   expect(container.querySelector('[data-testid="access-refresh-error"]')).toBeTruthy();
   unmount(container, root);
 });
@@ -149,7 +204,7 @@ test('a failed refresh keeps the last known-good list visible and shows an inlin
 test('no sensitive field is ever rendered, even if a mocked response smuggled one in', async () => {
   listAccessUsers.mockResolvedValue({
     kind: 'ok', status: 200,
-    users: [{ actor: 'owner', displayName: 'Ana', canonicalRole: 'owner', active: true, hasPin: true,
+    users: [{ actor: 'owner', displayName: 'Propietario', canonicalRole: 'owner', active: true, hasPin: true,
       pin: '1234', pinHash: 'abcd-should-not-render', token: 'secret-token-value' }],
   });
   const { container, root } = await mount();
@@ -160,12 +215,14 @@ test('no sensitive field is ever rendered, even if a mocked response smuggled on
   unmount(container, root);
 });
 
-test('the EN DESARROLLO section is explanatory text only — no clickable write action', async () => {
-  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: FOUR_USERS });
+test('the closing note is a single subtle line, not a large feature-checklist panel', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
   await flush();
-  expect(container.textContent).toMatch(/En desarrollo/);
-  expect(container.textContent).toMatch(/Próximamente/);
+  expect(container.textContent).toMatch(/próximamente/i);
+  // No oversized dedicated section heading for it anymore.
+  const headings = Array.from(container.querySelectorAll('h2'));
+  expect(headings.some((h) => /en desarrollo/i.test(h.textContent))).toBe(false);
   const buttons = Array.from(container.querySelectorAll('button')).map((b) => b.textContent);
   expect(buttons).not.toContain('Guardar');
   expect(buttons).not.toContain('Confirmar');
@@ -173,8 +230,18 @@ test('the EN DESARROLLO section is explanatory text only — no clickable write 
   unmount(container, root);
 });
 
+test('"Cambiar PIN" appears only as non-interactive future text, never an enabled button', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+  expect(container.textContent).toMatch(/Cambiar PIN/);
+  const buttons = Array.from(container.querySelectorAll('button'));
+  expect(buttons.some((b) => /Cambiar PIN/.test(b.textContent))).toBe(false);
+  unmount(container, root);
+});
+
 test('the back button calls onBack', async () => {
-  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: FOUR_USERS });
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root, onBack } = await mount();
   await flush();
   click(container.querySelector('[data-testid="access-back-btn"]'));

@@ -12,6 +12,7 @@ const MENU = read('components/OperationalMenu.jsx');
 const RBAC = read('utils/adminRbac.js');
 const CLIENT = read('accessManagement/accessManagementApi.js');
 const PAGE = read('components/accessManagement/AccessManagementPage.jsx');
+const VIEWMODEL = read('accessManagement/accessUserViewModel.js');
 
 // Strips comments so assertions about what the CODE does (not what a comment merely
 // mentions in passing, e.g. explaining which write routes it deliberately omits) are
@@ -116,6 +117,17 @@ describe('read-only guarantee: the page component (Section 17/19)', () => {
     }
   });
 
+  test('no implementation/migration jargon reaches the page as visible text (V3-I.1 UX)', () => {
+    for (const bad of ['Legacy', 'Beta · En desarrollo', 'canonicalRole', 'dbRole']) {
+      expect(code(PAGE)).not.toMatch(bad);
+    }
+  });
+
+  test('no raw actor id is threaded into the UI as a primary/secondary display prop', () => {
+    expect(PAGE).not.toMatch(/secondaryLabel=\{u\.actor\}/);
+    expect(PAGE).not.toMatch(/displayName \|\| u\.actor/);
+  });
+
   test('the page imports only the two read calls from the client, never a write one', () => {
     const importLine = PAGE.match(/import \{[^}]*\} from '\.\.\/\.\.\/accessManagement\/accessManagementApi';/);
     expect(importLine).toBeTruthy();
@@ -125,5 +137,43 @@ describe('read-only guarantee: the page component (Section 17/19)', () => {
 
   test('backend authorization comment: frontend gate is defense-in-depth, not the security claim', () => {
     expect(PAGE).toMatch(/gated by canAccessAdminArea/i);
+  });
+});
+
+describe('presentation-model architecture (Section 5 — no patchwork)', () => {
+  test('one centralized view-model module owns presentation decisions', () => {
+    expect(VIEWMODEL).toMatch(/export function toAccessUserViewModel/);
+    expect(VIEWMODEL).toMatch(/export function buildAccessDirectoryViewModel/);
+  });
+
+  test('the page imports and uses the view-model boundary exactly once, not its own presentation logic', () => {
+    expect(PAGE).toMatch(/import \{ buildAccessDirectoryViewModel \} from '\.\.\/\.\.\/accessManagement\/accessUserViewModel';/);
+    expect((PAGE.match(/buildAccessDirectoryViewModel\(/g) || []).length).toBe(1);
+  });
+
+  test('the page does not import roleLabels directly — role wording is owned by the view model only', () => {
+    expect(PAGE).not.toMatch(/from '\.\.\/\.\.\/accessManagement\/roleLabels'/);
+  });
+
+  test('the page renders no standalone Chip-based role/status/pin badge components', () => {
+    expect(PAGE).not.toMatch(/RoleChip|StatusChip|PinChip/);
+    expect(PAGE).not.toMatch(/from '\.\.\/ui\/Chip'/);
+  });
+
+  test('the view model is transport-free — no fetch, no API import, no write-route vocabulary', () => {
+    expect(code(VIEWMODEL)).not.toMatch(/fetch\(/);
+    expect(code(VIEWMODEL)).not.toMatch(/accessManagementApi/); // a comment may explain the relationship; the code must not import it
+    expect(code(VIEWMODEL)).not.toMatch(/display-name|\/role['"`]|\/pin['"`]|deactivate|reactivate/);
+  });
+
+  test('the view model never exposes a raw actor id under an ambiguous field name', () => {
+    expect(VIEWMODEL).toMatch(/secondaryTechnicalId/);
+    expect(VIEWMODEL).not.toMatch(/secondaryLabel/);
+  });
+
+  test('forbidden backend fields never appear in the view-model source', () => {
+    for (const bad of ['pin_hash', 'pinHash', 'fingerprint', 'failed_count', 'locked_until', 'sid_hash']) {
+      expect(VIEWMODEL).not.toMatch(new RegExp(bad));
+    }
   });
 });
