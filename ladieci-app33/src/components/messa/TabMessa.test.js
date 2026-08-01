@@ -36,3 +36,10 @@ describe("Mesa floor editor instructions", () => {
     expect(source).not.toContain("usa el botón rojo");
   });
 });
+
+describe("Mesa free-table capacity label", () => {
+  test("uses a compact max-person label instead of the long cubiertos sentence", () => {
+    expect(source).toContain('>máx. {table.capacity || "—"}p</span>');
+    expect(source).not.toContain('hasta {table.capacity || "—"} cubiertos');
+  });
+});
