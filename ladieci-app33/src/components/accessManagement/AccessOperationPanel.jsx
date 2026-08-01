@@ -46,11 +46,16 @@ function ErrorBanner({ message }) {
   );
 }
 
-function ActionRow({ children, onConfirm, onCancel, busy, confirmLabel = 'Confirmar' }) {
+// `busy` drives the "Guardando…" label and disables Cancelar (an in-flight
+// submit can't be cancelled mid-request); `disabled` (defaults to `busy`)
+// controls only the confirm button, so a caller can grey it out for an
+// incomplete form WITHOUT falsely claiming a save is already in progress.
+function ActionRow({ children, onConfirm, onCancel, busy, disabled, confirmLabel = 'Confirmar' }) {
+  const confirmDisabled = disabled !== undefined ? disabled : busy;
   return (
     <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-      <button type="button" onClick={onConfirm} disabled={busy}
-        style={{ ...primaryBtn, opacity: busy ? 0.55 : 1, cursor: busy ? 'default' : 'pointer', padding: '11px 18px', fontSize: 14 }}>
+      <button type="button" onClick={onConfirm} disabled={confirmDisabled}
+        style={{ ...primaryBtn, opacity: confirmDisabled ? 0.55 : 1, cursor: confirmDisabled ? 'default' : 'pointer', padding: '11px 18px', fontSize: 14 }}>
         {busy ? 'Guardando…' : (children || confirmLabel)}
       </button>
       <button type="button" onClick={onCancel} disabled={busy}
@@ -168,7 +173,7 @@ export function RenameForm({ targetVm, onCancel, onSuccess }) {
           placeholder="Nombre de la persona" style={inputStyle}
           data-testid="rename-name-input"
         />
-        <ActionRow onConfirm={submit} onCancel={onCancel} busy={op.busy || !trimmedName}>
+        <ActionRow onConfirm={submit} onCancel={onCancel} busy={op.busy} disabled={op.busy || !trimmedName}>
           Guardar
         </ActionRow>
       </StepUpGate>
@@ -210,9 +215,10 @@ export function RoleForm({ targetVm, onCancel, onSuccess }) {
                 {r.value === targetVm.writeSnapshot.dbRole ? '● ' : ''}{r.label}{r.beta ? ' · Beta' : ''}
               </button>
             ))}
-            <ActionRow onConfirm={onCancel} onCancel={onCancel} busy={false}>
+            <button type="button" onClick={onCancel}
+              style={{ ...ghostBtn, marginTop: 14, padding: '10px 18px', fontSize: 13 }}>
               Cancelar
-            </ActionRow>
+            </button>
           </div>
         ) : (
           <>
