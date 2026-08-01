@@ -330,7 +330,7 @@ const PlannerStatusOverlay = ({ loading, message, onClose }) => (
   </div>
 );
 
-const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, prefill, ordenes = [] }) => {
+const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, prefill, ordenes = [], tableContext = null }) => {
   const [items,           setItems]           = useState([]);
   const [tel,             setTel]             = useState("");
   const [nombre,          setNombre]          = useState("");
@@ -424,6 +424,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
   // ItemPickerModal state
   const [pickerVisible,   setPickerVisible]   = useState(false);
   const [editingItem,     setEditingItem]     = useState(null); // null = nuovo, item = modifica
+  const isTableOrder = Boolean(tableContext && tableContext.sessionId);
 
   // ── Tipo consegna: si determina automaticamente dall'indirizzo ─────────
   // Se l'indirizzo è compilato → DOMICILIO, altrimenti → RITIRO
@@ -603,10 +604,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
       durata_haversine_min: null,
       geo_source: null,
       forzado: cierreOverride || (tipoConsegna === "DOMICILIO" ? forzaHora : false),
-      ya_pagado: yaPagedo,
-      metodo_pago: yaPagedo ? metodoPago : "",
-      descuento_tipo: descuentoImporte > 0 ? descuentoTipo : null,
-      descuento_valor: descuentoImporte > 0 ? descuentoValor : null,
+      ya_pagado: isTableOrder ? false : yaPagedo,
+      metodo_pago: isTableOrder ? "" : (yaPagedo ? metodoPago : ""),
+      descuento_tipo: !isTableOrder && descuentoImporte > 0 ? descuentoTipo : null,
+      descuento_valor: !isTableOrder && descuentoImporte > 0 ? descuentoValor : null,
       pending_giro_intent: appliedGiroIntent || null,
     };
     if (onTransactionStart?.(orderAttempt) === false) {
@@ -1559,14 +1560,16 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
           {/* ── Header ──────────────────────────────────────────────────── */}
           <header className="np-header">
             <div className="np-title-row">
-              <h1>Nuevo Pedido</h1>
+              <h1>{isTableOrder ? "Nueva comanda" : "Nuevo Pedido"}</h1>
               {/* Badge stato tipo (P1a): solo display, riflette tipoConsegna (derivato dall'indirizzo). */}
               <span className={`np-tipo-badge ${tipoConsegna === "DOMICILIO" ? "is-domicilio" : "is-ritiro"}`}>
-                {tipoConsegna === "DOMICILIO" ? "🛵 DOMICILIO" : "🏪 RITIRO"}
+                {isTableOrder ? `🍽 MESA ${tableContext.tableNumber}` : (tipoConsegna === "DOMICILIO" ? "🛵 DOMICILIO" : "🏪 RITIRO")}
               </span>
               {/* P2: origen — WA read-only; altrimenti selettore Teléfono/Barra
                   legato a `canal` (TEL/BANCO), già salvato in createOrden. */}
-              {canal === "WA" ? (
+              {isTableOrder ? (
+                <span className="np-origen-wa" style={{ color: "#ffc93d" }}>Comanda separada para cocina</span>
+              ) : canal === "WA" ? (
                 <span className="np-origen-wa" title="Origen: WhatsApp (no editable)">💬 WhatsApp</span>
               ) : (
                 <span className="np-origen-seg" role="group" aria-label="Origen del pedido">
@@ -2144,7 +2147,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
             </div>
 
             {/* Descuento (componente esistente, non modificato) */}
-            <div style={{ display: "flex", alignItems: "center" }}>
+            {!isTableOrder && <div style={{ display: "flex", alignItems: "center" }}>
               <DescuentoInput
                 tipo={descuentoTipo}
                 valor={descuentoValor}
@@ -2152,10 +2155,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
                 totaleBase={totaleBase}
                 compact
               />
-            </div>
+            </div>}
 
             {/* Ya pagado + metodo */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {!isTableOrder && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <button onClick={() => { setYaPagedo(v => !v); setMetodoPago(""); }} style={{
                 background: yaPagedo ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.03)",
                 border: `1px solid ${yaPagedo ? "rgba(34,197,94,0.5)" : "rgba(208,184,145,0.22)"}`,
@@ -2176,7 +2179,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
                   color: "#fff", borderRadius: 8, padding: "9px 12px", fontSize: 14, fontWeight: 800, cursor: "pointer"
                 }}>💳 Tarjeta</button>
               </>)}
-            </div>
+            </div>}
 
             {/* S2-7D4E-A — SINGLE in-modal result surface. One element, keyed by a
                 sequence number, so pressing Confirmar repeatedly refreshes this

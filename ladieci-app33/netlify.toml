@@ -27,6 +27,9 @@
   REACT_APP_SUPABASE_URL = "https://tdikhfeinufaahagmpjz.supabase.co"
   REACT_APP_SUPABASE_ANON_KEY = "sb_publishable_qMYSRpFm1TQ4S04nD8Bw3Q_7Fc92qaS"
   REACT_APP_BACKEND_API_URL = "https://fearless-reverence-production-80bc.up.railway.app"
+  # V3-H Mesa UI is compiled only into this staging branch. Production builds
+  # without the exact lowercase flag keep the existing Barra tab.
+  REACT_APP_MESSA_ENABLED = "true"
   BACKEND_API_URL = "https://fearless-reverence-production-80bc.up.railway.app/api"
   SUPABASE_URL = "https://tdikhfeinufaahagmpjz.supabase.co"
   SUPABASE_ANON_KEY = "sb_publishable_qMYSRpFm1TQ4S04nD8Bw3Q_7Fc92qaS"

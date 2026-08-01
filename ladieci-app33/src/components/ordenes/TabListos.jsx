@@ -46,8 +46,11 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
     });
   };
 
-  const listos    = ordenes.filter(o=>o.estado===ORDER_STATES.LISTO || o.estado===ORDER_STATES.EN_ENTREGA);
-  const retirados = ordenes.filter(o=>o.estado===ORDER_STATES.RETIRADO);
+  // Le comandas Mesa vengono servite e incassate dalla schermata del tavolo:
+  // non devono entrare nel vecchio flusso Ritiro, che registrerebbe un secondo
+  // pagamento legacy sull'ordine invece del pagamento parziale della tavolata.
+  const listos    = ordenes.filter(o=>!o.table_session_id && (o.estado===ORDER_STATES.LISTO || o.estado===ORDER_STATES.EN_ENTREGA));
+  const retirados = ordenes.filter(o=>!o.table_session_id && o.estado===ORDER_STATES.RETIRADO);
   const tutti     = [...listos, ...retirados];
 
   // 3D Glass styles

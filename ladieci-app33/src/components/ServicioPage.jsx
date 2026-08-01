@@ -9,6 +9,7 @@ import Suoni from '../sounds';
 import TabWA from './wa/TabWA';
 import TabManual from './ordenes/TabManual';
 import TabBanco from './ordenes/TabBanco';
+import TabMessa from './messa/TabMessa';
 import TabListos, { caricoTotale } from './ordenes/TabListos';
 import TabCocina from './cocina/TabCocina';
 import PanelCocina from './cocina/PanelCocina';
@@ -25,6 +26,11 @@ import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
 import { isPaymentFailure, describePaymentFailure } from '../utils/paymentOutcome';
 import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
 import { runOperationalTransaction } from '../order/operationalTransaction';
+import { describeMessaError, messaApi } from '../messa/messaApi';
+
+// Staging-only rollout gate. A production build (or any build without the exact
+// lowercase value) keeps the existing Barra surface and never calls Mesa APIs.
+const MESSA_UI_ENABLED = process.env.REACT_APP_MESSA_ENABLED === "true";
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -114,6 +120,9 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const [showCocina,setShowCocina] = useState(false);
   const [chatStoricoSel, setChatStoricoSel] = useState(null);
   const [prefillCliente,setPrefillCliente] = useState(null);
+  const [messaCommandTarget, setMessaCommandTarget] = useState(null);
+  const [messaRefreshKey, setMessaRefreshKey] = useState(0);
+  const [messaN, setMessaN] = useState(0);
   const [goToPedidosSignal, setGoToPedidosSignal] = useState(0);
   const [goToPreguntasSignal, setGoToPreguntasSignal] = useState(0);
   const [ordenModifica, setOrdenModifica] = useState(null);
@@ -336,7 +345,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const waNoLei   = waMsgsOrdini.filter(m=>!m.leido&&(m.stato==="NUEVO"||!m.stato)).length;
   const pregNoLei = waMsgsPreguntas.filter(m=>!m.leido).length;
   const waTotBadge = waNoLei + pregNoLei;
-  const listosN  = useMemo(() => ordenes.filter(o=>o.estado===ORDER_STATES.LISTO || o.estado===ORDER_STATES.EN_ENTREGA).length, [ordenes]);
+  const listosN  = useMemo(() => ordenes.filter(o=>!o.table_session_id && (o.estado===ORDER_STATES.LISTO || o.estado===ORDER_STATES.EN_ENTREGA)).length, [ordenes]);
   const cocinaNC = useMemo(() => ordenes.filter(o=>o.estado===ORDER_STATES.EN_COCINA).length, [ordenes]);
   const repartoOffsetMax = useMemo(() => ordenes
     .filter(o => o.tipo_consegna === "DOMICILIO" && !isTerminalState(o.estado))
@@ -527,6 +536,29 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         throw failed;
       },
     });
+  };
+
+  const addMessaCommand = async (order) => {
+    const target = messaCommandTarget;
+    if (!target?.sessionId) throw new Error("MESSA_SESSION_NOT_OPEN");
+    try {
+      const result = await messaApi.addCommand(target.sessionId, {
+        items: Array.isArray(order.items) ? order.items.map((item) => ({ ...item })) : [],
+        note: order.nota || "",
+        kitchenNote: order.nota || "",
+        time: order.hora,
+        clientRequestId: order.client_req_id,
+      });
+      setShowNuevo(false);
+      setPrefillCliente(null);
+      setMessaCommandTarget(null);
+      setMessaRefreshKey((value) => value + 1);
+      notify(`✅ Mesa ${target.tableNumber} · comanda enviada a Cocina`, C.verde);
+      return result;
+    } catch (error) {
+      notify(`❌ ${describeMessaError(error)}`, C.rosso);
+      throw error;
+    }
   };
   const waConfirm = useCallback(async (id,items,hora,nombre,tel,nuovaHora) => {
     if (!id || waConfirmInflightRef.current.has(id)) return;
@@ -939,7 +971,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   };
 
   // Tab — WA (con sub-tab interni), Tel, Banco, Listos, Cocina
-  const bancoN  = useMemo(() => ordenes.filter(o=>o.canal==="BANCO" &&(o.estado===ORDER_STATES.POR_CONFIRMAR||o.estado===ORDER_STATES.EN_COCINA)).length, [ordenes]);
+  const bancoN  = useMemo(() => ordenes.filter(o=>o.canal==="BANCO" && !o.table_session_id && (o.estado===ORDER_STATES.POR_CONFIRMAR||o.estado===ORDER_STATES.EN_COCINA)).length, [ordenes]);
   const manualN   = useMemo(() => ordenes.filter(o=>o.canal==="MANUAL"&& o.estado===ORDER_STATES.POR_CONFIRMAR).length, [ordenes]);
   const entregasN = useMemo(() => ordenes.filter(o=>
     isWaitingDriverState(o) || isDriverOnTheWayState(o)
@@ -965,11 +997,11 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const TABS = useMemo(() => [
     {id:"wa",       icon:"💬", label:"WhatsApp", badge:{n:waTotBadge, c:C.wa}},
     {id:"manual",   icon:"📞", label:"Tel",      badge:{n:manualN,    c:C.blu}},
-    {id:"banco",    icon:"🏪", label:"Barra",    badge:{n:bancoN,     c:C.avana}},
+    {id:"banco",    icon:MESSA_UI_ENABLED?"🍽":"🏪", label:MESSA_UI_ENABLED?"Mesa":"Barra", badge:{n:MESSA_UI_ENABLED?messaN:bancoN, c:C.avana}},
     {id:"listos",   icon:"✅", label:"Listos",   badge:{n:listosN,    c:C.verde}},
     {id:"cocina",   icon:"🍕", label:"Cocina",   badge:{n:cocinaNC,   c:C.orange}},
     {id:"entregas", icon:"🛵", label:"Entregas", meta: pizzeConsegnateStasera > 0 ? `${pizzeConsegnateStasera} pz ✓` : null, badge:{n:entregasN,  c:"#F97316"}},
-  ], [waTotBadge, bancoN, manualN, listosN, cocinaNC, entregasN, pizzeConsegnateStasera]);
+  ], [waTotBadge, messaN, bancoN, manualN, listosN, cocinaNC, entregasN, pizzeConsegnateStasera]);
 
   const tabContent = () => {
     if(tab==="wa")     return <TabWA
@@ -1129,7 +1161,14 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       }}
     />;
     if(tab==="manual") return <TabManual ordenes={creationQueue.visibleOrders} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} onOpenTicket={setTicketOrder} vipIds={vipIds} loadingIds={loadingIds}/>;
-    if(tab==="banco")  return <TabBanco  ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
+    if(tab==="banco")  return MESSA_UI_ENABLED
+      ? <TabMessa role={auth.getRole()} notify={notify} refreshKey={messaRefreshKey} onCountChange={setMessaN}
+          onNewCommand={(table) => {
+            setMessaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name });
+            setPrefillCliente({ canal:"BANCO", nombre:`Mesa ${table.number}` });
+            setShowNuevo(true);
+          }}/>
+      : <TabBanco ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
     if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} loadingIds={loadingIds}
       vipIds={vipIds}
       waMsgs={waMsgs}
@@ -1508,7 +1547,10 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         background:`linear-gradient(to top, ${C.nero} 55%, transparent)`,
         zIndex:150,
         display:"flex",gap:10,alignItems:"stretch"}}>
-        <button onClick={()=>{ setPrefillCliente(tab==="banco"?{canal:"BARRA"}:null); setShowNuevo(true); }} style={{
+        <button onClick={()=>{
+          if (MESSA_UI_ENABLED && tab === "banco") { notify("Selecciona una Mesa para añadir la comanda", C.giallo); return; }
+          setMessaCommandTarget(null); setPrefillCliente(tab === "banco" ? {canal:"BARRA"} : null); setShowNuevo(true);
+        }} style={{
           flex:1,background:C.rosso,color:"#fff",
           border:"none",borderRadius:16,
           padding:"16px 0",
@@ -1517,7 +1559,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           boxShadow:`0 4px 22px ${C.rosso}55, inset 0 1px 0 rgba(255,130,90,0.22)`,
           textTransform:"uppercase",position:"relative",overflow:"hidden"}}>
           <span style={{position:"relative",fontSize:18}}>＋</span>
-          <span style={{position:"relative"}}>NUEVO PEDIDO</span>
+          <span style={{position:"relative"}}>{MESSA_UI_ENABLED && tab === "banco" ? "SELECCIONA UNA MESA" : "NUEVO PEDIDO"}</span>
         </button>
         <button onClick={handleChiudiServizio} style={{
           flexShrink:0,
@@ -1666,9 +1708,10 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       )}
 
       {/* Modals */}
-      <NuevoPedidoModal visible={showNuevo} onClose={()=>{setShowNuevo(false);setPrefillCliente(null);}}
-        onTransactionStart={startCreateTransaction}
-        onConfirm={async o=>{ await addOrden(o); }}
+      <NuevoPedidoModal visible={showNuevo} onClose={()=>{setShowNuevo(false);setPrefillCliente(null);setMessaCommandTarget(null);}}
+        onTransactionStart={messaCommandTarget ? ()=>true : startCreateTransaction}
+        onConfirm={async o=>{ if (messaCommandTarget) return addMessaCommand(o); await addOrden(o); }}
+        tableContext={messaCommandTarget}
         prefill={prefillCliente} ordenes={ordenes}/>
       {ordenModifica&&<ModificaOrdenModal orden={{
         ...ordenModifica,

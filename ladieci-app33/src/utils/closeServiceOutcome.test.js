@@ -46,5 +46,6 @@ describe("classifyCloseOutcome — no false success", () => {
     expect(closeFailureMessage({ error: "NO_SERVICE_SESSION" })).toMatch(/no hay un servicio abierto/i);
     // S2-7D5: the DB trigger raises the NO_OPEN_ variant; it must map too.
     expect(closeFailureMessage({ error: "NO_OPEN_SERVICE_SESSION" })).toMatch(/no hay un servicio abierto/i);
+    expect(closeFailureMessage({ error: "MESSA_TABLES_NOT_RELEASED" })).toMatch(/todavía ocupadas/i);
   });
 });

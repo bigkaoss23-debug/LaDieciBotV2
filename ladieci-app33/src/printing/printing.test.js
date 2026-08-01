@@ -51,6 +51,14 @@ describe("normalization", () => {
     expect(snapshot.customer.items[0].unit_price).toBe(9);
     expect(snapshot.kitchen.items[0]).not.toHaveProperty("unit_price");
   });
+  test("uses the immutable Mesa table snapshot when the legacy field is absent", () => {
+    const snapshot = normalize("04", TICKET_TYPES.CUSTOMER, 80, {
+      table_number: null,
+      table_number_snapshot: 3,
+      canal: "BANCO",
+    });
+    expect(snapshot.order.table_number).toBe("3");
+  });
   test("rejects invalid quantities", () => {
     const raw = { ...getPrintFixture("01").order, items: [{ quantity: 0, name: "Inválida" }] };
     expect(() => normalizeOrderForTicket(raw, { ticketType: TICKET_TYPES.KITCHEN, paperWidth: 80, orderRevision: 1, createdAt: raw.snapshot_created_at })).toThrow("positive integer");

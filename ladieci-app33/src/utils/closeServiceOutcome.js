@@ -20,6 +20,9 @@ export function closeFailureMessage(res) {
     invalid_service_session_identity: "Estado del servicio inconsistente; recarga e inténtalo de nuevo.",
     rider_state_gate_failed: "Hay un reparto en curso; cierra el reparto antes de cerrar el servicio.",
     active_rider_trip: "Hay un reparto en curso; cierra el reparto antes de cerrar el servicio.",
+    messa_tables_not_released: "Hay mesas con la cuenta abierta o todavía ocupadas. Márcalas como libres antes de cerrar el servicio.",
+    MESSA_TABLES_NOT_RELEASED: "Hay mesas con la cuenta abierta o todavía ocupadas. Márcalas como libres antes de cerrar el servicio.",
+    messa_table_gate_failed: "No se pudo comprobar el estado de las mesas. El servicio sigue abierto; recarga e inténtalo de nuevo.",
   };
   if (CODES[raw]) return CODES[raw];
   if (/\s/.test(raw)) {

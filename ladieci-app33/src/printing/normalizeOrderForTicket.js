@@ -153,7 +153,7 @@ export function normalizeOrderForTicket(rawOrder, options = {}) {
       order_number: nonEmpty(resolveServiceOrderNumber(rawOrder), "order.order_number"),
       channel: normalizeChannel(rawOrder.channel ?? rawOrder.canal),
       fulfilment_type: fulfilmentType,
-      table_number: optionalText(rawOrder.table_number),
+      table_number: optionalText(rawOrder.table_number ?? rawOrder.table_number_snapshot),
       ordered_at: normalizeDate(rawOrder.ordered_at ?? rawOrder.ts, "order.ordered_at"),
       promised_at: optionalText(rawOrder.promised_at ?? rawOrder.hora),
     },

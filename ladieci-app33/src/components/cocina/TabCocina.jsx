@@ -229,6 +229,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
         </div>
         :<div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>
           {activos.map(o=>{
+            const messaNumber = o.table_number_snapshot || o.table_number || null;
             const t  = o._timer;
             const fc = FASE_CONFIG[t.fase] || FASE_CONFIG.espera;
             const isUrgent = t.fase==="tarde" || t.fase==="lista" || t.fase==="para_salir";
@@ -269,12 +270,12 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                   l'header (fc.bg) → nessun segnale visivo forte, solo allineamento. */}
               <div style={{height:RIBBON_H,flexShrink:0,boxSizing:"border-box",
                 display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"0 8px",
-                background: o.isDelivery ? (giroAccent || zonaColore) : fc.bg,
+                background: o.isDelivery ? (giroAccent || zonaColore) : (messaNumber ? "#8B5CF6" : fc.bg),
                 color:"#fff",fontSize:12,fontWeight:900,letterSpacing:.7,textTransform:"uppercase",
                 textShadow:"0 1px 3px rgba(0,0,0,0.55)"}}>
                 {o.isDelivery
                   ? <>🚚 DELIVERY{o.manualGiro ? ` · ${formatManualGiroLabel(o.manualGiro)}` : ""}</>
-                  : null}
+                  : messaNumber ? <>🍽 MESA {messaNumber}</> : null}
               </div>
                 <div style={{background:fc.bg,padding:"12px 16px",minHeight:88,boxSizing:"border-box",
                   display:"flex",justifyContent:"space-between",alignItems:"flex-start",
