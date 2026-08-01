@@ -12,7 +12,16 @@ import { getPinStepUp, clearPinStepUp } from '../operationalSession';
 import { generateClientRequestId } from './clientRequestId';
 import { describeAccessWriteError } from './accessManagementErrors';
 
-export function useAccessOperation() {
+// `onOperationSuccess(result)` — optional, called exactly once per successful
+// write, whether it completed on the FIRST run() (a step-up proof was already
+// cached) or on the automatic retryAfterStepUp() that follows a fresh step-up.
+// Both paths funnel through this SAME internal run(), so a caller that reacts
+// to success only here (never via the run()/retryAfterStepUp() return value)
+// is notified uniformly either way — retryAfterStepUp() is fire-and-forget by
+// design (the step-up modal's onVerified prop can't itself await a result),
+// so a caller relying on run(...).then(...) alone silently misses every
+// operation that actually needed step-up (i.e. the first one in a session).
+export function useAccessOperation(onOperationSuccess) {
   const [phase, setPhase] = useState('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const busyRef = useRef(false);
@@ -44,6 +53,7 @@ export function useAccessOperation() {
       setPhase('success');
       clientRequestIdRef.current = null;
       pendingCallRef.current = null;
+      if (onOperationSuccess) onOperationSuccess(result);
       return result;
     }
     if (result && result.kind === 'step_up_required') {
@@ -58,7 +68,7 @@ export function useAccessOperation() {
     setPhase('error');
     setErrorMessage(describeAccessWriteError(result));
     return result;
-  }, []);
+  }, [onOperationSuccess]);
 
   // Abandons this attempt entirely — the next run() call starts a genuinely new
   // operation (new clientRequestId), matching "generate a new id for a

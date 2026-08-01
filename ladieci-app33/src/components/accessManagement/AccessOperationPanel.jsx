@@ -84,7 +84,7 @@ function StepUpGate({ op, onCancel, children }) {
 
 // ═══ CREATE ═══════════════════════════════════════════════════════════════
 export function CreateAccessForm({ onCancel, onSuccess }) {
-  const op = useAccessOperation();
+  const op = useAccessOperation((result) => onSuccess(result.user));
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState('');
   const [confirming, setConfirming] = useState(false);
@@ -96,7 +96,7 @@ export function CreateAccessForm({ onCancel, onSuccess }) {
   const submit = () => {
     op.run((stepUpProof, clientRequestId) =>
       createAccessUser({ displayName: trimmedName, role, stepUpProof, clientRequestId })
-    ).then((result) => { if (result && result.kind === 'ok') onSuccess(result.user); });
+    );
   };
 
   return (
@@ -149,7 +149,7 @@ export function CreateAccessForm({ onCancel, onSuccess }) {
 
 // ═══ RENAME ═══════════════════════════════════════════════════════════════
 export function RenameForm({ targetVm, onCancel, onSuccess }) {
-  const op = useAccessOperation();
+  const op = useAccessOperation((result) => onSuccess(result.user));
   // Never pre-fill a fallback label (e.g. "Operador 1") as though it were a real
   // stored name — only a genuinely human displayName is offered as a starting
   // point; a fallback name starts the field empty, requiring explicit input.
@@ -159,7 +159,7 @@ export function RenameForm({ targetVm, onCancel, onSuccess }) {
   const submit = () => {
     op.run((stepUpProof, clientRequestId) =>
       renameAccessUser({ actor: targetVm.actorId, displayName: trimmedName, stepUpProof, clientRequestId })
-    ).then((result) => { if (result && result.kind === 'ok') onSuccess(result.user); });
+    );
   };
 
   return (
@@ -183,7 +183,7 @@ export function RenameForm({ targetVm, onCancel, onSuccess }) {
 
 // ═══ ROLE CHANGE ══════════════════════════════════════════════════════════
 export function RoleForm({ targetVm, onCancel, onSuccess }) {
-  const op = useAccessOperation();
+  const op = useAccessOperation((result) => onSuccess(result.user));
   const [selected, setSelected] = useState(null);
 
   const submit = () => {
@@ -194,7 +194,7 @@ export function RoleForm({ targetVm, onCancel, onSuccess }) {
         requestedRole: selected,
         stepUpProof, clientRequestId,
       })
-    ).then((result) => { if (result && result.kind === 'ok') onSuccess(result.user); });
+    );
   };
 
   return (
@@ -237,10 +237,10 @@ export function RoleForm({ targetVm, onCancel, onSuccess }) {
 
 // ═══ PIN SET (configure/change) ══════════════════════════════════════════
 export function PinSetForm({ targetVm, onCancel, onSuccess }) {
-  const op = useAccessOperation();
-  const [step, setStep] = useState('new'); // 'new' | 'confirm'
   const [newPin, setNewPin] = useState('');
   const [draft, setDraft] = useState('');
+  const op = useAccessOperation((result) => { setNewPin(''); setDraft(''); onSuccess(result.user); });
+  const [step, setStep] = useState('new'); // 'new' | 'confirm'
   const [validationError, setValidationError] = useState('');
 
   const submitNew = () => {
@@ -260,9 +260,7 @@ export function PinSetForm({ targetVm, onCancel, onSuccess }) {
     }
     op.run((stepUpProof, clientRequestId) =>
       setAccessUserPin({ actor: targetVm.actorId, pin: newPin, stepUpProof, clientRequestId })
-    ).then((result) => {
-      if (result && result.kind === 'ok') { setNewPin(''); setDraft(''); onSuccess(result.user); }
-    });
+    );
   };
 
   return (
@@ -306,7 +304,7 @@ function PinPadInline(props) {
 
 // ═══ PIN CLEAR (destructive) ══════════════════════════════════════════════
 export function PinClearConfirm({ targetVm, onCancel, onSuccess }) {
-  const op = useAccessOperation();
+  const op = useAccessOperation((result) => onSuccess(result.user));
   const submit = () => {
     op.run((stepUpProof, clientRequestId) =>
       clearAccessUserPin({
@@ -314,7 +312,7 @@ export function PinClearConfirm({ targetVm, onCancel, onSuccess }) {
         expectedSessionVersion: targetVm.writeSnapshot.sessionVersion,
         stepUpProof, clientRequestId,
       })
-    ).then((result) => { if (result && result.kind === 'ok') onSuccess(result.user); });
+    );
   };
   return (
     <div style={panelShell} data-testid="panel-pin-clear">
@@ -333,7 +331,7 @@ export function PinClearConfirm({ targetVm, onCancel, onSuccess }) {
 
 // ═══ DEACTIVATE (destructive) ═════════════════════════════════════════════
 export function DeactivateConfirm({ targetVm, onCancel, onSuccess }) {
-  const op = useAccessOperation();
+  const op = useAccessOperation((result) => onSuccess(result.user));
   const submit = () => {
     op.run((stepUpProof, clientRequestId) =>
       deactivateAccessUser({
@@ -341,7 +339,7 @@ export function DeactivateConfirm({ targetVm, onCancel, onSuccess }) {
         expectedActive: targetVm.writeSnapshot.active,
         stepUpProof, clientRequestId,
       })
-    ).then((result) => { if (result && result.kind === 'ok') onSuccess(result.user); });
+    );
   };
   return (
     <div style={panelShell} data-testid="panel-deactivate">
@@ -360,7 +358,7 @@ export function DeactivateConfirm({ targetVm, onCancel, onSuccess }) {
 
 // ═══ REACTIVATE ═══════════════════════════════════════════════════════════
 export function ReactivateConfirm({ targetVm, onCancel, onSuccess }) {
-  const op = useAccessOperation();
+  const op = useAccessOperation((result) => onSuccess(result.user));
   const submit = () => {
     op.run((stepUpProof, clientRequestId) =>
       reactivateAccessUser({
@@ -368,7 +366,7 @@ export function ReactivateConfirm({ targetVm, onCancel, onSuccess }) {
         expectedActive: targetVm.writeSnapshot.active,
         stepUpProof, clientRequestId,
       })
-    ).then((result) => { if (result && result.kind === 'ok') onSuccess(result.user); });
+    );
   };
   return (
     <div style={panelShell} data-testid="panel-reactivate">
@@ -394,10 +392,10 @@ export function ReactivateConfirm({ targetVm, onCancel, onSuccess }) {
 // session_version and invalidates the current token, so `onSuccess` here means
 // "forced re-login", not "refresh the list" — the caller must log the owner out.
 export function OwnerPinChangeFlow({ onCancel, onSuccess }) {
-  const op = useAccessOperation();
   const [step, setStep] = useState('new');
   const [newPin, setNewPin] = useState('');
   const [draft, setDraft] = useState('');
+  const op = useAccessOperation(() => { setNewPin(''); setDraft(''); onSuccess(); });
   const [validationError, setValidationError] = useState('');
 
   const submitNew = () => {
@@ -421,8 +419,6 @@ export function OwnerPinChangeFlow({ onCancel, onSuccess }) {
       });
       if (res && res._ok !== false && res.ok === true) return { kind: 'ok', user: { actor: res.actor } };
       return { kind: 'server', status: res && res._status, code: null };
-    }).then((result) => {
-      if (result && result.kind === 'ok') { setNewPin(''); setDraft(''); onSuccess(); }
     });
   };
 

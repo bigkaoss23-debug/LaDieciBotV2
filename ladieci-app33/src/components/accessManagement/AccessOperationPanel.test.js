@@ -133,6 +133,47 @@ describe('CreateAccessForm', () => {
     expect(createAccessUser).not.toHaveBeenCalled();
     unmount(container, root);
   });
+
+  // V3-I staging incident (2026-08-01): the FIRST write of a session — the one
+  // that actually needs step-up — created the actor successfully on the
+  // backend, but the panel never found out: useAccessOperation's
+  // retryAfterStepUp() (called from OwnerStepUpView's onVerified) re-invoked
+  // run() without the caller's original .then() attached to THAT invocation,
+  // so onSuccess was silently never called. This is the direct regression
+  // proof for the fix (useAccessOperation now takes an onOperationSuccess
+  // callback invoked from inside run() itself, covering both the direct and
+  // the retried path) — it must complete the FULL real flow: no proof, PIN
+  // entry, verifyOwnPin succeeds, and only THEN does createAccessUser fire.
+  test('completing step-up from a fresh (no-proof) session actually creates the account and calls onSuccess — not just the isolated hook', async () => {
+    clearPinStepUp();
+    api.verifyOwnPin.mockResolvedValue({ ok: true, stepUpProof: 'FRESH-PROOF', expiresInSec: 600, _ok: true, _status: 200 });
+    createAccessUser.mockResolvedValue({ kind: 'ok', user: { actor: 'new1', displayName: 'Carlos', canonicalRole: 'waiter', active: true } });
+    const onSuccess = jest.fn();
+    const { container, root } = await mount(CreateAccessForm, { onCancel: jest.fn(), onSuccess });
+    const nameInput = container.querySelector('[data-testid="create-name-input"]');
+    typeInto(nameInput, 'Carlos');
+    click(container.querySelector('[data-testid="create-role-waiter"]'));
+    await flush();
+    click(findByText(container, 'Continuar'));
+    await flush();
+    click(findByText(container, 'Crear acceso'));
+    await flush();
+    expect(container.textContent).toMatch(/Confirma tu identidad/);
+    expect(createAccessUser).not.toHaveBeenCalled();
+
+    pressDigits(container, '123456');
+    click(findByText(container, 'Confirmar'));
+    await flush();
+
+    expect(api.verifyOwnPin).toHaveBeenCalledTimes(1);
+    expect(createAccessUser).toHaveBeenCalledTimes(1);
+    expect(createAccessUser).toHaveBeenCalledWith(expect.objectContaining({
+      displayName: 'Carlos', role: 'waiter', stepUpProof: 'FRESH-PROOF',
+    }));
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ actor: 'new1' }));
+    unmount(container, root);
+  });
 });
 
 describe('RenameForm', () => {
