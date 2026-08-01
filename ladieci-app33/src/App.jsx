@@ -12,7 +12,8 @@ import EconBotPage from './components/EconBotPage';
 import ServicioPage from './components/ServicioPage';
 import ServiceStateGate from './components/ServiceStateGate';
 import CurrentNightCloseoutPage from './components/CurrentNightCloseoutPage';
-import { canAccessCurrentCloseout } from './utils/adminRbac';
+import { canAccessCurrentCloseout, canAccessAdminArea } from './utils/adminRbac';
+import AccessManagementPage from './components/accessManagement/AccessManagementPage';
 import EconomiaPage from './components/EconomiaPage';
 import RepartidorPage from './components/repartidor/RepartidorPage';
 import ShadowPreviewPanel from './components/ShadowPreviewPanel';
@@ -74,6 +75,7 @@ export default function App({ skipSplash = false } = {}) {
     // Protetto dal PIN come /servizio, NON linkato da nessuna vista operatore.
     const dest  = path === 'servizio'          ? 'servicio'
                 : path === 'cierre'            ? 'closeout'
+                : path === 'accesos'           ? 'accessmanagement'
                 : path === 'shadow-preview'    ? 'shadowpreview'
                 : path === 'premium-proposals' ? 'premiumproposalslab'
                 : path === 'print-preview' && isPrintPreviewEnabled() ? 'printpreview'
@@ -104,6 +106,16 @@ export default function App({ skipSplash = false } = {}) {
   useEffect(() => {
     if (screen !== 'closeout') return;
     if (canAccessCurrentCloseout(auth.getRole())) return;
+    setScreen(startedAtRepartidor.current ? 'repartidor' : 'home');
+  }, [screen, pinUnlocked]);
+
+  // V3-I.1 — owner-only, same double-check pattern as the closeout gate above: a
+  // non-owner reaching /accesos (deep link or a stale render) is bounced back to
+  // home before AccessManagementPage's JSX conditional even considers mounting it,
+  // so the V3 access-management API is never called for a non-owner.
+  useEffect(() => {
+    if (screen !== 'accessmanagement') return;
+    if (canAccessAdminArea(auth.getRole())) return;
     setScreen(startedAtRepartidor.current ? 'repartidor' : 'home');
   }, [screen, pinUnlocked]);
 
@@ -426,7 +438,7 @@ export default function App({ skipSplash = false } = {}) {
       <style>{G}</style>
       <DevHeartbeatSender/>
       {screen !== "splash" && <OpsHealthBadge/>}
-      {screen !== "splash" && screen !== "booting" && <OperationalMenu onLogout={doOperationalLogout}/>}
+      {screen !== "splash" && screen !== "booting" && <OperationalMenu onLogout={doOperationalLogout} onAccessManagement={()=>setScreen("accessmanagement")}/>}
       {screen==="splash"   && <Splash onDone={()=>{ postSplashAction.current(); }}/>}
       {screen==="home"     && <Home
           onServizio={()=>withPin(()=>setScreen("servicio"))}
@@ -457,6 +469,9 @@ export default function App({ skipSplash = false } = {}) {
             onServiceOpened={()=>setScreen("servicio")}/>
       )}
       {screen==="economia" && <EconomiaPage onBack={()=>setScreen("home")}/>}
+      {screen==="accessmanagement" && canAccessAdminArea(auth.getRole()) && (
+        <AccessManagementPage onBack={()=>setScreen("home")}/>
+      )}
       {screen==="repartidor" && <RepartidorPage
           ordenes={ordenes}
           onBack={startedAtRepartidor.current ? null : ()=>setScreen("home")}

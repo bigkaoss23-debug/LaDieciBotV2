@@ -14,7 +14,7 @@ import PinPad from './ui/PinPad';
 // Owner/admin additionally gets the account entry points that actually exist. If the personal
 // account session is absent, those simply open the account login — the operational admin
 // token is NEVER treated as a personal-account login.
-export default function OperationalMenu({ onLogout }) {
+export default function OperationalMenu({ onLogout, onAccessManagement }) {
   const [open, setOpen] = useState(false);
   const [pinFlowOpen, setPinFlowOpen] = useState(false);
   const boxRef = useRef(null);
@@ -100,6 +100,14 @@ export default function OperationalMenu({ onLogout }) {
               >
                 Gestionar PIN de administrador
               </button>
+              {typeof onAccessManagement === 'function' && (
+                <button
+                  type="button" role="menuitem" style={itemStyle}
+                  onClick={() => { setOpen(false); onAccessManagement(); }}
+                >
+                  Gestión de accesos
+                </button>
+              )}
               <div style={{ height: 1, background: 'rgba(255,255,255,0.09)', margin: '6px 0' }} />
             </>
           )}
