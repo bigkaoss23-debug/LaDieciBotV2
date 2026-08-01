@@ -3,6 +3,7 @@ import { api } from '../../api';
 import { setPinStepUp } from '../../operationalSession';
 import { PIN_LOGIN_MIN, PIN_LOGIN_MAX } from '../../utils/pinLoginPolicy';
 import PinPad from '../ui/PinPad';
+import { classifyStepUpFailure } from './stepUpErrorTaxonomy';
 
 // S2-7D6E5 / V3-I — the owner's OWN login PIN, re-verified through the SAME canonical
 // PinPad and the SAME 6..12 legacy-compatible range as the operational login
@@ -40,20 +41,19 @@ export default function OwnerStepUpView({ onCancel, onVerified, onReauthRequired
       onVerified();
       return;
     }
-    if (res && res.error === 'LOCKED') {
-      const secs = Number(res.retryAfterSec) || 0;
-      setError(secs > 0 ? `Demasiados intentos. Espera ${secs}s e inténtalo de nuevo.` : 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.');
-      return;
-    }
-    if (res && res.error === 'REAUTH_REQUIRED') {
+    // Every failure — genuine wrong PIN, lockout, forced reauth, or a transport/
+    // session/config problem that never reached PIN comparison at all — is classified
+    // from the backend's own error CODE here, never assumed. See stepUpErrorTaxonomy.js:
+    // a 401 is not proof the PIN was wrong (the trusted-proxy boundary, an expired
+    // session, or a misconfigured backend all also answer 401/403/503).
+    const classified = classifyStepUpFailure(res);
+    setError(classified.message);
+    if (classified.kind === 'reauth') {
       // This session predates the per-login session id PIN management now requires — there
       // is no weaker fallback. Show WHY before the forced logout actually happens — a
       // controlled logout must never read as a silent, unexplained kick-out.
-      setError('Por seguridad, vuelve a iniciar sesión para gestionar los PIN.');
       setTimeout(() => onReauthRequired(), 1400);
-      return;
     }
-    setError('PIN incorrecto.');
   };
 
   return (
