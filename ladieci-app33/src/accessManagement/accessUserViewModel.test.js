@@ -4,10 +4,10 @@ import { toAccessUserViewModel, buildAccessDirectoryViewModel } from './accessUs
 // legacy operators carry a migration-generated "... heredado" name, and the rider's
 // displayName is literally just the role word. None of the three is a real person's
 // name, so the frozen UX feedback expects all three to fall back to "Operador N".
-const OWNER = { actor: 'owner', displayName: 'Propietario', canonicalRole: 'owner', active: true, hasPin: true };
-const OP_BACKUP = { actor: 'operator_backup', displayName: 'Operador de apoyo heredado', canonicalRole: 'legacy_operator', active: true, hasPin: true };
-const OP_PRIMARY = { actor: 'operator_primary', displayName: 'Operador principal heredado', canonicalRole: 'legacy_operator', active: true, hasPin: true };
-const RIDER = { actor: 'rider', displayName: 'Repartidor', canonicalRole: 'rider', active: true, hasPin: true };
+const OWNER = { actor: 'owner', displayName: 'Propietario', dbRole: 'admin', canonicalRole: 'owner', active: true, hasPin: true, sessionVersion: 15 };
+const OP_BACKUP = { actor: 'operator_backup', displayName: 'Operador de apoyo heredado', dbRole: 'operator', canonicalRole: 'legacy_operator', active: true, hasPin: true, sessionVersion: 4 };
+const OP_PRIMARY = { actor: 'operator_primary', displayName: 'Operador principal heredado', dbRole: 'operator', canonicalRole: 'legacy_operator', active: true, hasPin: true, sessionVersion: 10 };
+const RIDER = { actor: 'rider', displayName: 'Repartidor', dbRole: 'rider', canonicalRole: 'rider', active: true, hasPin: true, sessionVersion: 2 };
 
 describe('toAccessUserViewModel — owner', () => {
   test('owner with a role-only displayName collapses to Propietario, no duplicate role line', () => {
@@ -147,5 +147,25 @@ describe('buildAccessDirectoryViewModel — deterministic ordering', () => {
   test('an empty/non-array input never throws', () => {
     expect(buildAccessDirectoryViewModel(null, { currentActorId: 'owner' })).toEqual({ owner: null, staff: [] });
     expect(buildAccessDirectoryViewModel([], { currentActorId: 'owner' })).toEqual({ owner: null, staff: [] });
+  });
+});
+
+describe('writeSnapshot — internal-only stale-snapshot fields (V3-I)', () => {
+  test('carries the RAW dbRole (not canonicalRole) for the role-change stale-snapshot guard', () => {
+    const vm = toAccessUserViewModel(OP_PRIMARY, { isOwner: false, staffIndex: 2 });
+    expect(vm.writeSnapshot.dbRole).toBe('operator'); // raw DB value, NOT 'legacy_operator'
+  });
+
+  test('carries active and sessionVersion for the deactivate/reactivate/clear-PIN guards', () => {
+    const vm = toAccessUserViewModel(RIDER, { isOwner: false, staffIndex: 3 });
+    expect(vm.writeSnapshot.active).toBe(true);
+    expect(vm.writeSnapshot.sessionVersion).toBe(2);
+  });
+
+  test('writeSnapshot is never used for primary/role display — primaryLabel and roleLabel are unaffected by it', () => {
+    const vm = toAccessUserViewModel(OP_PRIMARY, { isOwner: false, staffIndex: 2 });
+    expect(vm.primaryLabel).toBe('Operador 2');
+    expect(vm.roleLabel).toBe('Operador actual');
+    expect(vm.roleLabel).not.toBe(vm.writeSnapshot.dbRole);
   });
 });
