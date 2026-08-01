@@ -26,4 +26,15 @@ export function describeRole(canonicalRole) {
   };
 }
 
-export { ROLE_LABEL, BETA_ROLES };
+// The role selector's option list (V3-I write flow). Exact allowlist mirrored
+// from the backend's ASSIGNABLE_ROLES (src/auth/roleTransition.js) — owner,
+// legacy_operator, admin and operator are deliberately excluded: none of them is
+// ever a valid role-change/create TARGET (confirmed against the backend source
+// and its own tests, which reject all four with AUTH_ROLE_INVALID/400).
+const ASSIGNABLE_ROLES = Object.freeze(['cashier', 'waiter', 'kitchen', 'rider', 'shift_manager']);
+
+const ROLE_OPTIONS = Object.freeze(
+  ASSIGNABLE_ROLES.map((value) => Object.freeze({ value, ...describeRole(value) }))
+);
+
+export { ROLE_LABEL, BETA_ROLES, ASSIGNABLE_ROLES, ROLE_OPTIONS };

@@ -470,7 +470,7 @@ export default function App({ skipSplash = false } = {}) {
       )}
       {screen==="economia" && <EconomiaPage onBack={()=>setScreen("home")}/>}
       {screen==="accessmanagement" && canAccessAdminArea(auth.getRole()) && (
-        <AccessManagementPage onBack={()=>setScreen("home")}/>
+        <AccessManagementPage onBack={()=>setScreen("home")} onLogout={doOperationalLogout}/>
       )}
       {screen==="repartidor" && <RepartidorPage
           ordenes={ordenes}

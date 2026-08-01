@@ -1,22 +1,24 @@
-// ─── Gestión de accesos — owner-only READ-ONLY view (V3-I.1) ─────────────────
-// Lists the current staff access accounts via the accepted Access Management V3
-// API (GET /api/auth/v3/access-users). STRICTLY READ-ONLY: no create, rename,
-// role-change, PIN, or activation controls. Those arrive in a later, separate
-// slice (V3-I.2/V3-I.3) — this screen only explains that they are coming.
+// ─── Gestión de accesos — owner-only access management (V3-I) ────────────────
+// Lists staff access accounts via the accepted Access Management V3 API and now
+// (V3-I) also performs the real owner operations against it: create, rename,
+// role change, PIN set/clear, deactivate/reactivate, plus the owner's own PIN
+// change (via the existing legacy transport — outside the V3 write API's scope).
 //
 // Gated by canAccessAdminArea(auth.getRole()) at the App.jsx call site, exactly
 // like CurrentNightCloseoutPage — a non-owner never mounts this component, so it
 // never calls the V3 API either.
 //
-// V3-I.1 UX pass: every presentation decision (fallback naming, role wording,
-// status wording/tone) is made once in accessUserViewModel.js — this component
-// only renders the resulting strings. Restaurant-facing list, not an admin
-// dashboard: plain rows with a single divider, no chip grid, no card grid.
+// Every presentation decision (fallback naming, role wording, status wording/
+// tone) is made once in accessUserViewModel.js. Every write decision (step-up,
+// idempotency, double-submit) is made once in useAccessOperation.js, used by
+// every panel in AccessOperationPanel.jsx. Only ONE operation panel is ever open
+// at a time — `activePanel` below is the single source of truth for that.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { auth } from '../../api';
 import { C } from '../../constants';
 import { listAccessUsers } from '../../accessManagement/accessManagementApi';
 import { buildAccessDirectoryViewModel } from '../../accessManagement/accessUserViewModel';
+import AccessOperationPanel from './AccessOperationPanel';
 
 function describeLoadError(result) {
   if (!result) return 'No se pudo cargar la lista de accesos.';
@@ -44,9 +46,15 @@ const button = {
 };
 const orangeButton = { ...button, background: C.orange, border: 'none', color: '#111' };
 
+const actionRowStyle = {
+  display: 'block', width: '100%', textAlign: 'left', padding: '10px 4px',
+  background: 'transparent', border: 'none', cursor: 'pointer',
+  fontSize: 13, fontWeight: 600, minHeight: 44,
+};
+
 // MI ACCESO — a single lightweight identity block, same weight as the
 // OperationalMenu identity header (name + one muted line), not a bordered card.
-function OwnerRow({ vm }) {
+function OwnerRow({ vm, panelOpen, onOpenPanel, onClosePanel }) {
   return (
     <div style={{ padding: '4px 2px 18px', borderBottom: `1px solid ${C.fumo}`, marginBottom: 18 }} data-testid="access-owner-row">
       <div style={{ fontSize: 17, fontWeight: 800, color: C.bianco }}>{vm.primaryLabel}</div>
@@ -56,21 +64,41 @@ function OwnerRow({ vm }) {
       <div style={{ fontSize: 13, fontWeight: 600, marginTop: 6, color: toneColor(vm.statusTone) }}>
         {vm.statusLabel}
       </div>
-      {/* Structurally ready for a real action in a later write-enabled slice — plain
-          non-interactive text, never an enabled button, per V3-I.1 scope. */}
-      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 10 }}>
-        Cambiar PIN · próximamente
-      </div>
+      {!panelOpen ? (
+        <button
+          type="button"
+          onClick={() => onOpenPanel('ownerPin')}
+          data-testid="access-owner-change-pin-btn"
+          style={{ ...actionRowStyle, padding: '10px 0 0 0', color: 'rgba(255,255,255,0.6)' }}
+        >
+          Cambiar PIN
+        </button>
+      ) : (
+        <AccessOperationPanel
+          operation="ownerPin"
+          onCancel={onClosePanel}
+          onSuccess={() => onOpenPanel('ownerPinDone')}
+        />
+      )}
     </div>
   );
 }
 
 // PERSONAL — one plain row per person, divider only (no card border/shadow), a
-// single combined role+status text line, expandable on tap for the one piece of
-// safe secondary detail (the internal id, for support use) that's genuinely
-// useful but must never be primary text. The role text is deliberately plain —
-// this is the exact spot a later write-slice replaces with a real role selector.
-function StaffRow({ vm, expanded, onToggle }) {
+// single combined role+status text line, expandable on tap for safe secondary
+// detail AND the operation action list. Only one row's panel is ever open (state
+// lives at the page level, see `activePanel`).
+function StaffRow({ vm, expanded, onToggle, panelOperation, onOpenPanel, onClosePanel, onSuccess }) {
+  const actions = [
+    { op: 'rename', label: 'Cambiar nombre' },
+    { op: 'role', label: 'Cambiar rol' },
+    { op: 'pin', label: vm.hasPin ? 'Cambiar PIN' : 'Configurar PIN' },
+    ...(vm.hasPin ? [{ op: 'clearPin', label: 'Quitar PIN', danger: true }] : []),
+    vm.active
+      ? { op: 'deactivate', label: 'Desactivar', danger: true }
+      : { op: 'reactivate', label: 'Activar' },
+  ];
+
   return (
     <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
       <button
@@ -100,21 +128,49 @@ function StaffRow({ vm, expanded, onToggle }) {
         </span>
       </button>
       {expanded && (
-        <div style={{ padding: '0 2px 14px', fontSize: 12, color: 'rgba(255,255,255,0.32)' }} data-testid={`access-row-detail-${vm.actorId}`}>
-          ID interno: {vm.secondaryTechnicalId}
+        <div style={{ padding: '0 2px 14px' }}>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.32)', marginBottom: 6 }} data-testid={`access-row-detail-${vm.actorId}`}>
+            ID interno: {vm.secondaryTechnicalId}
+          </div>
+          {!panelOperation ? (
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 4 }}>
+              {actions.map((a) => (
+                <button
+                  key={a.op}
+                  type="button"
+                  onClick={() => onOpenPanel(a.op)}
+                  data-testid={`access-action-${vm.actorId}-${a.op}`}
+                  style={{ ...actionRowStyle, color: a.danger ? C.rosso : 'rgba(255,255,255,0.75)' }}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <AccessOperationPanel
+              operation={panelOperation}
+              targetVm={vm}
+              onCancel={onClosePanel}
+              onSuccess={onSuccess}
+            />
+          )}
         </div>
       )}
     </div>
   );
 }
 
-export default function AccessManagementPage({ onBack }) {
+export default function AccessManagementPage({ onBack, onLogout }) {
   const [phase, setPhase] = useState('loading'); // 'loading' | 'ready' | 'error'
   const [users, setUsers] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState('');
   const [expandedActor, setExpandedActor] = useState(null);
+  // { actorId: string | null, operation: string } | null — actorId is null for
+  // 'create' (no target yet); the single source of truth enforcing "only one
+  // operation panel open at a time" across the whole page.
+  const [activePanel, setActivePanel] = useState(null);
   const inFlightRef = useRef(false);
   const liveRef = useRef(true);
 
@@ -151,6 +207,28 @@ export default function AccessManagementPage({ onBack }) {
   const directory = users
     ? buildAccessDirectoryViewModel(users, { currentActorId: auth.getActor() })
     : { owner: null, staff: [] };
+
+  const openStaffPanel = (actorId, operation) => {
+    setExpandedActor(actorId); // opening an action always keeps its row expanded
+    setActivePanel({ actorId, operation });
+  };
+  const closePanel = () => setActivePanel(null);
+
+  const onStaffOperationSuccess = useCallback(async (writtenUser) => {
+    setActivePanel(null);
+    await load({ isRefresh: true });
+    if (writtenUser && writtenUser.actor) setExpandedActor(writtenUser.actor);
+  }, [load]);
+
+  const onOwnerPinResult = (marker) => {
+    if (marker === 'ownerPinDone') {
+      // Session_version just bumped server-side — the current token is no longer
+      // valid; the canonical operational logout (App.jsx) returns to the PIN
+      // screen, exactly like OperationalMenu's own owner-self-PIN-change flow.
+      setActivePanel(null);
+      if (typeof onLogout === 'function') onLogout();
+    }
+  };
 
   return (
     <main style={{ minHeight: '100vh', background: C.nero, color: C.bianco, padding: 20, fontFamily: "'Satoshi',-apple-system,sans-serif" }}>
@@ -218,7 +296,12 @@ export default function AccessManagementPage({ onBack }) {
         {phase === 'ready' && users && users.length > 0 && (
           <>
             {directory.owner ? (
-              <OwnerRow vm={directory.owner} />
+              <OwnerRow
+                vm={directory.owner}
+                panelOpen={activePanel && activePanel.operation === 'ownerPin'}
+                onOpenPanel={(op) => (op === 'ownerPinDone' ? onOwnerPinResult(op) : setActivePanel({ actorId: directory.owner.actorId, operation: op }))}
+                onClosePanel={closePanel}
+              />
             ) : (
               <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 18 }}>
                 No se encontró tu propio registro en la lista.
@@ -236,14 +319,40 @@ export default function AccessManagementPage({ onBack }) {
                     key={vm.actorId}
                     vm={vm}
                     expanded={expandedActor === vm.actorId}
-                    onToggle={() => setExpandedActor((prev) => (prev === vm.actorId ? null : vm.actorId))}
+                    onToggle={() => {
+                      setExpandedActor((prev) => (prev === vm.actorId ? null : vm.actorId));
+                      if (activePanel && activePanel.actorId === vm.actorId) setActivePanel(null);
+                    }}
+                    panelOperation={activePanel && activePanel.actorId === vm.actorId ? activePanel.operation : null}
+                    onOpenPanel={(op) => openStaffPanel(vm.actorId, op)}
+                    onClosePanel={closePanel}
+                    onSuccess={onStaffOperationSuccess}
                   />
                 ))}
               </div>
             )}
 
+            {activePanel && activePanel.actorId === null && activePanel.operation === 'create' ? (
+              <div style={{ marginTop: 18, borderTop: `1px solid ${C.fumo}`, paddingTop: 14 }}>
+                <AccessOperationPanel
+                  operation="create"
+                  onCancel={closePanel}
+                  onSuccess={onStaffOperationSuccess}
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setActivePanel({ actorId: null, operation: 'create' })}
+                data-testid="access-create-btn"
+                style={{ ...orangeButton, width: '100%', marginTop: 18 }}
+              >
+                + Añadir acceso
+              </button>
+            )}
+
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 26, textAlign: 'center' }}>
-              La edición de nombres, roles y PIN estará disponible próximamente.
+              La gestión avanzada de permisos estará disponible próximamente.
             </p>
           </>
         )}

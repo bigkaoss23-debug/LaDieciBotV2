@@ -71,6 +71,18 @@ export function toAccessUserViewModel(apiUser, context = {}) {
     statusTone,
     // Explicitly named so no future page code mistakes this for a display name.
     secondaryTechnicalId: u.actor,
+    // V3-I write support ONLY — never rendered. The role-change/deactivate/
+    // reactivate/clear-PIN routes require the caller's believed-current raw
+    // state as a stale-snapshot guard (`expectedRole` compares against the RAW
+    // `auth_actors.role` DB value, confirmed directly against the RPC source —
+    // NOT canonicalRole; `expectedActive`/`expectedSessionVersion` likewise
+    // need the raw current values). Kept together under one clearly-named,
+    // clearly-scoped field so it can never be mistaken for display data.
+    writeSnapshot: Object.freeze({
+      dbRole: u.dbRole,
+      active,
+      sessionVersion: u.sessionVersion,
+    }),
   });
 }
 
