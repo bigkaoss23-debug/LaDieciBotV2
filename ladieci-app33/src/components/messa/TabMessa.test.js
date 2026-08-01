@@ -31,15 +31,32 @@ describe("Mesa closed-account boundary", () => {
 });
 
 describe("Mesa floor editor instructions", () => {
-  test("describes the actual remove interaction without inventing a red button", () => {
-    expect(source).toContain("Para quitar una, tócala y confirma.");
+  test("names the room settings and explains the table settings interaction", () => {
+    expect(source).toContain("⚙ Ajustes de sala");
+    expect(source).toContain("Tócala para cambiar su número, forma o capacidad máxima.");
     expect(source).not.toContain("usa el botón rojo");
+    expect(source).not.toContain("Editar plano");
   });
 });
 
 describe("Mesa free-table capacity label", () => {
-  test("uses a compact max-person label instead of the long cubiertos sentence", () => {
-    expect(source).toContain('>máx. {table.capacity || "—"}p</span>');
+  test("keeps capacity out of the operational table card", () => {
+    expect(source).not.toContain('>máx. {table.capacity || "—"}p</span>');
     expect(source).not.toContain('hasta {table.capacity || "—"} cubiertos');
+  });
+});
+
+describe("Mesa capacity settings", () => {
+  test("edits maximum capacity inside room settings and keeps exact Mesa numbering", () => {
+    expect(source).toContain('title="Ajustes de sala"');
+    expect(source).toContain('>Capacidad máxima</label>');
+    expect(source).toContain('displayName: `Mesa ${tableNumber}`');
+    expect(source).toContain('setSettingsId(table.id)');
+  });
+
+  test("removal is explicit, keeps history and is disabled for an open account", () => {
+    expect(source).toContain('>Quitar mesa</button>');
+    expect(source).toContain('El historial se conservará.');
+    expect(source).toContain('disabled={busy || table.status === "open"}');
   });
 });

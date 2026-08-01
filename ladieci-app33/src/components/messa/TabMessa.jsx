@@ -254,15 +254,54 @@ function AddTableModal({ tables, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const save = async () => {
+    const tableNumber = Number(form.tableNumber);
+    const capacity = Number(form.capacity);
+    if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > 999) { setError("Indica un número de mesa válido."); return; }
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 99) { setError("Indica una capacidad máxima válida."); return; }
     setBusy(true); setError("");
     try {
-      await messaApi.saveTable("new", { ...form, tableNumber: Number(form.tableNumber), capacity: Number(form.capacity), positionX: 50, positionY: 50, active: true });
+      await messaApi.saveTable("new", { ...form, tableNumber, displayName: `Mesa ${tableNumber}`, capacity, positionX: 50, positionY: 50, active: true });
       await onSaved(); onClose();
     } catch (err) { setError(describeMessaError(err)); setBusy(false); }
   };
   return <Modal title="Añadir mesa" subtitle="Después podrás moverla en el plano" onClose={busy ? undefined : onClose} width={520}>
-    <div className="messa-form-grid"><div><label className="messa-label">Número</label><input className="messa-input" type="number" value={form.tableNumber} onChange={(event) => setForm({ ...form, tableNumber: event.target.value, displayName: `Mesa ${event.target.value}` })} /></div><div><label className="messa-label">Cubiertos habituales</label><input className="messa-input" type="number" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} /></div><div><label className="messa-label">Nombre</label><input className="messa-input" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></div><div><label className="messa-label">Forma</label><select className="messa-input" value={form.shape} onChange={(event) => setForm({ ...form, shape: event.target.value })}><option value="round">Redonda</option><option value="square">Cuadrada</option><option value="rectangle">Rectangular</option></select></div></div>
+    <div className="messa-form-grid"><div><label className="messa-label">Número de mesa</label><input className="messa-input" type="number" min="1" max="999" value={form.tableNumber} onChange={(event) => setForm({ ...form, tableNumber: event.target.value, displayName: `Mesa ${event.target.value}` })} /></div><div><label className="messa-label">Capacidad máxima</label><input className="messa-input" type="number" min="1" max="99" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} /></div><div><label className="messa-label">Forma</label><select className="messa-input" value={form.shape} onChange={(event) => setForm({ ...form, shape: event.target.value })}><option value="round">Redonda</option><option value="square">Cuadrada</option><option value="rectangle">Rectangular</option></select></div></div>
     <div className="messa-actions" style={{ justifyContent: "flex-end" }}><button className="messa-btn" onClick={onClose}>Cancelar</button><button className="messa-btn gold" disabled={busy} onClick={save}>{busy ? "Guardando…" : "Añadir"}</button></div>{error && <div className="messa-banner messa-error">{error}</div>}
+  </Modal>;
+}
+
+function TableSettingsModal({ table, onClose, onSaved }) {
+  const [form, setForm] = useState({ tableNumber: table.number, capacity: table.capacity || 4, shape: table.shape || "square" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const payload = (active) => {
+    const tableNumber = Number(form.tableNumber);
+    const capacity = Number(form.capacity);
+    if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > 999) throw new Error("table_number");
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 99) throw new Error("capacity");
+    return { tableNumber, displayName: `Mesa ${tableNumber}`, capacity, positionX: table.x, positionY: table.y, shape: form.shape, active };
+  };
+  const save = async () => {
+    let next;
+    try { next = payload(true); }
+    catch (err) { setError(err.message === "capacity" ? "Indica una capacidad máxima válida." : "Indica un número de mesa válido."); return; }
+    setBusy(true); setError("");
+    try { await messaApi.saveTable(table.id, next); await onSaved(); onClose(); }
+    catch (err) { setError(describeMessaError(err)); setBusy(false); }
+  };
+  const remove = async () => {
+    if (table.status === "open") { setError("Cobra la cuenta antes de quitar esta mesa."); return; }
+    if (!window.confirm(`¿Quitar Mesa ${table.number} del plano? El historial se conservará.`)) return;
+    const next = { tableNumber: table.number, displayName: `Mesa ${table.number}`, capacity: table.capacity, positionX: table.x, positionY: table.y, shape: table.shape, active: false };
+    setBusy(true); setError("");
+    try { await messaApi.saveTable(table.id, next); await onSaved(); onClose(); }
+    catch (err) { setError(describeMessaError(err)); setBusy(false); }
+  };
+  return <Modal title="Ajustes de sala" subtitle={`Mesa ${table.number}`} onClose={busy ? undefined : onClose} width={520}>
+    <div className="messa-form-grid"><div><label className="messa-label">Número de mesa</label><input className="messa-input" type="number" min="1" max="999" value={form.tableNumber} onChange={(event) => setForm({ ...form, tableNumber: event.target.value })} /></div><div><label className="messa-label">Capacidad máxima</label><input className="messa-input" type="number" min="1" max="99" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} /></div><div><label className="messa-label">Forma</label><select className="messa-input" value={form.shape} onChange={(event) => setForm({ ...form, shape: event.target.value })}><option value="round">Redonda</option><option value="square">Cuadrada</option><option value="rectangle">Rectangular</option></select></div></div>
+    <div className="messa-actions" style={{ justifyContent: "space-between", marginTop: 20 }}><button className="messa-btn danger" disabled={busy || table.status === "open"} onClick={remove}>Quitar mesa</button><div style={{ display: "flex", gap: 8 }}><button className="messa-btn" disabled={busy} onClick={onClose}>Cancelar</button><button className="messa-btn gold" disabled={busy} onClick={save}>{busy ? "Guardando…" : "Guardar ajustes"}</button></div></div>
+    {table.status === "open" && <div className="messa-banner" style={{ marginTop: 10 }}>Puedes cambiar sus ajustes, pero no quitarla mientras tenga una cuenta abierta.</div>}
+    {error && <div className="messa-banner messa-error" style={{ marginTop: 10 }}>{error}</div>}
   </Modal>;
 }
 
@@ -274,6 +313,7 @@ export default function TabMessa({ role, notify, onNewCommand, onCountChange, re
   const [selectedId, setSelectedId] = useState(null);
   const [openingId, setOpeningId] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [settingsId, setSettingsId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [printDocument, setPrintDocument] = useState(null);
   const boardRef = useRef(null);
@@ -295,6 +335,7 @@ export default function TabMessa({ role, notify, onNewCommand, onCountChange, re
 
   const selected = tables.find((table) => table.id === selectedId && table.active) || null;
   const opening = tables.find((table) => table.id === openingId && table.active) || null;
+  const settingsTable = tables.find((table) => table.id === settingsId && table.active) || null;
   const activeTables = tables.filter((table) => table.active);
 
   const savePosition = async (table) => {
@@ -327,26 +368,21 @@ export default function TabMessa({ role, notify, onNewCommand, onCountChange, re
       await savePosition(drag.table);
     }
   };
-  const deactivate = async (table) => {
-    if (!window.confirm(`¿Quitar ${table.name} del plano? El historial se conservará.`)) return;
-    try { await messaApi.saveTable(table.id, { tableNumber: table.number, displayName: table.name, capacity: table.capacity, positionX: table.x, positionY: table.y, shape: table.shape, active: false }); await load(); }
-    catch (err) { notify?.(`❌ ${describeMessaError(err)}`, C.rosso); }
-  };
-
   if (loading) return <div className="messa-root"><style>{css}</style><div className="messa-banner">Cargando el plano de mesas…</div></div>;
   if (error && tables.length === 0) return <div className="messa-root"><style>{css}</style><div className="messa-banner messa-error">{error}</div><button className="messa-btn" style={{ marginTop: 10 }} onClick={() => load()}>Reintentar</button></div>;
 
   return <div className="messa-root"><style>{css}</style>
-    <div className="messa-toolbar"><div className="messa-legend">{Object.entries(STATUS).map(([id, item]) => <span key={id}><i className="messa-dot" style={{ background: item.color }} />{item.label}</span>)}</div><div style={{ display: "flex", gap: 8 }}>{canEdit && editing && <button className="messa-btn gold" onClick={() => setShowAdd(true)}>＋ Añadir mesa</button>}{canEdit && <button className={`messa-btn ${editing ? "primary" : ""}`} onClick={() => setEditing((value) => !value)}>{editing ? "✓ Terminar plano" : "✥ Editar plano"}</button>}<button className="messa-btn" onClick={() => load()}>↻</button></div></div>
-    {editing && <div className="messa-banner" style={{ marginBottom: 11 }}>Arrastra cada mesa hasta su posición real. Para quitar una, tócala y confirma.</div>}
+    <div className="messa-toolbar"><div className="messa-legend">{Object.entries(STATUS).map(([id, item]) => <span key={id}><i className="messa-dot" style={{ background: item.color }} />{item.label}</span>)}</div><div style={{ display: "flex", gap: 8 }}>{canEdit && editing && <button className="messa-btn gold" onClick={() => setShowAdd(true)}>＋ Añadir mesa</button>}{canEdit && <button className={`messa-btn ${editing ? "primary" : ""}`} onClick={() => setEditing((value) => { const next = !value; if (!next) { setSettingsId(null); setShowAdd(false); } return next; })}>{editing ? "✓ Cerrar ajustes" : "⚙ Ajustes de sala"}</button>}<button className="messa-btn" onClick={() => load()}>↻</button></div></div>
+    {editing && <div className="messa-banner" style={{ marginBottom: 11 }}>Arrastra cada mesa hasta su posición real. Tócala para cambiar su número, forma o capacidad máxima.</div>}
     <div className="messa-board" ref={boardRef} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
-      {activeTables.map((table) => { const state = STATUS[table.status] || STATUS.free; const dragging = dragRef.current?.id === table.id; return <button key={table.id} className={`messa-table ${table.shape} ${editing ? "is-editing" : ""} ${dragging ? "is-dragging" : ""}`} style={{ left: `${table.x}%`, top: `${table.y}%`, "--tc": state.color, "--tb": state.bg }} onPointerDown={(event) => pointerDown(event, table)} onClick={() => { if (suppressClickRef.current === table.id) { suppressClickRef.current = null; return; } if (editing) { deactivate(table); return; } if (table.status === "free") setOpeningId(table.id); else setSelectedId(table.id); }}>
-        <span style={{ fontSize: 12, color: state.color, fontWeight: 900 }}>{state.label}</span><strong style={{ fontSize: 19 }}>Mesa {table.number}</strong>{table.status === "open" && <><span style={{ fontSize: 13, fontWeight: 900 }}>{euro(table.session.outstanding)}</span><span style={{ fontSize: 11, color: "#dfd5c4" }}>👥 {table.session.coversRemaining}/{table.session.coversTotal}</span></>}{table.status === "free" && <span style={{ fontSize: 10, color: "#a99f8e", fontWeight: 800, letterSpacing: ".25px" }}>máx. {table.capacity || "—"}p</span>}
+      {activeTables.map((table) => { const state = STATUS[table.status] || STATUS.free; const dragging = dragRef.current?.id === table.id; return <button key={table.id} className={`messa-table ${table.shape} ${editing ? "is-editing" : ""} ${dragging ? "is-dragging" : ""}`} style={{ left: `${table.x}%`, top: `${table.y}%`, "--tc": state.color, "--tb": state.bg }} onPointerDown={(event) => pointerDown(event, table)} onClick={() => { if (suppressClickRef.current === table.id) { suppressClickRef.current = null; return; } if (editing) { setSettingsId(table.id); return; } if (table.status === "free") setOpeningId(table.id); else setSelectedId(table.id); }}>
+        <span style={{ fontSize: 12, color: state.color, fontWeight: 900 }}>{state.label}</span><strong style={{ fontSize: 19 }}>Mesa {table.number}</strong>{table.status === "open" && <><span style={{ fontSize: 13, fontWeight: 900 }}>{euro(table.session.outstanding)}</span><span style={{ fontSize: 11, color: "#dfd5c4" }}>👥 {table.session.coversRemaining}/{table.session.coversTotal}</span></>}
       </button>; })}
     </div>
     {error && <div className="messa-banner messa-error" style={{ marginTop: 10 }}>{error}</div>}
     {opening && <OpenTableModal table={opening} onClose={() => setOpeningId(null)} onOpened={async (tableId) => { await load(); setOpeningId(null); setSelectedId(tableId); }} />}
     {selected?.status === "open" && <TableDetail table={selected} onClose={() => setSelectedId(null)} onNewCommand={onNewCommand} onRefresh={() => load({ quiet: true })} onPrint={setPrintDocument} />}
+    {settingsTable && <TableSettingsModal table={settingsTable} onClose={() => setSettingsId(null)} onSaved={() => load()} />}
     {showAdd && <AddTableModal tables={tables} onClose={() => setShowAdd(false)} onSaved={() => load()} />}
     {printDocument && <PrintPreview document={printDocument} onClose={() => setPrintDocument(null)} />}
   </div>;
