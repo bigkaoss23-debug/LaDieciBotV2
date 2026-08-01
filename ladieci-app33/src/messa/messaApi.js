@@ -74,6 +74,18 @@ export const messaApi = Object.freeze({
   pay(sessionId, payment) {
     return request("POST", `/sessions/${encodeURIComponent(sessionId)}/payments`, payment);
   },
+  createReservation(tableId, reservation) {
+    return request("POST", `/tables/${encodeURIComponent(tableId)}/reservations`, reservation);
+  },
+  updateReservation(reservationId, reservation) {
+    return request("PUT", `/reservations/${encodeURIComponent(reservationId)}`, reservation);
+  },
+  setReservationStatus(reservationId, expectedVersion, status) {
+    return request("POST", `/reservations/${encodeURIComponent(reservationId)}/status`, { expectedVersion, status });
+  },
+  openReservation(reservationId, expectedVersion) {
+    return request("POST", `/reservations/${encodeURIComponent(reservationId)}/open`, { expectedVersion });
+  },
 });
 
 const ERROR_MESSAGES = Object.freeze({
@@ -95,6 +107,15 @@ const ERROR_MESSAGES = Object.freeze({
   MESSA_COMMAND_STATE_FAILED: "No se pudo marcar la comanda como servida.",
   MESSA_FORBIDDEN: "Tu acceso no permite realizar esta operación.",
   MESSA_LAYOUT_FORBIDDEN: "Solo el responsable puede cambiar la sala.",
+  MESSA_RESERVATION_FORBIDDEN: "Tu acceso no permite gestionar reservas.",
+  MESSA_RESERVATION_INVALID: "Revisa los datos de la reserva.",
+  MESSA_RESERVATION_TIME_INVALID: "La fecha o la hora de la reserva no es válida.",
+  MESSA_RESERVATION_NOT_FOUND: "La reserva ya no existe.",
+  MESSA_RESERVATION_NOT_BOOKED: "Esta reserva ya se ha atendido, cancelado o cerrado.",
+  MESSA_RESERVATION_OVERLAP: "Esta mesa ya tiene otra reserva durante esas dos horas.",
+  MESSA_RESERVATION_VERSION_CONFLICT: "Otro operador ha cambiado esta reserva. Actualiza antes de continuar.",
+  MESSA_RESERVATION_CAPACITY_EXCEEDED: "Los cubiertos superan la capacidad máxima de esta mesa.",
+  MESSA_TABLE_HAS_RESERVATIONS: "Esta mesa tiene reservas futuras. Muévelas o cancélalas antes de quitarla.",
   MESSA_RELOGIN_REQUIRED: "Vuelve a entrar con tu PIN antes de cobrar.",
   MESSA_UNAUTHENTICATED: "La sesión ha caducado.",
   MESSA_SESSION_STALE: "Tu acceso ha cambiado. Vuelve a entrar.",

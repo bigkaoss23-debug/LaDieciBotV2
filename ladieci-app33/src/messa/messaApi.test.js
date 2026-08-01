@@ -16,4 +16,9 @@ describe("Mesa client helpers", () => {
   test("explains that an open account prevents another opening", () => {
     expect(describeMessaError({ code: "MESSA_TABLE_NOT_RELEASED" })).toContain("cuenta abierta");
   });
+
+  test("describes concurrent and overlapping reservation changes", () => {
+    expect(describeMessaError({ code: "MESSA_RESERVATION_OVERLAP" })).toContain("dos horas");
+    expect(describeMessaError({ code: "MESSA_RESERVATION_VERSION_CONFLICT" })).toContain("Otro operador");
+  });
 });

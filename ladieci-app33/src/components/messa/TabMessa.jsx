@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { C } from "../../constants";
 import { createMessaRequestId, describeMessaError, messaApi } from "../../messa/messaApi";
 
@@ -12,9 +12,49 @@ const METHODS = [
   { id: "bizum", label: "Bizum", icon: "📱", color: "#8B5CF6" },
 ];
 
+const RESERVATION_ROLES = new Set(["admin", "operator", "owner", "cashier", "waiter", "shift_manager", "legacy_operator"]);
+const MADRID_TIMEZONE = "Europe/Madrid";
+
+function madridFields(value = new Date()) {
+  const out = {};
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: MADRID_TIMEZONE,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(value instanceof Date ? value : new Date(value)).forEach((part) => {
+    if (part.type !== "literal") out[part.type] = part.value;
+  });
+  return {
+    date: `${out.year}-${out.month}-${out.day}`,
+    time: `${String(Number(out.hour) % 24).padStart(2, "0")}:${out.minute}`,
+  };
+}
+
+function reservationLocalFields(reservation) {
+  return reservation?.reservedAt ? madridFields(reservation.reservedAt) : madridFields(new Date(Date.now() + 60 * 60 * 1000));
+}
+
+function bookedForToday(table, now = new Date()) {
+  const today = madridFields(now).date;
+  return (table?.reservations || [])
+    .filter((reservation) => reservation.status === "booked" && madridFields(reservation.reservedAt).date === today)
+    .sort((a, b) => String(a.reservedAt).localeCompare(String(b.reservedAt)));
+}
+
+function reservationDateLabel(reservation) {
+  return new Intl.DateTimeFormat("es-ES", {
+    timeZone: MADRID_TIMEZONE, weekday: "short", day: "2-digit", month: "2-digit",
+  }).format(new Date(reservation.reservedAt));
+}
+
+function reservationTimeLabel(reservation) {
+  return madridFields(reservation.reservedAt).time;
+}
+
 const STATUS = {
   free: { label: "Libre", color: "#22C55E", bg: "rgba(34,197,94,.18)" },
   open: { label: "Cuenta abierta", color: "#F59E0B", bg: "rgba(245,158,11,.20)" },
+  reserved: { label: "Reservada", color: "#EF4444", bg: "rgba(239,68,68,.22)" },
 };
 
 const css = `
@@ -40,8 +80,9 @@ const css = `
 .messa-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.messa-label{display:block;color:#b9ad99;font-size:12px;font-weight:800;margin-bottom:6px}.messa-methods{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.messa-method{border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:11px 7px;background:rgba(255,255,255,.035);color:#fff;font-weight:850;cursor:pointer}.messa-method.active{border-color:var(--mc);box-shadow:inset 0 0 0 1px var(--mc);background:color-mix(in srgb,var(--mc) 18%,transparent)}
 .messa-lines{max-height:260px;overflow:auto;border:1px solid rgba(208,184,145,.15);border-radius:12px;padding:4px 11px}.messa-line-check{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer}.messa-line-check:last-child{border-bottom:0}.messa-line-check input{width:18px;height:18px;accent-color:#d7a84b}
 .messa-banner{border:1px solid rgba(56,189,248,.35);border-radius:13px;padding:12px 14px;background:rgba(56,189,248,.09);color:#b9eaff;font-size:13px;line-height:1.45}.messa-error{border-color:rgba(232,52,28,.5);background:rgba(232,52,28,.1);color:#ffaaa0}
+.messa-reservation{border:1px solid rgba(239,68,68,.38);border-radius:14px;padding:12px;background:rgba(239,68,68,.09);margin-top:9px}.messa-reservation-main{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.messa-reservation-name{font-size:15px;font-weight:950}.messa-reservation-time{color:#ff8d83;font-size:16px;font-weight:950;white-space:nowrap}.messa-reservation-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.messa-btn.small{padding:7px 10px;border-radius:10px;font-size:12px}.messa-btn.red{background:#C62828;border-color:#EF4444;color:#fff}.messa-textarea{min-height:88px;resize:vertical}.messa-menu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.messa-menu-action{min-height:72px;text-align:left;display:flex;flex-direction:column;justify-content:center}.messa-menu-action strong{font-size:14px}.messa-menu-action span{font-size:11px;color:#a99d89;margin-top:3px}.messa-reserved-sub{max-width:100%;font-size:11px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .messa-print-layer{display:none}.messa-print-sheet{width:58mm;margin:0 auto;color:#000;background:#fff;font:12px/1.35 'DM Mono',monospace}.messa-print-sheet h1,.messa-print-sheet h2,.messa-print-sheet p{margin:0}.messa-print-sheet .sep{border-top:1px dashed #000;margin:8px 0}.messa-print-row{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.messa-print-row span:first-child{min-width:0;overflow-wrap:anywhere}.messa-print-total{font-size:18px;font-weight:900;text-align:right;margin:8px 0}.messa-print-center{text-align:center}.messa-print-small{font-size:10px}
-@media(max-width:620px){.messa-board{min-height:520px}.messa-table{width:102px;min-height:88px}.messa-table.rectangle{width:124px}.messa-table.round{width:96px;height:96px}.messa-summary{grid-template-columns:1fr 1fr}.messa-form-grid{grid-template-columns:1fr}.messa-methods{grid-template-columns:1fr}.messa-modal-body{padding:15px}.messa-modal-head{padding:14px 15px}}
+@media(max-width:620px){.messa-board{min-height:520px}.messa-table{width:102px;min-height:88px}.messa-table.rectangle{width:124px}.messa-table.round{width:96px;height:96px}.messa-summary{grid-template-columns:1fr 1fr}.messa-form-grid,.messa-menu-grid{grid-template-columns:1fr}.messa-methods{grid-template-columns:1fr}.messa-modal-body{padding:15px}.messa-modal-head{padding:14px 15px}}
 @media print{body *{visibility:hidden!important}.messa-print-layer,.messa-print-layer *{visibility:visible!important}.messa-print-layer{display:block!important;position:absolute;left:0;top:0;width:100%;background:#fff}.messa-print-sheet{display:block!important} @page{size:58mm auto;margin:3mm}}
 `;
 
@@ -248,6 +289,140 @@ function OpenTableModal({ table, onClose, onOpened }) {
   </Modal>;
 }
 
+function ReservationItem({ reservation, table, onEdit, onChanged, onOpened }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const booked = reservation.status === "booked";
+  const setStatus = async (status) => {
+    const copy = status === "cancelled" ? "¿Cancelar esta reserva?" : "¿Marcar que el cliente no se presentó?";
+    if (!window.confirm(copy)) return;
+    setBusy(true); setError("");
+    try {
+      await messaApi.setReservationStatus(reservation.id, reservation.version, status);
+      await onChanged();
+    } catch (err) { setError(describeMessaError(err)); }
+    finally { setBusy(false); }
+  };
+  const open = async () => {
+    setBusy(true); setError("");
+    try {
+      await messaApi.openReservation(reservation.id, reservation.version);
+      await onOpened(table.id);
+    } catch (err) { setError(describeMessaError(err)); setBusy(false); }
+  };
+  return <div className="messa-reservation">
+    <div className="messa-reservation-main">
+      <div>
+        <div className="messa-reservation-name">{reservation.guestName} · {reservation.coversTotal} personas</div>
+        <div className="messa-muted" style={{ marginTop: 3 }}>{reservationDateLabel(reservation)} · Mesa {table.number}{reservation.guestPhone ? ` · ${reservation.guestPhone}` : ""}</div>
+      </div>
+      <div className="messa-reservation-time">{reservationTimeLabel(reservation)}</div>
+    </div>
+    {reservation.note && <div style={{ fontSize: 12, marginTop: 8, color: "#dfd5c4" }}>{reservation.note}</div>}
+    {booked && <div className="messa-reservation-actions">
+      <button className="messa-btn small green" disabled={busy || table.status === "open"} onClick={open}>Abrir reserva</button>
+      <button className="messa-btn small" disabled={busy} onClick={() => onEdit(reservation)}>Modificar</button>
+      <button className="messa-btn small" disabled={busy} onClick={() => setStatus("no_show")}>No se presentó</button>
+      <button className="messa-btn small danger" disabled={busy} onClick={() => setStatus("cancelled")}>Cancelar</button>
+    </div>}
+    {reservation.status === "seated" && <div className="messa-chip" style={{ marginTop: 9 }}>MESA ABIERTA</div>}
+    {table.status === "open" && booked && <div className="messa-muted" style={{ fontSize: 11, marginTop: 8 }}>Para recibir esta reserva, libera esta mesa o mueve la reserva a otra.</div>}
+    {error && <div className="messa-banner messa-error" style={{ marginTop: 9 }}>{error}</div>}
+  </div>;
+}
+
+function ReservationModal({ tables, initialTableId, reservation, onClose, onSaved }) {
+  const initial = reservationLocalFields(reservation);
+  const initialTable = tables.find((table) => table.id === (reservation?.tableId || initialTableId)) || tables[0];
+  const [form, setForm] = useState({
+    tableId: initialTable?.id || "",
+    guestName: reservation?.guestName || "",
+    guestPhone: reservation?.guestPhone || "",
+    coversTotal: reservation?.coversTotal || Math.min(Number(initialTable?.capacity) || 4, 4),
+    reservedLocalDate: initial.date,
+    reservedLocalTime: initial.time,
+    note: reservation?.note || "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const save = async () => {
+    const selectedTable = tables.find((table) => table.id === form.tableId);
+    const coversTotal = Number(form.coversTotal);
+    if (!selectedTable) { setError("Selecciona una mesa."); return; }
+    if (!form.guestName.trim()) { setError("Indica el nombre del cliente."); return; }
+    if (!Number.isInteger(coversTotal) || coversTotal < 1 || coversTotal > 99) { setError("Indica un número de cubiertos válido."); return; }
+    if (selectedTable.capacity && coversTotal > Number(selectedTable.capacity)) { setError("Los cubiertos superan la capacidad máxima de esta mesa."); return; }
+    setBusy(true); setError("");
+    const payload = {
+      guestName: form.guestName.trim(),
+      guestPhone: form.guestPhone.trim() || null,
+      coversTotal,
+      reservedLocalDate: form.reservedLocalDate,
+      reservedLocalTime: form.reservedLocalTime,
+      note: form.note.trim() || null,
+    };
+    try {
+      if (reservation) {
+        await messaApi.updateReservation(reservation.id, {
+          ...payload, tableId: form.tableId, expectedVersion: reservation.version,
+        });
+      } else {
+        await messaApi.createReservation(form.tableId, payload);
+      }
+      await onSaved(); onClose();
+    } catch (err) { setError(describeMessaError(err)); setBusy(false); }
+  };
+  return <Modal title={reservation ? "Modificar reserva" : "Nueva reserva"} subtitle="Duración reservada: 2 horas" onClose={busy ? undefined : onClose} width={650}>
+    <div className="messa-form-grid">
+      <div><label className="messa-label">Mesa</label><select className="messa-input" value={form.tableId} onChange={(event) => setForm({ ...form, tableId: event.target.value })}>{tables.map((table) => <option key={table.id} value={table.id}>Mesa {table.number} · {table.capacity || "—"} personas</option>)}</select></div>
+      <div><label className="messa-label">Nombre del cliente</label><input className="messa-input" maxLength="120" value={form.guestName} onChange={(event) => setForm({ ...form, guestName: event.target.value })} autoFocus /></div>
+      <div><label className="messa-label">Fecha</label><input className="messa-input" type="date" value={form.reservedLocalDate} onChange={(event) => setForm({ ...form, reservedLocalDate: event.target.value })} /></div>
+      <div><label className="messa-label">Hora</label><input className="messa-input" type="time" value={form.reservedLocalTime} onChange={(event) => setForm({ ...form, reservedLocalTime: event.target.value })} /></div>
+      <div><label className="messa-label">Número de cubiertos</label><input className="messa-input" type="number" min="1" max="99" value={form.coversTotal} onChange={(event) => setForm({ ...form, coversTotal: event.target.value })} /></div>
+      <div><label className="messa-label">Teléfono</label><input className="messa-input" type="tel" maxLength="40" value={form.guestPhone} onChange={(event) => setForm({ ...form, guestPhone: event.target.value })} /></div>
+    </div>
+    <div style={{ marginTop: 12 }}><label className="messa-label">Nota</label><textarea className="messa-input messa-textarea" maxLength="1000" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} /></div>
+    <div className="messa-actions" style={{ justifyContent: "flex-end" }}><button className="messa-btn" disabled={busy} onClick={onClose}>Cancelar</button><button className="messa-btn red" disabled={busy} onClick={save}>{busy ? "Guardando…" : reservation ? "Guardar cambios" : "Reservar mesa"}</button></div>
+    {error && <div className="messa-banner messa-error">{error}</div>}
+  </Modal>;
+}
+
+function ReservationAgenda({ tables, onClose, onNew, onEdit, onChanged, onOpened }) {
+  const rows = tables.flatMap((table) => (table.reservations || []).map((reservation) => ({ table, reservation })))
+    .sort((a, b) => String(a.reservation.reservedAt).localeCompare(String(b.reservation.reservedAt)));
+  return <Modal title="Reservas" subtitle="Todas las reservas activas" onClose={onClose} width={760}>
+    <div className="messa-actions" style={{ marginTop: 0 }}><button className="messa-btn red" onClick={onNew}>＋ Nueva reserva</button></div>
+    {rows.length === 0 ? <div className="messa-muted">No hay reservas activas.</div> : rows.map(({ table, reservation }) => <ReservationItem key={reservation.id} reservation={reservation} table={table} onEdit={onEdit} onChanged={onChanged} onOpened={onOpened} />)}
+  </Modal>;
+}
+
+function TableMenuModal({ table, canEdit, onClose, onOpenTable, onOpenAccount, onNewReservation, onEditReservation, onChanged, onOpened, onSettings }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const reservations = [...(table.reservations || [])].sort((a, b) => String(a.reservedAt).localeCompare(String(b.reservedAt)));
+  const remove = async () => {
+    if (table.status === "open") { setError("Cobra la cuenta antes de quitar esta mesa."); return; }
+    if (!window.confirm(`¿Quitar Mesa ${table.number} del plano? El historial se conservará.`)) return;
+    setBusy(true); setError("");
+    try {
+      await messaApi.saveTable(table.id, { tableNumber: table.number, displayName: `Mesa ${table.number}`, capacity: table.capacity, positionX: table.x, positionY: table.y, shape: table.shape, active: false });
+      await onChanged(); onClose();
+    } catch (err) { setError(describeMessaError(err)); setBusy(false); }
+  };
+  return <Modal title={`Mesa ${table.number}`} subtitle={table.status === "open" ? "Cuenta abierta" : reservations.some((item) => item.status === "booked") ? "Con reservas activas" : "Libre"} onClose={busy ? undefined : onClose} width={700}>
+    <div className="messa-menu-grid">
+      {table.status === "open"
+        ? <button className="messa-btn messa-menu-action green" onClick={onOpenAccount}><strong>Ver cuenta</strong><span>Comandas, cobros y ticket</span></button>
+        : <button className="messa-btn messa-menu-action primary" onClick={onOpenTable}><strong>Abrir mesa</strong><span>Nuevo cliente sin consumir una reserva</span></button>}
+      <button className="messa-btn messa-menu-action red" onClick={onNewReservation}><strong>Nueva reserva</strong><span>Nombre, hora, cubiertos, teléfono y nota</span></button>
+      {canEdit && <button className="messa-btn messa-menu-action gold" onClick={onSettings}><strong>Ajustes de mesa</strong><span>Número, capacidad y forma</span></button>}
+      {canEdit && <button className="messa-btn messa-menu-action danger" disabled={busy} onClick={remove}><strong>Quitar mesa</strong><span>Conserva todo el historial</span></button>}
+    </div>
+    <div className="messa-section"><h3>Reservas activas</h3>{reservations.length === 0 ? <div className="messa-muted">Esta mesa no tiene reservas activas.</div> : reservations.map((reservation) => <ReservationItem key={reservation.id} reservation={reservation} table={table} onEdit={onEditReservation} onChanged={onChanged} onOpened={onOpened} />)}</div>
+    {error && <div className="messa-banner messa-error" style={{ marginTop: 10 }}>{error}</div>}
+  </Modal>;
+}
+
 function AddTableModal({ tables, onClose, onSaved }) {
   const nextNumber = Math.max(0, ...tables.map((table) => Number(table.number) || 0)) + 1;
   const [form, setForm] = useState({ tableNumber: nextNumber, displayName: `Mesa ${nextNumber}`, capacity: 4, shape: "square" });
@@ -274,47 +449,42 @@ function TableSettingsModal({ table, onClose, onSaved }) {
   const [form, setForm] = useState({ tableNumber: table.number, capacity: table.capacity || 4, shape: table.shape || "square" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const payload = (active) => {
+  const payload = () => {
     const tableNumber = Number(form.tableNumber);
     const capacity = Number(form.capacity);
     if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > 999) throw new Error("table_number");
     if (!Number.isInteger(capacity) || capacity < 1 || capacity > 99) throw new Error("capacity");
-    return { tableNumber, displayName: `Mesa ${tableNumber}`, capacity, positionX: table.x, positionY: table.y, shape: form.shape, active };
+    return { tableNumber, displayName: `Mesa ${tableNumber}`, capacity, positionX: table.x, positionY: table.y, shape: form.shape, active: true };
   };
   const save = async () => {
     let next;
-    try { next = payload(true); }
+    try { next = payload(); }
     catch (err) { setError(err.message === "capacity" ? "Indica una capacidad máxima válida." : "Indica un número de mesa válido."); return; }
-    setBusy(true); setError("");
-    try { await messaApi.saveTable(table.id, next); await onSaved(); onClose(); }
-    catch (err) { setError(describeMessaError(err)); setBusy(false); }
-  };
-  const remove = async () => {
-    if (table.status === "open") { setError("Cobra la cuenta antes de quitar esta mesa."); return; }
-    if (!window.confirm(`¿Quitar Mesa ${table.number} del plano? El historial se conservará.`)) return;
-    const next = { tableNumber: table.number, displayName: `Mesa ${table.number}`, capacity: table.capacity, positionX: table.x, positionY: table.y, shape: table.shape, active: false };
     setBusy(true); setError("");
     try { await messaApi.saveTable(table.id, next); await onSaved(); onClose(); }
     catch (err) { setError(describeMessaError(err)); setBusy(false); }
   };
   return <Modal title="Ajustes de sala" subtitle={`Mesa ${table.number}`} onClose={busy ? undefined : onClose} width={520}>
     <div className="messa-form-grid"><div><label className="messa-label">Número de mesa</label><input className="messa-input" type="number" min="1" max="999" value={form.tableNumber} onChange={(event) => setForm({ ...form, tableNumber: event.target.value })} /></div><div><label className="messa-label">Capacidad máxima</label><input className="messa-input" type="number" min="1" max="99" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} /></div><div><label className="messa-label">Forma</label><select className="messa-input" value={form.shape} onChange={(event) => setForm({ ...form, shape: event.target.value })}><option value="round">Redonda</option><option value="square">Cuadrada</option><option value="rectangle">Rectangular</option></select></div></div>
-    <div className="messa-actions" style={{ justifyContent: "space-between", marginTop: 20 }}><button className="messa-btn danger" disabled={busy || table.status === "open"} onClick={remove}>Quitar mesa</button><div style={{ display: "flex", gap: 8 }}><button className="messa-btn" disabled={busy} onClick={onClose}>Cancelar</button><button className="messa-btn gold" disabled={busy} onClick={save}>{busy ? "Guardando…" : "Guardar ajustes"}</button></div></div>
-    {table.status === "open" && <div className="messa-banner" style={{ marginTop: 10 }}>Puedes cambiar sus ajustes, pero no quitarla mientras tenga una cuenta abierta.</div>}
+    <div className="messa-actions" style={{ justifyContent: "flex-end", marginTop: 20 }}><button className="messa-btn" disabled={busy} onClick={onClose}>Cancelar</button><button className="messa-btn gold" disabled={busy} onClick={save}>{busy ? "Guardando…" : "Guardar ajustes"}</button></div>
     {error && <div className="messa-banner messa-error" style={{ marginTop: 10 }}>{error}</div>}
   </Modal>;
 }
 
 export default function TabMessa({ role, notify, onNewCommand, onCountChange, refreshKey = 0 }) {
   const canEdit = role === "admin" || role === "owner";
+  const canManageReservations = RESERVATION_ROLES.has(role);
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [openingId, setOpeningId] = useState(null);
+  const [menuId, setMenuId] = useState(null);
   const [editing, setEditing] = useState(false);
   const [settingsId, setSettingsId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showReservations, setShowReservations] = useState(false);
+  const [reservationEditor, setReservationEditor] = useState(null);
   const [printDocument, setPrintDocument] = useState(null);
   const boardRef = useRef(null);
   const dragRef = useRef(null);
@@ -325,7 +495,7 @@ export default function TabMessa({ role, notify, onNewCommand, onCountChange, re
     try {
       const result = await messaApi.floor({ includeInactive: canEdit });
       setTables(result.tables || []); setError("");
-      onCountChange?.((result.tables || []).filter((table) => table.active && table.status !== "free").length);
+      onCountChange?.((result.tables || []).filter((table) => table.active && (table.status === "open" || bookedForToday(table).length > 0)).length);
     } catch (err) { setError(describeMessaError(err)); }
     finally { if (!quiet) setLoading(false); }
   }, [canEdit, onCountChange]);
@@ -335,8 +505,18 @@ export default function TabMessa({ role, notify, onNewCommand, onCountChange, re
 
   const selected = tables.find((table) => table.id === selectedId && table.active) || null;
   const opening = tables.find((table) => table.id === openingId && table.active) || null;
+  const menuTable = tables.find((table) => table.id === menuId && table.active) || null;
   const settingsTable = tables.find((table) => table.id === settingsId && table.active) || null;
   const activeTables = tables.filter((table) => table.active);
+  const openEditor = (reservation = null, tableId = null) => {
+    setMenuId(null); setShowReservations(false);
+    setReservationEditor({ reservation, tableId: reservation?.tableId || tableId || activeTables[0]?.id || null });
+  };
+  const opened = async (tableId) => {
+    await load();
+    setMenuId(null); setShowReservations(false); setReservationEditor(null); setOpeningId(null);
+    setSelectedId(tableId);
+  };
 
   const savePosition = async (table) => {
     try {
@@ -372,18 +552,21 @@ export default function TabMessa({ role, notify, onNewCommand, onCountChange, re
   if (error && tables.length === 0) return <div className="messa-root"><style>{css}</style><div className="messa-banner messa-error">{error}</div><button className="messa-btn" style={{ marginTop: 10 }} onClick={() => load()}>Reintentar</button></div>;
 
   return <div className="messa-root"><style>{css}</style>
-    <div className="messa-toolbar"><div className="messa-legend">{Object.entries(STATUS).map(([id, item]) => <span key={id}><i className="messa-dot" style={{ background: item.color }} />{item.label}</span>)}</div><div style={{ display: "flex", gap: 8 }}>{canEdit && editing && <button className="messa-btn gold" onClick={() => setShowAdd(true)}>＋ Añadir mesa</button>}{canEdit && <button className={`messa-btn ${editing ? "primary" : ""}`} onClick={() => setEditing((value) => { const next = !value; if (!next) { setSettingsId(null); setShowAdd(false); } return next; })}>{editing ? "✓ Cerrar ajustes" : "⚙ Ajustes de sala"}</button>}<button className="messa-btn" onClick={() => load()}>↻</button></div></div>
-    {editing && <div className="messa-banner" style={{ marginBottom: 11 }}>Arrastra cada mesa hasta su posición real. Tócala para cambiar su número, forma o capacidad máxima.</div>}
+    <div className="messa-toolbar"><div className="messa-legend">{Object.entries(STATUS).map(([id, item]) => <span key={id}><i className="messa-dot" style={{ background: item.color }} />{item.label}</span>)}</div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{canManageReservations && <button className="messa-btn red" onClick={() => setShowReservations(true)}>📅 Reservas</button>}{canEdit && editing && <button className="messa-btn gold" onClick={() => setShowAdd(true)}>＋ Añadir mesa</button>}{canEdit && <button className={`messa-btn ${editing ? "primary" : ""}`} onClick={() => setEditing((value) => { const next = !value; if (!next) { setSettingsId(null); setShowAdd(false); } return next; })}>{editing ? "✓ Cerrar ajustes" : "⚙ Ajustes de sala"}</button>}<button className="messa-btn" onClick={() => load()}>↻</button></div></div>
+    {editing && <div className="messa-banner" style={{ marginBottom: 11 }}>Arrastra cada mesa hasta su posición real. Tócala para abrir su menú, cambiar los ajustes o quitarla.</div>}
     <div className="messa-board" ref={boardRef} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
-      {activeTables.map((table) => { const state = STATUS[table.status] || STATUS.free; const dragging = dragRef.current?.id === table.id; return <button key={table.id} className={`messa-table ${table.shape} ${editing ? "is-editing" : ""} ${dragging ? "is-dragging" : ""}`} style={{ left: `${table.x}%`, top: `${table.y}%`, "--tc": state.color, "--tb": state.bg }} onPointerDown={(event) => pointerDown(event, table)} onClick={() => { if (suppressClickRef.current === table.id) { suppressClickRef.current = null; return; } if (editing) { setSettingsId(table.id); return; } if (table.status === "free") setOpeningId(table.id); else setSelectedId(table.id); }}>
-        <span style={{ fontSize: 12, color: state.color, fontWeight: 900 }}>{state.label}</span><strong style={{ fontSize: 19 }}>Mesa {table.number}</strong>{table.status === "open" && <><span style={{ fontSize: 13, fontWeight: 900 }}>{euro(table.session.outstanding)}</span><span style={{ fontSize: 11, color: "#dfd5c4" }}>👥 {table.session.coversRemaining}/{table.session.coversTotal}</span></>}
+      {activeTables.map((table) => { const todayReservations = bookedForToday(table); const nextReservation = todayReservations[0]; const state = nextReservation ? STATUS.reserved : STATUS[table.status] || STATUS.free; const dragging = dragRef.current?.id === table.id; return <button key={table.id} className={`messa-table ${table.shape} ${editing ? "is-editing" : ""} ${dragging ? "is-dragging" : ""}`} style={{ left: `${table.x}%`, top: `${table.y}%`, "--tc": state.color, "--tb": state.bg }} onPointerDown={(event) => pointerDown(event, table)} onClick={() => { if (suppressClickRef.current === table.id) { suppressClickRef.current = null; return; } setMenuId(table.id); }}>
+        <span style={{ fontSize: 12, color: state.color, fontWeight: 900 }}>{nextReservation ? `Reservada ${reservationTimeLabel(nextReservation)}` : state.label}</span><strong style={{ fontSize: 19 }}>Mesa {table.number}</strong>{nextReservation ? <><span className="messa-reserved-sub">{nextReservation.guestName} · {nextReservation.coversTotal} personas</span>{todayReservations.length > 1 && <span style={{ fontSize: 10 }}>＋{todayReservations.length - 1} reserva</span>}{table.status === "open" && <span style={{ fontSize: 10, color: "#ffd29a" }}>Cuenta abierta · {euro(table.session.outstanding)}</span>}</> : table.status === "open" && <><span style={{ fontSize: 13, fontWeight: 900 }}>{euro(table.session.outstanding)}</span><span style={{ fontSize: 11, color: "#dfd5c4" }}>👥 {table.session.coversRemaining}/{table.session.coversTotal}</span></>}
       </button>; })}
     </div>
     {error && <div className="messa-banner messa-error" style={{ marginTop: 10 }}>{error}</div>}
-    {opening && <OpenTableModal table={opening} onClose={() => setOpeningId(null)} onOpened={async (tableId) => { await load(); setOpeningId(null); setSelectedId(tableId); }} />}
+    {menuTable && <TableMenuModal table={menuTable} canEdit={canEdit} onClose={() => setMenuId(null)} onOpenTable={() => { setMenuId(null); setOpeningId(menuTable.id); }} onOpenAccount={() => { setMenuId(null); setSelectedId(menuTable.id); }} onNewReservation={() => openEditor(null, menuTable.id)} onEditReservation={(reservation) => openEditor(reservation, menuTable.id)} onChanged={() => load({ quiet: true })} onOpened={opened} onSettings={() => { setMenuId(null); setSettingsId(menuTable.id); }} />}
+    {opening && <OpenTableModal table={opening} onClose={() => setOpeningId(null)} onOpened={opened} />}
     {selected?.status === "open" && <TableDetail table={selected} onClose={() => setSelectedId(null)} onNewCommand={onNewCommand} onRefresh={() => load({ quiet: true })} onPrint={setPrintDocument} />}
     {settingsTable && <TableSettingsModal table={settingsTable} onClose={() => setSettingsId(null)} onSaved={() => load()} />}
     {showAdd && <AddTableModal tables={tables} onClose={() => setShowAdd(false)} onSaved={() => load()} />}
+    {showReservations && <ReservationAgenda tables={activeTables} onClose={() => setShowReservations(false)} onNew={() => openEditor()} onEdit={(reservation) => openEditor(reservation)} onChanged={() => load({ quiet: true })} onOpened={opened} />}
+    {reservationEditor && <ReservationModal tables={activeTables} initialTableId={reservationEditor.tableId} reservation={reservationEditor.reservation} onClose={() => setReservationEditor(null)} onSaved={() => load()} />}
     {printDocument && <PrintPreview document={printDocument} onClose={() => setPrintDocument(null)} />}
   </div>;
 }

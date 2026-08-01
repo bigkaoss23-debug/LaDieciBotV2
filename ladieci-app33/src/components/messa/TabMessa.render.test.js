@@ -14,6 +14,10 @@ jest.mock("../../messa/messaApi", () => ({
     addCommand: jest.fn(),
     markServed: jest.fn(),
     pay: jest.fn(),
+    createReservation: jest.fn(),
+    updateReservation: jest.fn(),
+    setReservationStatus: jest.fn(),
+    openReservation: jest.fn(),
   },
 }));
 
@@ -49,12 +53,12 @@ async function flush() {
   await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 }
 
-async function mount() {
+async function mount(role = "owner") {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<TabMessa role="owner" notify={jest.fn()} onNewCommand={jest.fn()} onCountChange={jest.fn()} />);
+    root.render(<TabMessa role={role} notify={jest.fn()} onNewCommand={jest.fn()} onCountChange={jest.fn()} />);
   });
   await flush();
   return { container, root };
@@ -66,13 +70,17 @@ function unmount(container, root) {
 }
 
 function buttonByText(container, text) {
-  return Array.from(container.querySelectorAll("button")).find((button) => button.textContent.trim() === text);
+  return Array.from(container.querySelectorAll("button")).find((button) => button.textContent.trim().startsWith(text));
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
   messaApi.floor.mockResolvedValue({ ok: true, tables: floorTables });
   messaApi.saveTable.mockResolvedValue({ ok: true });
+  messaApi.createReservation.mockResolvedValue({ ok: true });
+  messaApi.updateReservation.mockResolvedValue({ ok: true });
+  messaApi.setReservationStatus.mockResolvedValue({ ok: true });
+  messaApi.openReservation.mockResolvedValue({ ok: true });
 });
 
 test("operational floor shows five clean table cards without capacity copy", async () => {
@@ -88,6 +96,8 @@ test("room settings edits and persists a table maximum capacity", async () => {
   const { container, root } = await mount();
   click(buttonByText(container, "⚙ Ajustes de sala"));
   click(container.querySelector(".messa-table"));
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("Nueva reserva");
+  click(buttonByText(container, "Ajustes de mesa"));
   expect(container.querySelector('[role="dialog"]').textContent).toContain("Ajustes de sala");
   const fields = container.querySelectorAll('.messa-modal input[type="number"]');
   expect(fields).toHaveLength(2);
@@ -101,6 +111,53 @@ test("room settings edits and persists a table maximum capacity", async () => {
     capacity: 6,
     active: true,
   }));
+  unmount(container, root);
+});
+
+test("today reservation turns the table red and shows time, customer and covers", async () => {
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  messaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: floorTables.map((table, index) => index === 4 ? {
+      ...table,
+      reservations: [{ id: "reservation-1", tableId: table.id, status: "booked", guestName: "Antonio", guestPhone: "600123123", coversTotal: 4, reservedAt, durationMinutes: 120, note: "Ventana", version: 1 }],
+    } : { ...table, reservations: [] }),
+  });
+  const { container, root } = await mount("waiter");
+  const cards = container.querySelectorAll(".messa-table");
+  expect(cards[4].textContent).toContain("Reservada");
+  expect(cards[4].textContent).toContain("Antonio · 4 personas");
+  expect(cards[4].getAttribute("style")).toContain("#EF4444");
+  click(cards[4]);
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("Antonio · 4 personas");
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("600123123");
+  unmount(container, root);
+});
+
+test("waiter can move a reservation to another table from the table menu", async () => {
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const tables = floorTables.map((table, index) => index === 0 ? {
+    ...table,
+    reservations: [{ id: "reservation-1", tableId: table.id, status: "booked", guestName: "Antonio", guestPhone: "600", coversTotal: 4, reservedAt, durationMinutes: 120, note: "", version: 2 }],
+  } : { ...table, reservations: [] });
+  messaApi.floor.mockResolvedValue({ ok: true, tables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".messa-table"));
+  click(buttonByText(container, "Modificar"));
+  const tableSelect = container.querySelector(".messa-modal select");
+  act(() => {
+    tableSelect.value = "table-2";
+    tableSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  click(buttonByText(container, "Guardar cambios"));
+  await flush();
+  expect(messaApi.updateReservation).toHaveBeenCalledWith("reservation-1", expect.objectContaining({
+    tableId: "table-2",
+    guestName: "Antonio",
+    coversTotal: 4,
+    expectedVersion: 2,
+  }));
+  expect(container.textContent).not.toContain("Ajustes de mesa");
   unmount(container, root);
 });
 
