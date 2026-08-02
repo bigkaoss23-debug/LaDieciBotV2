@@ -93,6 +93,11 @@ export function toAccessUserViewModel(apiUser, context = {}) {
 // ascending — an explicit, stable presentation key that does not depend on
 // backend response order (the backend list route is itself proven stable/
 // alphabetical by actor, but this module does not rely on that implicitly).
+//
+// The fallback sequence ("Operador N") is consumed ONLY by accounts that
+// actually need it (isGenericDisplayName) — a friendly-named account never
+// occupies or shifts a numbering slot. Adding or removing a named account
+// must never renumber a generic-named account around it.
 export function buildAccessDirectoryViewModel(users, context = {}) {
   const list = Array.isArray(users) ? users : [];
   const currentActorId = context.currentActorId;
@@ -103,8 +108,16 @@ export function buildAccessDirectoryViewModel(users, context = {}) {
     .slice()
     .sort((a, b) => (a.actor < b.actor ? -1 : a.actor > b.actor ? 1 : 0));
 
+  let fallbackSeq = 0;
+  const staff = staffSorted.map((u) => {
+    const { label: roleLabel } = describeRole(u.canonicalRole);
+    const needsFallback = isGenericDisplayName(u.displayName, roleLabel, u.actor);
+    const staffIndex = needsFallback ? (fallbackSeq += 1) : null;
+    return toAccessUserViewModel(u, { isOwner: false, staffIndex });
+  });
+
   return {
     owner: me ? toAccessUserViewModel(me, { isOwner: true, staffIndex: null }) : null,
-    staff: staffSorted.map((u, i) => toAccessUserViewModel(u, { isOwner: false, staffIndex: i + 1 })),
+    staff,
   };
 }
