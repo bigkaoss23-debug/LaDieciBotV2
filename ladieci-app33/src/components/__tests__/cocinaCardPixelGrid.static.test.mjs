@@ -38,16 +38,25 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
     assert.ok(/const RIBBON_H = 26;/.test(src), "RIBBON_H definito");
     assert.ok(/height:RIBBON_H,flexShrink:0,boxSizing:"border-box"/.test(src), "top slot height:RIBBON_H");
   });
-  // B. top slot SEMPRE presente: SOLO delivery mostra label; non-delivery = slot MUTO
-  ck(`${name}: top slot sempre presente — delivery label / non-delivery muto`, () => {
-    // fondo: delivery = accent; non-delivery = colore header (coerente, nessun segnale forte)
-    assert.ok(/(?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : fc\.bg(?:Light)?/.test(src),
-      "bg delivery-accent / non-delivery = colore header");
+  // B. top slot SEMPRE presente: delivery mostra label; TabCocina può mostrare
+  // anche il badge Mesa richiesto dal flusso ristorante; gli altri pickup restano muti.
+  ck(`${name}: top slot sempre presente — delivery / Mesa label, altri pickup muti`, () => {
+    if (name === "TabCocina") {
+      assert.ok(/(?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : \(messaNumber \? "#8B5CF6" : fc\.bg\)/.test(src),
+        "bg delivery-accent / Mesa viola / altro pickup colore header");
+    } else {
+      assert.ok(/(?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : fc\.bg(?:Light)?/.test(src),
+        "bg delivery-accent / non-delivery = colore header");
+    }
     // contenuto delivery `🚚 DELIVERY[· G{seq}]`
     assert.ok(/(?:o\.)?isDelivery\s*\?\s*<>🚚 DELIVERY\{o\.manualGiro \? ` · \$\{formatManualGiroLabel\(o\.manualGiro\)\}` : ""\}<\/>/.test(src),
       "contenuto delivery `🚚 DELIVERY[· G{seq}]`");
-    // non-delivery = slot MUTO (else = null, nessun testo/icona)
-    assert.ok(/<>🚚 DELIVERY[\s\S]*?<\/>\s*: null\}/.test(src), "non-delivery slot muto (else null)");
+    if (name === "TabCocina") {
+      assert.ok(/: messaNumber \? <>🍽 MESA \{messaNumber\}<\/> : null\}/.test(src),
+        "Mesa mostra numero; altro pickup resta muto");
+    } else {
+      assert.ok(/<>🚚 DELIVERY[\s\S]*?<\/>\s*: null\}/.test(src), "non-delivery slot muto (else null)");
+    }
   });
   // B2. non-delivery NON mostra testo/label nel top slot (no RITIRO/LOCO/🏠)
   ck(`${name}: non-delivery slot silenzioso (no RITIRO/LOCO/🏠)`, () => {

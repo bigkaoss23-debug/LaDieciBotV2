@@ -63,9 +63,14 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   ck(`${name}: ingredienti sotto (secondari)`, () => {
     assert.ok(/fontFamily:SYS_FONT,color:"#(?:555|777)",fontSize:compact\?1[01]:1[23],fontWeight:500[\s\S]{0,80}?\{nomeIng\}/.test(src));
   });
-  // C. top slot non-delivery MUTO (else null), niente RITIRO/LOCO/🏠
-  ck(`${name}: top slot non-delivery muto (else null)`, () => {
-    assert.ok(/<>🚚 DELIVERY[\s\S]*?<\/>\s*: null\}/.test(src), "non-delivery slot muto");
+  // C. Mesa può avere il riferimento operativo; gli altri pickup restano muti.
+  ck(`${name}: top slot Mesa consentita; altri pickup muti`, () => {
+    if (name === "TabCocina") {
+      assert.ok(/: messaNumber \? <>🍽 MESA \{messaNumber\}<\/> : null\}/.test(src),
+        "Mesa mostra numero; altro pickup resta muto");
+    } else {
+      assert.ok(/<>🚚 DELIVERY[\s\S]*?<\/>\s*: null\}/.test(src), "non-delivery slot muto");
+    }
     assert.ok(!/🏠/.test(src) && !/RETIRO/.test(src) && !/RITIRO/.test(src) && !/LOCO/.test(src),
       "niente label RITIRO/LOCO/🏠");
   });

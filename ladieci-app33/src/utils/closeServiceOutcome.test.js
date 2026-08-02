@@ -50,5 +50,7 @@ describe("classifyCloseOutcome — no false success", () => {
     expect(mesaMessage).toMatch(/mesas con la cuenta abierta/i);
     expect(mesaMessage).toMatch(/cobra esas cuentas/i);
     expect(mesaMessage).not.toMatch(/ocupad|libre|márca/i);
+    expect(closeFailureMessage({ error: "service_active_orders_not_resolved" })).toMatch(/pedidos todavía en curso/i);
+    expect(closeFailureMessage({ error: "service_active_order_gate_failed" })).toMatch(/no se pudo comprobar/i);
   });
 });

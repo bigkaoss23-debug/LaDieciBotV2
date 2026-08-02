@@ -236,10 +236,15 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
 
   const handleChiudiServizio = async () => {
     // Step 1: scan → mostra modale
-    setChiudiModal({ loading: true, completati: null, attivi: [] });
+    setChiudiModal({ loading: true, completati: null, attivi: [], blocking: { orders: 0, tables: 0 } });
     try {
       const scan = await api.get("scanServizio");
-      setChiudiModal({ loading: false, completati: scan.completati, attivi: scan.attivi || [] });
+      setChiudiModal({
+        loading: false,
+        completati: scan.completati,
+        attivi: scan.attivi || [],
+        blocking: scan.blocking || { orders: 0, tables: 0 },
+      });
     } catch(err) {
       setChiudiModal(null);
       notify("❌ Error al escanear servicio", C.rosso);
@@ -1644,7 +1649,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
               {chiudiModal.attivi.length > 0 ? (
                 <div style={{background:"rgba(255,171,0,0.1)",border:"1px solid rgba(255,171,0,0.3)",borderRadius:12,padding:"12px 16px",marginBottom:20}}>
                   <div style={{color:"#ffab00",fontWeight:700,fontSize:13,marginBottom:8}}>
-                    ⚠️ {chiudiModal.attivi.length} mensaje{chiudiModal.attivi.length>1?"s activos":"activo"} — ¿para mañana?
+                    ⚠️ {chiudiModal.attivi.length} elemento{chiudiModal.attivi.length>1?"s pendientes":" pendiente"}
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:150,overflowY:"auto"}}>
                     {chiudiModal.attivi.map((a,i) => (
@@ -1658,7 +1663,11 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
                     ))}
                   </div>
                   <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,marginTop:8}}>
-                    Verifica si son pedidos para mañana antes de eliminar.
+                    {chiudiModal.blocking?.tables > 0
+                      ? "Hay mesas con cuenta abierta: cóbralas antes de cerrar el servicio."
+                      : chiudiModal.blocking?.orders > 0
+                        ? "Completa los pedidos o ciérralos expresamente como anulados."
+                        : "Los mensajes sin pedido pueden quedarse para el siguiente servicio."}
                   </div>
                 </div>
               ) : (
@@ -1679,22 +1688,22 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
 
               {/* Bottoni */}
               <div style={{display:"flex",flexDirection:"column",gap:8,opacity:chiudiModal.submitting?0.6:1,pointerEvents:chiudiModal.submitting?"none":"auto"}}>
-                {chiudiModal.attivi.length > 0 && (
+                {chiudiModal.blocking?.tables === 0 && chiudiModal.blocking?.orders > 0 && (
                   <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma(true)} style={{
                     background:"rgba(192,57,43,0.85)",border:"1.5px solid rgba(192,57,43,0.8)",
                     borderRadius:12,padding:"13px 16px",color:"#fff",fontWeight:800,
                     fontSize:13,cursor:"pointer",width:"100%"}}>
-                    🗑️ Eliminar todo (incluso mensajes activos)
+                    🗑️ Cerrar y anular pedidos activos
                   </button>
                 )}
-                <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma(false)} style={{
+                {chiudiModal.blocking?.tables === 0 && chiudiModal.blocking?.orders === 0 && <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma(false)} style={{
                   background: chiudiModal.attivi.length > 0 ? "rgba(46,213,115,0.15)" : "rgba(192,57,43,0.85)",
                   border: chiudiModal.attivi.length > 0 ? "1.5px solid rgba(46,213,115,0.4)" : "1.5px solid rgba(192,57,43,0.8)",
                   borderRadius:12,padding:"13px 16px",
                   color: chiudiModal.attivi.length > 0 ? "#2ed573" : "#fff",
                   fontWeight:800,fontSize:13,cursor:"pointer",width:"100%"}}>
                   {chiudiModal.submitting ? "Cerrando…" : (chiudiModal.attivi.length > 0 ? "✅ Cerrar servicio (dejar mensajes activos)" : "✅ Confirmar — cerrar servicio")}
-                </button>
+                </button>}
                 <button disabled={chiudiModal.submitting} onClick={()=>setChiudiModal(null)} style={{
                   background:"transparent",border:"1px solid rgba(255,255,255,0.12)",
                   borderRadius:12,padding:"11px 16px",color:"rgba(255,255,255,0.4)",

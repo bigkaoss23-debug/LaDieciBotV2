@@ -264,10 +264,9 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                 </div>
               )}
               {/* COCINA_CARD_PIXEL_GRID · TOP_SLOT_SILENT: top slot ad altezza fissa
-                  (RIBBON_H) uguale per TUTTE le card → allineamento. SOLO i delivery
-                  mostrano la label (`🚚 DELIVERY[· G{seq}]`, accent zona/giro). I
-                  non-delivery hanno slot MUTO (nessun testo/icona), fondo coerente con
-                  l'header (fc.bg) → nessun segnale visivo forte, solo allineamento. */}
+                  (RIBBON_H) uguale per TUTTE le card → allineamento. I delivery mostrano
+                  `🚚 DELIVERY[· G{seq}]`; i comandi al tavolo mostrano `🍽 MESA N` come
+                  riferimento operativo; gli altri pickup restano muti. */}
               <div style={{height:RIBBON_H,flexShrink:0,boxSizing:"border-box",
                 display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"0 8px",
                 background: o.isDelivery ? (giroAccent || zonaColore) : (messaNumber ? "#8B5CF6" : fc.bg),

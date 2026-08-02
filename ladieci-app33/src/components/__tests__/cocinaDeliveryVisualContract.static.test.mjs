@@ -44,13 +44,18 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
     assert.ok(/🚚 DELIVERY\{o\.manualGiro \?/.test(src), "base label 🚚 DELIVERY presente");
     assert.ok(!/🚚 DELIVERY · \{formatManualGiroLabel/.test(src), "niente suffisso · G{seq} statico");
   });
-  // 3. TOP SLOT: SOLO delivery mostra label; non-delivery = slot MUTO (else null)
-  ck(`${name}: ribbon — DELIVERY solo delivery, non-delivery muto`, () => {
+  // 3. TOP SLOT: delivery mostra la label; TabCocina può mostrare anche Mesa N.
+  ck(`${name}: ribbon — DELIVERY solo delivery; Mesa consentita in TabCocina`, () => {
     assert.ok(
       /(?:o\.)?isDelivery\s*\?\s*<>🚚 DELIVERY/.test(src),
       "il contenuto DELIVERY del ribbon deve essere gated da isDelivery"
     );
-    assert.ok(/<>🚚 DELIVERY[\s\S]*?<\/>\s*: null\}/.test(src), "non-delivery = slot muto (else null)");
+    if (name === "TabCocina") {
+      assert.ok(/: messaNumber \? <>🍽 MESA \{messaNumber\}<\/> : null\}/.test(src),
+        "Mesa mostra numero; altro pickup resta muto");
+    } else {
+      assert.ok(/<>🚚 DELIVERY[\s\S]*?<\/>\s*: null\}/.test(src), "non-delivery = slot muto (else null)");
+    }
     assert.ok(!/🏠/.test(src), "niente label/icona per non-delivery");
   });
   // 4. giro manuale usa accent giro (grouped/manual): background giroAccent-first + palette
@@ -61,7 +66,10 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   });
   // 5. delivery singolo usa accent zona: fallback zonaColore nel ribbon + border zona
   ck(`${name}: delivery singolo usa accent zona (zonaColore)`, () => {
-    assert.ok(/background: (?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : fc\.bg(?:Light)?/.test(src), "ribbon: fallback zonaColore delivery / colore header non-delivery");
+    const ribbonBg = name === "TabCocina"
+      ? /background: (?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : \(messaNumber \? "#8B5CF6" : fc\.bg\)/
+      : /background: (?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : fc\.bg(?:Light)?/;
+    assert.ok(ribbonBg.test(src), "ribbon: fallback zonaColore delivery / Mesa o colore header non-delivery");
     assert.ok(/(?:o\.)?isDelivery \? `4px solid \$\{zonaColore\}`/.test(src), "border delivery = 4px zonaColore");
   });
   // 6. "GIRO MANUAL" assente

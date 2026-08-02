@@ -329,11 +329,13 @@ const api = {
     return proxyPost(body);
   },
 
-  // ── READS diretti (no Railway round-trip — sono read-only) ─────
+  // ── READS ───────────────────────────────────────────────────────
+  // `ordenes` is service-scoped by the backend lifecycle pointer. A browser-side
+  // "last 24 hours" filter mixes lunch/dinner and can resurrect a row belonging
+  // to an already-closed service, so this one read deliberately goes through the
+  // authenticated proxy. The remaining non-operational reads stay direct.
   getOrdenes: async function() {
-    const H24 = 24*60*60*1000;
-    const since = Date.now() - H24;
-    const rows = await sb.select("ordenes", `ts=gte.${since}&order=ts.desc&limit=100`);
+    const rows = await proxyGet("getOrdenes");
     return { ordenes: (rows||[]).map(o => ({
       ...o, ts: Number(o.ts)||Date.now(), llegado: o.llegado===true,
       items: typeof o.items === "string" ? JSON.parse(o.items) : (o.items||[])

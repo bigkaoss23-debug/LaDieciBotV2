@@ -23,6 +23,8 @@ export function closeFailureMessage(res) {
     messa_tables_not_released: "Hay mesas con la cuenta abierta. Cobra esas cuentas antes de cerrar el servicio.",
     MESSA_TABLES_NOT_RELEASED: "Hay mesas con la cuenta abierta. Cobra esas cuentas antes de cerrar el servicio.",
     messa_table_gate_failed: "No se pudo comprobar el estado de las mesas. El servicio sigue abierto; recarga e inténtalo de nuevo.",
+    service_active_orders_not_resolved: "Hay pedidos todavía en curso. Complétalos o elige cerrar anulando esos pedidos.",
+    service_active_order_gate_failed: "No se pudo comprobar si quedan pedidos activos. El servicio sigue abierto; recarga e inténtalo de nuevo.",
   };
   if (CODES[raw]) return CODES[raw];
   if (/\s/.test(raw)) {
