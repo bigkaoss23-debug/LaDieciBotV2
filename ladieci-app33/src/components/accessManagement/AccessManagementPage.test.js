@@ -1,9 +1,10 @@
-// Gestión de accesos — the full operational page (V3-I). react-dom + react-dom/test-utils,
-// same house style as src/components/pinManagementFlow.test.js — no @testing-library dependency.
-// Read-side/restaurant-friendly-UX assertions from V3-I.1 are preserved; V3-I adds
-// integration coverage for wiring the write panels (per-panel internal behavior is already
-// covered by AccessOperationPanel.test.js — this file checks the PAGE's own responsibilities:
-// single-panel-open enforcement, refresh-after-success, and the create/action entry points).
+// Gestión de accesos — the full operational page (V3-I, V3-I UX pass). react-dom +
+// react-dom/test-utils, same house style as src/components/pinManagementFlow.test.js —
+// no @testing-library dependency. Per-panel internal behavior is already covered by
+// AccessOperationPanel.test.js (untouched by the UX pass) — this file checks the PAGE's
+// own responsibilities: tab structure/accessibility, card disclosure, the 4-button
+// operation grid, the PIN Cambiar/Quitar sub-choice, technical-details disclosure,
+// single-panel-open enforcement, refresh-after-success, and the create entry point.
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react-dom/test-utils';
@@ -51,10 +52,14 @@ async function mount(props = {}) {
 }
 function unmount(container, root) { act(() => { root.unmount(); }); container.remove(); }
 
+function goToPersonalTab(container) {
+  click(container.querySelector('[data-testid="access-tab-personal"]'));
+}
+
 // Staging-shaped fixture: legacy operators carry a migration-generated "... heredado"
 // name, the rider's displayName is just the role word — none is a real person's name.
-// operator_primary is deliberately marked inactive here (the real dataset has all four
-// active) so the Inactivo-takes-priority-over-PIN-wording rule has coverage.
+// operator_primary is deliberately marked inactive + no PIN here (the real dataset has
+// all four active) so the Inactivo-takes-priority-over-PIN-wording rule has coverage.
 const REAL_FOUR_USERS = [
   { actor: 'owner', displayName: 'Propietario', dbRole: 'admin', canonicalRole: 'owner', active: true, hasPin: true, sessionVersion: 15 },
   { actor: 'operator_backup', displayName: 'Operador de apoyo heredado', dbRole: 'operator', canonicalRole: 'legacy_operator', active: true, hasPin: true, sessionVersion: 4 },
@@ -79,24 +84,95 @@ test('shows a page-level loading state before data arrives', async () => {
   unmount(container, root);
 });
 
-test('MI ACCESO shows Propietario with no duplicate role line and no Activo/Inactivo', async () => {
+// ═══ TABS ═══════════════════════════════════════════════════════════════════
+
+test('Mi acceso is the default active tab, with correct ARIA wiring on both tabs', async () => {
   listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
   await flush();
 
-  const ownerRow = container.querySelector('[data-testid="access-owner-row"]');
-  expect(ownerRow).toBeTruthy();
-  expect(ownerRow.textContent).toMatch(/Propietario/);
-  expect(ownerRow.textContent).toMatch(/PIN configurado/);
-  expect(ownerRow.textContent).not.toMatch(/Activo|Inactivo/);
-  // "Propietario" must appear once as the identity, not repeated as a separate role line.
-  expect((ownerRow.textContent.match(/Propietario/g) || []).length).toBe(1);
+  const tablist = container.querySelector('[role="tablist"]');
+  expect(tablist).toBeTruthy();
+  const miAcceso = container.querySelector('[data-testid="access-tab-miAcceso"]');
+  const personal = container.querySelector('[data-testid="access-tab-personal"]');
+  expect(miAcceso.getAttribute('role')).toBe('tab');
+  expect(miAcceso.getAttribute('aria-selected')).toBe('true');
+  expect(personal.getAttribute('aria-selected')).toBe('false');
+  expect(miAcceso.getAttribute('aria-controls')).toBe('access-tabpanel-miAcceso');
+
+  const miPanel = container.querySelector('[data-testid="access-tabpanel-miAcceso"]');
+  const personalPanel = container.querySelector('[data-testid="access-tabpanel-personal"]');
+  expect(miPanel.hasAttribute('hidden')).toBe(false);
+  expect(personalPanel.hasAttribute('hidden')).toBe(true);
+  expect(miPanel.getAttribute('role')).toBe('tabpanel');
   unmount(container, root);
 });
+
+test('clicking the Personal tab switches ARIA selection and visible tabpanel', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+
+  goToPersonalTab(container);
+  await flush();
+
+  expect(container.querySelector('[data-testid="access-tab-personal"]').getAttribute('aria-selected')).toBe('true');
+  expect(container.querySelector('[data-testid="access-tab-miAcceso"]').getAttribute('aria-selected')).toBe('false');
+  expect(container.querySelector('[data-testid="access-tabpanel-personal"]').hasAttribute('hidden')).toBe(false);
+  expect(container.querySelector('[data-testid="access-tabpanel-miAcceso"]').hasAttribute('hidden')).toBe(true);
+  unmount(container, root);
+});
+
+test('ArrowRight/ArrowLeft on the tablist moves selection between the two tabs', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+
+  const tablist = container.querySelector('[role="tablist"]');
+  act(() => { tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); });
+  await flush();
+  expect(container.querySelector('[data-testid="access-tab-personal"]').getAttribute('aria-selected')).toBe('true');
+
+  act(() => { tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); });
+  await flush();
+  expect(container.querySelector('[data-testid="access-tab-miAcceso"]').getAttribute('aria-selected')).toBe('true');
+  unmount(container, root);
+});
+
+// ═══ MI ACCESO ══════════════════════════════════════════════════════════════
+
+test('MI ACCESO shows a distinct owner card with no duplicate role line and no Activo/Inactivo', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+
+  const ownerCard = container.querySelector('[data-testid="access-owner-card"]');
+  expect(ownerCard).toBeTruthy();
+  expect(ownerCard.textContent).toMatch(/Propietario/);
+  expect(ownerCard.textContent).toMatch(/PIN configurado/);
+  expect(ownerCard.textContent).not.toMatch(/Activo|Inactivo/);
+  expect((ownerCard.textContent.match(/Propietario/g) || []).length).toBe(1);
+  unmount(container, root);
+});
+
+test('the owner Cambiar PIN control is a real button, not a text link, and meets the 44px touch target', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+
+  const btn = container.querySelector('[data-testid="access-owner-change-pin-btn"]');
+  expect(btn.tagName).toBe('BUTTON');
+  expect(getComputedStyle(btn).minHeight).toBe('44px');
+  unmount(container, root);
+});
+
+// ═══ PERSONAL — cards, fallback labels, disclosure ═══════════════════════════
 
 test('PERSONAL shows deterministic Operador N fallback labels, never raw actor ids or "Legacy"', async () => {
   listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
+  await flush();
+  goToPersonalTab(container);
   await flush();
 
   const backup = container.querySelector('[data-testid="access-row-operator_backup"]');
@@ -106,15 +182,28 @@ test('PERSONAL shows deterministic Operador N fallback labels, never raw actor i
   expect(primary.textContent).toMatch(/Operador 2/);
   expect(rider.textContent).toMatch(/Operador 3/);
 
-  expect(container.textContent).not.toMatch(/operator_backup|operator_primary/); // not visible collapsed
-  expect(container.textContent).not.toMatch(/Legacy/i);
-  expect(container.textContent).not.toMatch(/Beta · En desarrollo/);
+  const personalPanel = container.querySelector('[data-testid="access-tabpanel-personal"]');
+  expect(personalPanel.textContent).not.toMatch(/operator_backup|operator_primary/); // not visible collapsed
+  expect(personalPanel.textContent).not.toMatch(/Legacy/i);
+  expect(personalPanel.textContent).not.toMatch(/Beta · En desarrollo/);
   unmount(container, root);
 });
 
-test('collapsed staff row shows exactly one combined role+status line, no chip pile-up', async () => {
+test('the Personal section header shows a staff count', async () => {
   listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
+  await flush();
+  goToPersonalTab(container);
+  await flush();
+  expect(container.querySelector('[data-testid="access-tabpanel-personal"]').textContent).toMatch(/3 personas/);
+  unmount(container, root);
+});
+
+test('collapsed staff card shows exactly one combined role+status line, no chip pile-up', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+  goToPersonalTab(container);
   await flush();
 
   const backup = container.querySelector('[data-testid="access-row-operator_backup"]');
@@ -127,31 +216,59 @@ test('collapsed staff row shows exactly one combined role+status line, no chip p
   unmount(container, root);
 });
 
-test('the internal actor id is not visible until the row is expanded, and is subdued detail there', async () => {
+test('the staff card header is a real button meeting the 44px touch target, and toggles aria-expanded', async () => {
   listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
   await flush();
+  goToPersonalTab(container);
+  await flush();
 
   const row = container.querySelector('[data-testid="access-row-operator_backup"]');
-  expect(container.querySelector('[data-testid="access-row-detail-operator_backup"]')).toBeNull();
+  expect(row.tagName).toBe('BUTTON');
+  expect(getComputedStyle(row).minHeight).toBe('44px');
   expect(row.getAttribute('aria-expanded')).toBe('false');
-
   click(row);
   await flush();
   expect(row.getAttribute('aria-expanded')).toBe('true');
+  unmount(container, root);
+});
+
+test('technical details are hidden by default behind a closed disclosure, and reset closed when the card collapses', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+  goToPersonalTab(container);
+  await flush();
+
+  const row = container.querySelector('[data-testid="access-row-operator_backup"]');
+  click(row);
+  await flush();
+  // Expanded, but technical details are NOT shown until explicitly opened.
+  expect(container.querySelector('[data-testid="access-row-detail-operator_backup"]')).toBeNull();
+  expect(container.textContent).not.toMatch(/operator_backup/);
+
+  const toggle = container.querySelector('[data-testid="access-tech-toggle-operator_backup"]');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  click(toggle);
+  await flush();
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
   const detail = container.querySelector('[data-testid="access-row-detail-operator_backup"]');
   expect(detail).toBeTruthy();
   expect(detail.textContent).toMatch(/operator_backup/);
 
-  click(row); // collapses again
+  click(row); // collapse the whole card
   await flush();
-  expect(container.querySelector('[data-testid="access-row-detail-operator_backup"]')).toBeNull();
+  click(row); // re-expand
+  await flush();
+  expect(container.querySelector('[data-testid="access-row-detail-operator_backup"]')).toBeNull(); // closed again by default
   unmount(container, root);
 });
 
-test('only one row is expanded at a time', async () => {
+test('only one card is expanded at a time', async () => {
   listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
+  await flush();
+  goToPersonalTab(container);
   await flush();
 
   click(container.querySelector('[data-testid="access-row-operator_backup"]'));
@@ -159,8 +276,8 @@ test('only one row is expanded at a time', async () => {
   click(container.querySelector('[data-testid="access-row-rider"]'));
   await flush();
 
-  expect(container.querySelector('[data-testid="access-row-detail-operator_backup"]')).toBeNull();
-  expect(container.querySelector('[data-testid="access-row-detail-rider"]')).toBeTruthy();
+  expect(container.querySelector('[data-testid="access-row-operator_backup"]').getAttribute('aria-expanded')).toBe('false');
+  expect(container.querySelector('[data-testid="access-row-rider"]').getAttribute('aria-expanded')).toBe('true');
   unmount(container, root);
 });
 
@@ -181,7 +298,7 @@ test('a recoverable network error shows a retry control, and retry re-fetches', 
   listAccessUsers.mockResolvedValueOnce({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   click(container.querySelector('[data-testid="access-retry-btn"]'));
   await flush();
-  expect(container.querySelector('[data-testid="access-owner-row"]')).toBeTruthy();
+  expect(container.querySelector('[data-testid="access-owner-card"]')).toBeTruthy();
   expect(listAccessUsers).toHaveBeenCalledTimes(2);
   unmount(container, root);
 });
@@ -213,7 +330,7 @@ test('a failed refresh keeps the last known-good list visible and shows an inlin
   click(container.querySelector('[data-testid="access-refresh-btn"]'));
   await flush();
 
-  expect(container.querySelector('[data-testid="access-owner-row"]')).toBeTruthy(); // known-good data still visible
+  expect(container.querySelector('[data-testid="access-owner-card"]')).toBeTruthy(); // known-good data still visible
   expect(container.querySelector('[data-testid="access-refresh-error"]')).toBeTruthy();
   unmount(container, root);
 });
@@ -252,49 +369,132 @@ test('the back button calls onBack', async () => {
   unmount(container, root);
 });
 
-// ═══ V3-I — write-flow wiring (per-panel behavior is covered in AccessOperationPanel.test.js) ═══
+// ═══ V3-I UX — the 4-button operation grid ═══════════════════════════════════
 
-test('"+ Añadir acceso" opens the create panel; only one panel/expansion is open at a time', async () => {
+test('expanding a card reveals a 4-button grid (Nombre/Rol/PIN/Estado), each a real button with a 44px touch target', async () => {
   listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   const { container, root } = await mount();
   await flush();
+  goToPersonalTab(container);
+  await flush();
 
-  // Expand a staff row and open its role-change action first.
+  click(container.querySelector('[data-testid="access-row-operator_backup"]'));
+  await flush();
+
+  const nombre = container.querySelector('[data-testid="access-action-operator_backup-nombre"]');
+  const rol = container.querySelector('[data-testid="access-action-operator_backup-rol"]');
+  const pin = container.querySelector('[data-testid="access-action-operator_backup-pin"]');
+  const estado = container.querySelector('[data-testid="access-action-operator_backup-estado"]');
+  for (const btn of [nombre, rol, pin, estado]) {
+    expect(btn.tagName).toBe('BUTTON');
+    expect(getComputedStyle(btn).minHeight).toBe('44px');
+  }
+  // Estado is active:true here -> the lifecycle action offered is Desactivar acceso.
+  expect(estado.textContent).toBe('Desactivar acceso');
+  unmount(container, root);
+});
+
+test('Estado reads "Activar acceso" for an inactive account, and no separate reactivate/deactivate cells exist', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+  goToPersonalTab(container);
+  await flush();
+
+  click(container.querySelector('[data-testid="access-row-operator_primary"]')); // active:false in fixture
+  await flush();
+  const estado = container.querySelector('[data-testid="access-action-operator_primary-estado"]');
+  expect(estado.textContent).toBe('Activar acceso');
+  unmount(container, root);
+});
+
+test('the PIN grid cell opens a Cambiar/Quitar choice; Quitar PIN only appears when a PIN is already set', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+  goToPersonalTab(container);
+  await flush();
+
+  // operator_backup has a PIN -> both Cambiar PIN and Quitar PIN offered.
+  click(container.querySelector('[data-testid="access-row-operator_backup"]'));
+  await flush();
+  click(container.querySelector('[data-testid="access-action-operator_backup-pin"]'));
+  await flush();
+  expect(container.querySelector('[data-testid="access-pin-menu-operator_backup"]')).toBeTruthy();
+  expect(container.querySelector('[data-testid="access-pin-menu-operator_backup-change"]').textContent).toBe('Cambiar PIN');
+  expect(container.querySelector('[data-testid="access-pin-menu-operator_backup-clear"]')).toBeTruthy();
+
+  // Cancelling the choice returns to the grid, with no operation panel mounted.
+  click(container.querySelector('[data-testid="access-pin-menu-operator_backup-cancel"]'));
+  await flush();
+  expect(container.querySelector('[data-testid="access-pin-menu-operator_backup"]')).toBeNull();
+  expect(container.querySelector('[data-testid="access-action-operator_backup-nombre"]')).toBeTruthy();
+
+  // operator_primary has no PIN -> only Configurar PIN is offered, no Quitar PIN.
+  click(container.querySelector('[data-testid="access-row-operator_backup"]')); // collapse
+  await flush();
+  click(container.querySelector('[data-testid="access-row-operator_primary"]'));
+  await flush();
+  click(container.querySelector('[data-testid="access-action-operator_primary-pin"]'));
+  await flush();
+  expect(container.querySelector('[data-testid="access-pin-menu-operator_primary-change"]').textContent).toBe('Configurar PIN');
+  expect(container.querySelector('[data-testid="access-pin-menu-operator_primary-clear"]')).toBeNull();
+  unmount(container, root);
+});
+
+test('choosing Cambiar PIN from the menu opens the real PIN set panel (the existing, unmodified operation)', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+  goToPersonalTab(container);
+  await flush();
+
+  click(container.querySelector('[data-testid="access-row-operator_backup"]'));
+  await flush();
+  click(container.querySelector('[data-testid="access-action-operator_backup-pin"]'));
+  await flush();
+  click(container.querySelector('[data-testid="access-pin-menu-operator_backup-change"]'));
+  await flush();
+  expect(container.querySelector('[data-testid="panel-pin-set"]')).toBeTruthy();
+  unmount(container, root);
+});
+
+test('choosing Quitar PIN from the menu opens the real PIN clear confirmation', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+  goToPersonalTab(container);
+  await flush();
+
+  click(container.querySelector('[data-testid="access-row-operator_backup"]'));
+  await flush();
+  click(container.querySelector('[data-testid="access-action-operator_backup-pin"]'));
+  await flush();
+  click(container.querySelector('[data-testid="access-pin-menu-operator_backup-clear"]'));
+  await flush();
+  expect(container.querySelector('[data-testid="panel-pin-clear"]')).toBeTruthy();
+  unmount(container, root);
+});
+
+test('only one action grid/panel is visible at a time — opening "+ Añadir acceso" closes an open row panel', async () => {
+  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
+  const { container, root } = await mount();
+  await flush();
+  goToPersonalTab(container);
+  await flush();
+
   click(container.querySelector('[data-testid="access-row-rider"]'));
   await flush();
-  click(container.querySelector('[data-testid="access-action-rider-role"]'));
+  click(container.querySelector('[data-testid="access-action-rider-rol"]'));
   await flush();
   expect(container.querySelector('[data-testid="panel-role"]')).toBeTruthy();
 
-  // Opening "+ Añadir acceso" must close that panel (only one open at a time).
+  // "+ Añadir acceso" lives inside the Personal section, next to its heading — not a
+  // detached footer — and opening it must close that panel (only one open at a time).
   click(container.querySelector('[data-testid="access-create-btn"]'));
   await flush();
   expect(container.querySelector('[data-testid="panel-create"]')).toBeTruthy();
   expect(container.querySelector('[data-testid="panel-role"]')).toBeNull();
-  unmount(container, root);
-});
-
-test('expanding a row reveals the action list, including "Quitar PIN" only when hasPin, and Activar/Desactivar based on active state', async () => {
-  listAccessUsers.mockResolvedValue({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
-  const { container, root } = await mount();
-  await flush();
-
-  click(container.querySelector('[data-testid="access-row-operator_backup"]')); // active + hasPin
-  await flush();
-  expect(container.querySelector('[data-testid="access-action-operator_backup-rename"]')).toBeTruthy();
-  expect(container.querySelector('[data-testid="access-action-operator_backup-role"]')).toBeTruthy();
-  expect(container.querySelector('[data-testid="access-action-operator_backup-pin"]')).toBeTruthy();
-  expect(container.querySelector('[data-testid="access-action-operator_backup-clearPin"]')).toBeTruthy();
-  expect(container.querySelector('[data-testid="access-action-operator_backup-deactivate"]')).toBeTruthy();
-  expect(container.querySelector('[data-testid="access-action-operator_backup-reactivate"]')).toBeNull();
-
-  click(container.querySelector('[data-testid="access-row-operator_backup"]')); // collapse
-  await flush();
-  click(container.querySelector('[data-testid="access-row-operator_primary"]')); // inactive + no PIN
-  await flush();
-  expect(container.querySelector('[data-testid="access-action-operator_primary-clearPin"]')).toBeNull();
-  expect(container.querySelector('[data-testid="access-action-operator_primary-reactivate"]')).toBeTruthy();
-  expect(container.querySelector('[data-testid="access-action-operator_primary-deactivate"]')).toBeNull();
   unmount(container, root);
 });
 
@@ -304,10 +504,12 @@ test('a successful write refreshes the list and closes the panel', async () => {
   deactivateAccessUser.mockResolvedValue({ kind: 'ok', user: { actor: 'rider', active: false } });
   const { container, root } = await mount();
   await flush();
+  goToPersonalTab(container);
+  await flush();
 
   click(container.querySelector('[data-testid="access-row-rider"]'));
   await flush();
-  click(container.querySelector('[data-testid="access-action-rider-deactivate"]'));
+  click(container.querySelector('[data-testid="access-action-rider-estado"]'));
   await flush();
 
   const updatedUsers = REAL_FOUR_USERS.map((u) => (u.actor === 'rider' ? { ...u, active: false } : u));
@@ -321,16 +523,18 @@ test('a successful write refreshes the list and closes the panel', async () => {
   unmount(container, root);
 });
 
-test('rename success re-opens (keeps expanded) the row for the actor that was just changed', async () => {
+test('rename success re-opens (keeps expanded) the card for the actor that was just changed', async () => {
   listAccessUsers.mockResolvedValueOnce({ kind: 'ok', status: 200, users: REAL_FOUR_USERS });
   setPinStepUp('PROOF-1', 600);
   renameAccessUser.mockResolvedValue({ kind: 'ok', user: { actor: 'operator_backup', displayName: 'Carlos', canonicalRole: 'legacy_operator', active: true } });
   const { container, root } = await mount();
   await flush();
+  goToPersonalTab(container);
+  await flush();
 
   click(container.querySelector('[data-testid="access-row-operator_backup"]'));
   await flush();
-  click(container.querySelector('[data-testid="access-action-operator_backup-rename"]'));
+  click(container.querySelector('[data-testid="access-action-operator_backup-nombre"]'));
   await flush();
   const input = container.querySelector('[data-testid="rename-name-input"]');
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;

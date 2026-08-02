@@ -150,6 +150,48 @@ describe('buildAccessDirectoryViewModel — deterministic ordering', () => {
   });
 });
 
+describe('buildAccessDirectoryViewModel — fallback-numbering stability (V3-I UX)', () => {
+  const REAL_USERS = [OWNER, OP_BACKUP, OP_PRIMARY, RIDER]; // all three staff are generic-named -> Operador 1/2/3
+  const NAMED_EARLY = { actor: 'aaron_named', displayName: 'Aarón Named', canonicalRole: 'waiter', active: true, hasPin: false };
+  const NAMED_LATE = { actor: 'zzz_named', displayName: 'Zoe Named', canonicalRole: 'waiter', active: true, hasPin: false };
+
+  test('inserting a friendly-named account that sorts BEFORE the generic ones does not shift their fallback numbers', () => {
+    const dir = buildAccessDirectoryViewModel([...REAL_USERS, NAMED_EARLY], { currentActorId: 'owner' });
+    const byActor = Object.fromEntries(dir.staff.map((s) => [s.actorId, s.primaryLabel]));
+    expect(byActor.operator_backup).toBe('Operador 1');
+    expect(byActor.operator_primary).toBe('Operador 2');
+    expect(byActor.rider).toBe('Operador 3');
+    expect(byActor.aaron_named).toBe('Aarón Named'); // consumes no numbering slot
+  });
+
+  test('removing a friendly-named account leaves the remaining generic fallback numbers unchanged', () => {
+    const withNamed = buildAccessDirectoryViewModel([...REAL_USERS, NAMED_EARLY], { currentActorId: 'owner' });
+    const withoutNamed = buildAccessDirectoryViewModel(REAL_USERS, { currentActorId: 'owner' });
+    const before = Object.fromEntries(withNamed.staff.map((s) => [s.actorId, s.primaryLabel]));
+    const after = Object.fromEntries(withoutNamed.staff.map((s) => [s.actorId, s.primaryLabel]));
+    expect(before.operator_backup).toBe(after.operator_backup);
+    expect(before.operator_primary).toBe(after.operator_primary);
+    expect(before.rider).toBe(after.rider);
+  });
+
+  test('two friendly-named accounts interleaved on both sides of the generic ones still leave Operador N sequential and unshifted', () => {
+    const dir = buildAccessDirectoryViewModel([...REAL_USERS, NAMED_EARLY, NAMED_LATE], { currentActorId: 'owner' });
+    const byActor = Object.fromEntries(dir.staff.map((s) => [s.actorId, s.primaryLabel]));
+    expect(byActor.operator_backup).toBe('Operador 1');
+    expect(byActor.operator_primary).toBe('Operador 2');
+    expect(byActor.rider).toBe('Operador 3');
+  });
+
+  test('a later rename of a fallback-numbered account frees its slot but never renumbers a sibling still awaiting a name', () => {
+    const renamed = { ...OP_BACKUP, displayName: 'Carlos Pérez' }; // operator_backup gets a real name
+    const dir = buildAccessDirectoryViewModel([OWNER, renamed, OP_PRIMARY, RIDER], { currentActorId: 'owner' });
+    const byActor = Object.fromEntries(dir.staff.map((s) => [s.actorId, s.primaryLabel]));
+    expect(byActor.operator_backup).toBe('Carlos Pérez');
+    expect(byActor.operator_primary).toBe('Operador 1'); // still first in the fallback-only sequence
+    expect(byActor.rider).toBe('Operador 2');
+  });
+});
+
 describe('writeSnapshot — internal-only stale-snapshot fields (V3-I)', () => {
   test('carries the RAW dbRole (not canonicalRole) for the role-change stale-snapshot guard', () => {
     const vm = toAccessUserViewModel(OP_PRIMARY, { isOwner: false, staffIndex: 2 });
