@@ -46,7 +46,7 @@ describe("classifyCloseOutcome — no false success", () => {
     expect(closeFailureMessage({ error: "NO_SERVICE_SESSION" })).toMatch(/no hay un servicio abierto/i);
     // S2-7D5: the DB trigger raises the NO_OPEN_ variant; it must map too.
     expect(closeFailureMessage({ error: "NO_OPEN_SERVICE_SESSION" })).toMatch(/no hay un servicio abierto/i);
-    const mesaMessage = closeFailureMessage({ error: "MESSA_TABLES_NOT_RELEASED" });
+    const mesaMessage = closeFailureMessage({ error: "MESA_TABLES_NOT_RELEASED" });
     expect(mesaMessage).toMatch(/mesas con la cuenta abierta/i);
     expect(mesaMessage).toMatch(/cobra esas cuentas/i);
     expect(mesaMessage).not.toMatch(/ocupad|libre|márca/i);

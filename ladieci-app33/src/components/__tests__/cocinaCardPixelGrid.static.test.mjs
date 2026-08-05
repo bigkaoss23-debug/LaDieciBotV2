@@ -42,7 +42,7 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   // anche il badge Mesa richiesto dal flusso ristorante; gli altri pickup restano muti.
   ck(`${name}: top slot sempre presente — delivery / Mesa label, altri pickup muti`, () => {
     if (name === "TabCocina") {
-      assert.ok(/(?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : \(messaNumber \? "#8B5CF6" : fc\.bg\)/.test(src),
+      assert.ok(/(?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : \(mesaNumber \? "#8B5CF6" : fc\.bg\)/.test(src),
         "bg delivery-accent / Mesa viola / altro pickup colore header");
     } else {
       assert.ok(/(?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : fc\.bg(?:Light)?/.test(src),
@@ -52,7 +52,7 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
     assert.ok(/(?:o\.)?isDelivery\s*\?\s*<>🚚 DELIVERY\{o\.manualGiro \? ` · \$\{formatManualGiroLabel\(o\.manualGiro\)\}` : ""\}<\/>/.test(src),
       "contenuto delivery `🚚 DELIVERY[· G{seq}]`");
     if (name === "TabCocina") {
-      assert.ok(/: messaNumber \? <>🍽 MESA \{messaNumber\}<\/> : null\}/.test(src),
+      assert.ok(/: mesaNumber \? <>🍽 MESA \{mesaNumber\}<\/> : null\}/.test(src),
         "Mesa mostra numero; altro pickup resta muto");
     } else {
       assert.ok(/<>🚚 DELIVERY[\s\S]*?<\/>\s*: null\}/.test(src), "non-delivery slot muto (else null)");

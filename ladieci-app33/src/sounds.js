@@ -37,6 +37,10 @@ const Suoni = {
   consegnaEffettuata(){ _play("consegna",   "consegna.mp3",   1.0); },
   nuovoOrdineDelivery(){ _play("consegna",  "consegna.mp3",   1.0); },
   errore()            { _play("alarm10",    "alarm10.mp3",    1.0); },
+  // "bell" was already preloaded above but had no caller anywhere in the
+  // app -- reused here rather than adding a new audio asset, for the waiter
+  // shell's one-shot "a table's order is ready" chime (Listos badge).
+  mesaListo()          { _play("bell",       "bell.mp3",       0.9); },
 };
 
 export default Suoni;

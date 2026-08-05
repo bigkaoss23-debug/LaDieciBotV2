@@ -51,7 +51,7 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
       "il contenuto DELIVERY del ribbon deve essere gated da isDelivery"
     );
     if (name === "TabCocina") {
-      assert.ok(/: messaNumber \? <>🍽 MESA \{messaNumber\}<\/> : null\}/.test(src),
+      assert.ok(/: mesaNumber \? <>🍽 MESA \{mesaNumber\}<\/> : null\}/.test(src),
         "Mesa mostra numero; altro pickup resta muto");
     } else {
       assert.ok(/<>🚚 DELIVERY[\s\S]*?<\/>\s*: null\}/.test(src), "non-delivery = slot muto (else null)");
@@ -67,7 +67,7 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   // 5. delivery singolo usa accent zona: fallback zonaColore nel ribbon + border zona
   ck(`${name}: delivery singolo usa accent zona (zonaColore)`, () => {
     const ribbonBg = name === "TabCocina"
-      ? /background: (?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : \(messaNumber \? "#8B5CF6" : fc\.bg\)/
+      ? /background: (?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : \(mesaNumber \? "#8B5CF6" : fc\.bg\)/
       : /background: (?:o\.)?isDelivery \? \(giroAccent \|\| zonaColore\) : fc\.bg(?:Light)?/;
     assert.ok(ribbonBg.test(src), "ribbon: fallback zonaColore delivery / Mesa o colore header non-delivery");
     assert.ok(/(?:o\.)?isDelivery \? `4px solid \$\{zonaColore\}`/.test(src), "border delivery = 4px zonaColore");

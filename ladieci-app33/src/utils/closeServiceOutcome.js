@@ -20,9 +20,9 @@ export function closeFailureMessage(res) {
     invalid_service_session_identity: "Estado del servicio inconsistente; recarga e inténtalo de nuevo.",
     rider_state_gate_failed: "Hay un reparto en curso; cierra el reparto antes de cerrar el servicio.",
     active_rider_trip: "Hay un reparto en curso; cierra el reparto antes de cerrar el servicio.",
-    messa_tables_not_released: "Hay mesas con la cuenta abierta. Cobra esas cuentas antes de cerrar el servicio.",
-    MESSA_TABLES_NOT_RELEASED: "Hay mesas con la cuenta abierta. Cobra esas cuentas antes de cerrar el servicio.",
-    messa_table_gate_failed: "No se pudo comprobar el estado de las mesas. El servicio sigue abierto; recarga e inténtalo de nuevo.",
+    mesa_tables_not_released: "Hay mesas con la cuenta abierta. Cobra esas cuentas antes de cerrar el servicio.",
+    MESA_TABLES_NOT_RELEASED: "Hay mesas con la cuenta abierta. Cobra esas cuentas antes de cerrar el servicio.",
+    mesa_table_gate_failed: "No se pudo comprobar el estado de las mesas. El servicio sigue abierto; recarga e inténtalo de nuevo.",
     service_active_orders_not_resolved: "Hay pedidos todavía en curso. Complétalos o elige cerrar anulando esos pedidos.",
     service_active_order_gate_failed: "No se pudo comprobar si quedan pedidos activos. El servicio sigue abierto; recarga e inténtalo de nuevo.",
   };

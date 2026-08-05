@@ -383,7 +383,7 @@ describe('NO_OPEN_SERVICE_SESSION guidance (Phase 8)', () => {
   test('the error is rethrown so the EXISTING lifecycle renders it', () => {
     expect(SERVICIO_C).toMatch(/typed\.code = NO_OPEN_SERVICE_SESSION_CODE;\s*throw typed;/);
     expect(code(MODAL)).toMatch(/return onConfirm\(\{/);
-    expect(SERVICIO_C).toMatch(/onConfirm=\{async o=>\{ if \(messaCommandTarget\) return addMessaCommand\(o\); await addOrden\(o\); \}\}/);
+    expect(SERVICIO_C).toMatch(/onConfirm=\{async o=>\{ if \(mesaCommandTarget\) return addMesaCommand\(o\); await addOrden\(o\); \}\}/);
   });
 
   test('the operator is routed back to the service-state landing', () => {

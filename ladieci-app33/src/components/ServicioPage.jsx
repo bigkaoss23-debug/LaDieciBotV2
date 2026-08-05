@@ -9,7 +9,7 @@ import Suoni from '../sounds';
 import TabWA from './wa/TabWA';
 import TabManual from './ordenes/TabManual';
 import TabBanco from './ordenes/TabBanco';
-import TabMessa from './messa/TabMessa';
+import TabMesa from './mesa/TabMesa';
 import TabListos, { caricoTotale } from './ordenes/TabListos';
 import TabCocina from './cocina/TabCocina';
 import PanelCocina from './cocina/PanelCocina';
@@ -26,11 +26,11 @@ import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
 import { isPaymentFailure, describePaymentFailure } from '../utils/paymentOutcome';
 import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
 import { runOperationalTransaction } from '../order/operationalTransaction';
-import { describeMessaError, messaApi } from '../messa/messaApi';
+import { describeMesaError, mesaApi } from '../mesa/mesaApi';
 
 // Staging-only rollout gate. A production build (or any build without the exact
 // lowercase value) keeps the existing Barra surface and never calls Mesa APIs.
-const MESSA_UI_ENABLED = process.env.REACT_APP_MESSA_ENABLED === "true";
+const MESA_UI_ENABLED = process.env.REACT_APP_MESA_ENABLED === "true";
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -120,9 +120,9 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const [showCocina,setShowCocina] = useState(false);
   const [chatStoricoSel, setChatStoricoSel] = useState(null);
   const [prefillCliente,setPrefillCliente] = useState(null);
-  const [messaCommandTarget, setMessaCommandTarget] = useState(null);
-  const [messaRefreshKey, setMessaRefreshKey] = useState(0);
-  const [messaN, setMessaN] = useState(0);
+  const [mesaCommandTarget, setMesaCommandTarget] = useState(null);
+  const [mesaRefreshKey, setMesaRefreshKey] = useState(0);
+  const [mesaN, setMesaN] = useState(0);
   const [goToPedidosSignal, setGoToPedidosSignal] = useState(0);
   const [goToPreguntasSignal, setGoToPreguntasSignal] = useState(0);
   const [ordenModifica, setOrdenModifica] = useState(null);
@@ -543,25 +543,28 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     });
   };
 
-  const addMessaCommand = async (order) => {
-    const target = messaCommandTarget;
-    if (!target?.sessionId) throw new Error("MESSA_SESSION_NOT_OPEN");
+  const addMesaCommand = async (order) => {
+    const target = mesaCommandTarget;
+    if (!target?.sessionId) throw new Error("MESA_SESSION_NOT_OPEN");
     try {
-      const result = await messaApi.addCommand(target.sessionId, {
+      const result = await mesaApi.addCommand(target.sessionId, {
         items: Array.isArray(order.items) ? order.items.map((item) => ({ ...item })) : [],
         note: order.nota || "",
         kitchenNote: order.nota || "",
         time: order.hora,
+        // Only present for the table's first comanda -- TabMesa already asked
+        // for it before this modal opened; later comandas never carry it.
+        coversTotal: target.coversTotal,
         clientRequestId: order.client_req_id,
       });
       setShowNuevo(false);
       setPrefillCliente(null);
-      setMessaCommandTarget(null);
-      setMessaRefreshKey((value) => value + 1);
+      setMesaCommandTarget(null);
+      setMesaRefreshKey((value) => value + 1);
       notify(`✅ Mesa ${target.tableNumber} · comanda enviada a Cocina`, C.verde);
       return result;
     } catch (error) {
-      notify(`❌ ${describeMessaError(error)}`, C.rosso);
+      notify(`❌ ${describeMesaError(error)}`, C.rosso);
       throw error;
     }
   };
@@ -1002,11 +1005,11 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const TABS = useMemo(() => [
     {id:"wa",       icon:"💬", label:"WhatsApp", badge:{n:waTotBadge, c:C.wa}},
     {id:"manual",   icon:"📞", label:"Tel",      badge:{n:manualN,    c:C.blu}},
-    {id:"banco",    icon:MESSA_UI_ENABLED?"🍽":"🏪", label:MESSA_UI_ENABLED?"Mesa":"Barra", badge:{n:MESSA_UI_ENABLED?messaN:bancoN, c:C.avana}},
+    {id:"banco",    icon:MESA_UI_ENABLED?"🍽":"🏪", label:MESA_UI_ENABLED?"Mesa":"Barra", badge:{n:MESA_UI_ENABLED?mesaN:bancoN, c:C.avana}},
     {id:"listos",   icon:"✅", label:"Listos",   badge:{n:listosN,    c:C.verde}},
     {id:"cocina",   icon:"🍕", label:"Cocina",   badge:{n:cocinaNC,   c:C.orange}},
     {id:"entregas", icon:"🛵", label:"Entregas", meta: pizzeConsegnateStasera > 0 ? `${pizzeConsegnateStasera} pz ✓` : null, badge:{n:entregasN,  c:"#F97316"}},
-  ], [waTotBadge, messaN, bancoN, manualN, listosN, cocinaNC, entregasN, pizzeConsegnateStasera]);
+  ], [waTotBadge, mesaN, bancoN, manualN, listosN, cocinaNC, entregasN, pizzeConsegnateStasera]);
 
   const tabContent = () => {
     if(tab==="wa")     return <TabWA
@@ -1166,10 +1169,10 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       }}
     />;
     if(tab==="manual") return <TabManual ordenes={creationQueue.visibleOrders} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} onOpenTicket={setTicketOrder} vipIds={vipIds} loadingIds={loadingIds}/>;
-    if(tab==="banco")  return MESSA_UI_ENABLED
-      ? <TabMessa role={auth.getRole()} notify={notify} refreshKey={messaRefreshKey} onCountChange={setMessaN}
-          onNewCommand={(table) => {
-            setMessaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name });
+    if(tab==="banco")  return MESA_UI_ENABLED
+      ? <TabMesa role={auth.getRole()} notify={notify} refreshKey={mesaRefreshKey} onCountChange={setMesaN}
+          onNewCommand={(table, coversTotal) => {
+            setMesaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name, coversTotal });
             setPrefillCliente({ canal:"BANCO", nombre:`Mesa ${table.number}` });
             setShowNuevo(true);
           }}/>
@@ -1553,8 +1556,8 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         zIndex:150,
         display:"flex",gap:10,alignItems:"stretch"}}>
         <button onClick={()=>{
-          if (MESSA_UI_ENABLED && tab === "banco") { notify("Selecciona una Mesa para añadir la comanda", C.giallo); return; }
-          setMessaCommandTarget(null); setPrefillCliente(tab === "banco" ? {canal:"BARRA"} : null); setShowNuevo(true);
+          if (MESA_UI_ENABLED && tab === "banco") { notify("Selecciona una Mesa para añadir la comanda", C.giallo); return; }
+          setMesaCommandTarget(null); setPrefillCliente(tab === "banco" ? {canal:"BARRA"} : null); setShowNuevo(true);
         }} style={{
           flex:1,background:C.rosso,color:"#fff",
           border:"none",borderRadius:16,
@@ -1564,7 +1567,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           boxShadow:`0 4px 22px ${C.rosso}55, inset 0 1px 0 rgba(255,130,90,0.22)`,
           textTransform:"uppercase",position:"relative",overflow:"hidden"}}>
           <span style={{position:"relative",fontSize:18}}>＋</span>
-          <span style={{position:"relative"}}>{MESSA_UI_ENABLED && tab === "banco" ? "SELECCIONA UNA MESA" : "NUEVO PEDIDO"}</span>
+          <span style={{position:"relative"}}>{MESA_UI_ENABLED && tab === "banco" ? "SELECCIONA UNA MESA" : "NUEVO PEDIDO"}</span>
         </button>
         <button onClick={handleChiudiServizio} style={{
           flexShrink:0,
@@ -1717,10 +1720,10 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       )}
 
       {/* Modals */}
-      <NuevoPedidoModal visible={showNuevo} onClose={()=>{setShowNuevo(false);setPrefillCliente(null);setMessaCommandTarget(null);}}
-        onTransactionStart={messaCommandTarget ? ()=>true : startCreateTransaction}
-        onConfirm={async o=>{ if (messaCommandTarget) return addMessaCommand(o); await addOrden(o); }}
-        tableContext={messaCommandTarget}
+      <NuevoPedidoModal visible={showNuevo} onClose={()=>{setShowNuevo(false);setPrefillCliente(null);setMesaCommandTarget(null);}}
+        onTransactionStart={mesaCommandTarget ? ()=>true : startCreateTransaction}
+        onConfirm={async o=>{ if (mesaCommandTarget) return addMesaCommand(o); await addOrden(o); }}
+        tableContext={mesaCommandTarget}
         prefill={prefillCliente} ordenes={ordenes}/>
       {ordenModifica&&<ModificaOrdenModal orden={{
         ...ordenModifica,

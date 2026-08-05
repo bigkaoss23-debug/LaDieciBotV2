@@ -1,0 +1,1147 @@
+import React, { act } from "react";
+import { createRoot } from "react-dom/client";
+
+global.IS_REACT_ACT_ENVIRONMENT = true;
+
+jest.mock("../../mesa/mesaApi", () => ({
+  __esModule: true,
+  createMesaRequestId: jest.fn(() => "mesa_test_request"),
+  describeMesaError: jest.fn((error) => error?.code || "error"),
+  mesaApi: {
+    floor: jest.fn(),
+    openTable: jest.fn(),
+    releaseEmptyTable: jest.fn(),
+    saveTable: jest.fn(),
+    addCommand: jest.fn(),
+    markServed: jest.fn(),
+    pay: jest.fn(),
+    createReservation: jest.fn(),
+    updateReservation: jest.fn(),
+    setReservationStatus: jest.fn(),
+    openReservation: jest.fn(),
+  },
+}));
+
+const TabMesa = require("./TabMesa").default;
+const { mesaApi, createMesaRequestId, describeMesaError } = require("../../mesa/mesaApi");
+
+const floorTables = Array.from({ length: 5 }, (_, index) => ({
+  id: `table-${index + 1}`,
+  number: index + 1,
+  name: `Mesa ${index + 1}`,
+  capacity: 4,
+  x: 15 + (index * 15),
+  y: index < 3 ? 20 : 60,
+  shape: "square",
+  active: true,
+  status: "free",
+  session: null,
+}));
+
+function click(element) {
+  act(() => { element.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+}
+
+function typeInto(input, value) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+  act(() => {
+    setter.call(input, String(value));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function flush() {
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+}
+
+async function mount(role = "owner", { onNewCommand = jest.fn(), notify = jest.fn() } = {}) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(<TabMesa role={role} notify={notify} onNewCommand={onNewCommand} onCountChange={jest.fn()} />);
+  });
+  await flush();
+  return { container, root };
+}
+
+function unmount(container, root) {
+  act(() => { root.unmount(); });
+  container.remove();
+}
+
+function buttonByText(container, text) {
+  return Array.from(container.querySelectorAll("button")).find((button) => button.textContent.trim().startsWith(text));
+}
+
+const emptySession = (overrides = {}) => ({
+  id: "session-x", coversTotal: null, coversRemaining: 0, total: 0, paid: 0,
+  outstanding: 0, nextEqualShare: 0, paymentTotals: {}, commands: [], lines: [], payments: [],
+  ...overrides,
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  // react-scripts' jest config sets resetMocks:true, which strips even the
+  // factory-level `jest.fn(() => ...)` implementation before every test --
+  // without re-arming these here, requestIdRef's clientRequestId silently
+  // becomes undefined in every payment/idempotency-key assertion, and every
+  // error banner silently renders empty (setError(undefined) is falsy, so
+  // {error && <div className="mesa-error">...} never mounts at all).
+  createMesaRequestId.mockReturnValue("mesa_test_request");
+  describeMesaError.mockImplementation((error) => error?.code || "error");
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: floorTables });
+  mesaApi.openTable.mockResolvedValue({ ok: true });
+  mesaApi.releaseEmptyTable.mockResolvedValue({ ok: true });
+  mesaApi.saveTable.mockResolvedValue({ ok: true });
+  mesaApi.createReservation.mockResolvedValue({ ok: true });
+  mesaApi.updateReservation.mockResolvedValue({ ok: true });
+  mesaApi.setReservationStatus.mockResolvedValue({ ok: true });
+  mesaApi.openReservation.mockResolvedValue({ ok: true });
+});
+
+test("floor cards show only the bare number and a capacity badge, nothing more", async () => {
+  const { container, root } = await mount();
+  const cards = container.querySelectorAll(".mesa-table");
+  expect(cards).toHaveLength(5);
+  expect(cards[0].querySelector(".mesa-number").textContent).toBe("1");
+  expect(cards[0].querySelector(".mesa-capacity").textContent).toContain("4");
+  expect(container.textContent).not.toMatch(/máx\.|hasta 4 cubiertos/i);
+  expect(container.textContent).not.toContain("Mesa 1");
+  unmount(container, root);
+});
+
+test("Personalizar sala opens table settings and persists a table maximum capacity", async () => {
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  click(container.querySelector(".mesa-table"));
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("Nueva reserva");
+  click(buttonByText(container, "Ajustes de mesa"));
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("Ajustes de mesa");
+  const fields = container.querySelectorAll('.mesa-modal input[type="number"]');
+  expect(fields).toHaveLength(2);
+  expect(fields[1].value).toBe("4");
+  typeInto(fields[1], 6);
+  click(buttonByText(container, "Guardar ajustes"));
+  await flush();
+  expect(mesaApi.saveTable).toHaveBeenCalledWith("table-1", expect.objectContaining({
+    tableNumber: 1,
+    displayName: "Mesa 1",
+    capacity: 6,
+    active: true,
+  }));
+  unmount(container, root);
+});
+
+test("outside Personalizar sala, tapping a table never offers to edit or remove it", async () => {
+  const { container, root } = await mount("waiter");
+  // status free + a reservation forces the popup open (not the instant-open path)
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  mesaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: floorTables.map((table, index) => index === 0 ? { ...table, reservations: [{ id: "r1", tableId: table.id, status: "booked", guestName: "Ana", coversTotal: 2, reservedAt, durationMinutes: 120, note: "", version: 1 }] } : table),
+  });
+  await act(async () => { await flush(); });
+  const { container: c2, root: r2 } = await mount("waiter");
+  click(c2.querySelector(".mesa-table"));
+  expect(c2.querySelector('[role="dialog"]').textContent).not.toContain("Ajustes de mesa");
+  expect(c2.querySelector('[role="dialog"]').textContent).not.toContain("Quitar mesa");
+  unmount(c2, r2);
+  unmount(container, root);
+});
+
+test("a booking tonight turns a free table yellow; guest detail lives in the popup, not the card", async () => {
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  mesaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: floorTables.map((table, index) => index === 4 ? {
+      ...table,
+      reservations: [{ id: "reservation-1", tableId: table.id, status: "booked", guestName: "Antonio", guestPhone: "600123123", coversTotal: 4, reservedAt, durationMinutes: 120, note: "Ventana", version: 1 }],
+    } : { ...table, reservations: [] }),
+  });
+  const { container, root } = await mount("waiter");
+  const cards = container.querySelectorAll(".mesa-table");
+  expect(cards[4].getAttribute("style")).toContain("#EAB308");
+  expect(cards[4].getAttribute("style")).not.toContain("#EF4444");
+  expect(cards[4].textContent).not.toContain("Antonio");
+  click(cards[4]);
+  const dialog = container.querySelector('[role="dialog"]');
+  expect(dialog.textContent).not.toContain("Antonio · 4 personas");
+  // Scoped to the dialog, not the whole container: a free+reserved floor
+  // tile now also carries a "Reservada" badge (see isReservedFree), so a
+  // container-wide text search would find that first instead of the
+  // popup's own reservation-section toggle.
+  click(buttonByText(dialog, "Reserva"));
+  expect(dialog.textContent).toContain("Antonio · 4 personas");
+  expect(dialog.textContent).toContain("600123123");
+  expect(dialog.textContent).toContain("＋ Crear pedido");
+  unmount(container, root);
+});
+
+test("waiter can modify/move a reservation to another table from its popup", async () => {
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const tables = floorTables.map((table, index) => index === 0 ? {
+    ...table,
+    reservations: [{ id: "reservation-1", tableId: table.id, status: "booked", guestName: "Antonio", guestPhone: "600", coversTotal: 4, reservedAt, durationMinutes: 120, note: "", version: 2 }],
+  } : { ...table, reservations: [] });
+  mesaApi.floor.mockResolvedValue({ ok: true, tables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  const dialog = container.querySelector('[role="dialog"]');
+  click(buttonByText(dialog, "Reserva"));
+  click(buttonByText(dialog, "Modificar"));
+  const tableSelect = container.querySelector(".mesa-modal select");
+  act(() => {
+    tableSelect.value = "table-2";
+    tableSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  click(buttonByText(container, "Guardar cambios"));
+  await flush();
+  expect(mesaApi.updateReservation).toHaveBeenCalledWith("reservation-1", expect.objectContaining({
+    tableId: "table-2",
+    guestName: "Antonio",
+    coversTotal: 4,
+    expectedVersion: 2,
+  }));
+  expect(container.textContent).not.toContain("Ajustes de mesa");
+  unmount(container, root);
+});
+
+test("dragging in Personalizar sala persists the new percentage position", async () => {
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  const board = container.querySelector(".mesa-board");
+  const table = container.querySelector(".mesa-table");
+  board.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500 });
+  const pointer = (type, target, x, y) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 7 });
+    act(() => { target.dispatchEvent(event); });
+  };
+  pointer("pointerdown", table, 150, 100);
+  pointer("pointermove", board, 400, 250);
+  pointer("pointerup", board, 400, 250);
+  await flush();
+  expect(mesaApi.saveTable).toHaveBeenCalledWith("table-1", expect.objectContaining({
+    positionX: 40,
+    positionY: 50,
+    active: true,
+  }));
+  unmount(container, root);
+});
+
+test("in Personalizar sala, a tap that only jitters a few pixels opens the table menu instead of being read as a drag", async () => {
+  // Regression test for the reported bug: "el tap mueve la mesa y no abre
+  // el menú". Root cause was pointerMove treating ANY movement as a
+  // completed drag -- even the pixel or two of jitter a real tap always
+  // has between pointerdown and pointerup -- which nudged the table's
+  // position (and saved it) while suppressing the click that should have
+  // opened Ajustes de mesa. DRAG_THRESHOLD_PX fixes this: below threshold,
+  // nothing moves and the click fires normally.
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  const board = container.querySelector(".mesa-board");
+  const table = container.querySelector(".mesa-table");
+  board.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500 });
+  const pointer = (type, target, x, y) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 7 });
+    act(() => { target.dispatchEvent(event); });
+  };
+  pointer("pointerdown", table, 150, 100);
+  pointer("pointermove", board, 152, 101); // ~2.2px -- below the 6px threshold
+  pointer("pointerup", board, 152, 101);
+  click(table); // a real tap always ends with an actual click event too
+  await flush();
+  expect(mesaApi.saveTable).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  unmount(container, root);
+});
+
+test("in Personalizar sala, a genuine drag past the threshold still suppresses the trailing click (no menu flashes open)", async () => {
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  const board = container.querySelector(".mesa-board");
+  const table = container.querySelector(".mesa-table");
+  board.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500 });
+  const pointer = (type, target, x, y) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 7 });
+    act(() => { target.dispatchEvent(event); });
+  };
+  pointer("pointerdown", table, 150, 100);
+  pointer("pointermove", board, 400, 250);
+  pointer("pointerup", board, 400, 250);
+  click(table);
+  await flush();
+  expect(mesaApi.saveTable).toHaveBeenCalled();
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  unmount(container, root);
+});
+
+test.each([1, 3, 5])("in Personalizar sala, %ipx of travel is still a tap -- no drag, menu opens", async (px) => {
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  const board = container.querySelector(".mesa-board");
+  const table = container.querySelector(".mesa-table");
+  board.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500 });
+  const pointer = (type, target, x, y) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 7 });
+    act(() => { target.dispatchEvent(event); });
+  };
+  pointer("pointerdown", table, 150, 100);
+  pointer("pointermove", board, 150 + px, 100);
+  pointer("pointerup", board, 150 + px, 100);
+  click(table);
+  await flush();
+  expect(mesaApi.saveTable).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  unmount(container, root);
+});
+
+test("in Personalizar sala, exactly 6px of travel (the threshold itself) already counts as a drag", async () => {
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  const board = container.querySelector(".mesa-board");
+  const table = container.querySelector(".mesa-table");
+  board.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500 });
+  const pointer = (type, target, x, y) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 7 });
+    act(() => { target.dispatchEvent(event); });
+  };
+  pointer("pointerdown", table, 150, 100);
+  pointer("pointermove", board, 156, 100); // exactly 6px
+  pointer("pointerup", board, 156, 100);
+  click(table);
+  await flush();
+  expect(mesaApi.saveTable).toHaveBeenCalled();
+  unmount(container, root);
+});
+
+test("the drag threshold is pointerType-agnostic -- a touch pointer's jitter is still read as a tap", async () => {
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  const board = container.querySelector(".mesa-board");
+  const table = container.querySelector(".mesa-table");
+  board.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500 });
+  const pointer = (type, target, x, y) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 9 });
+    Object.defineProperty(event, "pointerType", { value: "touch" });
+    act(() => { target.dispatchEvent(event); });
+  };
+  pointer("pointerdown", table, 150, 100);
+  pointer("pointermove", board, 152, 101);
+  pointer("pointerup", board, 152, 101);
+  click(table);
+  await flush();
+  expect(mesaApi.saveTable).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  unmount(container, root);
+});
+
+test("outside Personalizar sala, pointerdown never arms a drag at all -- a tap always opens the menu", async () => {
+  mesaApi.floor.mockResolvedValueOnce({
+    ok: true,
+    tables: floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session: emptySession() } : table),
+  });
+  const { container, root } = await mount("waiter");
+  const board = container.querySelector(".mesa-board");
+  const table = container.querySelector(".mesa-table");
+  const pointer = (type, target, x, y) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 7 });
+    act(() => { target.dispatchEvent(event); });
+  };
+  pointer("pointerdown", table, 150, 100);
+  pointer("pointermove", board, 400, 250);
+  pointer("pointerup", board, 400, 250);
+  click(table);
+  await flush();
+  expect(mesaApi.saveTable).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  unmount(container, root);
+});
+
+test("tapping a free table with no reservation opens it instantly: no menu, no covers question", async () => {
+  mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: floorTables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  await flush();
+  expect(mesaApi.openTable).toHaveBeenCalledTimes(1);
+  expect(mesaApi.openTable).toHaveBeenCalledWith("table-1");
+  expect(container.textContent).not.toContain("Abrir mesa");
+  expect(container.textContent).not.toContain("Número de comensales");
+  unmount(container, root);
+});
+
+test("a double tap on a free table only opens it once", async () => {
+  let resolveOpen;
+  mesaApi.openTable.mockReturnValueOnce(new Promise((resolve) => { resolveOpen = resolve; }));
+  const { container, root } = await mount("waiter");
+  const table = container.querySelector(".mesa-table");
+  click(table);
+  click(table);
+  await flush();
+  expect(mesaApi.openTable).toHaveBeenCalledTimes(1);
+  act(() => { resolveOpen({ ok: true }); });
+  await flush();
+  unmount(container, root);
+});
+
+test("an occupied Mesa with no comanda yet offers Crear pedido and Liberar mesa directly, and still asks for real covers first", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession() }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const onNewCommand = jest.fn();
+  const { container, root } = await mount("waiter", { onNewCommand });
+  expect(container.querySelector(".mesa-badge-order")).toBeFalsy();
+  click(container.querySelector(".mesa-table"));
+  const dialog = container.querySelector('[role="dialog"]');
+  expect(dialog.textContent).toContain("Ocupada · sin comanda");
+  expect(dialog.textContent).toContain("Crear pedido");
+  expect(dialog.textContent).toContain("Liberar mesa");
+  expect(dialog.textContent).not.toContain("Ver cuenta");
+  click(buttonByText(container, "Crear pedido"));
+  expect(onNewCommand).not.toHaveBeenCalled();
+  const coversInput = container.querySelector('.mesa-modal input[type="number"]');
+  expect(coversInput).toBeTruthy();
+  typeInto(coversInput, 4);
+  click(buttonByText(container, "Continuar"));
+  expect(onNewCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "table-1" }), 4);
+  unmount(container, root);
+});
+
+test("liberar mesa releases an empty table directly from its popup, without any payment call", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession() }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const originalConfirm = window.confirm;
+  window.confirm = jest.fn(() => true);
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Liberar mesa"));
+  await flush();
+  expect(mesaApi.releaseEmptyTable).toHaveBeenCalledWith("session-x");
+  expect(mesaApi.pay).not.toHaveBeenCalled();
+  window.confirm = originalConfirm;
+  unmount(container, root);
+});
+
+test("an occupied Mesa with an order shows a green (not red) thick border, comanda summary, and offers Añadir pedido / Ver cuenta, never asking for covers again", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }], time: "21:00" }] }) }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const onNewCommand = jest.fn();
+  const { container, root } = await mount("waiter", { onNewCommand });
+  const card = container.querySelector(".mesa-table");
+  expect(card.className).toContain("thick");
+  expect(card.getAttribute("style")).toContain("--tc: #22C55E");
+  // Fill stays occupied-red regardless of order state -- only the border changed.
+  expect(card.getAttribute("style")).toContain("--tb: rgba(239,68,68,.22)");
+  click(card);
+  const dialog = container.querySelector('[role="dialog"]');
+  expect(dialog.textContent).toContain("Añadir pedido");
+  expect(dialog.textContent).toContain("Ver cuenta");
+  expect(dialog.textContent).toContain("Comandas");
+  expect(dialog.textContent).toContain("#1");
+  expect(dialog.textContent).toContain("21:00");
+  expect(dialog.textContent).toContain("En cocina");
+  expect(dialog.textContent).not.toContain("Crear pedido");
+  expect(dialog.textContent).not.toContain("Liberar mesa");
+  click(buttonByText(container, "Añadir pedido"));
+  expect(onNewCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "table-1" }));
+  unmount(container, root);
+});
+
+test("in Personalizar sala, an occupied table's popup offers only layout actions -- never Crear/Añadir pedido, Liberar mesa or Ver cuenta", async () => {
+  // Regression test: TableContextPopup used to gate Ajustes de mesa /
+  // Eliminar mesa on `editing` but never gated the order/account buttons
+  // the other way, so entering Personalizar sala and tapping an occupied
+  // table showed both sets of actions stacked in the same popup.
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }], time: "21:00" }] }) }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  click(container.querySelector(".mesa-table"));
+  const dialog = container.querySelector('[role="dialog"]');
+  expect(dialog.textContent).toContain("Ajustes de mesa");
+  expect(dialog.textContent).toContain("Eliminar mesa");
+  expect(dialog.textContent).not.toContain("Crear pedido");
+  expect(dialog.textContent).not.toContain("Añadir pedido");
+  expect(dialog.textContent).not.toContain("Ver cuenta");
+  expect(dialog.textContent).not.toContain("Liberar mesa");
+  // Leaving Personalizar sala restores the order actions and hides the
+  // layout-only ones, with no reload needed.
+  click(buttonByText(container, "✓ Salir de Personalizar sala"));
+  click(container.querySelector(".mesa-table"));
+  const dialog2 = container.querySelector('[role="dialog"]');
+  expect(dialog2.textContent).toContain("Añadir pedido");
+  expect(dialog2.textContent).toContain("Ver cuenta");
+  expect(dialog2.textContent).not.toContain("Ajustes de mesa");
+  expect(dialog2.textContent).not.toContain("Eliminar mesa");
+  unmount(container, root);
+});
+
+test("a table with two comandas shows both, distinct, in the order the backend returned them, and Añadir pedido stays available for a third", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [
+        { id: "o1", commandNumber: 1, state: "RETIRADO", items: [{ n: "Margherita" }], time: "20:50", note: "sin cebolla" },
+        { id: "o2", commandNumber: 2, state: "EN_COCINA", items: [{ n: "Coca-Cola" }, { n: "Agua" }], time: "21:10", note: "" },
+      ] }) }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  const dialog = container.querySelector('[role="dialog"]');
+  const cards = Array.from(dialog.querySelectorAll(".mesa-command-card")).map((card) => card.textContent);
+  expect(cards).toHaveLength(2);
+  expect(cards[0]).toContain("#1");
+  expect(cards[0]).toContain("20:50");
+  expect(cards[0]).toContain("Margherita");
+  expect(cards[0]).toContain("Nota: sin cebolla");
+  expect(cards[0]).toContain("Servido");
+  expect(cards[1]).toContain("#2");
+  expect(cards[1]).toContain("21:10");
+  expect(cards[1]).toContain("2 productos");
+  expect(cards[1]).toContain("Coca-Cola");
+  expect(cards[1]).toContain("Agua");
+  expect(cards[1]).toContain("En cocina");
+  // first comanda's own note/products never leak into the second's card or vice versa
+  expect(cards[1]).not.toContain("sin cebolla");
+  expect(cards[0]).not.toContain("Coca-Cola");
+  // the sheet actively grows for a table with real comandas to show, not
+  // just the default shrink-to-content popup size
+  expect(dialog.querySelector(".mesa-modal").className).toContain("tall");
+  expect(dialog.textContent).toContain("Añadir pedido");
+  expect(dialog.textContent).not.toContain("Crear pedido");
+  unmount(container, root);
+});
+
+test("Ver cuenta -> Cobrar todo charges the full outstanding balance, prints a receipt, and the next reload returns the table to free", async () => {
+  const session = emptySession({
+    coversTotal: 4, coversRemaining: 4, total: 40, paid: 0, outstanding: 40, nextEqualShare: 10,
+    commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }], time: "21:00" }],
+    lines: [{ id: "l1", description: "Margherita", remaining: 40 }],
+  });
+  const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
+  // Only the FIRST load is occupied; beforeEach's persisting mock (all-free
+  // floorTables) takes over on the reload triggered by onRefresh below --
+  // simulating the backend having closed the session after full payment.
+  mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: openTables });
+  mesaApi.pay.mockResolvedValue({ amount: 40, outstandingAfter: 0 });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Ver cuenta"));
+  click(buttonByText(container, "Cobrar todo"));
+  let dialogs = container.querySelectorAll('[role="dialog"]');
+  expect(dialogs[dialogs.length - 1].textContent).toContain("Cobrar cuenta completa");
+  click(buttonByText(container, "Confirmar cobro"));
+  await flush();
+  expect(mesaApi.pay).toHaveBeenCalledWith("session-x", expect.objectContaining({
+    paymentMethod: "efectivo", mode: "full", coversSettled: 4, clientRequestId: "mesa_test_request",
+  }));
+  await flush();
+  dialogs = container.querySelectorAll('[role="dialog"]');
+  expect(dialogs).toHaveLength(1);
+  expect(dialogs[0].textContent).toContain("RECIBO DE PAGO");
+  expect(dialogs[0].textContent).toContain("Cuenta cerrada.");
+  expect(container.textContent).not.toContain("Mesa 1 · aún sin comensales");
+  unmount(container, root);
+});
+
+test("Ver cuenta -> Elegir productos requires at least one selected line before confirming, and never calls pay with an empty selection", async () => {
+  const session = emptySession({
+    coversTotal: 2, coversRemaining: 2, total: 20, paid: 0, outstanding: 20, nextEqualShare: 10,
+    commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Pizza" }], time: "21:00" }],
+    lines: [{ id: "l1", description: "Pizza", remaining: 20 }],
+  });
+  const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Ver cuenta"));
+  click(buttonByText(container, "Elegir productos"));
+  click(buttonByText(container, "Confirmar cobro"));
+  const dialogs = container.querySelectorAll('[role="dialog"]');
+  expect(dialogs[dialogs.length - 1].textContent).toContain("Selecciona al menos un producto.");
+  expect(mesaApi.pay).not.toHaveBeenCalled();
+  unmount(container, root);
+});
+
+test("Ver cuenta -> Importe libre rejects a custom amount above the outstanding balance client-side, before ever calling pay", async () => {
+  const session = emptySession({
+    coversTotal: 2, coversRemaining: 2, total: 20, paid: 0, outstanding: 20, nextEqualShare: 10,
+    commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Pizza" }], time: "21:00" }],
+    lines: [{ id: "l1", description: "Pizza", remaining: 20 }],
+  });
+  const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Ver cuenta"));
+  click(buttonByText(container, "Importe libre"));
+  const dialogs = container.querySelectorAll('[role="dialog"]');
+  const paymentDialog = dialogs[dialogs.length - 1];
+  const amountInput = paymentDialog.querySelector("input.mesa-input");
+  typeInto(amountInput, "999");
+  click(buttonByText(paymentDialog, "Confirmar cobro"));
+  expect(paymentDialog.textContent).toContain("El importe no es válido.");
+  expect(mesaApi.pay).not.toHaveBeenCalled();
+  unmount(container, root);
+});
+
+test("a partial (item_selection) payment keeps the table occupied and recalculates the outstanding balance instead of closing the session", async () => {
+  const session = emptySession({
+    coversTotal: 4, coversRemaining: 4, total: 40, paid: 0, outstanding: 40, nextEqualShare: 10,
+    commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }, { n: "Coca-Cola" }], time: "21:00" }],
+    lines: [{ id: "l1", description: "Margherita", remaining: 25 }, { id: "l2", description: "Coca-Cola", remaining: 15 }],
+  });
+  const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
+  // Persists across the post-payment reload too -- the table must still read
+  // as occupied afterward, unlike the full-payment test above.
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  mesaApi.pay.mockResolvedValue({ amount: 25, outstandingAfter: 15 });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Ver cuenta"));
+  click(buttonByText(container, "Elegir productos"));
+  let dialogs = container.querySelectorAll('[role="dialog"]');
+  const paymentDialog = dialogs[dialogs.length - 1];
+  click(paymentDialog.querySelector('input[type="checkbox"]'));
+  click(buttonByText(paymentDialog, "Confirmar cobro"));
+  await flush();
+  expect(mesaApi.pay).toHaveBeenCalledWith("session-x", expect.objectContaining({
+    mode: "item_selection", lineIds: ["l1"],
+  }));
+  await flush();
+  dialogs = container.querySelectorAll('[role="dialog"]');
+  expect(dialogs).toHaveLength(2); // TableDetail stays open beneath the printed receipt
+  expect(container.textContent).toContain("RECIBO DE PAGO");
+  expect(container.textContent).toContain("Pago parcial registrado.");
+  unmount(container, root);
+});
+
+test("opening a free table that fails leaves it free with no stuck popup, notifies the error, and an immediate retry still works", async () => {
+  mesaApi.openTable.mockRejectedValueOnce({ code: "MESA_ALREADY_OPEN" });
+  const onNotify = jest.fn();
+  const { container, root } = await mount("waiter", { notify: onNotify });
+  const card = container.querySelector(".mesa-table");
+  click(card);
+  await flush();
+  expect(onNotify).toHaveBeenCalledWith(expect.stringContaining("MESA_ALREADY_OPEN"), expect.anything());
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  mesaApi.openTable.mockResolvedValueOnce({ ok: true });
+  click(card);
+  await flush();
+  expect(mesaApi.openTable).toHaveBeenCalledTimes(2);
+  unmount(container, root);
+});
+
+test("Liberar mesa surfaces a backend rejection (e.g. the session was not actually empty) as an inline error, keeping the popup and the occupied state intact", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession() } : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  mesaApi.releaseEmptyTable.mockRejectedValueOnce({ code: "MESA_SESSION_NOT_EMPTY" });
+  const originalConfirm = window.confirm;
+  window.confirm = jest.fn(() => true);
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Liberar mesa"));
+  await flush();
+  const dialog = container.querySelector('[role="dialog"]');
+  expect(dialog.textContent).toContain("MESA_SESSION_NOT_EMPTY");
+  // still occupied, still offering the same actions -- not left half-closed
+  expect(dialog.textContent).toContain("Liberar mesa");
+  expect(dialog.textContent).toContain("Crear pedido");
+  window.confirm = originalConfirm;
+  unmount(container, root);
+});
+
+test("a failed payment shows an inline error and keeps the table's outstanding balance unchanged -- no receipt, no reload, table stays open", async () => {
+  const session = emptySession({
+    coversTotal: 2, coversRemaining: 2, total: 20, paid: 0, outstanding: 20, nextEqualShare: 20,
+    commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Pizza" }], time: "21:00" }],
+    lines: [{ id: "l1", description: "Pizza", remaining: 20 }],
+  });
+  const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  mesaApi.pay.mockRejectedValueOnce({ code: "MESA_PAYMENT_DECLINED" });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Ver cuenta"));
+  click(buttonByText(container, "Cobrar todo"));
+  click(buttonByText(container, "Confirmar cobro"));
+  await flush();
+  const dialogs = container.querySelectorAll('[role="dialog"]');
+  expect(dialogs).toHaveLength(2); // payment modal stays open on top of the account view
+  expect(dialogs[dialogs.length - 1].textContent).toContain("MESA_PAYMENT_DECLINED");
+  expect(container.textContent).not.toContain("RECIBO DE PAGO");
+  expect(container.textContent).toMatch(/Pendiente20,00\s?€/);
+  unmount(container, root);
+});
+
+test("a slow payment request disables Confirmar cobro until it settles, so a second tap while pending cannot double-charge", async () => {
+  const session = emptySession({
+    coversTotal: 2, coversRemaining: 2, total: 20, paid: 0, outstanding: 20, nextEqualShare: 20,
+    commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Pizza" }], time: "21:00" }],
+    lines: [{ id: "l1", description: "Pizza", remaining: 20 }],
+  });
+  const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  let resolvePay;
+  mesaApi.pay.mockReturnValue(new Promise((resolve) => { resolvePay = resolve; }));
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Ver cuenta"));
+  click(buttonByText(container, "Cobrar todo"));
+  // Captured once, before it goes busy -- React updates this same button
+  // node in place (label + disabled), it doesn't replace it, so the
+  // reference stays valid for the second, should-be-ignored tap.
+  const confirmBtn = buttonByText(container, "Confirmar cobro");
+  click(confirmBtn);
+  await flush();
+  expect(confirmBtn.disabled).toBe(true);
+  expect(confirmBtn.textContent).toContain("Registrando");
+  // a second tap while busy is a no-op -- the button is disabled, so a real
+  // click() dispatch on it must not fire React's onClick handler again
+  click(confirmBtn);
+  await flush();
+  expect(mesaApi.pay).toHaveBeenCalledTimes(1);
+  act(() => { resolvePay({ amount: 20, outstandingAfter: 0 }); });
+  await flush();
+  unmount(container, root);
+});
+
+test("an occupied Mesa with NO order yet shows a thick red border and 'Ningún pedido enviado'", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession() } : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount("waiter");
+  const card = container.querySelector(".mesa-table");
+  expect(card.className).toContain("thick");
+  expect(card.getAttribute("style")).toContain("--tc: #EF4444");
+  click(card);
+  const dialog = container.querySelector('[role="dialog"]');
+  expect(dialog.textContent).toContain("Ningún pedido enviado");
+  unmount(container, root);
+});
+
+test("occupied + a future relevant reservation stays red (never yellow); the reservation shows only as a secondary, collapsed indicator", async () => {
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const openTables = floorTables.map((table, index) => index === 0
+    ? {
+      ...table, status: "open", session: emptySession(),
+      reservations: [{ id: "r1", tableId: table.id, status: "booked", guestName: "Laura", coversTotal: 2, reservedAt, durationMinutes: 120, note: "", version: 1 }],
+    }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount("waiter");
+  const card = container.querySelector(".mesa-table");
+  // Fill is occupied-red, not reserved-yellow -- occupied always wins.
+  expect(card.getAttribute("style")).toContain("--tb: rgba(239,68,68,.22)");
+  expect(card.textContent).not.toContain("Reservada"); // that badge is the free+reserved case only
+  click(card);
+  const dialog = container.querySelector('[role="dialog"]');
+  expect(dialog.textContent).toContain("Crear pedido"); // primary action, unaffected
+  // The reservation is present but collapsed (secondary), not driving the fill.
+  click(buttonByText(dialog, "Próxima reserva"));
+  expect(dialog.textContent).toContain("Laura");
+  unmount(container, root);
+});
+
+test("Reservas · Beta and the floor never disagree: a reservation dated a different day appears in neither", async () => {
+  const otherDay = new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(); // yesterday-ish, well outside today's window
+  const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const tables = floorTables.map((table, index) => index === 0
+    ? { ...table, reservations: [{ id: "r-stale", tableId: table.id, status: "booked", guestName: "Stale Guest", coversTotal: 2, reservedAt: otherDay, durationMinutes: 120, note: "", version: 1 }] }
+    : index === 1
+      ? { ...table, reservations: [{ id: "r-fresh", tableId: table.id, status: "booked", guestName: "Fresh Guest", coversTotal: 2, reservedAt: soon, durationMinutes: 120, note: "", version: 1 }] }
+      : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables });
+  const { container, root } = await mount("waiter");
+  const cards = container.querySelectorAll(".mesa-table");
+  // Floor: table 0 (stale) reads free/green, table 1 (fresh) reads reserved/yellow.
+  expect(cards[0].getAttribute("style")).not.toContain("#EAB308");
+  expect(cards[1].getAttribute("style")).toContain("#EAB308");
+  // Reservas · Beta: same two facts, from the same predicate.
+  click(buttonByText(container, "📅 Reservas · Beta"));
+  const agenda = container.querySelector('[role="dialog"]');
+  expect(agenda.textContent).not.toContain("Stale Guest");
+  expect(agenda.textContent).toContain("Fresh Guest");
+  unmount(container, root);
+});
+
+test("creating a reservation refreshes the floor without a manual reload", async () => {
+  const { container, root } = await mount("waiter");
+  const floorCallsBefore = mesaApi.floor.mock.calls.length;
+  click(buttonByText(container, "📅 Reservas · Beta"));
+  click(buttonByText(container, "＋ Nueva reserva"));
+  typeInto(container.querySelector('.mesa-modal input[maxlength="120"]'), "Nuevo Cliente");
+  click(buttonByText(container, "Reservar mesa"));
+  await flush();
+  expect(mesaApi.createReservation).toHaveBeenCalled();
+  expect(mesaApi.floor.mock.calls.length).toBeGreaterThan(floorCallsBefore);
+  unmount(container, root);
+});
+
+test("cancelling a reservation refreshes the floor without a manual reload", async () => {
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const tables = floorTables.map((table, index) => index === 0
+    ? { ...table, reservations: [{ id: "r1", tableId: table.id, status: "booked", guestName: "Ana", coversTotal: 2, reservedAt, durationMinutes: 120, note: "", version: 1 }] }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables });
+  const { container, root } = await mount("waiter");
+  const floorCallsBefore = mesaApi.floor.mock.calls.length;
+  click(container.querySelector(".mesa-table"));
+  const dialog = container.querySelector('[role="dialog"]');
+  click(buttonByText(dialog, "Reserva"));
+  window.confirm = jest.fn(() => true);
+  click(buttonByText(dialog, "Cancelar"));
+  await flush();
+  expect(mesaApi.setReservationStatus).toHaveBeenCalledWith("r1", 1, "cancelled");
+  expect(mesaApi.floor.mock.calls.length).toBeGreaterThan(floorCallsBefore);
+  unmount(container, root);
+});
+
+test("a free table's border is thin (only occupied tables get the thick order-state border)", async () => {
+  const { container, root } = await mount();
+  const card = container.querySelector(".mesa-table");
+  expect(card.className).not.toContain("thick");
+  unmount(container, root);
+});
+
+test("a ready order (LISTO) pulses the green border; a table with only in-kitchen orders does not pulse", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession({ commands: [{ id: "o1", commandNumber: 1, state: "LISTO", items: [], time: "21:00" }] }) }
+    : index === 1
+      ? { ...table, status: "open", session: emptySession({ commands: [{ id: "o2", commandNumber: 1, state: "EN_COCINA", items: [], time: "21:05" }] }) }
+      : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount();
+  const cards = container.querySelectorAll(".mesa-table");
+  expect(cards[0].className).toContain("ready-pulse");
+  expect(cards[1].className).not.toContain("ready-pulse");
+  unmount(container, root);
+});
+
+test("entering Personalizar sala suspends the ready-pulse glow; leaving it restores the pulse, with no reload", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession({ commands: [{ id: "o1", commandNumber: 1, state: "LISTO", items: [], time: "21:00" }] }) }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const floorCallsBefore = mesaApi.floor.mock.calls.length;
+  const { container, root } = await mount();
+  const readyCard = () => container.querySelectorAll(".mesa-table")[0];
+  expect(readyCard().className).toContain("ready-pulse");
+
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  expect(readyCard().className).not.toContain("ready-pulse");
+  expect(readyCard().className).toContain("is-editing");
+
+  click(buttonByText(container, "✓ Salir de Personalizar sala"));
+  expect(readyCard().className).toContain("ready-pulse");
+  expect(readyCard().className).not.toContain("is-editing");
+  // Restored from the SAME already-fetched table state -- no extra floor()
+  // call was needed to bring the pulse back.
+  expect(mesaApi.floor.mock.calls.length).toBe(floorCallsBefore + 1);
+  unmount(container, root);
+});
+
+test("Personalizar sala gives every table a flat neutral dashed border, regardless of its operational fill/thickness", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession({ commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [], time: "21:00" }] }) }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  const cards = container.querySelectorAll(".mesa-table");
+  // Table 0 is occupied-no-order (normally a thick RED border); in edit
+  // mode its border must read the same as every other table's.
+  expect(cards[0].className).toContain("is-editing");
+  expect(cards[0].className).toContain("thick"); // the operational flag is still there in the DOM...
+  // ...but is-editing.thick resets the width back to 2px, and is-editing
+  // itself overrides border-color to the same neutral value for every
+  // table -- verified as CSS rules present in the injected stylesheet
+  // (jsdom doesn't run layout, so this asserts the rule exists rather than
+  // a computed color).
+  const styleText = container.querySelector("style").textContent;
+  expect(styleText).toContain(".mesa-table.is-editing{border-style:dashed;border-color:rgba(224,214,194,.55)");
+  expect(styleText).toContain(".mesa-table.is-editing.thick{border-width:2px}");
+  unmount(container, root);
+});
+
+test("the dock below the map swaps Reservas·Beta/Personalizar sala for Añadir mesa/Salir while editing, never both at once", async () => {
+  const { container, root } = await mount();
+  const board = container.querySelector(".mesa-board");
+  const dock = () => board.nextElementSibling.matches(".mesa-dock") ? board.nextElementSibling : container.querySelector(".mesa-dock");
+
+  expect(dock().textContent).toContain("Reservas · Beta");
+  expect(dock().textContent).not.toContain("Añadir mesa");
+  expect(dock().textContent).toContain("Personalizar sala");
+
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  expect(dock().textContent).not.toContain("Reservas · Beta");
+  expect(dock().textContent).toContain("Añadir mesa");
+  expect(dock().textContent).toContain("Salir de Personalizar sala");
+
+  click(buttonByText(container, "✓ Salir de Personalizar sala"));
+  expect(dock().textContent).toContain("Reservas · Beta");
+  expect(dock().textContent).not.toContain("Añadir mesa");
+  unmount(container, root);
+});
+
+test("the dock renders after the floor board in the DOM (below the map, not a second toolbar above it)", async () => {
+  const { container, root } = await mount();
+  const board = container.querySelector(".mesa-board");
+  const dock = container.querySelector(".mesa-dock");
+  // DOCUMENT_POSITION_FOLLOWING (4) means dock comes after board.
+  expect(board.compareDocumentPosition(dock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  unmount(container, root);
+});
+
+test("selecting a reserved table's popup marks its own card as selected, others stay unselected", async () => {
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  mesaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: floorTables.map((table, index) => index === 0
+      ? { ...table, reservations: [{ id: "r1", tableId: table.id, status: "booked", guestName: "Ana", coversTotal: 2, reservedAt, durationMinutes: 120, note: "", version: 1 }] }
+      : table),
+  });
+  const { container, root } = await mount();
+  const cards = container.querySelectorAll(".mesa-table");
+  click(cards[0]);
+  expect(cards[0].className).toContain("selected");
+  expect(cards[1].className).not.toContain("selected");
+  unmount(container, root);
+});
+
+test("dragging a wide rectangle-long table to the right edge clamps by its own half-width, not the narrower default margin", async () => {
+  mesaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: [{ ...floorTables[0], shape: "rectangle", shapePreset: "long" }],
+  });
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  const board = container.querySelector(".mesa-board");
+  const table = container.querySelector(".mesa-table");
+  board.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500 });
+  const pointer = (type, target, x, y) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 7 });
+    act(() => { target.dispatchEvent(event); });
+  };
+  // Drag well past the right edge -- a 168px-wide card on a 1000px board needs
+  // an 8.4% margin (half-width), wider than the 7% default used by round/square.
+  pointer("pointerdown", table, 150, 100);
+  pointer("pointermove", board, 990, 250);
+  pointer("pointerup", board, 990, 250);
+  await flush();
+  expect(mesaApi.saveTable).toHaveBeenCalledWith("table-1", expect.objectContaining({
+    positionX: 91.6,
+  }));
+  unmount(container, root);
+});
+
+test("all four shape/length variants render with their exact CSS class and a fixed footprint", async () => {
+  const shaped = [
+    { ...floorTables[0], shape: "round", shapePreset: "standard" },
+    { ...floorTables[1], shape: "square", shapePreset: "standard" },
+    { ...floorTables[2], shape: "rectangle", shapePreset: "standard" },
+    { ...floorTables[3], shape: "rectangle", shapePreset: "long" },
+  ];
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: shaped });
+  const { container, root } = await mount();
+  const cards = container.querySelectorAll(".mesa-table");
+  expect(cards[0].className).toContain("mesa-table round");
+  expect(cards[1].className).toContain("mesa-table square");
+  expect(cards[2].className).toContain("mesa-table rectangle");
+  expect(cards[2].className).not.toContain("rectangle-long");
+  expect(cards[3].className).toContain("mesa-table rectangle-long");
+  // Two-digit table numbers and capacity still fit the same fixed card, no per-state sizing.
+  expect(cards[0].querySelector(".mesa-number").textContent).toBe("1");
+  unmount(container, root);
+});
+
+test("a table with no shapePreset on the wire (legacy row) defaults to the standard variant, not a crash", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [{ ...floorTables[0], shape: "square", shapePreset: undefined }] });
+  const { container, root } = await mount();
+  const card = container.querySelector(".mesa-table");
+  expect(card.className).toContain("mesa-table square");
+  unmount(container, root);
+});
+
+test("Añadir mesa offers the three visual shapes and creates with the chosen shape+length pair", async () => {
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  click(buttonByText(container, "＋ Añadir mesa"));
+  const dialog = container.querySelector('[role="dialog"]');
+  const shapeButtons = dialog.querySelectorAll(".mesa-shape-btn");
+  expect(Array.from(shapeButtons).map((button) => button.textContent)).toEqual(["Redonda", "Cuadrada", "Rectangular"]);
+  click(Array.from(shapeButtons).find((button) => button.textContent === "Rectangular"));
+  // Choosing Rectangular reveals the compact 6/8 plazas length control.
+  const lengthButtons = dialog.querySelectorAll(".mesa-btn.small");
+  expect(Array.from(lengthButtons).map((button) => button.textContent)).toEqual(["6 plazas", "8 plazas"]);
+  click(Array.from(lengthButtons).find((button) => button.textContent === "8 plazas"));
+  click(buttonByText(container, "Añadir"));
+  await flush();
+  expect(mesaApi.saveTable).toHaveBeenCalledWith("new", expect.objectContaining({
+    shape: "rectangle",
+    shapePreset: "long",
+    capacity: 8,
+  }));
+  unmount(container, root);
+});
+
+test("choosing a base shape (Redonda/Cuadrada/Rectangular) never touches capacity -- only the explicit 6/8 plazas preset does", async () => {
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  click(buttonByText(container, "＋ Añadir mesa"));
+  const dialog = container.querySelector('[role="dialog"]');
+  const capacityInput = dialog.querySelectorAll('input[type="number"]')[1];
+  expect(capacityInput.value).toBe("4"); // fresh Añadir mesa's own starting default
+  click(Array.from(dialog.querySelectorAll(".mesa-shape-btn")).find((button) => button.textContent === "Rectangular"));
+  // Merely switching the base shape to Rectangular must NOT overwrite capacity.
+  expect(capacityInput.value).toBe("4");
+  click(Array.from(dialog.querySelectorAll(".mesa-btn.small")).find((button) => button.textContent === "6 plazas"));
+  expect(capacityInput.value).toBe("6");
+  typeInto(capacityInput, 10);
+  expect(capacityInput.value).toBe("10");
+  // Switching shape away and back to Rectangular must not clobber the manually typed 10.
+  click(Array.from(dialog.querySelectorAll(".mesa-shape-btn")).find((button) => button.textContent === "Cuadrada"));
+  click(Array.from(dialog.querySelectorAll(".mesa-shape-btn")).find((button) => button.textContent === "Rectangular"));
+  expect(capacityInput.value).toBe("10");
+  unmount(container, root);
+});
+
+test("Ajustes de mesa preselects the table's current shape and persists a change to it", async () => {
+  mesaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: [{ ...floorTables[0], shape: "square", shapePreset: "standard" }],
+  });
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Ajustes de mesa"));
+  const modal = container.querySelector(".mesa-modal");
+  expect(modal.querySelector(".mesa-shape-btn.active").textContent).toBe("Cuadrada");
+  click(Array.from(modal.querySelectorAll(".mesa-shape-btn")).find((button) => button.textContent === "Rectangular"));
+  click(Array.from(modal.querySelectorAll(".mesa-btn.small")).find((button) => button.textContent === "8 plazas"));
+  click(buttonByText(container, "Guardar ajustes"));
+  await flush();
+  expect(mesaApi.saveTable).toHaveBeenCalledWith("table-1", expect.objectContaining({
+    shape: "rectangle",
+    shapePreset: "long",
+    capacity: 8,
+  }));
+  unmount(container, root);
+});
+
+test("reopening a rectangular table saved with a manual, off-preset capacity (10) shows 10, not 6 or 8", async () => {
+  mesaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: [{ ...floorTables[0], shape: "rectangle", shapePreset: "long", capacity: 10 }],
+  });
+  const { container, root } = await mount();
+  click(buttonByText(container, "🛠 Personalizar sala"));
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Ajustes de mesa"));
+  const modal = container.querySelector(".mesa-modal");
+  expect(modal.querySelector(".mesa-shape-btn.active").textContent).toBe("Rectangular");
+  const capacityInput = modal.querySelectorAll('input[type="number"]')[1];
+  expect(capacityInput.value).toBe("10");
+  // Re-picking the SAME shape/preset the table already has (a no-op edit,
+  // e.g. the operator just glancing at the form) must not reset capacity.
+  click(Array.from(modal.querySelectorAll(".mesa-shape-btn")).find((button) => button.textContent === "Rectangular"));
+  expect(capacityInput.value).toBe("10");
+  click(buttonByText(container, "Guardar ajustes"));
+  await flush();
+  expect(mesaApi.saveTable).toHaveBeenCalledWith("table-1", expect.objectContaining({
+    shape: "rectangle",
+    capacity: 10,
+  }));
+  unmount(container, root);
+});
+
+test("a Reservas · Beta row is compact, entirely clickable, and opens Modificar / mover for that reservation", async () => {
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  mesaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: floorTables.map((table, index) => index === 0
+      ? { ...table, reservations: [{ id: "r1", tableId: table.id, status: "booked", guestName: "Beatriz Soler", guestPhone: "611222333", coversTotal: 2, reservedAt, durationMinutes: 120, note: "", version: 1 }] }
+      : { ...table, reservations: [] }),
+  });
+  const { container, root } = await mount("waiter");
+  click(buttonByText(container, "📅 Reservas · Beta"));
+  const dialog = container.querySelector('[role="dialog"]');
+  const row = dialog.querySelector(".mesa-row");
+  expect(row.textContent).toContain("Beatriz Soler · Mesa 1 · 2 pax");
+  // No inline action buttons in the compact list row -- clicking the row itself opens edit.
+  expect(row.querySelector("button")).toBeFalsy();
+  click(row);
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("Modificar / mover reserva");
+  unmount(container, root);
+});
+
+test("Reservas · Beta's Nueva reserva button is not styled destructive-red", async () => {
+  const { container, root } = await mount();
+  click(buttonByText(container, "📅 Reservas · Beta"));
+  const nueva = buttonByText(container, "＋ Nueva reserva");
+  expect(nueva.className).not.toContain("red");
+  expect(nueva.className).toContain("gold");
+  unmount(container, root);
+});
+
+test("a table with two reservations tonight shows only the soonest in the popup's own Reserva section, and 'Ver reservas de la noche (2)' opens both", async () => {
+  const soon = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  const later = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+  const tables = floorTables.map((table, index) => index === 0
+    ? { ...table, reservations: [
+        { id: "r-later", tableId: table.id, status: "booked", guestName: "Later Guest", coversTotal: 2, reservedAt: later, durationMinutes: 60, note: "", version: 1 },
+        { id: "r-soon", tableId: table.id, status: "booked", guestName: "Soon Guest", coversTotal: 4, reservedAt: soon, durationMinutes: 60, note: "", version: 1 },
+      ] }
+    : { ...table, reservations: [] });
+  mesaApi.floor.mockResolvedValue({ ok: true, tables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  const dialog = container.querySelector('[role="dialog"]');
+  expect(dialog.textContent).toContain("＋ Crear pedido");
+  click(buttonByText(dialog, "Reserva"));
+  // the soonest reservation is the one shown inline -- not the later one
+  expect(dialog.textContent).toContain("Soon Guest");
+  expect(dialog.textContent).not.toContain("Later Guest");
+  const viewNightBtn = buttonByText(dialog, "Ver reservas de la noche (2)");
+  expect(viewNightBtn).toBeDefined();
+  click(viewNightBtn);
+  const agenda = container.querySelector('[role="dialog"]');
+  expect(agenda.textContent).toContain("Soon Guest");
+  expect(agenda.textContent).toContain("Later Guest");
+  unmount(container, root);
+});
+
+test("Reservas · Beta filters by name/phone and by a specific table", async () => {
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const tables = floorTables.map((table, index) => index === 0
+    ? { ...table, reservations: [{ id: "r1", tableId: table.id, status: "booked", guestName: "Beatriz Soler", guestPhone: "611222333", coversTotal: 2, reservedAt, durationMinutes: 120, note: "", version: 1 }] }
+    : index === 1
+      ? { ...table, reservations: [{ id: "r2", tableId: table.id, status: "booked", guestName: "Carlos Mena", guestPhone: "699888777", coversTotal: 3, reservedAt, durationMinutes: 120, note: "", version: 1 }] }
+      : { ...table, reservations: [] });
+  mesaApi.floor.mockResolvedValue({ ok: true, tables });
+  const { container, root } = await mount("waiter");
+  click(buttonByText(container, "📅 Reservas · Beta"));
+  const dialog = container.querySelector('[role="dialog"]');
+  expect(dialog.textContent).toContain("Beatriz Soler");
+  expect(dialog.textContent).toContain("Carlos Mena");
+  const search = dialog.querySelector('input.mesa-input:not([type])') || dialog.querySelectorAll(".mesa-modal input")[0];
+  typeInto(search, "Beatriz");
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("Beatriz Soler");
+  expect(container.querySelector('[role="dialog"]').textContent).not.toContain("Carlos Mena");
+  unmount(container, root);
+});

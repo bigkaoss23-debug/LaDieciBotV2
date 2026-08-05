@@ -29,7 +29,7 @@ describe("instant order feedback integration", () => {
     expect(block).toContain("onTransactionStart?.(orderAttempt)");
     expect(block.indexOf("onTransactionStart?.(orderAttempt)"))
       .toBeLessThan(block.indexOf("await api.upsertCliente"));
-    expect(source).toContain("onTransactionStart={messaCommandTarget ? ()=>true : startCreateTransaction}");
+    expect(source).toContain("onTransactionStart={mesaCommandTarget ? ()=>true : startCreateTransaction}");
     expect(source).toContain("await addOrden(o)");
     expect(source).toContain('title: "¡Pedido confirmado!"');
   });

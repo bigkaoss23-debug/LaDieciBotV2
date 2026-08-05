@@ -66,7 +66,7 @@ for (const [name, src] of [["TabCocina", tab], ["PanelCocina", panel]]) {
   // C. Mesa può avere il riferimento operativo; gli altri pickup restano muti.
   ck(`${name}: top slot Mesa consentita; altri pickup muti`, () => {
     if (name === "TabCocina") {
-      assert.ok(/: messaNumber \? <>🍽 MESA \{messaNumber\}<\/> : null\}/.test(src),
+      assert.ok(/: mesaNumber \? <>🍽 MESA \{mesaNumber\}<\/> : null\}/.test(src),
         "Mesa mostra numero; altro pickup resta muto");
     } else {
       assert.ok(/<>🚚 DELIVERY[\s\S]*?<\/>\s*: null\}/.test(src), "non-delivery slot muto");
