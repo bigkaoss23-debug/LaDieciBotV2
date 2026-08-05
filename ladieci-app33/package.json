@@ -10,13 +10,13 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "prebuild": "node scripts/guard-no-lab-markers.js && node scripts/guard-env-fail-closed.js && node scripts/generate-functions-public-env.js && node scripts/write-version.js",
+    "prebuild": "node scripts/check-domain-language.js && node scripts/guard-no-lab-markers.js && node scripts/guard-env-fail-closed.js && node scripts/generate-functions-public-env.js && node scripts/write-version.js",
     "build": "react-scripts build",
     "test": "react-scripts test --watchAll=false",
     "test:watch": "react-scripts test",
     "test:standalone": "node scripts/run-standalone-tests.js standalone",
     "test:mjs": "node scripts/run-standalone-tests.js mjs",
-    "test:all": "npm run test && npm run test:standalone && npm run test:mjs",
+    "test:all": "npm run check:domain-language && npm run test && npm run test:standalone && npm run test:mjs",
     "check:domain-language": "node scripts/check-domain-language.js"
   },
   "browserslist": {
