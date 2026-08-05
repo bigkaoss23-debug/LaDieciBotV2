@@ -37,9 +37,14 @@
 # S2-7D2 — canonical operational login. Same-origin proxy to the staging Railway Auth V2
 # route, which verifies auth_actors.pin_hash and returns an {actor, role, session_version}
 # token. MUST stay above the retired /api/auth rule so it is matched first.
+# S2-7D2-HOTFIX: the exact-path form (no wildcard) never matched real POST traffic on
+# Netlify's deployed edge -- confirmed 404 (Netlify's own error page, no backend headers)
+# while the structurally identical wildcard rule below (/api/account/*) reached Railway
+# correctly. Backend mounts exactly one route under this prefix (loginHttpIntegration.js),
+# so the wildcard is not overbroad -- anything else under it 404s from Railway itself.
 [[redirects]]
-  from = "/api/auth/v2/login"
-  to = "https://fearless-reverence-production-80bc.up.railway.app/api/auth/v2/login"
+  from = "/api/auth/v2/*"
+  to = "https://fearless-reverence-production-80bc.up.railway.app/api/auth/v2/:splat"
   status = 200
   force = true
 

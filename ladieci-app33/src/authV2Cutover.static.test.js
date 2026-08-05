@@ -151,11 +151,14 @@ describe('11-12. legacy login is dead', () => {
   });
 
   test('the canonical login route is proxied ahead of the retired one', () => {
-    const v2 = TOML.indexOf('from = "/api/auth/v2/login"');
+    // S2-7D2-HOTFIX: wildcard, not the exact path -- the exact-path form never matched
+    // real POST traffic on Netlify's deployed edge (confirmed 404, no backend headers),
+    // while the structurally identical /api/account/* wildcard rule worked correctly.
+    const v2 = TOML.indexOf('from = "/api/auth/v2/*"');
     const old = TOML.indexOf('from = "/api/auth"');
     expect(v2).toBeGreaterThan(-1);
     expect(v2).toBeLessThan(old);
-    expect(TOML).toMatch(/\/api\/auth\/v2\/login"\n\s+to = "https:\/\/fearless-reverence/);
+    expect(TOML).toMatch(/\/api\/auth\/v2\/\*"\n\s+to = "https:\/\/fearless-reverence.*\/api\/auth\/v2\/:splat"/);
   });
 });
 
