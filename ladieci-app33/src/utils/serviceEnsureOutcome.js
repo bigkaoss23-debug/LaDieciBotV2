@@ -28,6 +28,7 @@ export const ENSURE_OUTCOME = Object.freeze({
   OTHER_SERVICE_STILL_ACTIVE: 'OTHER_SERVICE_STILL_ACTIVE',
   SERVICE_SESSION_CLOSING: 'SERVICE_SESSION_CLOSING',
   INVALID_ACTOR: 'INVALID_ACTOR',
+  STALE_SERVICE_SESSION: 'STALE_SERVICE_SESSION', // an open session belongs to an earlier businessDate
   DENIED: 'DENIED',     // role gate / 401 / 403 — never reaches the backend decision at all
   NETWORK: 'NETWORK',   // transport failure, or a no-persist draft build
   UNKNOWN: 'UNKNOWN',   // a recognized transport success with an unrecognized code
@@ -43,6 +44,7 @@ const SCHEDULE_OR_SESSION_CODES = new Set([
   ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE,
   ENSURE_OUTCOME.SERVICE_SESSION_CLOSING,
   ENSURE_OUTCOME.INVALID_ACTOR,
+  ENSURE_OUTCOME.STALE_SERVICE_SESSION,
 ]);
 
 export const EXCEPTION_TITLE = Object.freeze({
@@ -59,6 +61,7 @@ export const EXCEPTION_TITLE = Object.freeze({
   [ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE]: 'El servicio anterior se está cerrando',
   [ENSURE_OUTCOME.SERVICE_SESSION_CLOSING]: 'El servicio se está cerrando',
   [ENSURE_OUTCOME.INVALID_ACTOR]: 'Usuario no verificado',
+  [ENSURE_OUTCOME.STALE_SERVICE_SESSION]: 'Servicio anterior pendiente',
   [ENSURE_OUTCOME.DENIED]: 'Acceso no autorizado',
   [ENSURE_OUTCOME.NETWORK]: 'Sin conexión con el servidor',
   [ENSURE_OUTCOME.UNKNOWN]: 'Estado del servicio no disponible',
@@ -73,6 +76,7 @@ export const EXCEPTION_MESSAGE = Object.freeze({
   [ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE]: 'Espera unos segundos a que termine el cierre e inténtalo de nuevo.',
   [ENSURE_OUTCOME.SERVICE_SESSION_CLOSING]: 'Espera a que termine el cierre en curso e inténtalo de nuevo.',
   [ENSURE_OUTCOME.INVALID_ACTOR]: 'Tu usuario no se pudo verificar para abrir el servicio. Contacta con el administrador.',
+  [ENSURE_OUTCOME.STALE_SERVICE_SESSION]: 'El servicio activo pertenece a otra fecha operativa. Ciérralo antes de recibir nuevos pedidos.',
   [ENSURE_OUTCOME.DENIED]: 'No tienes permiso para acceder al servicio.',
   [ENSURE_OUTCOME.NETWORK]: 'No se pudo contactar con el servidor. Comprueba la conexión e inténtalo de nuevo.',
   [ENSURE_OUTCOME.UNKNOWN]: 'No se pudo comprobar el estado del servicio. Inténtalo de nuevo.',
@@ -92,6 +96,7 @@ export function exceptionAllowsRetry(kind) {
 export function exceptionShowsCloseoutLink(kind) {
   return kind === ENSURE_OUTCOME.LUNCH_SESSION_STILL_ACTIVE
     || kind === ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE
+    || kind === ENSURE_OUTCOME.STALE_SERVICE_SESSION
     || kind === ENSURE_OUTCOME.NETWORK
     || kind === ENSURE_OUTCOME.UNKNOWN;
 }

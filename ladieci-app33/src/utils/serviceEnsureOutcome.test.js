@@ -40,6 +40,7 @@ describe('classifyEnsureAttempt — every documented typed non-success code', ()
     'BETWEEN_SERVICES', 'AFTER_ORDER_CUTOFF', 'OUTSIDE_WINDOWS',
     'SERVICE_ALREADY_COMPLETED_TODAY', 'LUNCH_SESSION_STILL_ACTIVE',
     'OTHER_SERVICE_STILL_ACTIVE', 'SERVICE_SESSION_CLOSING', 'INVALID_ACTOR',
+    'STALE_SERVICE_SESSION',
   ];
   test.each(cases)('%s maps to itself, with a title and a Spanish message, never invented locally', (code) => {
     const res = { success: false, code, session: null, scheduleState: 'X', businessDate: '2026-07-26', _status: code === 'LUNCH_SESSION_STILL_ACTIVE' || code === 'OTHER_SERVICE_STILL_ACTIVE' || code === 'SERVICE_SESSION_CLOSING' ? 409 : 200, _ok: false };
@@ -55,6 +56,35 @@ describe('classifyEnsureAttempt — every documented typed non-success code', ()
     // Never the internal PRANZO/SERA/service_kind vocabulary, in any code path.
     expect(o.title).not.toMatch(/PRANZO|SERA/);
     expect(o.message).not.toMatch(/PRANZO|SERA/);
+  });
+});
+
+describe('classifyEnsureAttempt — STALE_SERVICE_SESSION (an open session belongs to an earlier businessDate)', () => {
+  const res = {
+    success: false, created: false, code: 'STALE_SERVICE_SESSION',
+    session: { id: 'uuid-6', serviceKind: 'PRANZO', businessDate: '2026-08-02', status: 'open', openedAt: '2026-08-02T09:36:55.359195+00:00' },
+    scheduleState: 'PRANZO_WINDOW', businessDate: '2026-08-05', _status: 200, _ok: true,
+  };
+
+  test('classifies as its own kind, not UNKNOWN', () => {
+    const o = classifyEnsureAttempt(res);
+    expect(o.kind).toBe(ENSURE_OUTCOME.STALE_SERVICE_SESSION);
+    expect(o.kind).not.toBe(ENSURE_OUTCOME.UNKNOWN);
+  });
+
+  test('exact title', () => {
+    expect(classifyEnsureAttempt(res).title).toBe('Servicio anterior pendiente');
+  });
+
+  test('exact message', () => {
+    expect(classifyEnsureAttempt(res).message).toBe(
+      'El servicio activo pertenece a otra fecha operativa. Ciérralo antes de recibir nuevos pedidos.'
+    );
+  });
+
+  test('offers both Reintentar and Ver cierre del servicio', () => {
+    expect(exceptionAllowsRetry(ENSURE_OUTCOME.STALE_SERVICE_SESSION)).toBe(true);
+    expect(exceptionShowsCloseoutLink(ENSURE_OUTCOME.STALE_SERVICE_SESSION)).toBe(true);
   });
 });
 
