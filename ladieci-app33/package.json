@@ -16,7 +16,8 @@
     "test:watch": "react-scripts test",
     "test:standalone": "node scripts/run-standalone-tests.js standalone",
     "test:mjs": "node scripts/run-standalone-tests.js mjs",
-    "test:all": "npm run test && npm run test:standalone && npm run test:mjs"
+    "test:all": "npm run test && npm run test:standalone && npm run test:mjs",
+    "check:domain-language": "node scripts/check-domain-language.js"
   },
   "browserslist": {
     "production": [
