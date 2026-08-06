@@ -268,7 +268,23 @@ export default function App({ skipSplash = false } = {}) {
   };
 
   // ── Supabase Realtime + initial load (ZERO POLLING) ──
+  //
+  // AUTH_BOOTSTRAP_ORDERS_RETRY_BUG fix — this effect used to run once on the
+  // component's true first mount ([] deps), which on a cold load (PIN screen,
+  // no token yet) fires api.getOrdenes() with an empty Bearer well before
+  // login. The backend correctly answers 401 INVALID_TOKEN; proxyGet already
+  // treats that as a session problem, but the caller here only checked
+  // `if (rOrdenes.ordenes)` and silently kept whatever ordenes state it
+  // already had -- nothing here ever told it to try again once a real token
+  // existed, so Cocina stayed on its initial empty state for the rest of the
+  // session even after a completely normal login. Gating the whole effect
+  // (fetch + realtime + fallback poll) behind pinUnlocked, and re-running it
+  // whenever pinUnlocked flips, coordinates the retry directly with the real
+  // auth-ready signal auth.login() already produces -- no artificial delay,
+  // no polling loop, and it fires exactly once per login (React tears the
+  // false-run down, which did nothing, before starting the true-run).
   useEffect(()=>{
+    if (!pinUnlocked) return undefined;
     let mounted = true;
 
     // Initial load. Niente più skipLoadUntil: il backend è atomico.
@@ -432,7 +448,7 @@ export default function App({ skipSplash = false } = {}) {
       if (heartbeat) clearInterval(heartbeat);
       clearInterval(fallbackPoll);
     };
-  },[]);
+  },[pinUnlocked]);
   return (
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:C.nero}}>
       <style>{G}</style>
