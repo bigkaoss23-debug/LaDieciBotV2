@@ -400,6 +400,51 @@ function Modal({ title, subtitle, onClose, children, width = 760, size }) {
   </div>;
 }
 
+// In-app replacement for window.confirm() on the "close an empty table"
+// action. A native confirm() is indistinguishable, from application code, from
+// an environment that silently auto-answers it (some embedded/automated
+// browser contexts do exactly this) -- the app never learns the dialog was
+// never truly shown to anyone. This dialog is real DOM the app fully
+// controls: it always renders, always waits for a real click, and its result
+// is never ambiguous. Escape and the backdrop both cancel; Tab is trapped
+// between the two buttons since this is the only focusable content.
+function CerrarMesaDialog({ tableNumber, busy, error, onCancel, onConfirm }) {
+  const cancelRef = useRef(null);
+  const confirmRef = useRef(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") { if (!busy) onCancel(); return; }
+      if (event.key !== "Tab") return;
+      const focusables = [cancelRef.current, confirmRef.current].filter(Boolean);
+      if (focusables.length === 0) return;
+      const first = focusables[0], last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [busy, onCancel]);
+
+  return <div className="mesa-overlay" onClick={() => { if (!busy) onCancel(); }}>
+    <div className="mesa-modal" role="alertdialog" aria-modal="true" aria-labelledby="cerrar-mesa-title" aria-describedby="cerrar-mesa-body"
+      style={{ width: "min(420px, 100%)" }} onClick={(event) => event.stopPropagation()}>
+      <div className="mesa-modal-head">
+        <div id="cerrar-mesa-title" style={{ fontWeight: 950, fontSize: 19 }}>{`Cerrar Mesa ${tableNumber}`}</div>
+      </div>
+      <div className="mesa-modal-body">
+        <p id="cerrar-mesa-body" className="mesa-muted">La mesa está vacía y no tiene comandas ni pagos.</p>
+        {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
+        <div className="mesa-actions" style={{ marginTop: 16 }}>
+          <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>Cancelar</button>
+          <button ref={confirmRef} className="mesa-btn danger" disabled={busy} onClick={onConfirm}>{busy ? "Cerrando…" : "Cerrar mesa"}</button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
 // Shared comanda card -- same format everywhere a comanda is listed (the
 // table popup's quick summary and Ver cuenta's full detail), so a waiter
 // never has to learn two different layouts for the same information.
@@ -566,10 +611,12 @@ function TableDetail({ table, onClose, onNewCommand, onRefresh, onPrint }) {
     catch (err) { setError(describeMesaError(err)); }
     finally { setBusy(false); }
   };
-  const releaseEmpty = async () => {
-    if (!window.confirm(`¿Liberar Mesa ${table.number}? Todavía no se ha registrado ningún pedido.`)) return;
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const openCloseConfirm = () => setConfirmingClose(true);
+  const cancelCloseConfirm = () => { if (!busy) { setConfirmingClose(false); setError(""); } };
+  const confirmClose = async () => {
     setBusy(true); setError("");
-    try { await mesaApi.releaseEmptyTable(session.id); await onRefresh(); }
+    try { await mesaApi.releaseEmptyTable(session.id); setConfirmingClose(false); await onRefresh(); }
     catch (err) { setError(describeMesaError(err)); setBusy(false); }
   };
 
@@ -585,7 +632,7 @@ function TableDetail({ table, onClose, onNewCommand, onRefresh, onPrint }) {
       {table.status === "open" && <>
         <div className="mesa-actions">
           <button className="mesa-btn primary" onClick={() => { onClose(); onNewCommand(table); }}>＋ Nueva comanda</button>
-          {session.coversTotal == null && <button className="mesa-btn danger" disabled={busy} onClick={releaseEmpty}>Liberar mesa</button>}
+          {session.coversTotal == null && <button className="mesa-btn danger" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
           {session.outstanding > 0 && <button className="mesa-btn green" onClick={() => setPaymentMode("full")}>Cobrar todo</button>}
           {session.outstanding > 0 && session.coversRemaining > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("equal_split")}>A la romana · {euro(session.nextEqualShare)}</button>}
           {remainingLines.length > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("item_selection")}>Elegir productos</button>}
@@ -602,9 +649,10 @@ function TableDetail({ table, onClose, onNewCommand, onRefresh, onPrint }) {
           action={command.state === "LISTO" ? <button className="mesa-btn green" style={{ marginLeft: "auto" }} disabled={busy} onClick={() => markServed(command.id)}>✓ Servida</button> : null} />)}
       </div>}</div>
       {remainingLines.length > 0 && <div className="mesa-section"><h3>Pendiente de pago</h3>{remainingLines.map((line) => <div className="mesa-row" key={line.id}><span>{line.description}</span><strong>{euro(line.remaining)}</strong></div>)}</div>}
-      {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
+      {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
     </Modal>
     {paymentMode && <PaymentModal table={table} mode={paymentMode} onClose={() => setPaymentMode(null)} onPaid={paid} />}
+    {confirmingClose && <CerrarMesaDialog tableNumber={table.number} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
   </>;
 }
 
@@ -798,17 +846,20 @@ function TableContextPopup({
       await onChanged(); onClose();
     } catch (err) { setError(describeMesaError(err)); setBusy(false); }
   };
-  const releaseEmpty = async () => {
-    if (!window.confirm(`¿Liberar Mesa ${table.number}? Todavía no se ha registrado ningún pedido.`)) return;
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const openCloseConfirm = () => setConfirmingClose(true);
+  const cancelCloseConfirm = () => { if (!busy) { setConfirmingClose(false); setError(""); } };
+  const confirmClose = async () => {
     setBusy(true); setError("");
-    try { await mesaApi.releaseEmptyTable(session.id); await onChanged(); onClose(); }
+    try { await mesaApi.releaseEmptyTable(session.id); setConfirmingClose(false); await onChanged(); onClose(); }
     catch (err) { setError(describeMesaError(err)); setBusy(false); }
   };
 
   const subtitle = isOccupied ? (hasOrders ? "Ocupada" : "Ocupada · sin comanda")
     : nextReservation ? "Reservada" : "Libre";
 
-  return <Modal title={`Mesa ${table.number}`} subtitle={subtitle} onClose={busy ? undefined : onClose} width={640} size={hasOrders ? "tall" : undefined}>
+  return <>
+  <Modal title={`Mesa ${table.number}`} subtitle={subtitle} onClose={busy ? undefined : onClose} width={640} size={hasOrders ? "tall" : undefined}>
     {isOccupied && !hasOrders && <div className="mesa-banner" style={{ marginTop: 0 }}>Ningún pedido enviado.</div>}
 
     {/* Real comanda content right in the popup -- product names and note,
@@ -843,7 +894,7 @@ function TableContextPopup({
       {!editing && !isOccupied && nextReservation && <button className="mesa-btn mesa-menu-action primary" onClick={onOpenTable}><strong>＋ Crear pedido</strong><span>La reserva futura seguirá activa.</span></button>}
       {!editing && isOccupied && !hasOrders && <>
         <button className="mesa-btn mesa-menu-action green" onClick={onStartCommand}><strong>Crear pedido</strong><span>Primera comanda de esta mesa</span></button>
-        <button className="mesa-btn mesa-menu-action" disabled={busy} onClick={releaseEmpty}><strong>Liberar mesa</strong><span>Todavía no hay ningún pedido</span></button>
+        <button className="mesa-btn mesa-menu-action" disabled={busy} onClick={openCloseConfirm}><strong>Cerrar mesa</strong><span>Todavía no hay ningún pedido</span></button>
       </>}
       {!editing && isOccupied && hasOrders && <>
         <button className="mesa-btn mesa-menu-action green" onClick={onStartCommand}><strong>Añadir pedido</strong><span>Nueva comanda para esta mesa</span></button>
@@ -877,8 +928,10 @@ function TableContextPopup({
       {todayReservations.length > 1 && canManageReservations && <button className="mesa-btn small" onClick={onViewNight}>Ver reservas de la noche ({todayReservations.length})</button>}
       {canManageReservations && <button className="mesa-btn small gold" onClick={onNewReservation}>＋ Nueva reserva</button>}
     </div>}
-    {error && <div className="mesa-banner mesa-error" style={{ marginTop: 10 }}>{error}</div>}
-  </Modal>;
+    {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 10 }}>{error}</div>}
+  </Modal>
+  {confirmingClose && <CerrarMesaDialog tableNumber={table.number} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
+  </>;
 }
 
 // Visual shape choice: three icon buttons instead of a text dropdown, always

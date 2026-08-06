@@ -105,10 +105,26 @@ describe("Mesa capacity settings", () => {
     expect((source.match(/¿Eliminar Mesa \$\{table\.number\} del plano\? El historial se conservará\./g) || []).length).toBe(2);
   });
 
-  test("red is reserved for Eliminar mesa; Liberar mesa (a genuinely empty, non-destructive release) is neutral", () => {
-    expect(source).toContain('<button className="mesa-btn mesa-menu-action" disabled={busy} onClick={releaseEmpty}><strong>Liberar mesa</strong>');
-    expect(source).not.toMatch(/onClick=\{releaseEmpty\}>[\s\S]{0,5}(danger|red)/);
+  test("red is reserved for Eliminar mesa; Cerrar mesa (a genuinely empty, non-destructive release) is neutral", () => {
+    expect(source).toContain('<button className="mesa-btn mesa-menu-action" disabled={busy} onClick={openCloseConfirm}><strong>Cerrar mesa</strong>');
+    expect(source).not.toMatch(/onClick=\{openCloseConfirm\}>[\s\S]{0,5}(danger|red)/);
     expect(source).toContain('<button className="mesa-btn red" disabled={busy} onClick={remove}>Eliminar mesa</button>');
+  });
+
+  test("Cerrar mesa no longer uses window.confirm anywhere in the runtime action", () => {
+    expect(source).not.toMatch(/window\.confirm\(`¿Liberar Mesa/);
+    expect(source).not.toContain("Liberar mesa");
+    expect(source).not.toContain("Liberar Mesa");
+  });
+
+  test("CerrarMesaDialog is a real controlled dialog: alertdialog role, labelled title, Cancelar/Cerrar mesa actions, Escape support", () => {
+    expect(source).toContain('function CerrarMesaDialog(');
+    expect(source).toMatch(/role="alertdialog"/);
+    expect(source).toContain('aria-labelledby="cerrar-mesa-title"');
+    expect(source).toContain('`Cerrar Mesa ${tableNumber}`');
+    expect(source).toContain('La mesa está vacía y no tiene comandas ni pagos.');
+    expect(source).toContain('event.key === "Escape"');
+    expect(source).toContain('>Cancelar</button>');
   });
 });
 

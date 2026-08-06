@@ -447,7 +447,7 @@ test("a double tap on a free table only opens it once", async () => {
   unmount(container, root);
 });
 
-test("an occupied Mesa with no comanda yet offers Crear pedido and Liberar mesa directly, and still asks for real covers first", async () => {
+test("an occupied Mesa with no comanda yet offers Crear pedido and Cerrar mesa directly, and still asks for real covers first", async () => {
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession() }
     : table);
@@ -459,7 +459,7 @@ test("an occupied Mesa with no comanda yet offers Crear pedido and Liberar mesa 
   const dialog = container.querySelector('[role="dialog"]');
   expect(dialog.textContent).toContain("Ocupada · sin comanda");
   expect(dialog.textContent).toContain("Crear pedido");
-  expect(dialog.textContent).toContain("Liberar mesa");
+  expect(dialog.textContent).toContain("Cerrar mesa");
   expect(dialog.textContent).not.toContain("Ver cuenta");
   click(buttonByText(container, "Crear pedido"));
   expect(onNewCommand).not.toHaveBeenCalled();
@@ -471,20 +471,96 @@ test("an occupied Mesa with no comanda yet offers Crear pedido and Liberar mesa 
   unmount(container, root);
 });
 
-test("liberar mesa releases an empty table directly from its popup, without any payment call", async () => {
+test("Cerrar mesa opens an internal dialog (never window.confirm); it shows the right copy and makes no request until confirmed", async () => {
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession() }
     : table);
   mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
-  const originalConfirm = window.confirm;
-  window.confirm = jest.fn(() => true);
   const { container, root } = await mount("waiter");
   click(container.querySelector(".mesa-table"));
-  click(buttonByText(container, "Liberar mesa"));
+  click(buttonByText(container, "Cerrar mesa"));
+  const confirmDialog = container.querySelector('[role="alertdialog"]');
+  expect(confirmDialog).toBeTruthy();
+  expect(confirmDialog.getAttribute("aria-modal")).toBe("true");
+  expect(confirmDialog.textContent).toContain("Cerrar Mesa 1");
+  expect(confirmDialog.textContent).toContain("La mesa está vacía y no tiene comandas ni pagos.");
+  expect(mesaApi.releaseEmptyTable).not.toHaveBeenCalled();
+  unmount(container, root);
+});
+
+test("Cancelar closes the Cerrar mesa dialog without any request; the table stays open and offering Cerrar mesa", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession() }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Cerrar mesa"));
+  click(buttonByText(container.querySelector('[role="alertdialog"]'), "Cancelar"));
   await flush();
+  expect(mesaApi.releaseEmptyTable).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alertdialog"]')).toBeFalsy();
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("Cerrar mesa");
+  unmount(container, root);
+});
+
+test("Escape cancels the Cerrar mesa dialog without any request", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession() }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Cerrar mesa"));
+  expect(container.querySelector('[role="alertdialog"]')).toBeTruthy();
+  act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+  await flush();
+  expect(container.querySelector('[role="alertdialog"]')).toBeFalsy();
+  expect(mesaApi.releaseEmptyTable).not.toHaveBeenCalled();
+  unmount(container, root);
+});
+
+test("confirming Cerrar mesa releases the table exactly once, without any payment call, and closes both the confirm dialog and the popup", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession() }
+    : table);
+  mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: openTables });
+  mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: floorTables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Cerrar mesa"));
+  const confirmDialog = container.querySelector('[role="alertdialog"]');
+  click(buttonByText(confirmDialog, "Cerrar mesa"));
+  await flush();
+  expect(mesaApi.releaseEmptyTable).toHaveBeenCalledTimes(1);
   expect(mesaApi.releaseEmptyTable).toHaveBeenCalledWith("session-x");
   expect(mesaApi.pay).not.toHaveBeenCalled();
-  window.confirm = originalConfirm;
+  expect(container.querySelector('[role="alertdialog"]')).toBeFalsy();
+  expect(container.querySelector('[role="dialog"]')).toBeFalsy();
+  unmount(container, root);
+});
+
+test("a second click on Cerrar mesa (confirm) while the request is in flight never sends a second request -- button disables and shows Cerrando…", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession() }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  let resolveRelease;
+  mesaApi.releaseEmptyTable.mockReturnValue(new Promise((resolve) => { resolveRelease = resolve; }));
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Cerrar mesa"));
+  const confirmDialog = container.querySelector('[role="alertdialog"]');
+  const confirmBtn = buttonByText(confirmDialog, "Cerrar mesa");
+  click(confirmBtn);
+  await flush();
+  expect(confirmBtn.disabled).toBe(true);
+  expect(confirmBtn.textContent).toContain("Cerrando");
+  click(confirmBtn);
+  await flush();
+  expect(mesaApi.releaseEmptyTable).toHaveBeenCalledTimes(1);
+  act(() => { resolveRelease({ ok: true }); });
+  await flush();
   unmount(container, root);
 });
 
@@ -509,13 +585,13 @@ test("an occupied Mesa with an order shows a green (not red) thick border, coman
   expect(dialog.textContent).toContain("21:00");
   expect(dialog.textContent).toContain("En cocina");
   expect(dialog.textContent).not.toContain("Crear pedido");
-  expect(dialog.textContent).not.toContain("Liberar mesa");
+  expect(dialog.textContent).not.toContain("Cerrar mesa");
   click(buttonByText(container, "Añadir pedido"));
   expect(onNewCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "table-1" }));
   unmount(container, root);
 });
 
-test("in Personalizar sala, an occupied table's popup offers only layout actions -- never Crear/Añadir pedido, Liberar mesa or Ver cuenta", async () => {
+test("in Personalizar sala, an occupied table's popup offers only layout actions -- never Crear/Añadir pedido, Cerrar mesa or Ver cuenta", async () => {
   // Regression test: TableContextPopup used to gate Ajustes de mesa /
   // Eliminar mesa on `editing` but never gated the order/account buttons
   // the other way, so entering Personalizar sala and tapping an occupied
@@ -533,7 +609,7 @@ test("in Personalizar sala, an occupied table's popup offers only layout actions
   expect(dialog.textContent).not.toContain("Crear pedido");
   expect(dialog.textContent).not.toContain("Añadir pedido");
   expect(dialog.textContent).not.toContain("Ver cuenta");
-  expect(dialog.textContent).not.toContain("Liberar mesa");
+  expect(dialog.textContent).not.toContain("Cerrar mesa");
   // Leaving Personalizar sala restores the order actions and hides the
   // layout-only ones, with no reload needed.
   click(buttonByText(container, "✓ Salir de Personalizar sala"));
@@ -701,23 +777,23 @@ test("opening a free table that fails leaves it free with no stuck popup, notifi
   unmount(container, root);
 });
 
-test("Liberar mesa surfaces a backend rejection (e.g. the session was not actually empty) as an inline error, keeping the popup and the occupied state intact", async () => {
+test("a rejected Cerrar mesa keeps the confirm dialog open with an inline error, and the table stays occupied", async () => {
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession() } : table);
   mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
   mesaApi.releaseEmptyTable.mockRejectedValueOnce({ code: "MESA_SESSION_NOT_EMPTY" });
-  const originalConfirm = window.confirm;
-  window.confirm = jest.fn(() => true);
   const { container, root } = await mount("waiter");
   click(container.querySelector(".mesa-table"));
-  click(buttonByText(container, "Liberar mesa"));
+  click(buttonByText(container, "Cerrar mesa"));
+  const confirmDialog = container.querySelector('[role="alertdialog"]');
+  click(buttonByText(confirmDialog, "Cerrar mesa"));
   await flush();
-  const dialog = container.querySelector('[role="dialog"]');
-  expect(dialog.textContent).toContain("MESA_SESSION_NOT_EMPTY");
+  const dialogAfter = container.querySelector('[role="alertdialog"]');
+  expect(dialogAfter).toBeTruthy();
+  expect(dialogAfter.textContent).toContain("MESA_SESSION_NOT_EMPTY");
   // still occupied, still offering the same actions -- not left half-closed
-  expect(dialog.textContent).toContain("Liberar mesa");
-  expect(dialog.textContent).toContain("Crear pedido");
-  window.confirm = originalConfirm;
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("Crear pedido");
+  expect(mesaApi.releaseEmptyTable).toHaveBeenCalledTimes(1);
   unmount(container, root);
 });
 
