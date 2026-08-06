@@ -84,6 +84,25 @@ test("chimes exactly once when a comanda transitions to LISTO between polls, not
   container.remove();
 });
 
+test("unmount clears the polling interval -- no request after the component is gone", async () => {
+  jest.useFakeTimers();
+  try {
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(<WaiterListos notify={jest.fn()} onCountChange={jest.fn()} />); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const callsBeforeUnmount = mesaApi.floor.mock.calls.length;
+    act(() => { root.unmount(); });
+    container.remove();
+    await act(async () => { jest.advanceTimersByTime(30000); });
+    expect(mesaApi.floor.mock.calls.length).toBe(callsBeforeUnmount);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test("Servida calls mesaApi.markServed with the session and command id", async () => {
   mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
   mesaApi.markServed.mockResolvedValue({ ok: true });

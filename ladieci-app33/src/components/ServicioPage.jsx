@@ -10,6 +10,7 @@ import TabWA from './wa/TabWA';
 import TabManual from './ordenes/TabManual';
 import TabBanco from './ordenes/TabBanco';
 import TabMesa from './mesa/TabMesa';
+import WaiterListos from '../waiter/WaiterListos';
 import TabListos, { caricoTotale } from './ordenes/TabListos';
 import TabCocina from './cocina/TabCocina';
 import PanelCocina from './cocina/PanelCocina';
@@ -123,6 +124,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const [mesaCommandTarget, setMesaCommandTarget] = useState(null);
   const [mesaRefreshKey, setMesaRefreshKey] = useState(0);
   const [mesaN, setMesaN] = useState(0);
+  const [paraServirN, setParaServirN] = useState(0);
   const [goToPedidosSignal, setGoToPedidosSignal] = useState(0);
   const [goToPreguntasSignal, setGoToPreguntasSignal] = useState(0);
   const [ordenModifica, setOrdenModifica] = useState(null);
@@ -1002,14 +1004,23 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     .reduce((sum, o) => sum + (Array.isArray(o.items)?o.items:[]).filter(isPizzaItem).reduce((s,it)=>s+(parseInt(it.q)||1),0), 0),
   [ordenes]);
 
+  // "Para servir" reuses WaiterListos as-is (see that file's own header
+  // comment for why it is deliberately NOT a TabListos reskin: table
+  // comandas live in table.session.commands, not the ordenes list, and
+  // TabListos's own Retirado flow must never see a Mesa order -- it would
+  // register a second legacy payment on top of the table's own partial-
+  // payment ledger). This tab is only the stopgap exposure of that queue to
+  // today's admin/operator users; the full Waiter Mode (dedicated role,
+  // RBAC, routing) is a separate later slice -- see WaiterShell.jsx.
   const TABS = useMemo(() => [
     {id:"wa",       icon:"💬", label:"WhatsApp", badge:{n:waTotBadge, c:C.wa}},
     {id:"manual",   icon:"📞", label:"Tel",      badge:{n:manualN,    c:C.blu}},
     {id:"banco",    icon:MESA_UI_ENABLED?"🍽":"🏪", label:MESA_UI_ENABLED?"Mesa":"Barra", badge:{n:MESA_UI_ENABLED?mesaN:bancoN, c:C.avana}},
+    ...(MESA_UI_ENABLED ? [{id:"paraservir", icon:"🛎", label:"Para servir", badge:{n:paraServirN, c:C.verde}}] : []),
     {id:"listos",   icon:"✅", label:"Listos",   badge:{n:listosN,    c:C.verde}},
     {id:"cocina",   icon:"🍕", label:"Cocina",   badge:{n:cocinaNC,   c:C.orange}},
     {id:"entregas", icon:"🛵", label:"Entregas", meta: pizzeConsegnateStasera > 0 ? `${pizzeConsegnateStasera} pz ✓` : null, badge:{n:entregasN,  c:"#F97316"}},
-  ], [waTotBadge, mesaN, bancoN, manualN, listosN, cocinaNC, entregasN, pizzeConsegnateStasera]);
+  ], [waTotBadge, mesaN, paraServirN, bancoN, manualN, listosN, cocinaNC, entregasN, pizzeConsegnateStasera]);
 
   const tabContent = () => {
     if(tab==="wa")     return <TabWA
@@ -1177,6 +1188,13 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
             setShowNuevo(true);
           }}/>
       : <TabBanco ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
+    // Mounted only while this tab is open, same as every other tab here
+    // (TabMesa/TabListos/TabCocina are all conditionally mounted the same
+    // way) -- so its poll, and therefore Suoni.mesaListo(), only runs while
+    // "Para servir" is the active tab. The floor's own ready-pulse (TabMesa)
+    // stays the notification available outside this tab; a persistent
+    // global badge/sound is out of scope for this stopgap slice.
+    if(tab==="paraservir") return <WaiterListos notify={notify} onCountChange={setParaServirN} refreshKey={mesaRefreshKey}/>;
     if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} loadingIds={loadingIds}
       vipIds={vipIds}
       waMsgs={waMsgs}
