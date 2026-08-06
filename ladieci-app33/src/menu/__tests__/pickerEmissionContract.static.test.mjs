@@ -14,6 +14,12 @@
 //
 // buildEmittedItem è una closure dentro un componente React: non è importabile,
 // quindi il contratto è verificato staticamente sul sorgente.
+//
+// Mesa builder slice — la logica del carrello (increment/buildEmittedItem/
+// toggleRemoved/baseIngredientsOf) è stata estratta in useOrderCart.js così
+// che MesaOrderBuilder possa riusarla senza duplicarla. ItemPickerModal.jsx
+// resta responsabile solo del boundary onAdd/onUpdate. Il contratto verificato
+// qui non cambia: cambia solo in quale file vive ciascun pezzo.
 
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
@@ -23,7 +29,9 @@ import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, "..", "..");
 const picker = readFileSync(join(SRC, "components", "ItemPickerModal.jsx"), "utf8");
-const codeOnly = picker.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+const hook = readFileSync(join(SRC, "order", "useOrderCart.js"), "utf8");
+const strip = (src) => src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+const codeOnly = strip(picker) + "\n" + strip(hook);
 
 let pass = 0, fail = 0;
 const ck = (label, fn) => {

@@ -10,6 +10,7 @@ import TabWA from './wa/TabWA';
 import TabManual from './ordenes/TabManual';
 import TabBanco from './ordenes/TabBanco';
 import TabMesa from './mesa/TabMesa';
+import MesaOrderBuilder from './mesa/MesaOrderBuilder';
 import TabListos, { caricoTotale } from './ordenes/TabListos';
 import ListosUnificado from './ordenes/ListosUnificado';
 import TabCocina from './cocina/TabCocina';
@@ -554,13 +555,12 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         note: order.nota || "",
         kitchenNote: order.nota || "",
         time: order.hora,
-        // Only present for the table's first comanda -- TabMesa already asked
-        // for it before this modal opened; later comandas never carry it.
-        coversTotal: target.coversTotal,
+        // Only present for the table's first comanda -- MesaOrderBuilder's own
+        // covers step already asked for it before this call; later comandas
+        // never carry it (target.coversTotal is already set from the session).
+        coversTotal: order.coversTotal ?? target.coversTotal,
         clientRequestId: order.client_req_id,
       });
-      setShowNuevo(false);
-      setPrefillCliente(null);
       setMesaCommandTarget(null);
       setMesaRefreshKey((value) => value + 1);
       notify(`✅ Mesa ${target.tableNumber} · comanda enviada a Cocina`, C.verde);
@@ -1184,10 +1184,8 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     if(tab==="manual") return <TabManual ordenes={creationQueue.visibleOrders} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} onOpenTicket={setTicketOrder} vipIds={vipIds} loadingIds={loadingIds}/>;
     if(tab==="banco")  return MESA_UI_ENABLED
       ? <TabMesa role={auth.getRole()} notify={notify} refreshKey={mesaRefreshKey} onCountChange={setMesaN}
-          onNewCommand={(table, coversTotal) => {
-            setMesaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name, coversTotal });
-            setPrefillCliente({ canal:"BANCO", nombre:`Mesa ${table.number}` });
-            setShowNuevo(true);
+          onNewCommand={(table) => {
+            setMesaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name, coversTotal: table.session.coversTotal ?? null });
           }}/>
       : <TabBanco ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
     // Mounted only while this tab is open, same as every other tab here
@@ -1743,11 +1741,14 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       )}
 
       {/* Modals */}
-      <NuevoPedidoModal visible={showNuevo} onClose={()=>{setShowNuevo(false);setPrefillCliente(null);setMesaCommandTarget(null);}}
-        onTransactionStart={mesaCommandTarget ? ()=>true : startCreateTransaction}
-        onConfirm={async o=>{ if (mesaCommandTarget) return addMesaCommand(o); await addOrden(o); }}
-        tableContext={mesaCommandTarget}
+      <NuevoPedidoModal visible={showNuevo} onClose={()=>{setShowNuevo(false);setPrefillCliente(null);}}
+        onTransactionStart={startCreateTransaction}
+        onConfirm={async o=>{ await addOrden(o); }}
+        tableContext={null}
         prefill={prefillCliente} ordenes={ordenes}/>
+      {mesaCommandTarget && <MesaOrderBuilder target={mesaCommandTarget}
+        onClose={() => setMesaCommandTarget(null)}
+        onSubmit={addMesaCommand}/>}
       {ordenModifica&&<ModificaOrdenModal orden={{
         ...ordenModifica,
         nota: String(ordenModifica.nota||""),

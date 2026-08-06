@@ -656,26 +656,6 @@ function TableDetail({ table, onClose, onNewCommand, onRefresh, onPrint }) {
   </>;
 }
 
-// Covers are unknown when a table is opened (see openWalkIn) -- this modal is
-// the one and only place they're asked, gating the FIRST comanda only. It never
-// calls the API itself: it just collects a real number, then the caller opens
-// the normal product-picking flow which submits covers atomically with the order.
-function FirstCommandCoversModal({ table, onClose, onConfirm }) {
-  const [covers, setCovers] = useState("");
-  const [error, setError] = useState("");
-  const confirm = () => {
-    const count = Number(covers);
-    if (!Number.isInteger(count) || count < 1 || count > 99) { setError("Indica un número de comensales válido."); return; }
-    onConfirm(count);
-  };
-  return <Modal title={`Mesa ${table.number} · primera comanda`} subtitle="Indica los comensales reales antes de tomar el pedido" onClose={onClose} width={430}>
-    <label className="mesa-label">Número de comensales</label>
-    <input className="mesa-input" type="number" min="1" max="99" value={covers} onChange={(event) => { setCovers(event.target.value); setError(""); }} placeholder="Ej. 4" autoFocus />
-    <div className="mesa-actions" style={{ justifyContent: "flex-end" }}><button className="mesa-btn" onClick={onClose}>Cancelar</button><button className="mesa-btn primary" onClick={confirm}>Continuar</button></div>
-    {error && <div className="mesa-banner mesa-error">{error}</div>}
-  </Modal>;
-}
-
 function ReservationItem({ reservation, table, onEdit, onChanged, onOpened }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1053,7 +1033,6 @@ export default function TabMesa({ role, notify, onNewCommand, onCountChange, ref
   const [reservationsFilterTableId, setReservationsFilterTableId] = useState(null);
   const [reservationEditor, setReservationEditor] = useState(null);
   const [printDocument, setPrintDocument] = useState(null);
-  const [coversPromptTable, setCoversPromptTable] = useState(null);
   const boardRef = useRef(null);
   const dragRef = useRef(null);
   const suppressClickRef = useRef(null);
@@ -1102,17 +1081,11 @@ export default function TabMesa({ role, notify, onNewCommand, onCountChange, ref
       openingWalkInRef.current.delete(table.id);
     }
   };
-  // The first comanda on a walk-in Mesa asks for real covers before the product
-  // picker opens; later comandas already have session.coversTotal and skip this.
-  const startNewCommand = (table) => {
-    if (table.session?.coversTotal == null) { setCoversPromptTable(table); return; }
-    onNewCommand(table);
-  };
-  const confirmFirstCommandCovers = (count) => {
-    const table = coversPromptTable;
-    setCoversPromptTable(null);
-    onNewCommand(table, count);
-  };
+  // Covers (when the table's first comanda hasn't set them yet) are now asked
+  // inside MesaOrderBuilder itself, not here -- this just opens it; the caller
+  // (ServicioPage) reads table.session.coversTotal to decide which step the
+  // builder opens on.
+  const startNewCommand = (table) => onNewCommand(table);
 
   const savePosition = async (table) => {
     try {
@@ -1253,7 +1226,6 @@ export default function TabMesa({ role, notify, onNewCommand, onCountChange, ref
       onSettings={() => { setMenuId(null); setSettingsId(menuTable.id); }}
     />}
     {selected?.status === "open" && <TableDetail table={selected} onClose={() => setSelectedId(null)} onNewCommand={startNewCommand} onRefresh={() => load({ quiet: true })} onPrint={setPrintDocument} />}
-    {coversPromptTable && <FirstCommandCoversModal table={coversPromptTable} onClose={() => setCoversPromptTable(null)} onConfirm={confirmFirstCommandCovers} />}
     {settingsTable && <TableSettingsModal table={settingsTable} onClose={() => setSettingsId(null)} onSaved={() => load()} />}
     {showAdd && <AddTableModal tables={tables} onClose={() => setShowAdd(false)} onSaved={() => load()} />}
     {showReservations && <ReservationAgenda tables={activeTables} initialTableId={reservationsFilterTableId} onClose={() => { setShowReservations(false); setReservationsFilterTableId(null); }} onNew={() => openEditor()} onEdit={(reservation) => openEditor(reservation)} onChanged={() => load({ quiet: true })} onOpened={opened} />}

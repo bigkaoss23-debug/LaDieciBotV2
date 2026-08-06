@@ -447,7 +447,7 @@ test("a double tap on a free table only opens it once", async () => {
   unmount(container, root);
 });
 
-test("an occupied Mesa with no comanda yet offers Crear pedido and Cerrar mesa directly, and still asks for real covers first", async () => {
+test("an occupied Mesa with no comanda yet offers Crear pedido and Cerrar mesa directly, and opens the order builder immediately (covers are asked inside MesaOrderBuilder, not here)", async () => {
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession() }
     : table);
@@ -462,12 +462,11 @@ test("an occupied Mesa with no comanda yet offers Crear pedido and Cerrar mesa d
   expect(dialog.textContent).toContain("Cerrar mesa");
   expect(dialog.textContent).not.toContain("Ver cuenta");
   click(buttonByText(container, "Crear pedido"));
-  expect(onNewCommand).not.toHaveBeenCalled();
-  const coversInput = container.querySelector('.mesa-modal input[type="number"]');
-  expect(coversInput).toBeTruthy();
-  typeInto(coversInput, 4);
-  click(buttonByText(container, "Continuar"));
-  expect(onNewCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "table-1" }), 4);
+  // TabMesa no longer gates on coversTotal itself -- it just forwards the
+  // table; the caller (MesaOrderBuilder, mounted by ServicioPage) decides
+  // whether to show its own covers step from table.session.coversTotal.
+  expect(onNewCommand).toHaveBeenCalledTimes(1);
+  expect(onNewCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "table-1" }));
   unmount(container, root);
 });
 

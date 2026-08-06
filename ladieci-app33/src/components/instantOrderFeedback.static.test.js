@@ -29,7 +29,10 @@ describe("instant order feedback integration", () => {
     expect(block).toContain("onTransactionStart?.(orderAttempt)");
     expect(block.indexOf("onTransactionStart?.(orderAttempt)"))
       .toBeLessThan(block.indexOf("await api.upsertCliente"));
-    expect(source).toContain("onTransactionStart={mesaCommandTarget ? ()=>true : startCreateTransaction}");
+    // Mesa slice (V1_STAGING_MESA_ORDER_BUILDER_39): Mesa orders no longer reach
+    // NuevoPedidoModal at all (separate MesaOrderBuilder), so this callback is
+    // unconditionally the generic optimistic-transaction starter now.
+    expect(source).toContain("onTransactionStart={startCreateTransaction}");
     expect(source).toContain("await addOrden(o)");
     expect(source).toContain('title: "¡Pedido confirmado!"');
   });

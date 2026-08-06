@@ -383,7 +383,11 @@ describe('NO_OPEN_SERVICE_SESSION guidance (Phase 8)', () => {
   test('the error is rethrown so the EXISTING lifecycle renders it', () => {
     expect(SERVICIO_C).toMatch(/typed\.code = NO_OPEN_SERVICE_SESSION_CODE;\s*throw typed;/);
     expect(code(MODAL)).toMatch(/return onConfirm\(\{/);
-    expect(SERVICIO_C).toMatch(/onConfirm=\{async o=>\{ if \(mesaCommandTarget\) return addMesaCommand\(o\); await addOrden\(o\); \}\}/);
+    // Mesa slice (V1_STAGING_MESA_ORDER_BUILDER_39): NuevoPedidoModal's onConfirm
+    // no longer branches on mesaCommandTarget -- Mesa orders now go through the
+    // separate MesaOrderBuilder -> addMesaCommand path entirely, never through
+    // this modal, so this callback only ever calls addOrden.
+    expect(SERVICIO_C).toMatch(/onConfirm=\{async o=>\{ await addOrden\(o\); \}\}/);
   });
 
   test('the operator is routed back to the service-state landing', () => {
