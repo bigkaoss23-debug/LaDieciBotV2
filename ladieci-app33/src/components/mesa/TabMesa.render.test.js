@@ -302,6 +302,39 @@ test("in Personalizar sala, a genuine drag past the threshold still suppresses t
   unmount(container, root);
 });
 
+// MESA_POINTER_TARGET_SHIFT regression tests -- see
+// TabMesaPointerTargetShift.static.test.js for the CSS-level proof (jsdom
+// does not implement real :active cascade/layout, so the geometry bug itself
+// can't be reproduced here). These cover the React-level contract the fix
+// must not disturb: a real gesture sequence still opens exactly once, and
+// the tile stays a native <button> (native Enter/Space activation, unaffected
+// by the CSS-only fix). The double-tap dedup is already covered by "a double
+// tap on a free table only opens it once" above -- not duplicated here.
+test("a full pointerdown -> pointerup -> click sequence on a free table opens it exactly once", async () => {
+  mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: floorTables });
+  const { container, root } = await mount("waiter");
+  const table = container.querySelector(".mesa-table");
+  const pointer = (type, x, y) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 3 });
+    act(() => { table.dispatchEvent(event); });
+  };
+  pointer("pointerdown", 50, 50);
+  pointer("pointerup", 50, 50);
+  click(table);
+  await flush();
+  expect(mesaApi.openTable).toHaveBeenCalledTimes(1);
+  expect(mesaApi.openTable).toHaveBeenCalledWith("table-1");
+  unmount(container, root);
+});
+
+test("a table tile renders as a native <button>, so Enter/Space activation is preserved by the browser, not custom logic", async () => {
+  const { container, root } = await mount();
+  const table = container.querySelector(".mesa-table");
+  expect(table.tagName).toBe("BUTTON");
+  unmount(container, root);
+});
+
 test.each([1, 3, 5])("in Personalizar sala, %ipx of travel is still a tap -- no drag, menu opens", async (px) => {
   const { container, root } = await mount();
   click(buttonByText(container, "🛠 Personalizar sala"));

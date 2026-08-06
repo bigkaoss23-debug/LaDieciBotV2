@@ -240,6 +240,20 @@ const css = `
    height stay the outer, rendered size regardless of border-width. */
 .mesa-table{box-sizing:border-box;position:absolute;transform:translate(-50%,-50%);width:100px;height:100px;padding:8px;overflow:visible;-webkit-tap-highlight-color:transparent;border-style:solid;border-width:2px;border-color:var(--tc);color:#fff;background:var(--tb);box-shadow:0 8px 22px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.16);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none;user-select:none;transition:box-shadow .15s,filter .15s}
 .mesa-table:hover{filter:brightness(1.14);box-shadow:0 10px 26px rgba(0,0,0,.46),0 0 20px color-mix(in srgb,var(--tc) 28%,transparent)}
+/* MESA_POINTER_TARGET_SHIFT fix -- the global button:active{transform:scale(.96)}
+   (constants.js G, mounted app-wide) has higher specificity (0,1,1) than the bare
+   .mesa-table{transform:translate(-50%,-50%)} above (0,1,0), so on native :active
+   (real pointerdown, on mouse/touch/pen alike) it fully REPLACED this element's own
+   transform -- CSS transform is a single property, never merged across rules --
+   dropping the -50%,-50% centering. The tile's box-sizing:border-box footprint then
+   rendered from its raw (un-centered) left/top, jumping down-right by half its own
+   size before the matching pointerup/click ever fired, so the release always
+   hit-tested the parent .mesa-board instead of the button: the tap silently did
+   nothing. .mesa-table:active (0,2,0) outranks button:active (0,1,1), so pinning
+   transform back here -- with no scale at all, since geometry must stay byte-identical
+   through the whole gesture -- neutralizes it without touching the global button
+   press effect anywhere else in the app. */
+.mesa-table:active{transform:translate(-50%,-50%)}
 .mesa-table.round{border-radius:999px}.mesa-table.square{border-radius:16px}.mesa-table.rectangle{width:132px;border-radius:16px}.mesa-table.rectangle-long{width:168px;border-radius:16px}
 /* Edit mode: "estoy moviendo/editando mesas", never "estoy leyendo el estado
    de cocina" -- a flat, neutral dashed border replaces whatever operational
