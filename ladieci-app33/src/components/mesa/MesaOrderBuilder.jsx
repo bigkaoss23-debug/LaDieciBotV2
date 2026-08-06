@@ -9,22 +9,22 @@ import PizzaCustomBuilder from '../PizzaCustomBuilder';
 
 const COVER_QUICK_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
 
-// Le pizze custom (PizzaCustomBuilder) sono inserite grezze nel carrello, mai
-// passate da buildEmittedItem — esattamente come ItemPickerModal le tratta
-// oggi (onAdd diretto, mai attraverso il carrello di lavoro "+Extra, nota").
+// Custom pizzas (PizzaCustomBuilder) are inserted raw into the cart, never
+// passed through buildEmittedItem — exactly how ItemPickerModal treats them
+// today (direct onAdd, never through the "+Extra, note" working cart).
 const isCustomRaw = (item) => typeof item?.id === "string" && item.id.startsWith("custom_");
 
 /**
- * MesaOrderBuilder — Opzione C dell'audit (V1_STAGING_MESA_ORDER_FLOW_PICKER_
- * ARCHITECTURE_AUDIT.md): builder Mesa dedicato che sostituisce il passaggio
- * per NuevoPedidoModal. Nessuna schermata cliente/telefono/dirección/planner:
- * solo coperti (se mancanti) → workspace picker con carrello persistente →
- * invio diretto con lo stesso contratto backend di sempre (mesaApi.addCommand
- * via onSubmit, passato dal chiamante).
+ * MesaOrderBuilder — Option C from the audit (V1_STAGING_MESA_ORDER_FLOW_
+ * PICKER_ARCHITECTURE_AUDIT.md): a dedicated Mesa builder replacing the
+ * NuevoPedidoModal pass-through. No customer/phone/direccion/planner screen:
+ * just covers (only if missing) -> persistent-cart picker workspace ->
+ * direct submit through the same backend contract as always
+ * (mesaApi.addCommand via onSubmit, passed in by the caller).
  *
- * Il carrello e la logica di emissione (buildEmittedItem, extras, note,
- * ingredienti rimossi) sono gli STESSI di ItemPickerModal — riusati tramite
- * useOrderCart, non riscritti.
+ * The cart and its emission logic (buildEmittedItem, extras, notes, removed
+ * ingredients) are the SAME ones ItemPickerModal uses — reused via
+ * useOrderCart, not rewritten.
  */
 const MesaOrderBuilder = ({ target, onClose, onSubmit }) => {
   const [coversValue, setCoversValue] = useState(target?.coversTotal ?? null);
@@ -118,7 +118,7 @@ const MesaOrderBuilder = ({ target, onClose, onSubmit }) => {
     }
   };
 
-  // ── Step 1: coperti (solo se mancanti) ──────────────────────────────────
+  // ── Step 1: covers (only if missing) ──────────────────────────────────
   if (step === "covers") {
     return (
       <div onClick={onClose} style={overlayStyle}>

@@ -69,7 +69,7 @@ beforeEach(() => {
   setWidth(1280);
 });
 
-// 1. prima comanda con coperti null -- mostra scelta coperti
+// 1. first comanda with covers null -- shows the covers picker
 test("covers null shows the compact covers step first", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: null }) });
   expect(container.textContent).toContain("¿Cuántos comensales?");
@@ -77,7 +77,7 @@ test("covers null shows the compact covers step first", async () => {
   unmount(container, root);
 });
 
-// 2. scelta coperti -- apre picker immediatamente
+// 2. picking covers -- opens the picker immediately
 test("picking covers opens the picker workspace immediately, no intermediate screen", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: null }) });
   click(byTestId(container, "covers-quick-4"));
@@ -88,7 +88,7 @@ test("picking covers opens the picker workspace immediately, no intermediate scr
   unmount(container, root);
 });
 
-// 3. Cancelar sui coperti -- nessuna API
+// 3. Cancelar on the covers step -- no API call
 test("Cancelar on the covers step aborts without ever calling onSubmit", async () => {
   const { container, root, onClose, onSubmit } = await mount({ target: target({ coversTotal: null }) });
   click(buttonByText(container, "Cancelar"));
@@ -97,7 +97,7 @@ test("Cancelar on the covers step aborts without ever calling onSubmit", async (
   unmount(container, root);
 });
 
-// 4. coperti non persistiti separatamente -- scegliere i coperti da solo non chiama mai onSubmit
+// 4. covers are never persisted separately -- picking them alone never calls onSubmit
 test("choosing covers alone never calls onSubmit -- it's only bundled at final submit", async () => {
   const { container, root, onSubmit } = await mount({ target: target({ coversTotal: null }) });
   click(byTestId(container, "covers-quick-4"));
@@ -122,7 +122,7 @@ test("first comanda submit bundles the freshly chosen coversTotal atomically wit
   unmount(container, root);
 });
 
-// 6. comanda successiva -- picker diretto
+// 6. next comanda -- straight to the picker
 test("when covers are already known, the builder opens straight to the picker", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 4 }) });
   expect(container.textContent).not.toContain("¿Cuántos comensales?");
@@ -130,7 +130,7 @@ test("when covers are already known, the builder opens straight to the picker", 
   unmount(container, root);
 });
 
-// 7. carrello sopravvive ad apertura/chiusura del sottopicker (extras panel + category switch)
+// 7. cart survives opening/closing the sub-picker (extras panel + category switch)
 test("cart survives opening/closing the extras sub-panel and switching categories", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   click(productCard(container, "El Pelusa"));
@@ -153,7 +153,7 @@ test("cart survives opening/closing the extras sub-panel and switching categorie
   unmount(container, root);
 });
 
-// 8. aggiunta di più categorie
+// 8. adding items from multiple categories
 test("items from multiple categories accumulate in the same persistent cart", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   click(productCard(container, "El Pelusa"));
@@ -168,7 +168,7 @@ test("items from multiple categories accumulate in the same persistent cart", as
   unmount(container, root);
 });
 
-// 9. quantita
+// 9. quantity
 test("tapping a product again increments its quantity badge; drawer +/- also works", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   click(productCard(container, "El Pelusa"));
@@ -184,7 +184,7 @@ test("tapping a product again increments its quantity badge; drawer +/- also wor
   unmount(container, root);
 });
 
-// 10. extra e ingredienti rimossi
+// 10. extras and removed ingredients
 test("extras and removed-ingredient toggles reach the submitted payload", async () => {
   const onSubmit = jest.fn().mockResolvedValue({ ok: true });
   const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
@@ -210,7 +210,7 @@ test("extras and removed-ingredient toggles reach the submitted payload", async 
   unmount(container, root);
 });
 
-// 11. nota per linea
+// 11. per-line note
 test("a per-line note on a non-pizza item reaches the submitted item", async () => {
   const onSubmit = jest.fn().mockResolvedValue({ ok: true });
   const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
@@ -227,7 +227,7 @@ test("a per-line note on a non-pizza item reaches the submitted item", async () 
   unmount(container, root);
 });
 
-// 12. nota general
+// 12. general note
 test("the general note reaches onSubmit as `nota`", async () => {
   const onSubmit = jest.fn().mockResolvedValue({ ok: true });
   const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
@@ -242,7 +242,7 @@ test("the general note reaches onSubmit as `nota`", async () => {
   unmount(container, root);
 });
 
-// 13. entrambi i nomi prodotto e ID preservati
+// 13. both product names and ID preserved
 test("submitted item preserves product id, classic name and fantasy name -- no silent remap", async () => {
   const onSubmit = jest.fn().mockResolvedValue({ ok: true });
   const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
@@ -260,7 +260,7 @@ test("submitted item preserves product id, classic name and fantasy name -- no s
   unmount(container, root);
 });
 
-// 14. modifica riga
+// 14. edit a line
 test("editing a line via the pencil updates that same line, not a duplicate", async () => {
   const onSubmit = jest.fn().mockResolvedValue({ ok: true });
   const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
@@ -284,7 +284,7 @@ test("editing a line via the pencil updates that same line, not a duplicate", as
   unmount(container, root);
 });
 
-// 15. eliminazione riga
+// 15. remove a line
 test("removing a line via the trash button drops it from the cart and the submitted payload", async () => {
   const onSubmit = jest.fn().mockResolvedValue({ ok: true });
   const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
@@ -305,7 +305,7 @@ test("removing a line via the trash button drops it from the cart and the submit
   unmount(container, root);
 });
 
-// 16. totale corretto
+// 16. correct total
 test("total shown in the sticky bar matches the sum of line subtotals", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   click(productCard(container, "El Pelusa")); // 12.0
@@ -318,7 +318,7 @@ test("total shown in the sticky bar matches the sum of line subtotals", async ()
   unmount(container, root);
 });
 
-// 17. barra sticky corretta
+// 17. correct sticky bar
 test("the sticky bar shows item count, total and a Ver comanda action, disabled while empty", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   expect(byTestId(container, "mesa-ver-comanda").disabled).toBe(true);
@@ -329,7 +329,7 @@ test("the sticky bar shows item count, total and a Ver comanda action, disabled 
   unmount(container, root);
 });
 
-// 18. submit una sola volta
+// 18. submit only once
 test("a normal submit calls onSubmit exactly once", async () => {
   const onSubmit = jest.fn().mockResolvedValue({ ok: true });
   const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
@@ -343,7 +343,7 @@ test("a normal submit calls onSubmit exactly once", async () => {
   unmount(container, root);
 });
 
-// 19. doppio tap non duplica
+// 19. double tap does not duplicate
 test("a rapid double tap on Enviar never sends a second request -- button disables synchronously", async () => {
   let resolveSubmit;
   const onSubmit = jest.fn(() => new Promise((resolve) => { resolveSubmit = resolve; }));
@@ -364,7 +364,7 @@ test("a rapid double tap on Enviar never sends a second request -- button disabl
   unmount(container, root);
 });
 
-// 20. client request ID stabile nel retry
+// 20. client request ID stable across retry
 test("client_req_id stays identical across a failed submit and its retry", async () => {
   const onSubmit = jest.fn()
     .mockRejectedValueOnce({ code: "MESA_NETWORK_ERROR" })
@@ -383,7 +383,7 @@ test("client_req_id stays identical across a failed submit and its retry", async
   unmount(container, root);
 });
 
-// 21. errore conserva intera bozza
+// 21. error keeps the whole draft
 test("a failed submit shows the error and keeps covers, cart and note intact for retry", async () => {
   const onSubmit = jest.fn().mockRejectedValue({ code: "MESA_SERVER_ERROR" });
   const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
@@ -401,7 +401,7 @@ test("a failed submit shows the error and keeps covers, cart and note intact for
   unmount(container, root);
 });
 
-// 23. nessun campo delivery/telefono/planner nel percorso Mesa
+// 23. no delivery/phone/planner field on the Mesa path
 test("no delivery/customer/planner surface leaks into the Mesa builder", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   const text = container.textContent;
@@ -427,7 +427,7 @@ test("on a tablet/desktop-width viewport the picker panel keeps its rounded floa
   unmount(container, root);
 });
 
-// 27. accessibilita
+// 27. accessibility
 test("the picker step exposes a labelled dialog role", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   const dialog = container.querySelector('[role="dialog"]');

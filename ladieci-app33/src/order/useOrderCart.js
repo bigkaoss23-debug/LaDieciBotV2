@@ -207,10 +207,10 @@ export function useOrderCart({ MENU, INGREDIENTI }) {
     return uid;
   };
 
-  // Inserisce una riga già pronta (es. pizza custom da PizzaCustomBuilder) SENZA
-  // farla passare dalla working shape "+Extra, nota" — esattamente come
-  // ItemPickerModal la passa oggi direttamente a onAdd, bypassando il carrello
-  // interno. Aggiunta alla stessa mappa così qty/remove restano generici.
+  // Inserts an already-built line (e.g. a custom pizza from PizzaCustomBuilder)
+  // WITHOUT passing it through the working "+Extra, nota" shape — exactly how
+  // ItemPickerModal passes it directly to onAdd today, bypassing its internal
+  // cart. Added to the same map so qty/remove stay generic.
   const addRaw = (item) => {
     const uid = item._uid || genId();
     setCart(prev => ({ ...prev, [uid]: { ...item, _uid: uid, q: item.q || 1 } }));
