@@ -80,6 +80,29 @@ const emptySession = (overrides = {}) => ({
   ...overrides,
 });
 
+// Fixed clock, not real wall time: several tests below build reservations at
+// Date.now() + N hours to probe "today" vs. "tonight" grouping
+// (isRelevantReservation in TabMesa.jsx compares Europe/Madrid calendar
+// dates). With the real clock, any run landing late enough in the Madrid day
+// makes a +3h offset spill into the next calendar day and silently changes
+// which reservations count as "tonight" -- a suite-order-independent flake
+// tied to the wall-clock hour, not to test order or machine locale. Pinning
+// to noon UTC (14:00 in Madrid's summer DST) keeps every offset used in this
+// file (up to +26h is never added forward, only -26h back for "otherDay")
+// safely inside the same or a deliberately different calendar day, in any
+// process TZ. Only Date is faked -- TabMesa's own setInterval/setTimeout
+// calls run on the real clock, unaffected.
+beforeAll(() => {
+  jest.useFakeTimers({
+    doNotFake: ["setTimeout", "setInterval", "clearTimeout", "clearInterval", "nextTick", "setImmediate", "queueMicrotask", "hrtime", "performance"],
+  });
+  jest.setSystemTime(new Date("2026-08-05T12:00:00.000Z"));
+});
+
+afterAll(() => {
+  jest.useRealTimers();
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
   // react-scripts' jest config sets resetMocks:true, which strips even the
