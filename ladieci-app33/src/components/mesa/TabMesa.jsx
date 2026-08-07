@@ -1185,13 +1185,36 @@ export default function TabMesa({
   // atomically with the first comanda. Guarded against a double tap on the same
   // table firing two opens; a genuinely concurrent open from another device is
   // still safely rejected by the backend's own table-account-open guard.
+  //
+  // FREE_TABLE_OPEN_LATENCY_01 -- does NOT go through opened() (which awaits a
+  // full quiet floor reload before showing the workspace): openTable's own
+  // response is already authoritative for everything the workspace needs to
+  // render (sessionId, coversTotal), and a table it just created cannot yet
+  // have any commands/payments/total -- that's not an optimistic guess, it's
+  // what "freshly opened" means per the backend's own contract (covers are
+  // always NULL at open time; see mesaService.open()'s own comment). So the
+  // workspace opens straight off that one response -- no second round trip
+  // gates it -- while the floor's fuller shape (position/shape/reservations,
+  // nothing the workspace itself needs) reconciles in the background, fired
+  // but not awaited, so it can never block or re-delay the tap.
   const openWalkIn = async (table) => {
     if (openingWalkInRef.current.has(table.id)) return;
     openingWalkInRef.current.add(table.id);
     setOpeningIds((prev) => new Set(prev).add(table.id));
     try {
-      await mesaApi.openTable(table.id);
-      await opened(table.id);
+      const result = await mesaApi.openTable(table.id);
+      setTables((current) => current.map((t) => t.id === table.id ? {
+        ...t,
+        status: "open",
+        session: {
+          id: result.sessionId, coversTotal: result.coversTotal ?? null,
+          coversRemaining: 0, total: 0, paid: 0, outstanding: 0, nextEqualShare: 0,
+          paymentTotals: {}, commands: [], lines: [], payments: [],
+        },
+      } : t));
+      setMenuId(null); setShowReservations(false); setReservationEditor(null);
+      setSelectedId(table.id);
+      load({ quiet: true });
     } catch (err) {
       notify?.(`❌ ${describeMesaError(err)}`, C.rosso);
       await load({ quiet: true });

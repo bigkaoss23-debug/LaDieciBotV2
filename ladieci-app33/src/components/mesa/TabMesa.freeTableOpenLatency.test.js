@@ -99,7 +99,12 @@ beforeEach(() => {
   createMesaRequestId.mockReturnValue("mesa_test_request");
   describeMesaError.mockImplementation((error) => error?.code || "error");
   mesaApi.floor.mockResolvedValue({ ok: true, tables: freeTables });
-  mesaApi.openTable.mockResolvedValue({ ok: true });
+  // Real shape captured live from staging's POST /tables/:id/open (2026-08-07):
+  // {"ok":true,"status":"open","tableId":"...","openedAt":"...",
+  //  "sessionId":"...","coversTotal":null,"displayName":"Mesa 7","tableNumber":7}
+  mesaApi.openTable.mockImplementation((tableId) => Promise.resolve({
+    ok: true, status: "open", tableId, sessionId: `session-${tableId}`, coversTotal: null,
+  }));
   mesaApi.releaseEmptyTable.mockResolvedValue({ ok: true });
 });
 
@@ -162,7 +167,7 @@ test("5. the second tap is never lost: the map never shows the blocking loading 
   const floorGate = deferred();
   mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: freeTables }); // initial mount load
   const { container, root } = await mount();
-  mesaApi.floor.mockImplementationOnce(() => floorGate.promise); // opened()'s own reload
+  mesaApi.floor.mockImplementationOnce(() => floorGate.promise); // background reconciliation
   const [a, b] = tableButtons(container);
   click(a);
   await flush();
@@ -175,6 +180,34 @@ test("5. the second tap is never lost: the map never shows the blocking loading 
   click(bStill);
   await flush();
   expect(mesaApi.openTable).toHaveBeenCalledWith("table-2");
+  floorGate.resolve({ ok: true, tables: openedTables(["table-1"]) });
+  await flush();
+  unmount(container, root);
+});
+
+// CASE A (ideal) vs CASE B (partial) -- this is the specific distinction the
+// audit report demands: the workspace must render off openTable's own
+// authoritative response, NOT wait for a second (floor) round trip. If this
+// regresses back to Case B, this test fails while test 5 above would still
+// pass (it only proves taps aren't lost, not that latency is fixed).
+test("5b. IDEAL case: the workspace opens off openTable's own response -- it never waits for the background floor reconciliation", async () => {
+  mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: freeTables }); // initial mount load
+  const { container, root } = await mount();
+  const floorGate = deferred();
+  mesaApi.floor.mockImplementationOnce(() => floorGate.promise); // background reconciliation -- deliberately never resolved in this test
+  const a = tableButtons(container)[0];
+  click(a);
+  await flush();
+  // The background floor call is still pending (unresolved) at this point,
+  // yet the workspace must already be visible and usable, built entirely
+  // from openTable's own response.
+  const modal = container.querySelector(".mesa-modal-head");
+  expect(modal).not.toBeNull();
+  expect(modal.textContent).toContain("Mesa 1");
+  expect(container.textContent).toContain("Todavía no hay comandas");
+  // Session id came straight from openTable's response, not a placeholder.
+  const closeBtn = container.querySelector(".mesa-close");
+  expect(closeBtn).not.toBeNull();
   floorGate.resolve({ ok: true, tables: openedTables(["table-1"]) });
   await flush();
   unmount(container, root);
