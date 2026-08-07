@@ -271,6 +271,13 @@ const css = `
 .mesa-table.is-editing.thick{border-width:2px}
 .mesa-table.is-dragging{cursor:grabbing;z-index:4;filter:brightness(1.2)}
 .mesa-table.thick{border-width:4px}
+/* FREE_TABLE_OPEN_LATENCY_01 -- immediate per-table tap feedback while its
+   own open() round-trip is in flight (see openingIds' comment). Scoped to
+   this one tile only -- every other table keeps its normal fill/cursor and
+   stays fully tappable. pointer-events:none only blocks a second tap on
+   THIS same table; the ref-based dedupe in openWalkIn already guarded
+   against that, this is belt-and-braces plus the visual cue. */
+.mesa-table.opening{opacity:.55;filter:grayscale(.35);cursor:wait;pointer-events:none}
 .mesa-table.selected{box-shadow:0 0 0 3px rgba(247,240,223,.75),0 8px 22px rgba(0,0,0,.34)}
 @keyframes mesa-ready-pulse{0%,100%{box-shadow:0 8px 22px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.16),0 0 0 0 rgba(34,197,94,0)}50%{box-shadow:0 8px 22px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.16),0 0 22px 7px rgba(34,197,94,.65)}}
 .mesa-table.ready-pulse{animation:mesa-ready-pulse 1.35s ease-in-out infinite}
@@ -1126,6 +1133,12 @@ export default function TabMesa({
   const [reservationsFilterTableId, setReservationsFilterTableId] = useState(null);
   const [reservationEditor, setReservationEditor] = useState(null);
   const [printDocument, setPrintDocument] = useState(null);
+  // FREE_TABLE_OPEN_LATENCY_01 -- per-table (not global) pending state, purely
+  // visual: the dead-simple ref-based dedupe below already prevents a second
+  // request for the SAME table; this state exists only so that one specific
+  // table's tile can show immediate tap feedback (dimmed, cursor:wait) while
+  // its own open() round-trip is in flight, without touching any other table.
+  const [openingIds, setOpeningIds] = useState(() => new Set());
   const boardRef = useRef(null);
   const dragRef = useRef(null);
   const suppressClickRef = useRef(null);
@@ -1152,8 +1165,19 @@ export default function TabMesa({
     setMenuId(null); setShowReservations(false);
     setReservationEditor({ reservation, tableId: reservation?.tableId || tableId || activeTables[0]?.id || null });
   };
+  // FREE_TABLE_OPEN_LATENCY_01 -- quiet on purpose: this used to be a bare
+  // load(), which flips the component's GLOBAL `loading` flag and replaces
+  // the entire mesa-board (every table button, for every table, not just
+  // the one just opened) with a "Cargando el plano de mesas..." banner for
+  // the ~400-500ms the floor refetch takes. During that window the whole
+  // map was unmounted -- a second tap on ANY other table (e.g. closing this
+  // one and opening a different free table right after) landed on nothing
+  // and was silently lost, sometimes for 3-4 attempts in a row. `tables`
+  // state still gets the same fresh floor data either way; quiet only skips
+  // the blocking full-screen replacement, so the map -- and every other
+  // table's own tap target -- stays live and interactive throughout.
   const opened = async (tableId) => {
-    await load();
+    await load({ quiet: true });
     setMenuId(null); setShowReservations(false); setReservationEditor(null);
     setSelectedId(tableId);
   };
@@ -1164,6 +1188,7 @@ export default function TabMesa({
   const openWalkIn = async (table) => {
     if (openingWalkInRef.current.has(table.id)) return;
     openingWalkInRef.current.add(table.id);
+    setOpeningIds((prev) => new Set(prev).add(table.id));
     try {
       await mesaApi.openTable(table.id);
       await opened(table.id);
@@ -1172,6 +1197,7 @@ export default function TabMesa({
       await load({ quiet: true });
     } finally {
       openingWalkInRef.current.delete(table.id);
+      setOpeningIds((prev) => { const next = new Set(prev); next.delete(table.id); return next; });
     }
   };
   // Covers (when the table's first comanda hasn't set them yet) are now asked
@@ -1270,10 +1296,14 @@ export default function TabMesa({
         // the table number for attention. Full reservation detail (name,
         // time, covers, phone) lives one tap away, inside the popup.
         const isReservedFree = state === STATUS.reserved && !!nextReservation;
+        // FREE_TABLE_OPEN_LATENCY_01 -- per-table pending feedback, see
+        // openingIds' own comment: immediate, scoped to this one tile only.
+        const opening = openingIds.has(table.id);
         const classes = [
           "mesa-table", variantIdOf(table.shape, table.shapePreset),
           editing ? "is-editing" : "", dragging ? "is-dragging" : "",
           border.thick ? "thick" : "", ready ? "ready-pulse" : "", selected ? "selected" : "",
+          opening ? "opening" : "",
         ].filter(Boolean).join(" ");
         return <button key={table.id} className={classes} style={{ left: `${table.x}%`, top: `${table.y}%`, "--tc": border.color, "--tb": state.bg }} onPointerDown={(event) => pointerDown(event, table)} onClick={() => {
           if (suppressClickRef.current === table.id) { suppressClickRef.current = null; return; }
