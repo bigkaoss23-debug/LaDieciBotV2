@@ -106,7 +106,7 @@ describe("Mesa capacity settings", () => {
   });
 
   test("red is reserved for Eliminar mesa; Cerrar mesa (a genuinely empty, non-destructive release) is neutral", () => {
-    expect(source).toContain('<button className="mesa-btn mesa-menu-action" disabled={busy} onClick={openCloseConfirm}><strong>Cerrar mesa</strong>');
+    expect(source).toContain('<button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>');
     expect(source).not.toMatch(/onClick=\{openCloseConfirm\}>[\s\S]{0,5}(danger|red)/);
     expect(source).toContain('<button className="mesa-btn red" disabled={busy} onClick={remove}>Eliminar mesa</button>');
   });

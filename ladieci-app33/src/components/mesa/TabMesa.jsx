@@ -368,10 +368,10 @@ const css = `
   .mesa-overlay{align-items:flex-end;padding:0}
   .mesa-modal{width:100%;max-width:100%;max-height:94vh;border-radius:20px 20px 0 0;border-left:none;border-right:none;border-bottom:none}
   /* The only sheets that force real height: ones with actual comanda
-     content to show (size="tall" on Modal, see TableContextPopup/
-     TableDetail). Free/reserved/no-order sheets stay their natural
-     shrink-to-content height -- short on purpose, not padded out to match.
-     70-85vh range as specified; 80vh split the difference. */
+     content to show (size="tall" on Modal, see MesaWorkspace). Free/
+     reserved/no-order sheets stay their natural shrink-to-content height --
+     short on purpose, not padded out to match. 70-85vh range as specified;
+     80vh split the difference. */
   .mesa-modal.tall{min-height:min(80vh,94vh)}
   .mesa-modal-body{padding-bottom:calc(22px + env(safe-area-inset-bottom,0px))}
 }
@@ -445,28 +445,34 @@ function CerrarMesaDialog({ tableNumber, busy, error, onCancel, onConfirm }) {
   </div>;
 }
 
-// Shared comanda card -- same format everywhere a comanda is listed (the
-// table popup's quick summary and Ver cuenta's full detail), so a waiter
-// never has to learn two different layouts for the same information.
-// Real product names/quantities and the note, not just a count -- a count
-// alone ("2 productos") told a waiter nothing about whether this was the
-// margherita-and-a-coke table or the one with the food allergy note.
-// action is an optional per-command control (only TableDetail wires
-// "✓ Servida" through it; the popup stays a read-only glance, same as before).
-function CommandCard({ command, action }) {
+// Shared comanda card -- the ONE place a comanda's product list ever renders
+// (MesaWorkspace; nowhere else). Collapsed by default: a table with several
+// comandas must stay scannable (number + state + time), and the full product/
+// modifier/note detail is one tap away, not always-on screen real estate.
+// action is an optional per-command control (MesaWorkspace wires "✓ Servida"
+// through it for a ready comanda).
+function CommandCard({ command, action, defaultExpanded = false }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const productCount = (command.items || []).reduce((sum, item) => sum + (Number(item.q) || 1), 0);
   return <div className="mesa-command-card">
-    <div className="mesa-command-head">
+    <button type="button" onClick={() => setExpanded((value) => !value)} style={{
+      display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none",
+      border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left",
+    }}>
       <strong>Comanda #{command.commandNumber}</strong>
-      <span className="mesa-muted">{command.time || "ahora"}</span>
       <span className="mesa-chip" style={command.state === "LISTO" ? { borderColor: "#22C55E", color: "#22C55E" } : undefined}>{commandStateLabel(command.state)}</span>
-      {action}
-    </div>
-    <div className="mesa-muted" style={{ fontSize: 12, marginTop: 4 }}>{productCount} producto{productCount === 1 ? "" : "s"}</div>
-    {(command.items || []).length > 0 && <ul className="mesa-command-items">
-      {command.items.map((item, index) => <li key={index}>{Number(item.q) > 1 ? `${item.q}× ` : ""}{item.n}</li>)}
-    </ul>}
-    {command.note && <div className="mesa-command-note">Nota: {command.note}</div>}
+      <span className="mesa-muted" style={{ marginLeft: "auto" }}>{command.time || "ahora"}</span>
+      <span style={{ color: "#a99d89", transform: expanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
+    </button>
+    {!expanded && <div className="mesa-muted" style={{ fontSize: 12, marginTop: 4 }}>{productCount} producto{productCount === 1 ? "" : "s"}</div>}
+    {expanded && <>
+      <div className="mesa-muted" style={{ fontSize: 12, marginTop: 6 }}>{productCount} producto{productCount === 1 ? "" : "s"}</div>
+      {(command.items || []).length > 0 && <ul className="mesa-command-items">
+        {command.items.map((item, index) => <li key={index}>{Number(item.q) > 1 ? `${item.q}× ` : ""}{item.n}</li>)}
+      </ul>}
+      {command.note && <div className="mesa-command-note">Nota: {command.note}</div>}
+      {action && <div style={{ marginTop: 8, display: "flex" }}>{action}</div>}
+    </>}
   </div>;
 }
 
@@ -564,9 +570,23 @@ function PaymentModal({ table, mode, onClose, onPaid }) {
   </Modal>;
 }
 
-function TableDetail({ table, onClose, onNewCommand, onRefresh, onPrint }) {
+// VerCuentaModal -- the ONLY financial surface. Total/Cobrado/Pendiente,
+// payment actions, printable tickets, Pendiente de pago. It never creates or
+// lists comandas (that's MesaWorkspace, which opens this by button, not the
+// other way around) -- "Elegir productos" here is a partial-payment line
+// picker (which already-billed lines this payment settles), not a second
+// order-creator, so it stays exactly as-is.
+// "A la romana" is removed as a UI entry point (rejected product decision):
+// no equal_split payment button. "Imprimir división" is KEPT and semantically
+// decoupled from it -- its content (a single ticket with an equal per-person
+// subtotal, no separate accounts created) is exactly the shape a future
+// "Dividir por persona" print would need, so the underlying computation
+// (equalShares) and this read-only preview survive; only its printed title
+// changes from "A LA ROMANA" to the neutral "DIVISIÓN POR PERSONA". The
+// equal_split PAYMENT mode itself is untouched at the API/PaymentModal level
+// -- no backend or ledger change, only this entry point is gone.
+function VerCuentaModal({ table, onClose, onRefresh, onPrint }) {
   const [paymentMode, setPaymentMode] = useState(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const session = table.session;
   const shares = equalShares(session?.outstanding, session?.coversRemaining);
@@ -583,7 +603,7 @@ function TableDetail({ table, onClose, onNewCommand, onRefresh, onPrint }) {
     note: session.paid > 0 ? "Incluye únicamente lo que queda por pagar." : "Cuenta completa de la mesa.",
   });
   const splitDocument = () => ({
-    title: "DIVISIÓN A LA ROMANA", tableNumber: table.number,
+    title: "DIVISIÓN POR PERSONA", tableNumber: table.number,
     rows: shares.map((share, index) => ({ label: `Persona ${index + 1}`, value: euro(share) })),
     totalLabel: "PENDIENTE", total: session.outstanding,
     note: `${session.coversRemaining} persona${session.coversRemaining === 1 ? "" : "s"} pendiente${session.coversRemaining === 1 ? "" : "s"}`,
@@ -605,6 +625,57 @@ function TableDetail({ table, onClose, onNewCommand, onRefresh, onPrint }) {
     });
     await onRefresh();
   };
+
+  return <>
+    <Modal title={`Mesa ${table.number} · Cuenta`} onClose={onClose}>
+      <div className="mesa-summary">
+        <div className="mesa-stat"><small>Total</small><strong>{euro(session.total)}</strong></div>
+        <div className="mesa-stat"><small>Cobrado</small><strong style={{ color: "#65d995" }}>{euro(session.paid)}</strong></div>
+        <div className="mesa-stat"><small>Pendiente</small><strong style={{ color: "#ffc65c" }}>{euro(session.outstanding)}</strong></div>
+        <div className="mesa-stat"><small>Personas</small><strong>{session.coversTotal == null ? "—" : `${session.coversRemaining}/${session.coversTotal}`}</strong></div>
+      </div>
+      {table.status === "open" && <>
+        <div className="mesa-actions">
+          {session.outstanding > 0 && <button className="mesa-btn green" onClick={() => setPaymentMode("full")}>Cobrar todo</button>}
+          {remainingLines.length > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("item_selection")}>Elegir productos</button>}
+          {session.outstanding > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("custom_amount")}>Importe libre</button>}
+        </div>
+        <div className="mesa-actions">
+          {session.outstanding > 0 && <button className="mesa-btn gold" onClick={() => onPrint(billDocument())}>🖨 Cuenta pendiente</button>}
+          {shares.length > 0 && <button className="mesa-btn" onClick={() => onPrint(splitDocument())}>🖨 Imprimir división</button>}
+        </div>
+      </>}
+      {paymentTotals.length > 0 && <div className="mesa-section"><h3>Cobrado por método</h3>{paymentTotals.map(([method, amount]) => <div className="mesa-row" key={method}><span>{METHODS.find((item) => item.id === method)?.label || method}</span><strong>{euro(amount)}</strong></div>)}</div>}
+      {remainingLines.length > 0 && <div className="mesa-section"><h3>Pendiente de pago</h3>{remainingLines.map((line) => <div className="mesa-row" key={line.id}><span>{line.description}</span><strong>{euro(line.remaining)}</strong></div>)}</div>}
+      {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
+    </Modal>
+    {paymentMode && <PaymentModal table={table} mode={paymentMode} onClose={() => setPaymentMode(null)} onPaid={paid} />}
+  </>;
+}
+
+// MesaWorkspace -- the ONE operative surface for an occupied table (replaces
+// the old TableContextPopup-occupied-branch + TableDetail split, which
+// rendered the same comanda list in two different modals reachable from the
+// same tap). Comandas, Nueva comanda and Cerrar mesa live here; anything
+// financial (totals, payment, printable tickets) is one explicit "Ver
+// cuenta" tap away, in VerCuentaModal, never inlined here.
+function MesaWorkspace({
+  table, onClose, onNewCommand, onRefresh, onPrint,
+  canManageReservations, onEditReservation, onViewNight, onChanged, onOpened,
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [showAccount, setShowAccount] = useState(false);
+  // Collapsed by default, same as the free/reserved popup -- an occupied
+  // table can still have a LATER reservation booked for tonight; that must
+  // stay visible here too (it used to show in the old popup regardless of
+  // occupied state), just never competing with the comandas for attention.
+  const [reservationOpen, setReservationOpen] = useState(false);
+  const session = table.session;
+  const hasOrders = (session?.commands?.length || 0) > 0;
+  const todayReservations = bookedForToday(table);
+  const nextReservation = todayReservations[0];
+
   const markServed = async (orderId) => {
     setBusy(true); setError("");
     try { await mesaApi.markServed(session.id, orderId); await onRefresh(); }
@@ -620,38 +691,40 @@ function TableDetail({ table, onClose, onNewCommand, onRefresh, onPrint }) {
     catch (err) { setError(describeMesaError(err)); setBusy(false); }
   };
 
-  return <>
-    <Modal title={`Mesa ${table.number}`} subtitle={`${STATUS.occupied.label}${session.coversTotal == null ? " · aún sin comensales" : ` · ${session.coversTotal} cubiertos`}`} onClose={onClose} size={session.commands.length > 0 ? "tall" : undefined}>
-      <div className="mesa-summary">
-        <div className="mesa-stat"><small>Total</small><strong>{euro(session.total)}</strong></div>
-        <div className="mesa-stat"><small>Cobrado</small><strong style={{ color: "#65d995" }}>{euro(session.paid)}</strong></div>
-        <div className="mesa-stat"><small>Pendiente</small><strong style={{ color: "#ffc65c" }}>{euro(session.outstanding)}</strong></div>
-        <div className="mesa-stat"><small>Personas</small><strong>{session.coversTotal == null ? "—" : `${session.coversRemaining}/${session.coversTotal}`}</strong></div>
-      </div>
+  // "Mesa 6 (4 pax)" -- no "Ocupada", no second line, no cubiertos wording.
+  // Unknown covers -> just "Mesa 6".
+  const title = `Mesa ${table.number}${session.coversTotal != null ? ` (${session.coversTotal} pax)` : ""}`;
 
-      {table.status === "open" && <>
-        <div className="mesa-actions">
-          <button className="mesa-btn primary" onClick={() => { onClose(); onNewCommand(table); }}>＋ Nueva comanda</button>
-          {session.coversTotal == null && <button className="mesa-btn danger" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
-          {session.outstanding > 0 && <button className="mesa-btn green" onClick={() => setPaymentMode("full")}>Cobrar todo</button>}
-          {session.outstanding > 0 && session.coversRemaining > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("equal_split")}>A la romana · {euro(session.nextEqualShare)}</button>}
-          {remainingLines.length > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("item_selection")}>Elegir productos</button>}
-          {session.outstanding > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("custom_amount")}>Importe libre</button>}
-        </div>
-        <div className="mesa-actions">
-          {session.outstanding > 0 && <button className="mesa-btn gold" onClick={() => onPrint(billDocument())}>🖨 Cuenta pendiente</button>}
-          {shares.length > 0 && <button className="mesa-btn" onClick={() => onPrint(splitDocument())}>🖨 Imprimir división</button>}
-        </div>
-      </>}
-      {paymentTotals.length > 0 && <div className="mesa-section"><h3>Cobrado por método</h3>{paymentTotals.map(([method, amount]) => <div className="mesa-row" key={method}><span>{METHODS.find((item) => item.id === method)?.label || method}</span><strong>{euro(amount)}</strong></div>)}</div>}
-      <div className="mesa-section"><h3>Comandas de cocina</h3>{session.commands.length === 0 ? <div className="mesa-muted">Todavía no hay comandas.</div> : <div className="mesa-commands-scroll">
-        {session.commands.map((command) => <CommandCard key={command.id} command={command}
-          action={command.state === "LISTO" ? <button className="mesa-btn green" style={{ marginLeft: "auto" }} disabled={busy} onClick={() => markServed(command.id)}>✓ Servida</button> : null} />)}
-      </div>}</div>
-      {remainingLines.length > 0 && <div className="mesa-section"><h3>Pendiente de pago</h3>{remainingLines.map((line) => <div className="mesa-row" key={line.id}><span>{line.description}</span><strong>{euro(line.remaining)}</strong></div>)}</div>}
+  return <>
+    <Modal title={title} onClose={onClose} size={hasOrders ? "tall" : undefined}>
+      <div className="mesa-section" style={{ marginTop: 0 }}>
+        <h3>Comandas</h3>
+        {!hasOrders ? <div className="mesa-muted">Todavía no hay comandas.</div> : <div className="mesa-commands-scroll">
+          {session.commands.map((command) => <CommandCard key={command.id} command={command}
+            action={command.state === "LISTO" ? <button className="mesa-btn green" style={{ marginLeft: "auto" }} disabled={busy} onClick={() => markServed(command.id)}>✓ Servida</button> : null} />)}
+        </div>}
+      </div>
+      <div className="mesa-actions">
+        <button className="mesa-btn primary" onClick={() => { onClose(); onNewCommand(table); }}>＋ Nueva comanda</button>
+        <button className="mesa-btn gold" onClick={() => setShowAccount(true)}>Ver cuenta</button>
+        {session.coversTotal == null && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
+      </div>
+      {nextReservation && <div className="mesa-section">
+        <button type="button" onClick={() => setReservationOpen((value) => !value)}
+          style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left" }}>
+          <i className="mesa-dot" style={{ background: STATUS.reserved.color, flexShrink: 0 }} />
+          <strong style={{ flex: 1 }}>Próxima reserva</strong>
+          <span className="mesa-chip">Reservada</span>
+          <span style={{ color: "#a99d89", transform: reservationOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}>⌄</span>
+        </button>
+        {reservationOpen && <div style={{ marginTop: 10 }}>
+          <ReservationItem reservation={nextReservation} table={table} onEdit={onEditReservation} onChanged={onChanged} onOpened={onOpened} />
+        </div>}
+        {todayReservations.length > 1 && canManageReservations && <button className="mesa-btn small" style={{ marginTop: 9 }} onClick={onViewNight}>Ver reservas de la noche ({todayReservations.length})</button>}
+      </div>}
       {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
     </Modal>
-    {paymentMode && <PaymentModal table={table} mode={paymentMode} onClose={() => setPaymentMode(null)} onPaid={paid} />}
+    {showAccount && <VerCuentaModal table={table} onClose={() => setShowAccount(false)} onRefresh={onRefresh} onPrint={onPrint} />}
     {confirmingClose && <CerrarMesaDialog tableNumber={table.number} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
   </>;
 }
@@ -791,31 +864,34 @@ function ReservationAgenda({ tables, onClose, onNew, onEdit, onChanged, onOpened
   </Modal>;
 }
 
-// The single contextual popup covering every non-instant-open tap: content and
-// actions branch on state (yellow=reserved, red=occupied without/with a
-// comanda), plus the layout-editing extras when Personalizar sala is active.
-// "Ver reserva" has no separate click: the reservation's full detail is always
-// shown right here. In the occupied-with-orders branch, "Ver pedido"/"Ir al
-// pago" both land on the same "Ver cuenta" screen -- this app has one unified
-// account view (comandas + payment), not separate order/payment screens.
+// The contextual popup for every tap that isn't an instant walk-in-open and
+// isn't an occupied table (occupied -> MesaWorkspace directly, see the click
+// handler in the main component below): free-with-a-tonight-reservation,
+// reserved, and Personalizar sala editing. An occupied table only ever
+// reaches this popup while editing (Ajustes/Eliminar) -- MesaWorkspace is the
+// one and only place a comanda list or "Nueva comanda" renders, so this
+// component carries neither, even in that edit-mode case.
+// "Ver reserva" has no separate click: the reservation's full detail is
+// always shown right here.
 function TableContextPopup({
   table, canEdit, editing, canManageReservations,
-  onClose, onOpenTable, onOpenAccount, onStartCommand,
+  onClose, onOpenTable,
   onNewReservation, onEditReservation, onViewNight,
   onChanged, onOpened, onSettings,
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // Collapsed by default -- the reservation is background information here,
-  // not the reason the popup opened. "Crear pedido" (or the comanda summary
-  // for an occupied table) is always the first thing a waiter sees; the
-  // reservation card only expands on request.
+  // not the reason the popup opened. "Crear pedido" is always the first
+  // thing a waiter sees; the reservation card only expands on request.
   const [reservationOpen, setReservationOpen] = useState(false);
   const todayReservations = bookedForToday(table);
   const nextReservation = todayReservations[0];
+  // This popup only ever sees an occupied table while editing (Ajustes/
+  // Eliminar) -- the click handler below routes a non-editing occupied tap
+  // straight to MesaWorkspace. isOccupied is still needed to gate "Eliminar
+  // mesa" (a table with an open account can't be deleted from the floor).
   const isOccupied = table.status === "open";
-  const session = table.session;
-  const hasOrders = isOccupied && (session?.commands?.length || 0) > 0;
 
   const remove = async () => {
     if (isOccupied) { setError("Cobra la cuenta antes de eliminar esta mesa."); return; }
@@ -826,64 +902,26 @@ function TableContextPopup({
       await onChanged(); onClose();
     } catch (err) { setError(describeMesaError(err)); setBusy(false); }
   };
-  const [confirmingClose, setConfirmingClose] = useState(false);
-  const openCloseConfirm = () => setConfirmingClose(true);
-  const cancelCloseConfirm = () => { if (!busy) { setConfirmingClose(false); setError(""); } };
-  const confirmClose = async () => {
-    setBusy(true); setError("");
-    try { await mesaApi.releaseEmptyTable(session.id); setConfirmingClose(false); await onChanged(); onClose(); }
-    catch (err) { setError(describeMesaError(err)); setBusy(false); }
-  };
 
-  const subtitle = isOccupied ? (hasOrders ? "Ocupada" : "Ocupada · sin comanda")
-    : nextReservation ? "Reservada" : "Libre";
+  const subtitle = isOccupied ? "Ocupada" : nextReservation ? "Reservada" : "Libre";
 
-  return <>
-  <Modal title={`Mesa ${table.number}`} subtitle={subtitle} onClose={busy ? undefined : onClose} width={640} size={hasOrders ? "tall" : undefined}>
-    {isOccupied && !hasOrders && <div className="mesa-banner" style={{ marginTop: 0 }}>Ningún pedido enviado.</div>}
-
-    {/* Real comanda content right in the popup -- product names and note,
-        not just a count -- so a waiter can see what's actually going on at
-        this table without leaving to "Ver cuenta", which stays the one
-        place for payment. Own bounded scroll region: on a table with many
-        comandas this can grow past what fits on screen, but it must never
-        push the primary actions below it out of view (see .mesa-commands-
-        scroll), and it's what makes the sheet actually tall instead of a
-        short popup floating over a mostly-empty backdrop (see the "tall"
-        size passed to Modal above). */}
-    {isOccupied && hasOrders && <div className="mesa-section" style={{ marginTop: 0 }}>
-      <h3>Comandas</h3>
-      <div className="mesa-commands-scroll">
-        {(session.commands || []).map((command) => <CommandCard key={command.id} command={command} />)}
-      </div>
-    </div>}
-
-    <div className="mesa-menu-grid" style={{ marginTop: isOccupied ? 16 : 0 }}>
+  return <Modal title={`Mesa ${table.number}`} subtitle={subtitle} onClose={busy ? undefined : onClose} width={640}>
+    <div className="mesa-menu-grid">
       {/* Strict separation: order/account actions only outside Personalizar
           sala, layout actions only inside it -- never both in the same
-          grid. Editing a table's shape/capacity is a different job from
-          taking its order, and mixing the two invites tapping "Eliminar
-          mesa" while meaning to tap "Ver cuenta" (or vice versa). A waiter
-          (canEdit=false) never sees editing=true at all, so this changes
-          nothing for them.
+          grid. An occupied table never reaches this grid at all outside
+          editing (see the click handler in the main component below) --
+          MesaWorkspace is the only "take/see this table's order" surface.
           Labelled "Crear pedido" (not "Abrir mesa") on purpose -- to a
           waiter this button IS "start taking the order for this table";
           that it also opens the table's session first is an implementation
           detail, not a separate step they should have to think about. */}
       {!editing && !isOccupied && !nextReservation && <button className="mesa-btn mesa-menu-action primary" onClick={onOpenTable}><strong>＋ Crear pedido</strong><span>Un cliente se sienta ahora, sin consumir una reserva</span></button>}
       {!editing && !isOccupied && nextReservation && <button className="mesa-btn mesa-menu-action primary" onClick={onOpenTable}><strong>＋ Crear pedido</strong><span>La reserva futura seguirá activa.</span></button>}
-      {!editing && isOccupied && !hasOrders && <>
-        <button className="mesa-btn mesa-menu-action green" onClick={onStartCommand}><strong>Crear pedido</strong><span>Primera comanda de esta mesa</span></button>
-        <button className="mesa-btn mesa-menu-action" disabled={busy} onClick={openCloseConfirm}><strong>Cerrar mesa</strong><span>Todavía no hay ningún pedido</span></button>
-      </>}
-      {!editing && isOccupied && hasOrders && <>
-        <button className="mesa-btn mesa-menu-action green" onClick={onStartCommand}><strong>Añadir pedido</strong><span>Nueva comanda para esta mesa</span></button>
-        <button className="mesa-btn mesa-menu-action gold" onClick={onOpenAccount}><strong>Ver cuenta</strong><span>Pedidos, cobros y pago</span></button>
-      </>}
       {canEdit && editing && <button className="mesa-btn mesa-menu-action gold" onClick={onSettings}><strong>Ajustes de mesa</strong><span>Número, capacidad y forma</span></button>}
       {canEdit && editing && <button className="mesa-btn mesa-menu-action red" disabled={busy} onClick={remove}><strong>Eliminar mesa</strong><span>Conserva todo el historial</span></button>}
     </div>
-    {editing && <div className="mesa-banner" style={{ marginTop: isOccupied ? 16 : 0 }}>Saliendo de Personalizar sala podrás tomar pedidos o cobrar esta mesa.</div>}
+    {editing && <div className="mesa-banner" style={{ marginTop: 16 }}>Saliendo de Personalizar sala podrás tomar pedidos o cobrar esta mesa.</div>}
 
     {/* Reservation: collapsed by default, one tap to expand -- background
         information here, never competing with the primary action above for
@@ -908,10 +946,8 @@ function TableContextPopup({
       {todayReservations.length > 1 && canManageReservations && <button className="mesa-btn small" onClick={onViewNight}>Ver reservas de la noche ({todayReservations.length})</button>}
       {canManageReservations && <button className="mesa-btn small gold" onClick={onNewReservation}>＋ Nueva reserva</button>}
     </div>}
-    {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 10 }}>{error}</div>}
-  </Modal>
-  {confirmingClose && <CerrarMesaDialog tableNumber={table.number} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
-  </>;
+    {error && <div className="mesa-banner mesa-error" style={{ marginTop: 10 }}>{error}</div>}
+  </Modal>;
 }
 
 // Visual shape choice: three icon buttons instead of a text dropdown, always
@@ -1185,6 +1221,11 @@ export default function TabMesa({ role, notify, onNewCommand, onCountChange, ref
         return <button key={table.id} className={classes} style={{ left: `${table.x}%`, top: `${table.y}%`, "--tc": border.color, "--tb": state.bg }} onPointerDown={(event) => pointerDown(event, table)} onClick={() => {
           if (suppressClickRef.current === table.id) { suppressClickRef.current = null; return; }
           if (!editing && table.status === "free" && todayReservations.length === 0) { openWalkIn(table); return; }
+          // An occupied table (outside Personalizar sala) goes straight to
+          // MesaWorkspace -- the one operative surface for that table, no
+          // intermediate quick-menu hop. Free-with-reservation and editing
+          // still go through the popup (see TableContextPopup).
+          if (!editing && table.status === "open") { setSelectedId(table.id); return; }
           setMenuId(table.id);
         }}>
           {isReservedFree && <span className="mesa-badge mesa-badge-reserved">Reservada</span>}
@@ -1209,15 +1250,13 @@ export default function TabMesa({ role, notify, onNewCommand, onCountChange, ref
     <div className="mesa-dock">
       {!editing && canManageReservations && <button className="mesa-btn primary" onClick={() => { setReservationsFilterTableId(null); setShowReservations(true); }}>📅 Reservas · Beta</button>}
       {canEdit && editing && <button className="mesa-btn gold" onClick={() => setShowAdd(true)}>＋ Añadir mesa</button>}
-      {canEdit && <button className={`mesa-btn ${editing ? "primary" : ""}`} onClick={() => setEditing((value) => { const next = !value; if (!next) { setSettingsId(null); setShowAdd(false); } return next; })}>{editing ? "✓ Salir de Personalizar sala" : "🛠 Personalizar sala"}</button>}
+      {canEdit && <button className={`mesa-btn ${editing ? "primary" : ""}`} onClick={() => setEditing((value) => { const next = !value; if (!next) { setSettingsId(null); setShowAdd(false); setMenuId(null); } return next; })}>{editing ? "✓ Salir de Personalizar sala" : "🛠 Personalizar sala"}</button>}
       <button className="mesa-btn icon" title="Actualizar el plano" aria-label="Actualizar el plano" onClick={() => load()}>↻</button>
     </div>
     {menuTable && <TableContextPopup
       table={menuTable} canEdit={canEdit} editing={editing} canManageReservations={canManageReservations}
       onClose={() => setMenuId(null)}
       onOpenTable={() => { setMenuId(null); openWalkIn(menuTable); }}
-      onOpenAccount={() => { setMenuId(null); setSelectedId(menuTable.id); }}
-      onStartCommand={() => { setMenuId(null); startNewCommand(menuTable); }}
       onNewReservation={() => openEditor(null, menuTable.id)}
       onEditReservation={(reservation) => openEditor(reservation, menuTable.id)}
       onViewNight={() => { setMenuId(null); setReservationsFilterTableId(menuTable.id); setShowReservations(true); }}
@@ -1225,7 +1264,13 @@ export default function TabMesa({ role, notify, onNewCommand, onCountChange, ref
       onOpened={opened}
       onSettings={() => { setMenuId(null); setSettingsId(menuTable.id); }}
     />}
-    {selected?.status === "open" && <TableDetail table={selected} onClose={() => setSelectedId(null)} onNewCommand={startNewCommand} onRefresh={() => load({ quiet: true })} onPrint={setPrintDocument} />}
+    {selected?.status === "open" && <MesaWorkspace table={selected} onClose={() => setSelectedId(null)} onNewCommand={startNewCommand} onRefresh={() => load({ quiet: true })} onPrint={setPrintDocument}
+      canManageReservations={canManageReservations}
+      onEditReservation={(reservation) => openEditor(reservation, selected.id)}
+      onViewNight={() => { setSelectedId(null); setReservationsFilterTableId(selected.id); setShowReservations(true); }}
+      onChanged={() => load({ quiet: true })}
+      onOpened={opened}
+    />}
     {settingsTable && <TableSettingsModal table={settingsTable} onClose={() => setSettingsId(null)} onSaved={() => load()} />}
     {showAdd && <AddTableModal tables={tables} onClose={() => setShowAdd(false)} onSaved={() => load()} />}
     {showReservations && <ReservationAgenda tables={activeTables} initialTableId={reservationsFilterTableId} onClose={() => { setShowReservations(false); setReservationsFilterTableId(null); }} onNew={() => openEditor()} onEdit={(reservation) => openEditor(reservation)} onChanged={() => load({ quiet: true })} onOpened={opened} />}

@@ -447,7 +447,7 @@ test("a double tap on a free table only opens it once", async () => {
   unmount(container, root);
 });
 
-test("an occupied Mesa with no comanda yet offers Crear pedido and Cerrar mesa directly, and opens the order builder immediately (covers are asked inside MesaOrderBuilder, not here)", async () => {
+test("an occupied Mesa with no comanda yet opens MesaWorkspace directly, offering Nueva comanda, Ver cuenta and Cerrar mesa", async () => {
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession() }
     : table);
@@ -457,11 +457,12 @@ test("an occupied Mesa with no comanda yet offers Crear pedido and Cerrar mesa d
   expect(container.querySelector(".mesa-badge-order")).toBeFalsy();
   click(container.querySelector(".mesa-table"));
   const dialog = container.querySelector('[role="dialog"]');
-  expect(dialog.textContent).toContain("Ocupada · sin comanda");
-  expect(dialog.textContent).toContain("Crear pedido");
+  // No "Ocupada" subtitle and no second line -- just the compact title.
+  expect(dialog.textContent).not.toContain("Ocupada");
+  expect(dialog.textContent).toContain("＋ Nueva comanda");
+  expect(dialog.textContent).toContain("Ver cuenta");
   expect(dialog.textContent).toContain("Cerrar mesa");
-  expect(dialog.textContent).not.toContain("Ver cuenta");
-  click(buttonByText(container, "Crear pedido"));
+  click(buttonByText(container, "＋ Nueva comanda"));
   // TabMesa no longer gates on coversTotal itself -- it just forwards the
   // table; the caller (MesaOrderBuilder, mounted by ServicioPage) decides
   // whether to show its own covers step from table.session.coversTotal.
@@ -563,7 +564,7 @@ test("a second click on Cerrar mesa (confirm) while the request is in flight nev
   unmount(container, root);
 });
 
-test("an occupied Mesa with an order shows a green (not red) thick border, comanda summary, and offers Añadir pedido / Ver cuenta, never asking for covers again", async () => {
+test("an occupied Mesa with an order shows a green (not red) thick border, comanda summary, and offers Nueva comanda / Ver cuenta, never asking for covers again", async () => {
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }], time: "21:00" }] }) }
     : table);
@@ -577,24 +578,27 @@ test("an occupied Mesa with an order shows a green (not red) thick border, coman
   expect(card.getAttribute("style")).toContain("--tb: rgba(239,68,68,.22)");
   click(card);
   const dialog = container.querySelector('[role="dialog"]');
-  expect(dialog.textContent).toContain("Añadir pedido");
+  expect(dialog.textContent).toContain("＋ Nueva comanda");
   expect(dialog.textContent).toContain("Ver cuenta");
   expect(dialog.textContent).toContain("Comandas");
   expect(dialog.textContent).toContain("#1");
   expect(dialog.textContent).toContain("21:00");
   expect(dialog.textContent).toContain("En cocina");
   expect(dialog.textContent).not.toContain("Crear pedido");
+  expect(dialog.textContent).not.toContain("Añadir pedido");
   expect(dialog.textContent).not.toContain("Cerrar mesa");
-  click(buttonByText(container, "Añadir pedido"));
+  click(buttonByText(container, "＋ Nueva comanda"));
   expect(onNewCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "table-1" }));
   unmount(container, root);
 });
 
-test("in Personalizar sala, an occupied table's popup offers only layout actions -- never Crear/Añadir pedido, Cerrar mesa or Ver cuenta", async () => {
+test("in Personalizar sala, an occupied table's popup offers only layout actions -- never Nueva comanda, Cerrar mesa or Ver cuenta", async () => {
   // Regression test: TableContextPopup used to gate Ajustes de mesa /
   // Eliminar mesa on `editing` but never gated the order/account buttons
   // the other way, so entering Personalizar sala and tapping an occupied
-  // table showed both sets of actions stacked in the same popup.
+  // table showed both sets of actions stacked in the same popup. Since the
+  // consolidation into MesaWorkspace, an occupied table outside editing
+  // never even reaches this popup -- editing is the ONLY way it does.
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }], time: "21:00" }] }) }
     : table);
@@ -606,22 +610,23 @@ test("in Personalizar sala, an occupied table's popup offers only layout actions
   expect(dialog.textContent).toContain("Ajustes de mesa");
   expect(dialog.textContent).toContain("Eliminar mesa");
   expect(dialog.textContent).not.toContain("Crear pedido");
-  expect(dialog.textContent).not.toContain("Añadir pedido");
+  expect(dialog.textContent).not.toContain("Nueva comanda");
   expect(dialog.textContent).not.toContain("Ver cuenta");
   expect(dialog.textContent).not.toContain("Cerrar mesa");
-  // Leaving Personalizar sala restores the order actions and hides the
-  // layout-only ones, with no reload needed.
+  expect(dialog.textContent).not.toContain("Comandas");
+  // Leaving Personalizar sala restores MesaWorkspace (direct, no popup hop)
+  // and hides the layout-only actions, with no reload needed.
   click(buttonByText(container, "✓ Salir de Personalizar sala"));
   click(container.querySelector(".mesa-table"));
   const dialog2 = container.querySelector('[role="dialog"]');
-  expect(dialog2.textContent).toContain("Añadir pedido");
+  expect(dialog2.textContent).toContain("＋ Nueva comanda");
   expect(dialog2.textContent).toContain("Ver cuenta");
   expect(dialog2.textContent).not.toContain("Ajustes de mesa");
   expect(dialog2.textContent).not.toContain("Eliminar mesa");
   unmount(container, root);
 });
 
-test("a table with two comandas shows both, distinct, in the order the backend returned them, and Añadir pedido stays available for a third", async () => {
+test("a table with two comandas shows both, collapsed by default, expandable independently and distinct, and Nueva comanda stays available for a third", async () => {
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [
         { id: "o1", commandNumber: 1, state: "RETIRADO", items: [{ n: "Margherita" }], time: "20:50", note: "sin cebolla" },
@@ -632,27 +637,39 @@ test("a table with two comandas shows both, distinct, in the order the backend r
   const { container, root } = await mount("waiter");
   click(container.querySelector(".mesa-table"));
   const dialog = container.querySelector('[role="dialog"]');
-  const cards = Array.from(dialog.querySelectorAll(".mesa-command-card")).map((card) => card.textContent);
+  let cards = Array.from(dialog.querySelectorAll(".mesa-command-card")).map((card) => card.textContent);
   expect(cards).toHaveLength(2);
+  // Collapsed: number, state and time are always visible; product detail is not.
   expect(cards[0]).toContain("#1");
   expect(cards[0]).toContain("20:50");
-  expect(cards[0]).toContain("Margherita");
-  expect(cards[0]).toContain("Nota: sin cebolla");
   expect(cards[0]).toContain("Servido");
+  expect(cards[0]).not.toContain("Margherita");
   expect(cards[1]).toContain("#2");
   expect(cards[1]).toContain("21:10");
+  expect(cards[1]).toContain("En cocina");
+  expect(cards[1]).not.toContain("Coca-Cola");
+  // Expanding #1 reveals its own products/note without touching #2.
+  const cardEls = Array.from(dialog.querySelectorAll(".mesa-command-card"));
+  click(cardEls[0].querySelector("button"));
+  cards = Array.from(dialog.querySelectorAll(".mesa-command-card")).map((card) => card.textContent);
+  expect(cards[0]).toContain("Margherita");
+  expect(cards[0]).toContain("Nota: sin cebolla");
+  expect(cards[1]).not.toContain("Margherita");
+  expect(cards[1]).not.toContain("sin cebolla");
+  expect(cards[1]).not.toContain("Coca-Cola");
+  // Expanding #2 independently reveals its own 2 products.
+  click(cardEls[1].querySelector("button"));
+  cards = Array.from(dialog.querySelectorAll(".mesa-command-card")).map((card) => card.textContent);
   expect(cards[1]).toContain("2 productos");
   expect(cards[1]).toContain("Coca-Cola");
   expect(cards[1]).toContain("Agua");
-  expect(cards[1]).toContain("En cocina");
-  // first comanda's own note/products never leak into the second's card or vice versa
-  expect(cards[1]).not.toContain("sin cebolla");
   expect(cards[0]).not.toContain("Coca-Cola");
   // the sheet actively grows for a table with real comandas to show, not
   // just the default shrink-to-content popup size
   expect(dialog.querySelector(".mesa-modal").className).toContain("tall");
-  expect(dialog.textContent).toContain("Añadir pedido");
+  expect(dialog.textContent).toContain("＋ Nueva comanda");
   expect(dialog.textContent).not.toContain("Crear pedido");
+  expect(dialog.textContent).not.toContain("Añadir pedido");
   unmount(container, root);
 });
 
@@ -754,7 +771,7 @@ test("a partial (item_selection) payment keeps the table occupied and recalculat
   }));
   await flush();
   dialogs = container.querySelectorAll('[role="dialog"]');
-  expect(dialogs).toHaveLength(2); // TableDetail stays open beneath the printed receipt
+  expect(dialogs).toHaveLength(3); // MesaWorkspace + VerCuentaModal stay open beneath the printed receipt
   expect(container.textContent).toContain("RECIBO DE PAGO");
   expect(container.textContent).toContain("Pago parcial registrado.");
   unmount(container, root);
@@ -791,7 +808,7 @@ test("a rejected Cerrar mesa keeps the confirm dialog open with an inline error,
   expect(dialogAfter).toBeTruthy();
   expect(dialogAfter.textContent).toContain("MESA_SESSION_NOT_EMPTY");
   // still occupied, still offering the same actions -- not left half-closed
-  expect(container.querySelector('[role="dialog"]').textContent).toContain("Crear pedido");
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("＋ Nueva comanda");
   expect(mesaApi.releaseEmptyTable).toHaveBeenCalledTimes(1);
   unmount(container, root);
 });
@@ -812,7 +829,7 @@ test("a failed payment shows an inline error and keeps the table's outstanding b
   click(buttonByText(container, "Confirmar cobro"));
   await flush();
   const dialogs = container.querySelectorAll('[role="dialog"]');
-  expect(dialogs).toHaveLength(2); // payment modal stays open on top of the account view
+  expect(dialogs).toHaveLength(3); // payment modal stays open on top of MesaWorkspace + VerCuentaModal
   expect(dialogs[dialogs.length - 1].textContent).toContain("MESA_PAYMENT_DECLINED");
   expect(container.textContent).not.toContain("RECIBO DE PAGO");
   expect(container.textContent).toMatch(/Pendiente20,00\s?€/);
@@ -851,7 +868,7 @@ test("a slow payment request disables Confirmar cobro until it settles, so a sec
   unmount(container, root);
 });
 
-test("an occupied Mesa with NO order yet shows a thick red border and 'Ningún pedido enviado'", async () => {
+test("an occupied Mesa with NO order yet shows a thick red border and 'Todavía no hay comandas'", async () => {
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession() } : table);
   mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
@@ -861,7 +878,7 @@ test("an occupied Mesa with NO order yet shows a thick red border and 'Ningún p
   expect(card.getAttribute("style")).toContain("--tc: #EF4444");
   click(card);
   const dialog = container.querySelector('[role="dialog"]');
-  expect(dialog.textContent).toContain("Ningún pedido enviado");
+  expect(dialog.textContent).toContain("Todavía no hay comandas");
   unmount(container, root);
 });
 
@@ -881,7 +898,7 @@ test("occupied + a future relevant reservation stays red (never yellow); the res
   expect(card.textContent).not.toContain("Reservada"); // that badge is the free+reserved case only
   click(card);
   const dialog = container.querySelector('[role="dialog"]');
-  expect(dialog.textContent).toContain("Crear pedido"); // primary action, unaffected
+  expect(dialog.textContent).toContain("＋ Nueva comanda"); // primary action, unaffected
   // The reservation is present but collapsed (secondary), not driving the fill.
   click(buttonByText(dialog, "Próxima reserva"));
   expect(dialog.textContent).toContain("Laura");
