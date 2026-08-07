@@ -3,6 +3,7 @@ import { C, useWidth } from '../../constants';
 import { ORDER_STATES } from '../../core/orders';
 import TabListos from './TabListos';
 import ListosArchivados from './ListosArchivados';
+import { useTakeawayArchivedOrders } from './useTakeawayArchivedOrders';
 import { WaiterListosView } from '../../waiter/WaiterListos';
 import { useMesaReadyCommands } from '../../waiter/useMesaReadyCommands';
 
@@ -39,6 +40,7 @@ const ListosUnificado = ({
   notify, refreshKey, onSalaCountChange, listosN,
 }) => {
   const { readyRows, servedRows, loading, error, busyId, markServed } = useMesaReadyCommands({ notify, refreshKey });
+  const { archivedOrdenes } = useTakeawayArchivedOrders({ refreshKey });
   const width = useWidth();
   const isPhone = width < SALA_COLUMN_BREAKPOINT;
   const [filter, setFilter] = useState('todo'); // 'todo' | 'sala' | 'takeaway'
@@ -51,8 +53,21 @@ const ListosUnificado = ({
   useEffect(() => { onSalaCountChange?.(salaCount); }, [salaCount, onSalaCountChange]);
 
   // Archivados: completed items only, distinguished by type but never
-  // counted towards the active badges above.
-  const retiradosTakeaway = ordenes.filter(o => !o.table_session_id && o.estado === ORDER_STATES.RETIRADO);
+  // counted towards the active badges above. Sourced from the session-scoped
+  // getOrdenesArchivadosSesion read (useTakeawayArchivedOrders), NOT from the
+  // realtime-driven `ordenes` prop -- that one intentionally drops RETIRADO
+  // rows the moment its own active-state query excludes them, so it cannot
+  // survive a poll/refresh. Mesa is excluded (table_session_id) since its own
+  // archive already comes from servedRows above. An order still showing as
+  // active in `ordenes` (a brief transition window before its next realtime
+  // refresh) is filtered out of the archive view here rather than risking it
+  // rendering in both places at once.
+  const activeTakeawayIds = new Set(
+    ordenes
+      .filter(o => !o.table_session_id && (o.estado === ORDER_STATES.LISTO || o.estado === ORDER_STATES.EN_ENTREGA))
+      .map(o => o.id)
+  );
+  const retiradosTakeaway = archivedOrdenes.filter(o => !o.table_session_id && !activeTakeawayIds.has(o.id));
 
   const takeawayColumn = <TabListos
     ordenes={ordenes} onRetirado={onRetirado} onVolverACocina={onVolverACocina}

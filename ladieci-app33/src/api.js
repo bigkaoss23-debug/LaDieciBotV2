@@ -341,6 +341,18 @@ const api = {
       items: typeof o.items === "string" ? JSON.parse(o.items) : (o.items||[])
     })), ts: Date.now() };
   },
+  // LISTOS_ARCHIVADOS_V1 — session-scoped terminal orders (sibling of getOrdenes
+  // above, same service-scoping, same reason to go through the authenticated
+  // proxy rather than a client-side time window). Powers Listos "Archivados" so
+  // a Retirado order survives a poll/refresh instead of vanishing the moment
+  // getOrdenes' own active-state filter excludes it.
+  getOrdenesArchivadosSesion: async function() {
+    const rows = await proxyGet("getOrdenesArchivadosSesion");
+    return { ordenes: (rows||[]).map(o => ({
+      ...o, ts: Number(o.ts)||Date.now(), llegado: o.llegado===true,
+      items: typeof o.items === "string" ? JSON.parse(o.items) : (o.items||[])
+    })), ts: Date.now() };
+  },
   getWaMsgs: async function() {
     const H24 = 24*60*60*1000;
     const rows = await sb.select("wa_msgs", "order=ts.desc&limit=100");

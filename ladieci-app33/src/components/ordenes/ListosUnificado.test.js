@@ -16,9 +16,15 @@ jest.mock("../../mesa/mesaApi", () => ({
 
 jest.mock("../../sounds", () => ({ __esModule: true, default: { mesaListo: jest.fn(), conferma: jest.fn() } }));
 
+jest.mock("../../api", () => ({
+  __esModule: true,
+  api: { getOrdenesArchivadosSesion: jest.fn() },
+}));
+
 const ListosUnificado = require("./ListosUnificado").default;
 const { mesaApi } = require("../../mesa/mesaApi");
 const Suoni = require("../../sounds").default;
+const { api } = require("../../api");
 
 function click(element) {
   act(() => { element.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
@@ -83,6 +89,7 @@ async function renderPage(props) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  api.getOrdenesArchivadosSesion.mockResolvedValue({ ordenes: [] });
   setWidth(1280);
 });
 
@@ -189,7 +196,8 @@ test("Archivados row: closed by default, count sums served Sala + Retirado Takea
       session: { id: "session-1", commands: [{ id: "o1", commandNumber: 1, state: "RETIRADO", items: [{ n: "El Pelusa" }] }] },
     }],
   });
-  const { container, root } = await renderPage({ ordenes: [pickupOrder, retiradoOrder], listosN: 1 });
+  api.getOrdenesArchivadosSesion.mockResolvedValue({ ordenes: [retiradoOrder] });
+  const { container, root } = await renderPage({ ordenes: [pickupOrder], listosN: 1 });
   const archBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.startsWith("Archivados"));
   expect(archBtn.textContent).toContain("2");
   expect(container.textContent).not.toContain("Carla");
@@ -201,6 +209,104 @@ test("Archivados row: closed by default, count sums served Sala + Retirado Takea
   // Archived items never move the live badge or filter counts.
   expect(filterButton(container, "Sala").textContent).toBe("Sala (0)");
   expect(filterButton(container, "Takeaway").textContent).toBe("Takeaway (1)");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+// ── Archivados survives polling/refresh (LISTOS_ARCHIVADOS_V1) ─────────────
+test("a Retirado order does NOT disappear from Archivados when ordenes' next poll drops it (realtime re-sync)", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+  api.getOrdenesArchivadosSesion.mockResolvedValue({ ordenes: [retiradoOrder] });
+  const { container, root } = await renderPage({ ordenes: [pickupOrder, retiradoOrder], listosN: 1 });
+  // Simulate ServicioPage's realtime reload: `ordenes` refreshes to the
+  // backend's active-only snapshot, which no longer carries the Retirado row
+  // at all (its own documented, pre-existing behavior -- see getOrdenes).
+  await act(async () => { root.render(<ListosUnificado {...baseProps} ordenes={[pickupOrder]} listosN={1} />); });
+  await flush();
+  const archBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.startsWith("Archivados"));
+  expect(archBtn.textContent).toContain("1");
+  click(archBtn);
+  await flush();
+  expect(container.textContent).toContain("Carla");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+test("a fresh mount (simulating a full page reload) rebuilds Archivados straight from the backend, not from React state", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+  api.getOrdenesArchivadosSesion.mockResolvedValue({ ordenes: [retiradoOrder] });
+  // No prior render, no prior state -- exactly what a hard reload looks like.
+  const { container, root } = await renderPage({ ordenes: [pickupOrder], listosN: 1 });
+  expect(api.getOrdenesArchivadosSesion).toHaveBeenCalledTimes(1);
+  const archBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.startsWith("Archivados"));
+  click(archBtn);
+  await flush();
+  expect(container.textContent).toContain("Carla");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+test("a network error while refetching Archivados keeps the last known authoritative data instead of wiping it", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+  api.getOrdenesArchivadosSesion.mockResolvedValueOnce({ ordenes: [retiradoOrder] });
+  const { container, root } = await renderPage({ ordenes: [pickupOrder], listosN: 1, refreshKey: 0 });
+  const archBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.startsWith("Archivados"));
+  click(archBtn);
+  await flush();
+  expect(container.textContent).toContain("Carla");
+  api.getOrdenesArchivadosSesion.mockRejectedValueOnce(new Error("network down"));
+  await act(async () => { root.render(<ListosUnificado {...baseProps} ordenes={[pickupOrder]} listosN={1} refreshKey={1} />); });
+  await flush();
+  expect(container.textContent).toContain("Carla");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+test("Delivery (DOMICILIO) terminal order is classified into the Delivery group, not Recogida", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+  // language-guard: allow-legacy existing backend field name (tipo_consegna), not new vocabulary
+  const deliveryRetirado = { ...retiradoOrder, id: "R2", nombre: "Mario", tipo_consegna: "DOMICILIO" };
+  api.getOrdenesArchivadosSesion.mockResolvedValue({ ordenes: [deliveryRetirado] });
+  const { container, root } = await renderPage({ ordenes: [pickupOrder], listosN: 1 });
+  const archBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.startsWith("Archivados"));
+  click(archBtn);
+  await flush();
+  expect(container.textContent).toContain("Delivery (1)");
+  expect(container.textContent).toContain("Recogida (0)");
+  expect(container.textContent).toContain("Mario");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+test("a Mesa row leaking into the archive source (table_session_id set) is excluded from Recogida/Delivery -- Mesa's own archive is Sala only", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+  const mesaLeak = { ...retiradoOrder, id: "R3", nombre: "MesaLeakArchive", table_session_id: "session-1" };
+  api.getOrdenesArchivadosSesion.mockResolvedValue({ ordenes: [retiradoOrder, mesaLeak] });
+  const { container, root } = await renderPage({ ordenes: [pickupOrder], listosN: 1 });
+  const archBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.startsWith("Archivados"));
+  expect(archBtn.textContent).toContain("1"); // only the real Takeaway one counts
+  click(archBtn);
+  await flush();
+  expect(container.textContent).not.toContain("MesaLeakArchive");
+  expect(container.textContent).toContain("Carla");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+test("an order still active in ordenes (transition race) is not shown in Archivados at the same time", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+  // The archive endpoint already sees it as terminal, but the realtime-driven
+  // `ordenes` snapshot hasn't caught up yet and still reports it LISTO.
+  const stillActiveInOrdenes = { ...pickupOrder, id: "P9", estado: "LISTO" };
+  const sameOrderTerminalInArchive = { ...retiradoOrder, id: "P9" };
+  api.getOrdenesArchivadosSesion.mockResolvedValue({ ordenes: [sameOrderTerminalInArchive] });
+  const { container, root } = await renderPage({ ordenes: [stillActiveInOrdenes], listosN: 1 });
+  const archBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.startsWith("Archivados"));
+  expect(archBtn.textContent).toContain("0");
+  click(archBtn);
+  await flush();
+  // Shows once (as active), never in Archivados at the same time.
+  expect(container.textContent).not.toContain("Carla");
   act(() => { root.unmount(); });
   container.remove();
 });
