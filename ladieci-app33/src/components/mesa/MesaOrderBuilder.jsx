@@ -232,12 +232,14 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
                       {lbl.secondary && <div style={{ color: "#a99f8b", fontSize: 12, fontStyle: "italic", lineHeight: 1.2, marginTop: 1 }}>{lbl.secondary}</div>}
                       <div style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 13, fontWeight: 800, marginTop: 4 }}>{p.p.toFixed(2)}€</div>
                       {/* Discreto, solo se p.num esiste — numero ufficiale del menù,
-                          MAI inventato. Non tocca layout/densità della card. */}
+                          MAI inventato. In alto a sinistra (fuori dal riquadro,
+                          come il badge quantità a destra) per non sovrapporsi
+                          mai al prezzo/testo della card. */}
                       {p.num && (
                         <span data-testid="mesa-pizza-number-badge" style={{
-                          position: "absolute", bottom: 5, left: 5, background: C.carbone, color: "#888",
-                          border: `1px solid ${C.fumo}`, borderRadius: 4, minWidth: 16, height: 16, padding: "0 3px",
-                          fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+                          position: "absolute", top: -7, left: -7, background: C.carbone, color: "#888",
+                          border: `2px solid ${C.fumo}`, borderRadius: 5, minWidth: 18, height: 18, padding: "0 4px",
+                          fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
                         }}>{p.num}</span>
                       )}
                     </div>
