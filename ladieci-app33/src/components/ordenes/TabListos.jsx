@@ -24,7 +24,7 @@ const isPizzaItem = (it) => {
   return true;
 };
 
-const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds}) => {
+const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds,hideRetirados=false}) => {
   const [pendingPago,      setPendingPago]      = useState(null);
   const [filterPago,       setFilterPago]       = useState("todos");
   const [pendingCambioPago, setPendingCambioPago] = useState(null); // id ordine in modifica
@@ -51,7 +51,11 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
   // pagamento legacy sull'ordine invece del pagamento parziale della tavolata.
   const listos    = ordenes.filter(o=>!o.table_session_id && (o.estado===ORDER_STATES.LISTO || o.estado===ORDER_STATES.EN_ENTREGA));
   const retirados = ordenes.filter(o=>!o.table_session_id && o.estado===ORDER_STATES.RETIRADO);
-  const tutti     = [...listos, ...retirados];
+  // hideRetirados: the unified Listos shell moves completed orders into the
+  // collapsed Archivados row instead of showing them inline here. The
+  // "RESUMEN DE TURNO" totals footer below still reads `retirados` as
+  // before -- it's a shift summary, not a duplicate archive list.
+  const tutti     = hideRetirados ? listos : [...listos, ...retirados];
 
   // 3D Glass styles
   const glassListo = {

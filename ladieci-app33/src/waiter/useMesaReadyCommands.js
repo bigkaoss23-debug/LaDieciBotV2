@@ -77,5 +77,17 @@ export function useMesaReadyCommands({ notify, refreshKey = 0 } = {}) {
       .filter((command) => command.state === "LISTO")
       .map((command) => ({ table, command })));
 
-  return { readyRows, loading, error, busyId, markServed };
+  // Served (state RETIRADO per TabMesa's commandStateLabel) comandas of
+  // currently-open table sessions -- derived from the SAME `tables` state
+  // above, no extra request. Powers the Listos "Archivados" Sala group.
+  // Scope note: once a table is paid/closed its session leaves the default
+  // floor() result, so a served comanda only stays visible here while its
+  // table remains open -- an honest limit of this read model, not a bug.
+  const servedRows = tables
+    .filter((table) => table.active)
+    .flatMap((table) => (table.session?.commands || [])
+      .filter((command) => command.state === "RETIRADO")
+      .map((command) => ({ table, command })));
+
+  return { readyRows, servedRows, loading, error, busyId, markServed };
 }

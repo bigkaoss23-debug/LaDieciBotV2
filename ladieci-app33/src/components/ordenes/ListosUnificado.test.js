@@ -32,6 +32,10 @@ function setWidth(px) {
   Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: px });
 }
 
+function filterButton(container, label) {
+  return Array.from(container.querySelectorAll("button")).find((b) => b.textContent.startsWith(`${label} (`));
+}
+
 const tableWith = (commandState) => ({
   id: "t1", number: 1, active: true, status: "open",
   session: {
@@ -43,6 +47,13 @@ const tableWith = (commandState) => ({
 const pickupOrder = {
   id: "P1", estado: "LISTO", nombre: "Juan", tel: "600111222", canal: "WA",
   items: [{ n: "Margherita", e: "🍕", p: 10, q: 1 }], totale: 10, ya_pagado: false,
+};
+
+const retiradoOrder = {
+  id: "R1", estado: "RETIRADO", nombre: "Carla", tel: "600333444", canal: "WA",
+  // language-guard: allow-legacy existing backend field/enum (tipo_consegna/RITIRO), not new vocabulary
+  tipo_consegna: "RITIRO",
+  items: [{ n: "Diavola", e: "🍕", p: 12, q: 1 }], totale: 12, ya_pagado: true, metodo_pago: "efectivo",
 };
 
 const baseProps = {
@@ -75,102 +86,43 @@ beforeEach(() => {
   setWidth(1280);
 });
 
-test("zero comande Sala: no Sala column, Recogida/Domicilio list stays full width", async () => {
-  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+// ── 1-2. single Listos experience, three filters always present ──────────
+test("exactly one Listos surface with the three Todo/Sala/Takeaway filters, always visible with live counts", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
   const { container, root } = await renderPage({});
-  expect(container.textContent).not.toContain("Sala");
-  expect(container.textContent).toContain("Juan"); // pickup order still renders
-  expect(container.querySelector(".listos-sala-column")).toBeNull();
+  expect(filterButton(container, "Todo").textContent).toBe("Todo (2)");
+  expect(filterButton(container, "Sala").textContent).toBe("Sala (1)");
+  expect(filterButton(container, "Takeaway").textContent).toBe("Takeaway (1)");
   act(() => { root.unmount(); });
   container.remove();
 });
 
-test("one comanda Mesa pronta: Sala column appears automatically, card shown once", async () => {
+test("filters stay visible with count 0 even when a queue is empty (no conditional hiding)", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+  const { container, root } = await renderPage({ ordenes: [], listosN: 0 });
+  expect(filterButton(container, "Todo").textContent).toBe("Todo (0)");
+  expect(filterButton(container, "Sala").textContent).toBe("Sala (0)");
+  expect(filterButton(container, "Takeaway").textContent).toBe("Takeaway (0)");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+// ── 3. Todo shows both sources, no duplication ────────────────────────────
+test("Todo (default filter) shows both Sala and Takeaway together, each item once", async () => {
   mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
   const { container, root } = await renderPage({});
-  expect(container.querySelector(".listos-sala-column")).not.toBeNull();
+  expect(container.textContent).toContain("Juan");
   const occurrences = container.textContent.split("Mesa 1 · #1").length - 1;
   expect(occurrences).toBe(1);
-  expect(container.textContent).toContain("Juan"); // pickup list untouched, coexists
   act(() => { root.unmount(); });
   container.remove();
 });
 
-test("multiple Sala comandas on different tables all render, no duplication", async () => {
-  const twoTables = [
-    { id: "t1", number: 1, active: true, status: "open", session: { id: "s1", commands: [{ id: "o1", commandNumber: 1, state: "LISTO", items: [{ n: "A" }] }] } },
-    { id: "t2", number: 2, active: true, status: "open", session: { id: "s2", commands: [{ id: "o2", commandNumber: 1, state: "LISTO", items: [{ n: "B" }] }] } },
-  ];
-  mesaApi.floor.mockResolvedValue({ ok: true, tables: twoTables });
-  const { container, root } = await renderPage({});
-  expect(container.textContent).toContain("Mesa 1");
-  expect(container.textContent).toContain("Mesa 2");
-  expect(container.querySelectorAll(".mesa-row").length).toBe(2);
-  act(() => { root.unmount(); });
-  container.remove();
-});
-
-test("last Sala comanda marked Servida: column disappears, list returns full width", async () => {
-  mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: [tableWith("LISTO")] });
-  mesaApi.markServed.mockResolvedValue({ ok: true });
-  const { container, root } = await renderPage({});
-  expect(container.querySelector(".listos-sala-column")).not.toBeNull();
-
-  mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: [tableWith(null)] });
-  const btn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Servida"));
-  click(btn);
-  await flush();
-
-  expect(mesaApi.markServed).toHaveBeenCalledWith("session-1", "o1");
-  expect(container.querySelector(".listos-sala-column")).toBeNull();
-  expect(container.textContent).not.toContain("Sala");
-  act(() => { root.unmount(); });
-  container.remove();
-});
-
-test("Servida calls only mesaApi.markServed -- no payment/financial endpoint touched", async () => {
-  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
-  mesaApi.markServed.mockResolvedValue({ ok: true });
-  const { container, root } = await renderPage({});
-  const btn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Servida"));
-  click(btn);
-  await flush();
-  expect(mesaApi.markServed).toHaveBeenCalledTimes(1);
-  expect(mesaApi.pay).not.toHaveBeenCalled();
-  expect(baseProps.onRetirado).not.toHaveBeenCalled();
-  act(() => { root.unmount(); });
-  container.remove();
-});
-
-test("badge callback reports the exact ready count, summed nowhere else in this component", async () => {
-  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
-  const onSalaCountChange = jest.fn();
-  const { root, container } = await renderPage({ onSalaCountChange });
-  expect(onSalaCountChange).toHaveBeenLastCalledWith(1);
-  act(() => { root.unmount(); });
-  container.remove();
-});
-
-test("tablet/desktop width shows both columns side by side", async () => {
-  setWidth(1280);
+// ── 4. Sala excludes Takeaway ──────────────────────────────────────────────
+test("Sala filter shows only the Mesa queue, Takeaway pickup orders excluded", async () => {
   mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
   const { container, root } = await renderPage({});
-  expect(container.textContent).not.toContain("Recogida/Domicilio (");
-  expect(container.querySelector(".listos-sala-column")).not.toBeNull();
-  act(() => { root.unmount(); });
-  container.remove();
-});
-
-test("phone width shows the compact selector, not two columns", async () => {
-  setWidth(400);
-  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
-  const { container, root } = await renderPage({});
-  expect(container.textContent).toContain("Recogida/Domicilio (1)");
-  expect(container.textContent).toContain("Sala (1)");
-  // default view is pickup -- Sala cards not shown until the selector is tapped
-  expect(container.textContent).not.toContain("Mesa 1 · #1");
-  const salaBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.startsWith("Sala ("));
-  click(salaBtn);
+  click(filterButton(container, "Sala"));
   await flush();
   expect(container.textContent).toContain("Mesa 1 · #1");
   expect(container.textContent).not.toContain("Juan");
@@ -178,6 +130,107 @@ test("phone width shows the compact selector, not two columns", async () => {
   container.remove();
 });
 
+// ── 5. Takeaway excludes Mesa ──────────────────────────────────────────────
+test("Takeaway filter shows only Recogida/Domicilio orders, Mesa excluded", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
+  const { container, root } = await renderPage({});
+  click(filterButton(container, "Takeaway"));
+  await flush();
+  expect(container.textContent).toContain("Juan");
+  expect(container.textContent).not.toContain("Mesa 1 · #1");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+// ── 6. Servida contract unchanged ──────────────────────────────────────────
+test("Servida calls only mesaApi.markServed -- no payment/financial endpoint, table stays open", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
+  mesaApi.markServed.mockResolvedValue({ ok: true });
+  const { container, root } = await renderPage({});
+  const btn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Servida"));
+  click(btn);
+  await flush();
+  expect(mesaApi.markServed).toHaveBeenCalledWith("session-1", "o1");
+  expect(mesaApi.pay).not.toHaveBeenCalled();
+  expect(baseProps.onRetirado).not.toHaveBeenCalled();
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+// ── 7. Badge sums active only ──────────────────────────────────────────────
+test("badge callback reports only the active Sala count, archivados never included", async () => {
+  mesaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: [{
+      id: "t1", number: 1, active: true, status: "open",
+      session: {
+        id: "session-1",
+        commands: [
+          { id: "o1", commandNumber: 1, state: "LISTO", items: [{ n: "A" }] },
+          { id: "o2", commandNumber: 2, state: "RETIRADO", items: [{ n: "B" }] },
+        ],
+      },
+    }],
+  });
+  const onSalaCountChange = jest.fn();
+  const { root, container } = await renderPage({ onSalaCountChange });
+  expect(onSalaCountChange).toHaveBeenLastCalledWith(1);
+  expect(filterButton(container, "Sala").textContent).toBe("Sala (1)");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+// ── Archivados: closed by default, distinguishes type, excluded from badge ─
+test("Archivados row: closed by default, count sums served Sala + Retirado Takeaway, opens to distinguish types", async () => {
+  mesaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: [{
+      id: "t1", number: 6, active: true, status: "open",
+      session: { id: "session-1", commands: [{ id: "o1", commandNumber: 1, state: "RETIRADO", items: [{ n: "El Pelusa" }] }] },
+    }],
+  });
+  const { container, root } = await renderPage({ ordenes: [pickupOrder, retiradoOrder], listosN: 1 });
+  const archBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.startsWith("Archivados"));
+  expect(archBtn.textContent).toContain("2");
+  expect(container.textContent).not.toContain("Carla");
+  click(archBtn);
+  await flush();
+  expect(container.textContent).toContain("Sala (1)");
+  expect(container.textContent).toContain("Recogida (1)");
+  expect(container.textContent).toContain("Carla");
+  // Archived items never move the live badge or filter counts.
+  expect(filterButton(container, "Sala").textContent).toBe("Sala (0)");
+  expect(filterButton(container, "Takeaway").textContent).toBe("Takeaway (1)");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+// ── viewport behavior ──────────────────────────────────────────────────────
+test("tablet/desktop width: Todo shows both columns side by side", async () => {
+  setWidth(1280);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
+  const { container, root } = await renderPage({});
+  expect(container.querySelector(".listos-sala-column")).not.toBeNull();
+  expect(container.textContent).toContain("Juan");
+  expect(container.textContent).toContain("Mesa 1 · #1");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+test("phone width: Todo stacks vertically, never a squeezed two-column layout", async () => {
+  setWidth(400);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
+  const { container, root } = await renderPage({});
+  // Both sections are present (stacked), same as desktop, just not side by side --
+  // there is no separate "compact selector" text/state left over from the old binary toggle.
+  expect(container.textContent).toContain("Juan");
+  expect(container.textContent).toContain("Mesa 1 · #1");
+  expect(container.textContent).not.toContain("Recogida/Domicilio (");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+// ── no double polling / sound / count ──────────────────────────────────────
 test("unmount clears the polling interval -- no request after the component is gone", async () => {
   jest.useFakeTimers();
   try {
@@ -204,6 +257,54 @@ test("no double chime: only one useMesaReadyCommands instance is mounted by this
   await act(async () => { root.render(<ListosUnificado {...baseProps} refreshKey={1} />); });
   await flush();
   expect(Suoni.mesaListo).toHaveBeenCalledTimes(1);
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+// ── Recogida/Delivery still work through the unified shell ────────────────
+test("Recogida pickup order still reaches Retirado via Takeaway filter", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+  const onRetirado = jest.fn();
+  const { container, root } = await renderPage({ onRetirado, ordenes: [{ ...pickupOrder, ya_pagado: true, metodo_pago: "efectivo" }] });
+  const btn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Retirado"));
+  click(btn);
+  await flush();
+  expect(onRetirado).toHaveBeenCalledWith("P1", "efectivo", undefined);
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+test("Delivery (DOMICILIO) order still renders its driver-status flow, unaffected by the new filters", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+  // language-guard: allow-legacy existing backend field name (tipo_consegna), not new vocabulary
+  const deliveryOrder = { ...pickupOrder, id: "P2", tipo_consegna: "DOMICILIO", estado: "EN_ENTREGA" };
+  const { container, root } = await renderPage({ ordenes: [deliveryOrder], listosN: 1 });
+  expect(container.textContent).toContain("Driver fuera");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+// ── table_session_id exclusion holds through the unified shell too ────────
+test("an order carrying table_session_id never appears in the Takeaway filter, even if its estado matches LISTO", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith(null)] });
+  const tableOwnedOrder = { ...pickupOrder, id: "P3", nombre: "MesaLeak", table_session_id: "session-1" };
+  const { container, root } = await renderPage({ ordenes: [tableOwnedOrder], listosN: 0 });
+  click(filterButton(container, "Takeaway"));
+  await flush();
+  expect(container.textContent).not.toContain("MesaLeak");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+test("switching filters does not trigger extra mesaApi.floor polls", async () => {
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
+  const { container, root } = await renderPage({});
+  const callsAfterMount = mesaApi.floor.mock.calls.length;
+  click(filterButton(container, "Sala"));
+  click(filterButton(container, "Takeaway"));
+  click(filterButton(container, "Todo"));
+  await flush();
+  expect(mesaApi.floor.mock.calls.length).toBe(callsAfterMount);
   act(() => { root.unmount(); });
   container.remove();
 });

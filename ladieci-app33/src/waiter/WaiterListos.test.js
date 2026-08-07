@@ -103,6 +103,31 @@ test("unmount clears the polling interval -- no request after the component is g
   }
 });
 
+test("card shows both authoritative product names, quantity and item note (LISTOS_UNIFICADO_V1)", async () => {
+  const table = {
+    id: "t1", number: 6, active: true, status: "open",
+    session: {
+      id: "session-1",
+      commands: [{
+        id: "o1", commandNumber: 1, state: "LISTO", time: "21:00", note: "",
+        items: [{ n: "El Pelusa", classicName: "Margherita Classica", q: 2, notes: "bien caliente" }],
+      }],
+    },
+  };
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: [table] });
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => { root.render(<WaiterListos notify={jest.fn()} onCountChange={jest.fn()} />); });
+  await flush();
+  expect(container.textContent).toContain("Margherita Classica");
+  expect(container.textContent).toContain("El Pelusa");
+  expect(container.textContent).toContain("2×");
+  expect(container.textContent).toContain("bien caliente");
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
 test("Servida calls mesaApi.markServed with the session and command id", async () => {
   mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableWith("LISTO")] });
   mesaApi.markServed.mockResolvedValue({ ok: true });

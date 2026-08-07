@@ -1,6 +1,12 @@
 import { useEffect } from "react";
 import { mesaCss } from "../components/mesa/TabMesa";
 import { useMesaReadyCommands } from "./useMesaReadyCommands";
+import {
+  formatItemExtrasLabel,
+  formatItemRemovedLabel,
+  resolveItemNote,
+  resolveItemProductNames,
+} from "../menu/itemDisplay";
 
 // Pure presentational view over Mesa's ready-to-serve queue. Exported
 // separately so the Listos-unificado "Sala" column (ServicioPage) can render
@@ -19,8 +25,25 @@ export function WaiterListosView({ loading, error, readyRows, busyId, onServed }
         <div key={command.id} className="mesa-row" style={{ alignItems: "flex-start", padding: "14px 4px" }}>
           <div>
             <div style={{ fontWeight: 950, fontSize: 16 }}>Mesa {table.number} · #{command.commandNumber}</div>
-            <div className="mesa-muted" style={{ marginTop: 3 }}>
-              {(command.items || []).map((item) => item.n).filter(Boolean).join(", ") || `${(command.items || []).length} productos`}
+            <div className="mesa-muted" style={{ marginTop: 3, display: "flex", flexDirection: "column", gap: 2 }}>
+              {(command.items || []).length === 0
+                ? "0 productos"
+                : command.items.map((item, idx) => {
+                    const names = resolveItemProductNames(item);
+                    const extrasLabel = formatItemExtrasLabel(item);
+                    const removedLabel = formatItemRemovedLabel(item);
+                    const note = resolveItemNote(item);
+                    const qty = Number(item.q) || 1;
+                    return (
+                      <span key={idx}>
+                        <span>{qty > 1 ? `${qty}× ` : ""}{names.primary}</span>
+                        {names.secondary && <span style={{ display: "block", paddingLeft: 14, fontSize: 11, opacity: 0.75 }}>{names.secondary}</span>}
+                        {extrasLabel && <span style={{ display: "block", paddingLeft: 14, fontSize: 11, color: "#FDBA74" }}>+ {extrasLabel}</span>}
+                        {removedLabel && <span style={{ display: "block", paddingLeft: 14, fontSize: 11, color: "#FCA5A5" }}>{removedLabel}</span>}
+                        {note && <span style={{ display: "block", paddingLeft: 14, fontSize: 11, color: "#FDE68A" }}>📝 {note}</span>}
+                      </span>
+                    );
+                  })}
             </div>
             <div className="mesa-muted" style={{ marginTop: 3, fontSize: 11 }}>{command.time || "ahora"}{command.note ? ` · "${command.note}"` : ""}</div>
           </div>
