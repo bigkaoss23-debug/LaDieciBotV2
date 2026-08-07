@@ -1451,3 +1451,32 @@ describe("hideToolbar -- Mesa map visual cleanup", () => {
     unmount(container, root);
   });
 });
+
+describe("MesaWorkspace header format -- 'Mesa 6 (4 pax)', never a dot-separated second line", () => {
+  test("with known covers, the header reads exactly 'Mesa 1 (4 pax)'", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4 }) } : table);
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+    const { container, root } = await mount("waiter");
+    click(container.querySelector(".mesa-table"));
+    const dialog = container.querySelector('[role="dialog"]');
+    const titleEl = dialog.querySelector(".mesa-modal-head > div > div");
+    expect(titleEl.textContent).toBe("Mesa 1 (4 pax)");
+    expect(dialog.textContent).not.toContain("cubiertos");
+    expect(dialog.textContent).not.toContain("Mesa 1 · ");
+    unmount(container, root);
+  });
+
+  test("with covers still unknown, the header is just 'Mesa 1' -- never '0 pax'", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession() } : table);
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+    const { container, root } = await mount("waiter");
+    click(container.querySelector(".mesa-table"));
+    const dialog = container.querySelector('[role="dialog"]');
+    const titleEl = dialog.querySelector(".mesa-modal-head > div > div");
+    expect(titleEl.textContent).toBe("Mesa 1");
+    expect(dialog.textContent).not.toContain("pax");
+    unmount(container, root);
+  });
+});
