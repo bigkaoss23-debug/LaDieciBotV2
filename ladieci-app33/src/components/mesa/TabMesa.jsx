@@ -662,10 +662,12 @@ function VerCuentaModal({ table, onClose, onRefresh, onPrint }) {
 function MesaWorkspace({
   table, onClose, onNewCommand, onRefresh, onPrint,
   canManageReservations, onEditReservation, onViewNight, onChanged, onOpened,
+  notify, draft, onClearDraft, onSendToCocina,
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showAccount, setShowAccount] = useState(false);
+  const [sendingDraft, setSendingDraft] = useState(false);
   // Collapsed by default, same as the free/reserved popup -- an occupied
   // table can still have a LATER reservation booked for tonight; that must
   // stay visible here too (it used to show in the old popup regardless of
@@ -675,6 +677,7 @@ function MesaWorkspace({
   const hasOrders = (session?.commands?.length || 0) > 0;
   const todayReservations = bookedForToday(table);
   const nextReservation = todayReservations[0];
+  const draftTotal = (draft?.items || []).reduce((sum, item) => sum + (Number(item.p) || 0) * (Number(item.q) || 0), 0);
 
   const markServed = async (orderId) => {
     setBusy(true); setError("");
@@ -690,13 +693,30 @@ function MesaWorkspace({
     try { await mesaApi.releaseEmptyTable(session.id); setConfirmingClose(false); await onRefresh(); }
     catch (err) { setError(describeMesaError(err)); setBusy(false); }
   };
+  // The real, authoritative Cocina submit -- the ONLY place a Mesa comanda
+  // reaches the backend. One request, button disabled while in flight (both
+  // guard a double tap); on failure the draft is untouched (setError only,
+  // draft state itself lives one level up in ServicioPage and is never
+  // touched here) so retrying reuses the exact same client_req_id already
+  // baked into the draft. On success the draft is cleared and the floor
+  // reloads, turning this same comanda into a normal compact/expandable card.
+  const sendToCocina = async () => {
+    if (!draft || sendingDraft) return;
+    setSendingDraft(true); setError("");
+    try {
+      await onSendToCocina(session.id, table.number, draft);
+      onClearDraft(session.id);
+      await onRefresh();
+    } catch (err) { setError(describeMesaError(err)); }
+    finally { setSendingDraft(false); }
+  };
 
   // "Mesa 6 (4 pax)" -- no "Ocupada", no second line, no cubiertos wording.
   // Unknown covers -> just "Mesa 6".
   const title = `Mesa ${table.number}${session.coversTotal != null ? ` (${session.coversTotal} pax)` : ""}`;
 
   return <>
-    <Modal title={title} onClose={onClose} size={hasOrders ? "tall" : undefined}>
+    <Modal title={title} onClose={onClose} size={hasOrders || draft ? "tall" : undefined}>
       <div className="mesa-section" style={{ marginTop: 0 }}>
         <h3>Comandas</h3>
         {!hasOrders ? <div className="mesa-muted">Todavía no hay comandas.</div> : <div className="mesa-commands-scroll">
@@ -704,10 +724,36 @@ function MesaWorkspace({
             action={command.state === "LISTO" ? <button className="mesa-btn green" style={{ marginLeft: "auto" }} disabled={busy} onClick={() => markServed(command.id)}>✓ Servida</button> : null} />)}
         </div>}
       </div>
+      {/* Comanda por confirmar -- the local draft MesaOrderBuilder handed
+          back via "Confirmar comanda". Open by default (unlike sent
+          comandas): this IS the last check with the client before it
+          reaches Cocina. Only "Enviar a cocina" here calls the backend. */}
+      {draft && <div className="mesa-section" data-testid="mesa-draft-panel">
+        <h3>Comanda por confirmar</h3>
+        <div className="mesa-command-card">
+          {draft.items.map((item, index) => (
+            <div key={item._uid || index} style={{ marginBottom: index < draft.items.length - 1 ? 8 : 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span>{item.q}× {item.fantasyName || item.n}{item.classicName ? ` / ${item.classicName}` : ""}</span>
+                <strong>{euro((Number(item.p) || 0) * (Number(item.q) || 0))}</strong>
+              </div>
+              {(item.extras || []).length > 0 && <div className="mesa-muted" style={{ fontSize: 12 }}>+{item.extras.map((extra) => extra.name).join(", ")}</div>}
+              {(item.removedIngredients || []).length > 0 && <div className="mesa-muted" style={{ fontSize: 12 }}>Sin: {item.removedIngredients.join(", ")}</div>}
+              {item.notes && <div className="mesa-command-note">Nota: {item.notes}</div>}
+            </div>
+          ))}
+          {draft.nota && <div className="mesa-command-note">Nota general: {draft.nota}</div>}
+          <div style={{ marginTop: 8, textAlign: "right", fontWeight: 900 }}>{euro(draftTotal)}</div>
+        </div>
+        <div className="mesa-actions">
+          <button className="mesa-btn" disabled={sendingDraft} onClick={() => onNewCommand(table)}>Modificar</button>
+          <button className="mesa-btn green" disabled={sendingDraft} onClick={sendToCocina}>{sendingDraft ? "Enviando…" : "Enviar a cocina"}</button>
+        </div>
+      </div>}
       <div className="mesa-actions">
-        <button className="mesa-btn primary" onClick={() => { onClose(); onNewCommand(table); }}>＋ Nueva comanda</button>
+        {!draft && <button className="mesa-btn primary" onClick={() => onNewCommand(table)}>＋ Nueva comanda</button>}
         <button className="mesa-btn gold" onClick={() => setShowAccount(true)}>Ver cuenta</button>
-        {session.coversTotal == null && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
+        {session.coversTotal == null && !draft && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
       </div>
       {nextReservation && <div className="mesa-section">
         <button type="button" onClick={() => setReservationOpen((value) => !value)}
@@ -1054,7 +1100,10 @@ function TableSettingsModal({ table, onClose, onSaved }) {
 // room for). Nothing about role/data/behavior changes -- purely the toolbar's
 // left-hand block is skipped; the Reservas·Beta / Personalizar sala dock
 // (already role-gated below) renders exactly the same either way.
-export default function TabMesa({ role, notify, onNewCommand, onCountChange, refreshKey = 0, compact = false }) {
+export default function TabMesa({
+  role, notify, onNewCommand, onCountChange, refreshKey = 0, compact = false,
+  mesaDrafts = {}, onClearDraft, onSendToCocina,
+}) {
   const canEdit = role === "admin" || role === "owner";
   const canManageReservations = RESERVATION_ROLES.has(role);
   const [tables, setTables] = useState([]);
@@ -1270,6 +1319,10 @@ export default function TabMesa({ role, notify, onNewCommand, onCountChange, ref
       onViewNight={() => { setSelectedId(null); setReservationsFilterTableId(selected.id); setShowReservations(true); }}
       onChanged={() => load({ quiet: true })}
       onOpened={opened}
+      notify={notify}
+      draft={mesaDrafts[selected.session.id] || null}
+      onClearDraft={onClearDraft}
+      onSendToCocina={onSendToCocina}
     />}
     {settingsTable && <TableSettingsModal table={settingsTable} onClose={() => setSettingsId(null)} onSaved={() => load()} />}
     {showAdd && <AddTableModal tables={tables} onClose={() => setShowAdd(false)} onSaved={() => load()} />}

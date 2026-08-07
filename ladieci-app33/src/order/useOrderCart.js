@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { genId, findExtra } from '../constants';
 
+// Custom pizzas (PizzaCustomBuilder) are inserted raw and never pass through
+// buildEmittedItem -- shared here so any consumer that needs to tell a custom
+// line apart from a catalogue line (e.g. re-seeding a cart from a previously
+// emitted draft) uses the exact same rule addRaw's own callers rely on.
+export const isCustomRawItem = (item) => typeof item?.id === "string" && item.id.startsWith("custom_");
+
 /**
  * useOrderCart — cart logic extracted from ItemPickerModal (S2-7D4C/D era), so
  * it can be shared by any consumer that needs the same uid-keyed working cart
@@ -220,6 +226,31 @@ export function useOrderCart({ MENU, INGREDIENTI }) {
   const clear = () => setCart({});
   const replaceCart = (nextCartObj) => setCart(nextCartObj || {});
 
+  // Inverse of buildEmittedItem -- reconstructs the working "+Extra, nota"
+  // shape (sub/p) from a structured emitted item's extras[]/notes, so a
+  // previously-confirmed pre-comanda (MesaOrderBuilder's draft) can be
+  // reopened for editing with its exact extras/removed/notes/quantities,
+  // not a blank cart. Custom-raw lines are put back completely unchanged --
+  // they never had a working shape to reconstruct in the first place (see
+  // isCustomRawItem / addRaw).
+  const workingShapeFromEmitted = (item) => {
+    if (isCustomRawItem(item)) return item;
+    const extraTokens = (item.extras || []).flatMap((extra) =>
+      Array.from({ length: Math.max(1, Number(extra.quantity) || 1) }, () => `+${extra.name}`));
+    const sub = [item.notes, ...extraTokens].filter(Boolean).join(", ");
+    const extrasUnit = (item.extras || []).reduce((s, e) => s + (Number(e.price) || 0) * (Number(e.quantity) || 1), 0);
+    const p = Math.round(((Number(item.baseUnitPrice) || 0) + extrasUnit) * 100) / 100;
+    return { ...item, sub, p };
+  };
+  const replaceCartFromEmitted = (items) => {
+    const next = {};
+    (items || []).forEach((item) => {
+      const uid = item._uid || genId();
+      next[uid] = { ...workingShapeFromEmitted(item), _uid: uid };
+    });
+    setCart(next);
+  };
+
   return {
     cart, setCart, cartItems, totalCart, totalQty,
     increment, decrement, removeLine, setQty, qtyOf,
@@ -227,7 +258,7 @@ export function useOrderCart({ MENU, INGREDIENTI }) {
     setNota, setNotaLibera, splitSub,
     descrizioneDi, resolveExtra,
     buildEmittedItem,
-    loadItem, addRaw, clear, replaceCart,
+    loadItem, addRaw, clear, replaceCart, replaceCartFromEmitted,
   };
 }
 

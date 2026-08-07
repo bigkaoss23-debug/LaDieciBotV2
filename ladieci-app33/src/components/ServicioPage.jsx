@@ -28,7 +28,7 @@ import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
 import { isPaymentFailure, describePaymentFailure } from '../utils/paymentOutcome';
 import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
 import { runOperationalTransaction } from '../order/operationalTransaction';
-import { describeMesaError, mesaApi } from '../mesa/mesaApi';
+import { mesaApi } from '../mesa/mesaApi';
 
 // Staging-only rollout gate. A production build (or any build without the exact
 // lowercase value) keeps the existing Barra surface and never calls Mesa APIs.
@@ -123,6 +123,13 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const [chatStoricoSel, setChatStoricoSel] = useState(null);
   const [prefillCliente,setPrefillCliente] = useState(null);
   const [mesaCommandTarget, setMesaCommandTarget] = useState(null);
+  // Confirmed-but-not-yet-sent Mesa comandas, keyed by table_session_id.
+  // MesaOrderBuilder's "Confirmar comanda" only ever writes here (no
+  // network); MesaWorkspace's "Enviar a cocina" (TabMesa.jsx) is the only
+  // thing that reads a draft, sends it, and clears its own key. Deliberately
+  // NOT persisted server-side in this slice -- a full page reload loses an
+  // unsent draft (documented limit, not a new backend draft feature).
+  const [mesaDrafts, setMesaDrafts] = useState({});
   const [mesaRefreshKey, setMesaRefreshKey] = useState(0);
   const [mesaN, setMesaN] = useState(0);
   const [salaN, setSalaN] = useState(0);
@@ -546,30 +553,25 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     });
   };
 
-  const addMesaCommand = async (order) => {
-    const target = mesaCommandTarget;
-    if (!target?.sessionId) throw new Error("MESA_SESSION_NOT_OPEN");
-    try {
-      const result = await mesaApi.addCommand(target.sessionId, {
-        items: Array.isArray(order.items) ? order.items.map((item) => ({ ...item })) : [],
-        note: order.nota || "",
-        kitchenNote: order.nota || "",
-        time: order.hora,
-        // Only present for the table's first comanda -- MesaOrderBuilder's own
-        // covers step already asked for it before this call; later comandas
-        // never carry it (target.coversTotal is already set from the session).
-        coversTotal: order.coversTotal ?? target.coversTotal,
-        clientRequestId: order.client_req_id,
-      });
-      setMesaCommandTarget(null);
-      setMesaRefreshKey((value) => value + 1);
-      notify(`✅ Mesa ${target.tableNumber} · comanda enviada a Cocina`, C.verde);
-      return result;
-    } catch (error) {
-      notify(`❌ ${describeMesaError(error)}`, C.rosso);
-      throw error;
-    }
+  // Sends an already-confirmed local draft (see mesaDrafts below) to the real
+  // backend contract -- the ONLY place a Mesa comanda actually reaches Cocina.
+  // Called from MesaWorkspace (TabMesa.jsx), which owns its own busy/error
+  // state and shows the error inline without losing the draft (see
+  // MesaWorkspace's sendToCocina) -- this throws on failure rather than
+  // notifying, so the caller decides how to surface it.
+  const sendMesaCommandToCocina = async (sessionId, tableNumber, draft) => {
+    const result = await mesaApi.addCommand(sessionId, {
+      items: Array.isArray(draft.items) ? draft.items.map((item) => ({ ...item })) : [],
+      note: draft.nota || "",
+      kitchenNote: draft.nota || "",
+      coversTotal: draft.coversTotal,
+      clientRequestId: draft.client_req_id,
+    });
+    setMesaRefreshKey((value) => value + 1);
+    notify(`✅ Mesa ${tableNumber} · comanda enviada a Cocina`, C.verde);
+    return result;
   };
+
   const waConfirm = useCallback(async (id,items,hora,nombre,tel,nuovaHora) => {
     if (!id || waConfirmInflightRef.current.has(id)) return;
     waConfirmInflightRef.current.add(id);
@@ -1186,7 +1188,11 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       ? <TabMesa role={auth.getRole()} notify={notify} refreshKey={mesaRefreshKey} onCountChange={setMesaN}
           onNewCommand={(table) => {
             setMesaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name, coversTotal: table.session.coversTotal ?? null });
-          }}/>
+          }}
+          mesaDrafts={mesaDrafts}
+          onClearDraft={(sessionId) => setMesaDrafts((prev) => { const next = { ...prev }; delete next[sessionId]; return next; })}
+          onSendToCocina={sendMesaCommandToCocina}
+        />
       : <TabBanco ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
     // Mounted only while this tab is open, same as every other tab here
     // (TabMesa/TabListos/TabCocina are all conditionally mounted the same
@@ -1747,8 +1753,13 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         tableContext={null}
         prefill={prefillCliente} ordenes={ordenes}/>
       {mesaCommandTarget && <MesaOrderBuilder target={mesaCommandTarget}
+        draft={mesaDrafts[mesaCommandTarget.sessionId] || null}
         onClose={() => setMesaCommandTarget(null)}
-        onSubmit={addMesaCommand}/>}
+        onConfirm={(draftPayload) => {
+          setMesaDrafts((prev) => ({ ...prev, [mesaCommandTarget.sessionId]: draftPayload }));
+          setMesaCommandTarget(null);
+        }}
+      />}
       {ordenModifica&&<ModificaOrdenModal orden={{
         ...ordenModifica,
         nota: String(ordenModifica.nota||""),

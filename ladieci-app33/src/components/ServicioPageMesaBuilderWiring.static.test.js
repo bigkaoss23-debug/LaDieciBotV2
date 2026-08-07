@@ -30,13 +30,23 @@ describe("MesaOrderBuilder is a separate mount, never routed through NuevoPedido
     expect(block).toMatch(/addOrden\(o\)/);
   });
 
-  test("MesaOrderBuilder is mounted separately, gated on mesaCommandTarget, receiving target/onClose/onSubmit", () => {
+  test("MesaOrderBuilder is mounted separately, gated on mesaCommandTarget, receiving target/draft/onClose/onConfirm (local-only, no onSubmit)", () => {
     const idx = src.indexOf("<MesaOrderBuilder");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(Math.max(0, idx - 40), idx + 300);
+    const block = src.slice(Math.max(0, idx - 40), idx + 400);
     expect(block).toMatch(/mesaCommandTarget && <MesaOrderBuilder/);
     expect(block).toMatch(/target=\{mesaCommandTarget\}/);
-    expect(block).toMatch(/onSubmit=\{addMesaCommand\}/);
+    expect(block).toMatch(/draft=\{mesaDrafts\[mesaCommandTarget\.sessionId\] \|\| null\}/);
+    expect(block).toMatch(/onConfirm=\{/);
+    expect(block).not.toMatch(/onSubmit=/);
+  });
+
+  test("Confirmar comanda (onConfirm) only ever writes to local mesaDrafts state -- no mesaApi call in this wiring", () => {
+    const idx = src.indexOf("<MesaOrderBuilder");
+    const end = src.indexOf("{ordenModifica", idx);
+    const block = src.slice(idx, end);
+    expect(block).toMatch(/setMesaDrafts/);
+    expect(block).not.toMatch(/mesaApi\.addCommand/);
   });
 
   test("TabMesa's onNewCommand no longer opens the Cliente-panel modal (no setShowNuevo/setPrefillCliente for Mesa)", () => {
@@ -48,17 +58,30 @@ describe("MesaOrderBuilder is a separate mount, never routed through NuevoPedido
     expect(block).toMatch(/setMesaCommandTarget/);
     expect(block).toMatch(/table\.session\.coversTotal/);
   });
+
+  test("TabMesa also receives mesaDrafts/onClearDraft/onSendToCocina -- MesaWorkspace, not ServicioPage, owns the Cocina send", () => {
+    const idx = src.indexOf("<TabMesa role=");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/mesaDrafts=\{mesaDrafts\}/);
+    expect(block).toMatch(/onClearDraft=\{/);
+    expect(block).toMatch(/onSendToCocina=\{sendMesaCommandToCocina\}/);
+  });
 });
 
-describe("the Mesa contract addMesaCommand still posts through mesaApi.addCommand unchanged", () => {
-  test("addMesaCommand still sends items/note/kitchenNote/coversTotal/clientRequestId", () => {
-    const idx = src.indexOf("const addMesaCommand");
+describe("the Mesa contract sendMesaCommandToCocina still posts through mesaApi.addCommand unchanged", () => {
+  test("sendMesaCommandToCocina still sends items/note/kitchenNote/coversTotal/clientRequestId", () => {
+    const idx = src.indexOf("const sendMesaCommandToCocina");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 900);
-    expect(block).toMatch(/mesaApi\.addCommand\(target\.sessionId/);
-    expect(block).toMatch(/note: order\.nota \|\| ""/);
-    expect(block).toMatch(/kitchenNote: order\.nota \|\| ""/);
-    expect(block).toMatch(/clientRequestId: order\.client_req_id/);
+    expect(block).toMatch(/mesaApi\.addCommand\(sessionId/);
+    expect(block).toMatch(/note: draft\.nota \|\| ""/);
+    expect(block).toMatch(/kitchenNote: draft\.nota \|\| ""/);
+    expect(block).toMatch(/clientRequestId: draft\.client_req_id/);
+  });
+
+  test("addMesaCommand (the old direct-submit path) no longer exists -- fully replaced by the draft flow", () => {
+    expect(src).not.toMatch(/const addMesaCommand/);
   });
 });
 

@@ -3,32 +3,36 @@ import { C, EXTRAS_DULCES, pizzaLabel, esDulce, useWidth } from '../../constants
 import { useMenuData } from '../../menu/useMenuData';
 import { canEditExtras } from '../../menu/extrasPolicy';
 import { extrasForProduct } from '../../menu/menuAdapter';
-import { useOrderCart } from '../../order/useOrderCart';
-import { createMesaRequestId, describeMesaError } from '../../mesa/mesaApi';
+import { useOrderCart, isCustomRawItem } from '../../order/useOrderCart';
+import { createMesaRequestId } from '../../mesa/mesaApi';
 import PizzaCustomBuilder from '../PizzaCustomBuilder';
 
 const COVER_QUICK_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
-
-// Custom pizzas (PizzaCustomBuilder) are inserted raw into the cart, never
-// passed through buildEmittedItem — exactly how ItemPickerModal treats them
-// today (direct onAdd, never through the "+Extra, note" working cart).
-const isCustomRaw = (item) => typeof item?.id === "string" && item.id.startsWith("custom_");
 
 /**
  * MesaOrderBuilder — Option C from the audit (V1_STAGING_MESA_ORDER_FLOW_
  * PICKER_ARCHITECTURE_AUDIT.md): a dedicated Mesa builder replacing the
  * NuevoPedidoModal pass-through. No customer/phone/direccion/planner screen:
  * just covers (only if missing) -> persistent-cart picker workspace ->
- * direct submit through the same backend contract as always
- * (mesaApi.addCommand via onSubmit, passed in by the caller).
+ * "Confirmar comanda".
+ *
+ * S2-mesa-final-ux (pre-command flow): this component never talks to the
+ * backend. "Confirmar comanda" hands a local draft to the caller (via
+ * onConfirm) and closes -- the caller is MesaWorkspace's owner, which shows
+ * the draft expanded and is the ONLY place "Enviar a cocina" (the real
+ * mesaApi.addCommand call) happens. `draft`, when passed in, is a
+ * previously-confirmed-but-not-yet-sent draft for this same table
+ * ("Modificar") -- the cart, covers and client_req_id are all reseeded from
+ * it so editing never starts from a blank slate or mints a new idempotency
+ * id for what is still the same not-yet-sent comanda.
  *
  * The cart and its emission logic (buildEmittedItem, extras, notes, removed
  * ingredients) are the SAME ones ItemPickerModal uses — reused via
  * useOrderCart, not rewritten.
  */
-const MesaOrderBuilder = ({ target, onClose, onSubmit }) => {
-  const [coversValue, setCoversValue] = useState(target?.coversTotal ?? null);
-  const [step, setStep] = useState(coversValue == null ? "covers" : "picker");
+const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
+  const [coversValue, setCoversValue] = useState(() => draft?.coversTotal ?? target?.coversTotal ?? null);
+  const [step, setStep] = useState(() => (draft?.coversTotal ?? target?.coversTotal) == null ? "covers" : "picker");
   const [coversInput, setCoversInput] = useState("");
   const [coversError, setCoversError] = useState("");
 
@@ -38,18 +42,28 @@ const MesaOrderBuilder = ({ target, onClose, onSubmit }) => {
     increment, decrement, removeLine, setQty, qtyOf,
     addExtra, removeExtra, toggleRemoved, isRemoved, baseIngredientsOf,
     setNota, setNotaLibera, splitSub,
-    buildEmittedItem, addRaw,
+    buildEmittedItem, addRaw, replaceCartFromEmitted,
   } = useOrderCart({ MENU, INGREDIENTI });
 
   const [cat, setCat] = useState("Pizzas");
   const [extrasOpen, setExtrasOpen] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [notaGeneral, setNotaGeneral] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [notaGeneral, setNotaGeneral] = useState(() => draft?.nota || "");
 
-  const reqIdRef = useRef(createMesaRequestId("mesacmd"));
-  const submitLockRef = useRef(false);
+  // Stable per not-yet-sent draft: reused verbatim across every "Modificar"
+  // round-trip so Enviar a cocina's own idempotency (in MesaWorkspace) never
+  // sees two different ids for what is still the same comanda. Only a fresh
+  // (no draft) open mints a new one.
+  const reqIdRef = useRef(draft?.client_req_id || createMesaRequestId("mesacmd"));
+  // This component remounts fresh every time it opens (ServicioPage always
+  // clears mesaCommandTarget to null before setting it again), so "seed once
+  // on mount" is exactly "seed once per open" -- no key/effect churn needed.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    seededRef.current = true;
+    if (draft?.items?.length) replaceCartFromEmitted(draft.items);
+  }, []); // eslint-disable-line
 
   const width = useWidth();
   const isPhone = width < 640;
@@ -97,25 +111,19 @@ const MesaOrderBuilder = ({ target, onClose, onSubmit }) => {
     ? extrasForProduct(extrasTarget, INGREDIENTI)
     : (extrasEsDulce ? EXTRAS_DULCES : INGREDIENTI);
 
-  const handleSubmit = async () => {
-    if (cartItems.length === 0 || submitLockRef.current) return;
-    submitLockRef.current = true;
-    setSubmitting(true);
-    setError("");
-    try {
-      const items = cartItems.map(item => isCustomRaw(item) ? item : buildEmittedItem(item));
-      await onSubmit({
-        items,
-        nota: notaGeneral,
-        coversTotal: coversValue,
-        client_req_id: reqIdRef.current,
-      });
-      // Successo: il chiamante smonta questo componente (target azzerato).
-    } catch (err) {
-      setError(describeMesaError(err));
-      submitLockRef.current = false;
-      setSubmitting(false);
-    }
+  // Local-only: validates the cart, builds the same emitted-item shape the
+  // backend contract expects, and hands it to the caller as a draft. No
+  // network call, no loading/error state -- those belong to Enviar a cocina
+  // now (MesaWorkspace), the only place this draft is ever actually sent.
+  const handleConfirm = () => {
+    if (cartItems.length === 0) return;
+    const items = cartItems.map(item => isCustomRawItem(item) ? item : buildEmittedItem(item));
+    onConfirm({
+      items,
+      nota: notaGeneral,
+      coversTotal: coversValue,
+      client_req_id: reqIdRef.current,
+    });
   };
 
   // ── Step 1: covers (only if missing) ──────────────────────────────────
@@ -286,7 +294,7 @@ const MesaOrderBuilder = ({ target, onClose, onSubmit }) => {
               </div>
               <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
                 {cartItems.map(item => {
-                  const custom = isCustomRaw(item);
+                  const custom = isCustomRawItem(item);
                   const { extras: extraTokens, note } = custom ? { extras: [], note: "" } : splitSub(item.sub);
                   return (
                     <div key={item._uid} data-testid="mesa-line" style={{
@@ -362,16 +370,15 @@ const MesaOrderBuilder = ({ target, onClose, onSubmit }) => {
                   <div style={{ color: C.verde, fontWeight: 900, fontSize: 20, fontFamily: "'DM Mono',monospace" }}>{totalCart.toFixed(2)}€</div>
                 </div>
                 <button
-                  data-testid="mesa-enviar-comanda"
-                  onClick={handleSubmit}
-                  disabled={submitting || totalQty === 0}
+                  data-testid="mesa-confirmar-comanda"
+                  onClick={handleConfirm}
+                  disabled={totalQty === 0}
                   style={{
-                    background: submitting ? C.fumo : C.rosso, color: "#fff", border: "none",
+                    background: totalQty > 0 ? C.rosso : C.fumo, color: "#fff", border: "none",
                     borderRadius: 12, padding: "14px 26px", fontWeight: 800, fontSize: 15,
-                    cursor: submitting ? "default" : "pointer",
-                  }}>{submitting ? "Enviando…" : "✅ Enviar comanda"}</button>
+                    cursor: totalQty > 0 ? "pointer" : "default",
+                  }}>✅ Confirmar comanda</button>
               </div>
-              {error && <div data-testid="mesa-error" style={{ padding: "0 16px 12px", color: "#F87171", fontSize: 13 }}>{error}</div>}
             </div>
           </div>
         )}
@@ -461,7 +468,12 @@ const ExtrasPanel = ({ extrasTarget, extrasEsDulce, extrasList, splitSub, addExt
 };
 
 const overlayStyle = {
-  position: "fixed", inset: 0, zIndex: 600, display: "flex", alignItems: "center",
+  // Above MesaWorkspace's own overlay (TabMesa.jsx .mesa-overlay, z-index
+  // 1200) on purpose: MesaWorkspace is left mounted underneath while this is
+  // open (see "＋ Nueva comanda"/"Modificar", which no longer close it
+  // first), so closing/confirming this picker reveals it already showing
+  // the right table, no re-open step needed.
+  position: "fixed", inset: 0, zIndex: 1300, display: "flex", alignItems: "center",
   justifyContent: "center", background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)",
 };
 const panelStyle = {

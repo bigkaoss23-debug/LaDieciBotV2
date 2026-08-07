@@ -54,12 +54,16 @@ async function flush() {
   await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 }
 
-async function mount(role = "owner", { onNewCommand = jest.fn(), notify = jest.fn() } = {}) {
+async function mount(role = "owner", {
+  onNewCommand = jest.fn(), notify = jest.fn(),
+  mesaDrafts = {}, onClearDraft = jest.fn(), onSendToCocina = jest.fn(),
+} = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<TabMesa role={role} notify={notify} onNewCommand={onNewCommand} onCountChange={jest.fn()} />);
+    root.render(<TabMesa role={role} notify={notify} onNewCommand={onNewCommand} onCountChange={jest.fn()}
+      mesaDrafts={mesaDrafts} onClearDraft={onClearDraft} onSendToCocina={onSendToCocina} />);
   });
   await flush();
   return { container, root };
@@ -1292,4 +1296,119 @@ test("Reservas · Beta filters by name/phone and by a specific table", async () 
   expect(container.querySelector('[role="dialog"]').textContent).toContain("Beatriz Soler");
   expect(container.querySelector('[role="dialog"]').textContent).not.toContain("Carlos Mena");
   unmount(container, root);
+});
+
+describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)", () => {
+  const sampleDraft = {
+    items: [{
+      id: 1, n: "El Pelusa", q: 2, cat: "Pizzas", p: 12.5,
+      classicName: "Margherita Classica", fantasyName: "El Pelusa", baseUnitPrice: 12.0,
+      extras: [{ key: "ing_jamon", name: "Jamón cocido", price: 0.5, emoji: "🍖", quantity: 1 }],
+      notes: "poco hecha", removedIngredients: ["Albahaca"],
+    }],
+    nota: "mesa junto a la ventana", coversTotal: 4, client_req_id: "draft-req-1",
+  };
+
+  test("a pending draft is shown expanded, with Modificar/Enviar a cocina, and hides Nueva comanda + Cerrar mesa", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession() } : table);
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+    const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": sampleDraft } });
+    click(container.querySelector(".mesa-table"));
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog.textContent).toContain("Comanda por confirmar");
+    expect(dialog.textContent).toContain("El Pelusa");
+    expect(dialog.textContent).toContain("Margherita Classica");
+    expect(dialog.textContent).toContain("Jamón cocido");
+    expect(dialog.textContent).toContain("Albahaca");
+    expect(dialog.textContent).toContain("poco hecha");
+    expect(dialog.textContent).toContain("mesa junto a la ventana");
+    expect(dialog.textContent).toContain("Modificar");
+    expect(dialog.textContent).toContain("Enviar a cocina");
+    // No second order-creator and no premature close while a draft is pending.
+    expect(dialog.textContent).not.toContain("＋ Nueva comanda");
+    expect(dialog.textContent).not.toContain("Cerrar mesa");
+    unmount(container, root);
+  });
+
+  test("Modificar calls onNewCommand for the same table -- MesaOrderBuilder reseeds itself from the draft, TabMesa doesn't own that", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession() } : table);
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+    const onNewCommand = jest.fn();
+    const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": sampleDraft }, onNewCommand });
+    click(container.querySelector(".mesa-table"));
+    click(buttonByText(container, "Modificar"));
+    expect(onNewCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "table-1" }));
+    unmount(container, root);
+  });
+
+  test("Enviar a cocina calls onSendToCocina once with (sessionId, tableNumber, draft), then clears the draft and reloads", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession() } : table);
+    mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: openTables });
+    mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: floorTables.map((t, i) => i === 0 ? { ...t, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "El Pelusa" }], time: "21:00" }] }) } : t) });
+    const onSendToCocina = jest.fn().mockResolvedValue({ ok: true });
+    const onClearDraft = jest.fn();
+    const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": sampleDraft }, onSendToCocina, onClearDraft });
+    click(container.querySelector(".mesa-table"));
+    click(buttonByText(container, "Enviar a cocina"));
+    await flush();
+    expect(onSendToCocina).toHaveBeenCalledTimes(1);
+    expect(onSendToCocina).toHaveBeenCalledWith("session-x", 1, sampleDraft);
+    expect(onClearDraft).toHaveBeenCalledWith("session-x");
+    unmount(container, root);
+  });
+
+  test("a rapid double tap on Enviar a cocina never sends a second request -- button disables synchronously", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession() } : table);
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+    let resolveSend;
+    const onSendToCocina = jest.fn(() => new Promise((resolve) => { resolveSend = resolve; }));
+    const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": sampleDraft }, onSendToCocina });
+    click(container.querySelector(".mesa-table"));
+    const btn = buttonByText(container, "Enviar a cocina");
+    click(btn);
+    click(btn);
+    click(btn);
+    await flush();
+    expect(onSendToCocina).toHaveBeenCalledTimes(1);
+    expect(btn.disabled).toBe(true);
+    act(() => { resolveSend({ ok: true }); });
+    await flush();
+    unmount(container, root);
+  });
+
+  test("a failed Enviar a cocina shows an inline error and keeps the whole draft intact for retry", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession() } : table);
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+    const onSendToCocina = jest.fn().mockRejectedValueOnce({ code: "MESA_SERVER_ERROR" });
+    const onClearDraft = jest.fn();
+    const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": sampleDraft }, onSendToCocina, onClearDraft });
+    click(container.querySelector(".mesa-table"));
+    click(buttonByText(container, "Enviar a cocina"));
+    await flush();
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog.textContent).toContain("MESA_SERVER_ERROR");
+    expect(dialog.textContent).toContain("Comanda por confirmar");
+    expect(dialog.textContent).toContain("El Pelusa");
+    expect(onClearDraft).not.toHaveBeenCalled();
+    const retryBtn = buttonByText(container, "Enviar a cocina");
+    expect(retryBtn.disabled).toBe(false);
+    unmount(container, root);
+  });
+
+  test("without a pending draft, the workspace looks exactly as before: Nueva comanda shown, no 'Comanda por confirmar' section", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession() } : table);
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+    const { container, root } = await mount("waiter", { mesaDrafts: {} });
+    click(container.querySelector(".mesa-table"));
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog.textContent).not.toContain("Comanda por confirmar");
+    expect(dialog.textContent).toContain("＋ Nueva comanda");
+    unmount(container, root);
+  });
 });

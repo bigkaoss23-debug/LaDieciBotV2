@@ -6,11 +6,10 @@ global.IS_REACT_ACT_ENVIRONMENT = true;
 jest.mock("../../mesa/mesaApi", () => ({
   __esModule: true,
   createMesaRequestId: jest.fn(() => "mesa_test_request"),
-  describeMesaError: jest.fn((error) => error?.code || "error"),
 }));
 
 const MesaOrderBuilder = require("./MesaOrderBuilder").default;
-const { createMesaRequestId, describeMesaError } = require("../../mesa/mesaApi");
+const { createMesaRequestId } = require("../../mesa/mesaApi");
 
 function click(element) {
   act(() => { element.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
@@ -48,24 +47,18 @@ async function mount(props = {}) {
   document.body.appendChild(container);
   const root = createRoot(container);
   const onClose = props.onClose || jest.fn();
-  const onSubmit = props.onSubmit || jest.fn().mockResolvedValue({ ok: true });
+  const onConfirm = props.onConfirm || jest.fn();
   await act(async () => {
-    root.render(<MesaOrderBuilder target={props.target || target()} onClose={onClose} onSubmit={onSubmit} />);
+    root.render(<MesaOrderBuilder target={props.target || target()} draft={props.draft || null} onClose={onClose} onConfirm={onConfirm} />);
   });
   await flush();
-  return { container, root, onClose, onSubmit };
+  return { container, root, onClose, onConfirm };
 }
 function unmount(container, root) { act(() => { root.unmount(); }); container.remove(); }
 
-// CRA's default jest config sets resetMocks:true, which wipes a jest.fn's
-// implementation before EVERY test (not just clears call history) -- so the
-// implementation given in the jest.mock() factory above must be re-armed
-// here every time, exactly like TabMesa.render.test.js already does for the
-// same module.
 beforeEach(() => {
   jest.clearAllMocks();
   createMesaRequestId.mockReturnValue("mesa_test_request");
-  describeMesaError.mockImplementation((error) => error?.code || "error");
   setWidth(1280);
 });
 
@@ -88,41 +81,42 @@ test("picking covers opens the picker workspace immediately, no intermediate scr
   unmount(container, root);
 });
 
-// 3. Cancelar on the covers step -- no API call
-test("Cancelar on the covers step aborts without ever calling onSubmit", async () => {
-  const { container, root, onClose, onSubmit } = await mount({ target: target({ coversTotal: null }) });
+// 3. Cancelar on the covers step -- no draft produced
+test("Cancelar on the covers step aborts without ever calling onConfirm", async () => {
+  const { container, root, onClose, onConfirm } = await mount({ target: target({ coversTotal: null }) });
   click(buttonByText(container, "Cancelar"));
   expect(onClose).toHaveBeenCalledTimes(1);
-  expect(onSubmit).not.toHaveBeenCalled();
+  expect(onConfirm).not.toHaveBeenCalled();
   unmount(container, root);
 });
 
-// 4. covers are never persisted separately -- picking them alone never calls onSubmit
-test("choosing covers alone never calls onSubmit -- it's only bundled at final submit", async () => {
-  const { container, root, onSubmit } = await mount({ target: target({ coversTotal: null }) });
+// 4. covers are never persisted separately -- picking them alone never calls onConfirm
+test("choosing covers alone never calls onConfirm -- it's only bundled at Confirmar comanda", async () => {
+  const { container, root, onConfirm } = await mount({ target: target({ coversTotal: null }) });
   click(byTestId(container, "covers-quick-4"));
   await flush();
-  expect(onSubmit).not.toHaveBeenCalled();
+  expect(onConfirm).not.toHaveBeenCalled();
   unmount(container, root);
 });
 
-// 5. submit prima comanda include coversTotal
-test("first comanda submit bundles the freshly chosen coversTotal atomically with items", async () => {
-  const { container, root, onSubmit } = await mount({ target: target({ coversTotal: null }) });
+// 5. Confirmar comanda bundles the freshly chosen coversTotal with items, no network call
+test("Confirmar comanda bundles the freshly chosen coversTotal atomically with items, calling onConfirm locally (no network)", async () => {
+  const { container, root, onConfirm } = await mount({ target: target({ coversTotal: null }) });
   click(byTestId(container, "covers-quick-4"));
   await flush();
   click(productCard(container, "El Pelusa"));
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-enviar-comanda"));
+  click(byTestId(container, "mesa-confirmar-comanda"));
   await flush();
-  expect(onSubmit).toHaveBeenCalledTimes(1);
-  expect(onSubmit.mock.calls[0][0].coversTotal).toBe(4);
+  expect(onConfirm).toHaveBeenCalledTimes(1);
+  expect(onConfirm.mock.calls[0][0].coversTotal).toBe(4);
+  expect(onConfirm.mock.calls[0][0].client_req_id).toBe("mesa_test_request");
   unmount(container, root);
 });
 
-// 6. next comanda -- straight to the picker
+// 6. when covers are already known, the builder opens straight to the picker
 test("when covers are already known, the builder opens straight to the picker", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 4 }) });
   expect(container.textContent).not.toContain("¿Cuántos comensales?");
@@ -135,7 +129,6 @@ test("cart survives opening/closing the extras sub-panel and switching categorie
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   click(productCard(container, "El Pelusa"));
   await flush();
-  // open extras (pencil) via drawer, then close it without losing the line
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
   click(byTestId(container, "mesa-line-edit"));
@@ -144,7 +137,6 @@ test("cart survives opening/closing the extras sub-panel and switching categorie
   click(buttonByText(container, "Listo"));
   await flush();
   expect(container.textContent).toContain("1 artículo");
-  // switch categories, then back -- product still selected (badge qty)
   click(buttonByText(container, "Bebidas"));
   await flush();
   click(buttonByText(container, "Pizzas"));
@@ -174,7 +166,6 @@ test("tapping a product again increments its quantity badge; drawer +/- also wor
   click(productCard(container, "El Pelusa"));
   click(productCard(container, "El Pelusa"));
   await flush();
-  // two taps create two separate lines (never merge -- same rule as ItemPickerModal)
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
   expect(allByTestId(container, "mesa-line").length).toBe(2);
@@ -185,9 +176,9 @@ test("tapping a product again increments its quantity badge; drawer +/- also wor
 });
 
 // 10. extras and removed ingredients
-test("extras and removed-ingredient toggles reach the submitted payload", async () => {
-  const onSubmit = jest.fn().mockResolvedValue({ ok: true });
-  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
+test("extras and removed-ingredient toggles reach the confirmed draft", async () => {
+  const onConfirm = jest.fn();
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onConfirm });
   click(productCard(container, "El Pelusa"));
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
@@ -202,18 +193,18 @@ test("extras and removed-ingredient toggles reach the submitted payload", async 
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-enviar-comanda"));
+  click(byTestId(container, "mesa-confirmar-comanda"));
   await flush();
-  const submitted = onSubmit.mock.calls[0][0].items[0];
+  const submitted = onConfirm.mock.calls[0][0].items[0];
   expect(submitted.extras.length).toBe(1);
   expect(submitted.removedIngredients.length).toBe(1);
   unmount(container, root);
 });
 
-// 11. per-line note
-test("a per-line note on a non-pizza item reaches the submitted item", async () => {
-  const onSubmit = jest.fn().mockResolvedValue({ ok: true });
-  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
+// 11. per-line note on a non-pizza item
+test("a per-line note on a non-pizza item reaches the confirmed item", async () => {
+  const onConfirm = jest.fn();
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onConfirm });
   click(buttonByText(container, "Bebidas"));
   await flush();
   click(productCard(container, "Estrella Galicia"));
@@ -221,38 +212,38 @@ test("a per-line note on a non-pizza item reaches the submitted item", async () 
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
   typeInto(byTestId(container, "mesa-line-note"), "bien fría");
-  click(byTestId(container, "mesa-enviar-comanda"));
+  click(byTestId(container, "mesa-confirmar-comanda"));
   await flush();
-  expect(onSubmit.mock.calls[0][0].items[0].notes).toBe("bien fría");
+  expect(onConfirm.mock.calls[0][0].items[0].notes).toBe("bien fría");
   unmount(container, root);
 });
 
 // 12. general note
-test("the general note reaches onSubmit as `nota`", async () => {
-  const onSubmit = jest.fn().mockResolvedValue({ ok: true });
-  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
+test("the general note reaches onConfirm as `nota`", async () => {
+  const onConfirm = jest.fn();
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onConfirm });
   click(productCard(container, "El Pelusa"));
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
   typeInto(byTestId(container, "mesa-nota-general"), "mesa junto a la ventana");
-  click(byTestId(container, "mesa-enviar-comanda"));
+  click(byTestId(container, "mesa-confirmar-comanda"));
   await flush();
-  expect(onSubmit.mock.calls[0][0].nota).toBe("mesa junto a la ventana");
+  expect(onConfirm.mock.calls[0][0].nota).toBe("mesa junto a la ventana");
   unmount(container, root);
 });
 
 // 13. both product names and ID preserved
-test("submitted item preserves product id, classic name and fantasy name -- no silent remap", async () => {
-  const onSubmit = jest.fn().mockResolvedValue({ ok: true });
-  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
+test("confirmed item preserves product id, classic name and fantasy name -- no silent remap", async () => {
+  const onConfirm = jest.fn();
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onConfirm });
   click(productCard(container, "El Pelusa"));
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-enviar-comanda"));
+  click(byTestId(container, "mesa-confirmar-comanda"));
   await flush();
-  const item = onSubmit.mock.calls[0][0].items[0];
+  const item = onConfirm.mock.calls[0][0].items[0];
   expect(item.id).toBe(1);
   expect(item.fantasyName).toBe("El Pelusa");
   expect(item.classicName).toBe("Margherita Classica");
@@ -262,8 +253,8 @@ test("submitted item preserves product id, classic name and fantasy name -- no s
 
 // 14. edit a line
 test("editing a line via the pencil updates that same line, not a duplicate", async () => {
-  const onSubmit = jest.fn().mockResolvedValue({ ok: true });
-  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
+  const onConfirm = jest.fn();
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onConfirm });
   click(productCard(container, "El Pelusa"));
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
@@ -277,17 +268,17 @@ test("editing a line via the pencil updates that same line, not a duplicate", as
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
   expect(allByTestId(container, "mesa-line").length).toBe(1);
-  click(byTestId(container, "mesa-enviar-comanda"));
+  click(byTestId(container, "mesa-confirmar-comanda"));
   await flush();
-  expect(onSubmit.mock.calls[0][0].items.length).toBe(1);
-  expect(onSubmit.mock.calls[0][0].items[0].extras.length).toBe(1);
+  expect(onConfirm.mock.calls[0][0].items.length).toBe(1);
+  expect(onConfirm.mock.calls[0][0].items[0].extras.length).toBe(1);
   unmount(container, root);
 });
 
 // 15. remove a line
-test("removing a line via the trash button drops it from the cart and the submitted payload", async () => {
-  const onSubmit = jest.fn().mockResolvedValue({ ok: true });
-  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
+test("removing a line via the trash button drops it from the cart and the confirmed draft", async () => {
+  const onConfirm = jest.fn();
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onConfirm });
   click(productCard(container, "El Pelusa"));
   click(buttonByText(container, "Bebidas"));
   await flush();
@@ -299,9 +290,9 @@ test("removing a line via the trash button drops it from the cart and the submit
   click(byTestId(container, "mesa-line-remove"));
   await flush();
   expect(allByTestId(container, "mesa-line").length).toBe(1);
-  click(byTestId(container, "mesa-enviar-comanda"));
+  click(byTestId(container, "mesa-confirmar-comanda"));
   await flush();
-  expect(onSubmit.mock.calls[0][0].items.length).toBe(1);
+  expect(onConfirm.mock.calls[0][0].items.length).toBe(1);
   unmount(container, root);
 });
 
@@ -329,85 +320,81 @@ test("the sticky bar shows item count, total and a Ver comanda action, disabled 
   unmount(container, root);
 });
 
-// 18. submit only once
-test("a normal submit calls onSubmit exactly once", async () => {
-  const onSubmit = jest.fn().mockResolvedValue({ ok: true });
-  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
+// 18. Confirmar comanda only once
+test("Confirmar comanda calls onConfirm exactly once", async () => {
+  const onConfirm = jest.fn();
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onConfirm });
   click(productCard(container, "El Pelusa"));
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-enviar-comanda"));
+  click(byTestId(container, "mesa-confirmar-comanda"));
   await flush();
-  expect(onSubmit).toHaveBeenCalledTimes(1);
+  expect(onConfirm).toHaveBeenCalledTimes(1);
   unmount(container, root);
 });
 
-// 19. double tap does not duplicate
-test("a rapid double tap on Enviar never sends a second request -- button disables synchronously", async () => {
-  let resolveSubmit;
-  const onSubmit = jest.fn(() => new Promise((resolve) => { resolveSubmit = resolve; }));
-  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
-  click(productCard(container, "El Pelusa"));
-  await flush();
-  click(byTestId(container, "mesa-ver-comanda"));
-  await flush();
-  const btn = byTestId(container, "mesa-enviar-comanda");
-  click(btn);
-  click(btn);
-  click(btn);
-  await flush();
-  expect(onSubmit).toHaveBeenCalledTimes(1);
-  expect(btn.disabled).toBe(true);
-  act(() => { resolveSubmit({ ok: true }); });
-  await flush();
-  unmount(container, root);
-});
-
-// 20. client request ID stable across retry
-test("client_req_id stays identical across a failed submit and its retry", async () => {
-  const onSubmit = jest.fn()
-    .mockRejectedValueOnce({ code: "MESA_NETWORK_ERROR" })
-    .mockResolvedValueOnce({ ok: true });
-  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
-  click(productCard(container, "El Pelusa"));
-  await flush();
-  click(byTestId(container, "mesa-ver-comanda"));
-  await flush();
-  click(byTestId(container, "mesa-enviar-comanda"));
-  await flush();
-  click(byTestId(container, "mesa-enviar-comanda"));
-  await flush();
-  expect(onSubmit).toHaveBeenCalledTimes(2);
-  expect(onSubmit.mock.calls[0][0].client_req_id).toBe(onSubmit.mock.calls[1][0].client_req_id);
-  unmount(container, root);
-});
-
-// 21. error keeps the whole draft
-test("a failed submit shows the error and keeps covers, cart and note intact for retry", async () => {
-  const onSubmit = jest.fn().mockRejectedValue({ code: "MESA_SERVER_ERROR" });
-  const { container, root } = await mount({ target: target({ coversTotal: 2 }), onSubmit });
-  click(productCard(container, "El Pelusa"));
-  await flush();
-  click(byTestId(container, "mesa-ver-comanda"));
-  await flush();
-  typeInto(byTestId(container, "mesa-nota-general"), "sin gluten");
-  click(byTestId(container, "mesa-enviar-comanda"));
-  await flush();
-  expect(byTestId(container, "mesa-error")).toBeTruthy();
-  expect(allByTestId(container, "mesa-line").length).toBe(1);
-  expect(byTestId(container, "mesa-nota-general").value).toBe("sin gluten");
-  expect(byTestId(container, "mesa-enviar-comanda").disabled).toBe(false);
-  unmount(container, root);
-});
-
-// 23. no delivery/phone/planner field on the Mesa path
+// 19. no delivery/customer/planner surface
 test("no delivery/customer/planner surface leaks into the Mesa builder", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   const text = container.textContent;
   for (const banned of ["Teléfono", "Dirección", "Planner", "Retirar a las", "Comanda separada para cocina", "Método de pago"]) {
     expect(text).not.toContain(banned);
   }
+  unmount(container, root);
+});
+
+// 20/21. Modificar -- reopening with an existing draft
+test("reopening with an existing draft (Modificar) reseeds cart, covers, general note and reuses the same client_req_id", async () => {
+  createMesaRequestId.mockReturnValue("should-not-be-used");
+  const draft = {
+    items: [{
+      id: 1, n: "El Pelusa", sub: "", q: 2, cat: "Pizzas", p: 12.5,
+      classicName: "Margherita Classica", fantasyName: "El Pelusa", baseUnitPrice: 12.0,
+      extras: [{ key: "ing_jamon", name: "Jamón cocido", price: 0.5, emoji: "🍖", quantity: 1 }],
+      notes: "poco hecha", removedIngredients: ["Albahaca"],
+    }],
+    nota: "mesa junto a la ventana", coversTotal: 4, client_req_id: "existing-draft-id",
+  };
+  const { container, root, onConfirm } = await mount({ target: target({ coversTotal: null }), draft });
+  // No covers prompt -- reseeded straight from the draft, not the target.
+  expect(container.textContent).not.toContain("¿Cuántos comensales?");
+  expect(container.textContent).toContain("4 comensales");
+  click(byTestId(container, "mesa-ver-comanda"));
+  await flush();
+  expect(allByTestId(container, "mesa-line").length).toBe(1);
+  expect(byTestId(container, "mesa-nota-general").value).toBe("mesa junto a la ventana");
+  click(byTestId(container, "mesa-confirmar-comanda"));
+  await flush();
+  const resubmitted = onConfirm.mock.calls[0][0];
+  expect(resubmitted.client_req_id).toBe("existing-draft-id");
+  expect(resubmitted.items[0].extras.length).toBe(1);
+  expect(resubmitted.items[0].extras[0].name).toBe("Jamón cocido");
+  expect(resubmitted.items[0].removedIngredients).toEqual(["Albahaca"]);
+  expect(resubmitted.items[0].notes).toBe("poco hecha");
+  unmount(container, root);
+});
+
+test("Modificar preserves quantity and lets the operator change it before re-confirming", async () => {
+  const draft = {
+    items: [{
+      id: 1, n: "El Pelusa", sub: "", q: 2, cat: "Pizzas", p: 12.0,
+      classicName: "Margherita Classica", fantasyName: "El Pelusa", baseUnitPrice: 12.0,
+      extras: [], notes: "", removedIngredients: [],
+    }],
+    nota: "", coversTotal: 2, client_req_id: "existing-draft-id-2",
+  };
+  const onConfirm = jest.fn();
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }), draft, onConfirm });
+  click(byTestId(container, "mesa-ver-comanda"));
+  await flush();
+  const line = byTestId(container, "mesa-line");
+  expect(line.textContent).toContain("2");
+  click(byTestId(container, "mesa-line-plus"));
+  await flush();
+  click(byTestId(container, "mesa-confirmar-comanda"));
+  await flush();
+  expect(onConfirm.mock.calls[0][0].items[0].q).toBe(3);
   unmount(container, root);
 });
 
