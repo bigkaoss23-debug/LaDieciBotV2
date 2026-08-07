@@ -31,8 +31,11 @@ function setWidth(px) {
 }
 function byTestId(container, id) { return container.querySelector(`[data-testid="${id}"]`); }
 function allByTestId(container, id) { return Array.from(container.querySelectorAll(`[data-testid="${id}"]`)); }
+// Case-insensitive: non-pizza cards now render their primary name in
+// UPPERCASE (Fase 9 -- presentation only), so a lookup by the menu's own
+// mixed-case name must not depend on DOM casing.
 function productCard(container, name) {
-  return allByTestId(container, "mesa-product-card").find((el) => el.textContent.includes(name));
+  return allByTestId(container, "mesa-product-card").find((el) => el.textContent.toLowerCase().includes(name.toLowerCase()));
 }
 function buttonByText(container, text) {
   return Array.from(container.querySelectorAll("button")).find((button) => button.textContent.trim().startsWith(text));
@@ -463,5 +466,90 @@ test("Escape closes the extras panel first, then the drawer, then the whole buil
   act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
   await flush();
   expect(onClose).toHaveBeenCalledTimes(1);
+  unmount(container, root);
+});
+
+// 28. Ver comanda drawer must show removed ingredients too -- they already
+// exist on the working cart item (isRemoved/toggleRemoved) and already show
+// correctly in MesaWorkspace's draft panel; the drawer was silently omitting
+// them. Also covers the required per-line format: dual name, "+ extras",
+// "Sin: ..." and "Nota: ...".
+test("Ver comanda drawer shows dual name, extras, removed ingredients and note for a fresh line", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
+  click(productCard(container, "El Pelusa"));
+  await flush();
+  click(byTestId(container, "mesa-ver-comanda"));
+  await flush();
+  click(byTestId(container, "mesa-line-edit"));
+  await flush();
+  // First salted extra chip (prezzo > 0, filtered before the base/free
+  // ingredients) is "Albahaca fresca"; first "Quitar ingredientes" chip
+  // (El Pelusa's own base) is "Tomate San Marzano" -- both from the real
+  // static menu/ingredient list, not invented.
+  click(allByTestId(container, "mesa-extra-chip")[0]);
+  await flush();
+  click(allByTestId(container, "remove-ingredient-chip")[0]);
+  await flush();
+  const notaInput = container.querySelector('input[placeholder^="Nota cocina"]');
+  typeInto(notaInput, "poco hecha");
+  click(buttonByText(container, "Listo"));
+  await flush();
+  click(byTestId(container, "mesa-ver-comanda"));
+  await flush();
+  const line = byTestId(container, "mesa-line");
+  expect(line.textContent).toContain("El Pelusa / Margherita Classica");
+  expect(line.textContent).toContain("+ Albahaca fresca");
+  const removedLine = byTestId(container, "mesa-line-removed");
+  expect(removedLine).toBeTruthy();
+  expect(removedLine.textContent).toBe("Sin: Tomate San Marzano");
+  expect(line.textContent).toContain("Nota: poco hecha");
+  unmount(container, root);
+});
+
+// 29. the same bug, reproduced from a reopened draft (Modificar path) -- the
+// exact scenario reported: removed ingredients exist in the draft and show
+// correctly in MesaWorkspace, but must ALSO show here once reseeded.
+test("Ver comanda drawer shows removed ingredients for a line reseeded from an existing draft", async () => {
+  const draft = {
+    items: [{
+      id: 1, n: "El Pelusa", sub: "", q: 1, cat: "Pizzas", p: 12.0,
+      classicName: "Margherita Classica", fantasyName: "El Pelusa", baseUnitPrice: 12.0,
+      extras: [], notes: "", removedIngredients: ["Albahaca", "Fior di latte"],
+    }],
+    nota: "", coversTotal: 2, client_req_id: "draft-req-99",
+  };
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }), draft });
+  click(byTestId(container, "mesa-ver-comanda"));
+  await flush();
+  const removedLine = byTestId(container, "mesa-line-removed");
+  expect(removedLine).toBeTruthy();
+  expect(removedLine.textContent).toBe("Sin: Albahaca, Fior di latte");
+  unmount(container, root);
+});
+
+// 30. pizza-number badge -- discreet, bottom-left, using the authoritative
+// menu number verbatim; absent for products that have none.
+test("pizza cards show a small badge with the authoritative pizza number; non-pizza cards show none", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
+  const pizzaCard = productCard(container, "El Pelusa");
+  const badge = pizzaCard.querySelector('[data-testid="mesa-pizza-number-badge"]');
+  expect(badge).toBeTruthy();
+  expect(badge.textContent).toBe("1");
+  click(buttonByText(container, "Bebidas"));
+  await flush();
+  const drinkCard = productCard(container, "Estrella Galicia");
+  expect(drinkCard.querySelector('[data-testid="mesa-pizza-number-badge"]')).toBeNull();
+  unmount(container, root);
+});
+
+// 31. Postres/Bebidas cards use the same strong uppercase hierarchy as pizza
+// cards for the main name -- presentation only, no data mutation.
+test("non-pizza cards render the main name in uppercase, secondary value unchanged", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
+  click(buttonByText(container, "Postres"));
+  await flush();
+  const card = productCard(container, "Misu Clásico");
+  expect(card.textContent).toContain("MISU CLÁSICO");
+  expect(card.textContent).toContain("Tiramisú");
   unmount(container, root);
 });

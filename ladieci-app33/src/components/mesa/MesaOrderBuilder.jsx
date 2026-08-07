@@ -212,6 +212,10 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
                 {MENU.filter(m => m.cat === cat && m.disponible !== false && m.visiblePicker !== false).map(p => {
                   const qty = qtyOf(p.id);
                   const lbl = pizzaLabel(p);
+                  // Presentation only, same data -- pizzaLabel already
+                  // uppercases pizza names; extend the same hierarchy to
+                  // Postres/Bebidas without touching pizzaLabel itself.
+                  const primaryLabel = String(lbl.primary || "").toUpperCase();
                   return (
                     <div key={p.id} data-testid="mesa-product-card" className="mesa-picker-card" onClick={() => increment(p)} style={{
                       background: qty > 0 ? C.rosso + "22" : C.carbone2,
@@ -224,9 +228,18 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
                           fontSize: 11, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center",
                         }}>{qty}</span>
                       )}
-                      <div style={{ color: C.bianco, fontSize: 14, fontWeight: 800, lineHeight: 1.25 }}>{lbl.primary}</div>
+                      <div style={{ color: C.bianco, fontSize: 14, fontWeight: 800, lineHeight: 1.25 }}>{primaryLabel}</div>
                       {lbl.secondary && <div style={{ color: "#a99f8b", fontSize: 12, fontStyle: "italic", lineHeight: 1.2, marginTop: 1 }}>{lbl.secondary}</div>}
                       <div style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 13, fontWeight: 800, marginTop: 4 }}>{p.p.toFixed(2)}€</div>
+                      {/* Discreto, solo se p.num esiste — numero ufficiale del menù,
+                          MAI inventato. Non tocca layout/densità della card. */}
+                      {p.num && (
+                        <span data-testid="mesa-pizza-number-badge" style={{
+                          position: "absolute", bottom: 5, left: 5, background: C.carbone, color: "#888",
+                          border: `1px solid ${C.fumo}`, borderRadius: 4, minWidth: 16, height: 16, padding: "0 3px",
+                          fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>{p.num}</span>
+                      )}
                     </div>
                   );
                 })}
@@ -302,15 +315,20 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
                     }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: C.bianco, fontSize: 15, fontWeight: 700 }}>{item.n}</div>
+                          <div style={{ color: C.bianco, fontSize: 15, fontWeight: 700 }}>
+                            {item.fantasyName || item.n}{item.classicName ? ` / ${item.classicName}` : ""}
+                          </div>
                           {custom ? (
                             <div style={{ color: "#a99f8b", fontSize: 12 }}>{item.sub}</div>
                           ) : (
                             <>
                               {extraTokens.length > 0 && (
-                                <div style={{ color: "#fff5e4", fontSize: 12 }}>{extraTokens.join(", ")}</div>
+                                <div style={{ color: "#fff5e4", fontSize: 12 }}>+ {extraTokens.map(t => t.replace(/^\+/, "")).join(", ")}</div>
                               )}
-                              {note && <div style={{ color: "#E8341C", fontSize: 12, fontWeight: 700 }}>{note}</div>}
+                              {(item.removedIngredients || []).length > 0 && (
+                                <div style={{ color: "#F87171", fontSize: 12 }} data-testid="mesa-line-removed">Sin: {item.removedIngredients.join(", ")}</div>
+                              )}
+                              {note && <div style={{ color: "#E8341C", fontSize: 12, fontWeight: 700 }}>Nota: {note}</div>}
                             </>
                           )}
                         </div>

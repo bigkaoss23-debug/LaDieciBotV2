@@ -680,11 +680,15 @@ function MesaWorkspace({
   // stay visible here too (it used to show in the old popup regardless of
   // occupied state), just never competing with the comandas for attention.
   const [reservationOpen, setReservationOpen] = useState(false);
+  // Collapsed by default -- the draft must read as a compact one-line summary
+  // inline in the workspace, not a second full-page view (see Fase 5 spec).
+  const [draftExpanded, setDraftExpanded] = useState(false);
   const session = table.session;
   const hasOrders = (session?.commands?.length || 0) > 0;
   const todayReservations = bookedForToday(table);
   const nextReservation = todayReservations[0];
   const draftTotal = (draft?.items || []).reduce((sum, item) => sum + (Number(item.p) || 0) * (Number(item.q) || 0), 0);
+  const draftItemCount = (draft?.items || []).reduce((sum, item) => sum + (Number(item.q) || 0), 0);
 
   const markServed = async (orderId) => {
     setBusy(true); setError("");
@@ -736,8 +740,15 @@ function MesaWorkspace({
           comandas): this IS the last check with the client before it
           reaches Cocina. Only "Enviar a cocina" here calls the backend. */}
       {draft && <div className="mesa-section" data-testid="mesa-draft-panel">
-        <h3>Comanda por confirmar</h3>
-        <div className="mesa-command-card">
+        <button type="button" data-testid="mesa-draft-toggle" onClick={() => setDraftExpanded((value) => !value)} style={{
+          display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none",
+          border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left",
+        }}>
+          <h3 style={{ margin: 0 }}>Comanda por confirmar</h3>
+          <span className="mesa-muted" style={{ marginLeft: "auto" }}>{draftItemCount} artículo{draftItemCount === 1 ? "" : "s"} · {euro(draftTotal)}</span>
+          <span style={{ color: "#a99d89", transform: draftExpanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
+        </button>
+        {draftExpanded && <div className="mesa-command-card" style={{ marginTop: 8 }}>
           {draft.items.map((item, index) => (
             <div key={item._uid || index} style={{ marginBottom: index < draft.items.length - 1 ? 8 : 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -751,7 +762,7 @@ function MesaWorkspace({
           ))}
           {draft.nota && <div className="mesa-command-note">Nota general: {draft.nota}</div>}
           <div style={{ marginTop: 8, textAlign: "right", fontWeight: 900 }}>{euro(draftTotal)}</div>
-        </div>
+        </div>}
         <div className="mesa-actions">
           <button className="mesa-btn" disabled={sendingDraft} onClick={() => onNewCommand(table)}>Modificar</button>
           <button className="mesa-btn green" disabled={sendingDraft} onClick={sendToCocina}>{sendingDraft ? "Enviando…" : "Enviar a cocina"}</button>

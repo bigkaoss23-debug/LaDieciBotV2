@@ -78,6 +78,8 @@ function buttonByText(container, text) {
   return Array.from(container.querySelectorAll("button")).find((button) => button.textContent.trim().startsWith(text));
 }
 
+function byTestId(container, id) { return container.querySelector(`[data-testid="${id}"]`); }
+
 const emptySession = (overrides = {}) => ({
   id: "session-x", coversTotal: null, coversRemaining: 0, total: 0, paid: 0,
   outstanding: 0, nextEqualShare: 0, paymentTotals: {}, commands: [], lines: [], payments: [],
@@ -1309,7 +1311,7 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     nota: "mesa junto a la ventana", coversTotal: 4, client_req_id: "draft-req-1",
   };
 
-  test("a pending draft is shown expanded, with Modificar/Enviar a cocina, and hides Nueva comanda + Cerrar mesa", async () => {
+  test("a pending draft renders collapsed as a compact summary by default, with Modificar/Enviar a cocina, and hides Nueva comanda + Cerrar mesa", async () => {
     const openTables = floorTables.map((table, index) => index === 0
       ? { ...table, status: "open", session: emptySession() } : table);
     mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
@@ -1317,17 +1319,33 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     click(container.querySelector(".mesa-table"));
     const dialog = container.querySelector('[role="dialog"]');
     expect(dialog.textContent).toContain("Comanda por confirmar");
+    expect(dialog.textContent).toContain("2 artículos");
+    // Collapsed: full item detail is NOT in the DOM yet, only the summary line.
+    expect(dialog.textContent).not.toContain("Margherita Classica");
+    expect(dialog.textContent).toContain("Modificar");
+    expect(dialog.textContent).toContain("Enviar a cocina");
+    // No second order-creator and no premature close while a draft is pending.
+    expect(dialog.textContent).not.toContain("＋ Nueva comanda");
+    expect(dialog.textContent).not.toContain("Cerrar mesa");
+    unmount(container, root);
+  });
+
+  test("tapping the draft summary expands it inline, showing full item detail; tapping again collapses it", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession() } : table);
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+    const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": sampleDraft } });
+    click(container.querySelector(".mesa-table"));
+    const dialog = container.querySelector('[role="dialog"]');
+    click(byTestId(container, "mesa-draft-toggle"));
     expect(dialog.textContent).toContain("El Pelusa");
     expect(dialog.textContent).toContain("Margherita Classica");
     expect(dialog.textContent).toContain("Jamón cocido");
     expect(dialog.textContent).toContain("Albahaca");
     expect(dialog.textContent).toContain("poco hecha");
     expect(dialog.textContent).toContain("mesa junto a la ventana");
-    expect(dialog.textContent).toContain("Modificar");
-    expect(dialog.textContent).toContain("Enviar a cocina");
-    // No second order-creator and no premature close while a draft is pending.
-    expect(dialog.textContent).not.toContain("＋ Nueva comanda");
-    expect(dialog.textContent).not.toContain("Cerrar mesa");
+    click(byTestId(container, "mesa-draft-toggle"));
+    expect(dialog.textContent).not.toContain("Margherita Classica");
     unmount(container, root);
   });
 
@@ -1393,6 +1411,7 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     const dialog = container.querySelector('[role="dialog"]');
     expect(dialog.textContent).toContain("MESA_SERVER_ERROR");
     expect(dialog.textContent).toContain("Comanda por confirmar");
+    click(byTestId(container, "mesa-draft-toggle"));
     expect(dialog.textContent).toContain("El Pelusa");
     expect(onClearDraft).not.toHaveBeenCalled();
     const retryBtn = buttonByText(container, "Enviar a cocina");
