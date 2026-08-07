@@ -1102,6 +1102,14 @@ function TableSettingsModal({ table, onClose, onSaved }) {
 // (already role-gated below) renders exactly the same either way.
 export default function TabMesa({
   role, notify, onNewCommand, onCountChange, refreshKey = 0, compact = false,
+  // Narrower than `compact`: hides only the Sala principal selector + Libre/
+  // Reservada/Ocupada legend (dead weight once there's a single sala and the
+  // three fill colors are already self-evident on the map), without also
+  // pulling in `compact`'s height:100%/flex-column CSS -- that assumes a
+  // parent that already promises a real flex height (the waiter-shell
+  // embedding `compact` was built for), which this app's current ServicioPage
+  // tab body does not, per the CSS's own comment on .mesa-root.compact.
+  hideToolbar = false,
   mesaDrafts = {}, onClearDraft, onSendToCocina,
 }) {
   const canEdit = role === "admin" || role === "owner";
@@ -1228,7 +1236,7 @@ export default function TabMesa({
   if (error && tables.length === 0) return <div className="mesa-root"><style>{css}</style><div className="mesa-banner mesa-error">{error}</div><button className="mesa-btn" style={{ marginTop: 10 }} onClick={() => load()}>Reintentar</button></div>;
 
   return <div className={`mesa-root${compact ? " compact" : ""}`}><style>{css}</style>
-    {!compact && <div className="mesa-toolbar">
+    {!compact && !hideToolbar && <div className="mesa-toolbar">
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         {/* Single room today; the selector stays a real <select> (not a static
             label) so a future second sala (e.g. terraza) is additive UI only --

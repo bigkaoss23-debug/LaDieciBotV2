@@ -1185,7 +1185,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     />;
     if(tab==="manual") return <TabManual ordenes={creationQueue.visibleOrders} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} onOpenTicket={setTicketOrder} vipIds={vipIds} loadingIds={loadingIds}/>;
     if(tab==="banco")  return MESA_UI_ENABLED
-      ? <TabMesa role={auth.getRole()} notify={notify} refreshKey={mesaRefreshKey} onCountChange={setMesaN}
+      ? <TabMesa role={auth.getRole()} notify={notify} refreshKey={mesaRefreshKey} onCountChange={setMesaN} hideToolbar
           onNewCommand={(table) => {
             setMesaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name, coversTotal: table.session.coversTotal ?? null });
           }}
@@ -1582,9 +1582,12 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         background:`linear-gradient(to top, ${C.nero} 55%, transparent)`,
         zIndex:150,
         display:"flex",gap:10,alignItems:"stretch"}}>
-        <button onClick={()=>{
-          if (MESA_UI_ENABLED && tab === "banco") { notify("Selecciona una Mesa para añadir la comanda", C.giallo); return; }
-          setMesaCommandTarget(null); setPrefillCliente(tab === "banco" ? {canal:"BARRA"} : null); setShowNuevo(true);
+        {/* Mesa has its own "＋ Nueva comanda" inside the table workspace --
+            this generic creator is meaningless there (it used to relabel
+            itself into a dead CTA whose only behavior was a toast telling
+            the operator to go tap a table on the map instead). */}
+        {!(MESA_UI_ENABLED && tab === "banco") && <button onClick={()=>{
+          setMesaCommandTarget(null); setPrefillCliente(null); setShowNuevo(true);
         }} style={{
           flex:1,background:C.rosso,color:"#fff",
           border:"none",borderRadius:16,
@@ -1594,8 +1597,8 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           boxShadow:`0 4px 22px ${C.rosso}55, inset 0 1px 0 rgba(255,130,90,0.22)`,
           textTransform:"uppercase",position:"relative",overflow:"hidden"}}>
           <span style={{position:"relative",fontSize:18}}>＋</span>
-          <span style={{position:"relative"}}>{MESA_UI_ENABLED && tab === "banco" ? "SELECCIONA UNA MESA" : "NUEVO PEDIDO"}</span>
-        </button>
+          <span style={{position:"relative"}}>NUEVO PEDIDO</span>
+        </button>}
         <button onClick={handleChiudiServizio} style={{
           flexShrink:0,
           background: "rgba(255,255,255,0.07)",

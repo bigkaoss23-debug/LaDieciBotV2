@@ -67,6 +67,24 @@ describe("MesaOrderBuilder is a separate mount, never routed through NuevoPedido
     expect(block).toMatch(/onClearDraft=\{/);
     expect(block).toMatch(/onSendToCocina=\{sendMesaCommandToCocina\}/);
   });
+
+  test("TabMesa is mounted with hideToolbar -- the Sala principal selector/legend are map clutter Mesa doesn't need", () => {
+    const idx = src.indexOf("<TabMesa role=");
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/\bhideToolbar\b/);
+  });
+});
+
+describe("Mesa map cleanup: the dead 'SELECCIONA UNA MESA' bottom CTA is gone", () => {
+  test("the literal 'SELECCIONA UNA MESA' label no longer exists in source", () => {
+    expect(src).not.toMatch(/SELECCIONA UNA MESA/);
+  });
+  test("the generic NUEVO PEDIDO bottom button is not rendered while on the Mesa tab", () => {
+    const idx = src.indexOf('>NUEVO PEDIDO<');
+    expect(idx).toBeGreaterThan(-1);
+    const before = src.slice(Math.max(0, idx - 700), idx);
+    expect(before).toMatch(/!\(MESA_UI_ENABLED && tab === "banco"\) && <button/);
+  });
 });
 
 describe("the Mesa contract sendMesaCommandToCocina still posts through mesaApi.addCommand unchanged", () => {

@@ -414,6 +414,31 @@ test("on a tablet/desktop-width viewport the picker panel keeps its rounded floa
   unmount(container, root);
 });
 
+// 31/32/33. responsive product grid -- real CSS breakpoints (jsdom doesn't
+// compute layout from media queries, so this asserts the rules themselves
+// exist with the right column counts, not a runtime grid measurement).
+test("the product grid uses real CSS breakpoints for 2/3/4 columns -- no user-agent sniffing, no JS width branching for layout", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
+  const css = Array.from(container.querySelectorAll("style")).map((el) => el.textContent).join("\n");
+  expect(css).toMatch(/\.mesa-picker-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*1fr\)/);
+  expect(css).toMatch(/@media \(max-width:\s*359px\)[^{]*\{[^}]*\.mesa-picker-grid[^}]*grid-template-columns:\s*1fr/);
+  expect(css).toMatch(/@media \(min-width:\s*768px\)[^{]*\{[^}]*\.mesa-picker-grid[^}]*grid-template-columns:\s*repeat\(3,\s*1fr\)/);
+  expect(css).toMatch(/@media \(min-width:\s*1024px\)[^{]*\{[^}]*\.mesa-picker-grid[^}]*grid-template-columns:\s*repeat\(4,\s*1fr\)/);
+  unmount(container, root);
+});
+
+// 36. no decorative emoji on the product card -- name/subname/price only.
+test("product cards show no decorative icon -- just primary name, secondary name and price", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
+  const card = productCard(container, "El Pelusa");
+  expect(card.textContent).toContain("El Pelusa");
+  expect(card.textContent.toUpperCase()).toContain("MARGHERITA CLASSICA");
+  expect(card.textContent).toContain("12.00€");
+  // The static menu's own emoji field (🍕 for El Pelusa) must not appear on the card.
+  expect(card.textContent).not.toContain("🍕");
+  unmount(container, root);
+});
+
 // 27. accessibility
 test("the picker step exposes a labelled dialog role", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });

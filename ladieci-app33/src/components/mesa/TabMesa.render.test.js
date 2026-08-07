@@ -1412,3 +1412,42 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     unmount(container, root);
   });
 });
+
+describe("hideToolbar -- Mesa map visual cleanup", () => {
+  test("by default (hideToolbar unset) the Sala principal selector and Libre/Reservada/Ocupada legend still render", async () => {
+    const { container, root } = await mount("waiter");
+    expect(container.textContent).toContain("Sala principal");
+    expect(container.textContent).toContain("Libre");
+    expect(container.textContent).toContain("Reservada");
+    expect(container.textContent).toContain("Ocupada");
+    unmount(container, root);
+  });
+
+  test("hideToolbar hides the Sala selector and legend without touching the map/board itself", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<TabMesa role="waiter" notify={jest.fn()} onNewCommand={jest.fn()} onCountChange={jest.fn()} hideToolbar />);
+    });
+    await flush();
+    expect(container.textContent).not.toContain("Sala principal");
+    expect(container.querySelector(".mesa-legend")).toBeFalsy();
+    // the map itself, with all its tables, is unaffected
+    expect(container.querySelectorAll(".mesa-table").length).toBe(floorTables.length);
+    unmount(container, root);
+  });
+
+  test("hideToolbar does not add the compact class -- it only hides the toolbar, unlike WaiterShell's `compact` (different height/flex CSS, different embedding)", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<TabMesa role="waiter" notify={jest.fn()} onNewCommand={jest.fn()} onCountChange={jest.fn()} hideToolbar />);
+    });
+    await flush();
+    expect(container.querySelector(".mesa-root.compact")).toBeFalsy();
+    expect(container.querySelector(".mesa-root")).toBeTruthy();
+    unmount(container, root);
+  });
+});

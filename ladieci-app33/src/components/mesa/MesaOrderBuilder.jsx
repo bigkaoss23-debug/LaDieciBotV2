@@ -206,33 +206,32 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
 
         <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 14 }}>
           {cat !== "⭐ Custom" ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
-              {MENU.filter(m => m.cat === cat && m.disponible !== false && m.visiblePicker !== false).map(p => {
-                const qty = qtyOf(p.id);
-                const lbl = pizzaLabel(p);
-                return (
-                  <div key={p.id} data-testid="mesa-product-card" onClick={() => increment(p)} style={{
-                    background: qty > 0 ? C.rosso + "22" : C.carbone2,
-                    border: `2px solid ${qty > 0 ? C.rosso : C.fumo}`,
-                    borderRadius: 16, padding: "16px 10px", minHeight: 116,
-                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                    gap: 7, position: "relative", cursor: "pointer",
-                  }}>
-                    {qty > 0 && (
-                      <span style={{
-                        position: "absolute", top: -8, right: -8, background: C.rosso, color: "#fff",
-                        border: `2px solid ${C.carbone}`, borderRadius: "50%", width: 24, height: 24,
-                        fontSize: 12, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center",
-                      }}>{qty}</span>
-                    )}
-                    <span style={{ fontSize: 30, pointerEvents: "none" }}>{p.e}</span>
-                    <span style={{ color: C.bianco, fontSize: p.num ? 15 : 14, fontWeight: 800, textAlign: "center", lineHeight: 1.2 }}>{lbl.primary}</span>
-                    {lbl.secondary && <span style={{ color: "#a99f8b", fontSize: 12, fontStyle: p.num ? "italic" : "normal", textAlign: "center", lineHeight: 1.2 }}>{lbl.secondary}</span>}
-                    <span style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 14, fontWeight: 800, marginTop: 2 }}>{p.p.toFixed(2)}€</span>
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              <style>{pickerGridCss}</style>
+              <div className="mesa-picker-grid">
+                {MENU.filter(m => m.cat === cat && m.disponible !== false && m.visiblePicker !== false).map(p => {
+                  const qty = qtyOf(p.id);
+                  const lbl = pizzaLabel(p);
+                  return (
+                    <div key={p.id} data-testid="mesa-product-card" className="mesa-picker-card" onClick={() => increment(p)} style={{
+                      background: qty > 0 ? C.rosso + "22" : C.carbone2,
+                      border: `2px solid ${qty > 0 ? C.rosso : C.fumo}`,
+                    }}>
+                      {qty > 0 && (
+                        <span style={{
+                          position: "absolute", top: -7, right: -7, background: C.rosso, color: "#fff",
+                          border: `2px solid ${C.carbone}`, borderRadius: "50%", width: 22, height: 22,
+                          fontSize: 11, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>{qty}</span>
+                      )}
+                      <div style={{ color: C.bianco, fontSize: 14, fontWeight: 800, lineHeight: 1.25 }}>{lbl.primary}</div>
+                      {lbl.secondary && <div style={{ color: "#a99f8b", fontSize: 12, fontStyle: "italic", lineHeight: 1.2, marginTop: 1 }}>{lbl.secondary}</div>}
+                      <div style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 13, fontWeight: 800, marginTop: 4 }}>{p.p.toFixed(2)}€</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           ) : (
             <PizzaCustomBuilder setItems={(updater) => {
               const result = typeof updater === "function" ? updater([]) : updater;
@@ -466,6 +465,22 @@ const ExtrasPanel = ({ extrasTarget, extrasEsDulce, extrasList, splitSub, addExt
     </div>
   );
 };
+
+// Real CSS breakpoints, not JS width-branching -- smoother across resize/
+// rotation, and the column counts asked for map directly to media queries:
+// phone portrait 2 (1 only if genuinely too narrow to stay legible), tablet
+// portrait ~3, tablet landscape/desktop ~4. No UA sniffing anywhere.
+const pickerGridCss = `
+  .mesa-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  @media (max-width: 359px) { .mesa-picker-grid { grid-template-columns: 1fr; } }
+  @media (min-width: 768px) { .mesa-picker-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 1024px) { .mesa-picker-grid { grid-template-columns: repeat(4, 1fr); } }
+  .mesa-picker-card {
+    border-radius: 14px; padding: 10px 12px; min-height: 64px;
+    display: flex; flex-direction: column; justify-content: center;
+    position: relative; cursor: pointer;
+  }
+`;
 
 const overlayStyle = {
   // Above MesaWorkspace's own overlay (TabMesa.jsx .mesa-overlay, z-index
