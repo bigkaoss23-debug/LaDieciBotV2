@@ -122,6 +122,12 @@ export function classifyEnsureAttempt(res) {
       created: res.created === true,
       code: res.code || null,
       session: res.session || null,
+      // SERVICE CLOSEOUT V2 / SLICE 4B — optional, read-only, non-blocking
+      // carryover advisory. Absent whenever the backend's own read-model
+      // lookup failed (it degrades by omitting the field, never a 5xx) or
+      // there is nothing to report; never invented here, never re-fetched
+      // separately.
+      previousCloseoutIncidents: res.previousCloseoutIncidents || null,
     });
   }
 
@@ -153,6 +159,9 @@ export function classifyEnsureAttempt(res) {
       created: false,
       code,
       session: res.session,
+      // The backend only ever attaches this on a success:true body; kept
+      // here defensively for the same shape as the primary ALLOWED branch.
+      previousCloseoutIncidents: res.previousCloseoutIncidents || null,
     });
   }
 

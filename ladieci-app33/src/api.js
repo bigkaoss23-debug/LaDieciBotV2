@@ -408,6 +408,22 @@ const api = {
     if (hasta) params.hasta = hasta;
     return proxyGet("getEconomiaLedger", params);
   },
+  // SERVICE CLOSEOUT V2 / SLICE 4B — Admin "Incidencias" backlog, read-only.
+  // Admin-only backend action, unconditionally verified regardless of
+  // AUTH_V2_LEGACY_GUARD_ENABLED (see backend Slice 4A.1). Filters are all
+  // optional; omitted resolutionStatus gets the backend's own actionable
+  // (pending,acknowledged) default. No mutation counterpart exists.
+  getServiceIncidents: (filters) => {
+    const params = {};
+    const f = filters || {};
+    if (f.resolutionStatus) params.resolutionStatus = f.resolutionStatus;
+    if (f.category) params.category = f.category;
+    if (f.businessDate) params.businessDate = f.businessDate;
+    if (f.serviceSessionId) params.serviceSessionId = f.serviceSessionId;
+    if (f.incidentId) params.incidentId = f.incidentId;
+    if (f.limit) params.limit = f.limit;
+    return proxyGet("getServiceIncidents", params);
+  },
   // Opens THE next service session. Takes no arguments by design: the backend
   // derives actor from the verified token and business_date in Europe/Madrid.
   openServiceSession: () => proxyPost({ action: "openServiceSession" }),

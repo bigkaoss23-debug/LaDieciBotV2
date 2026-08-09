@@ -14,6 +14,7 @@ import ServiceStateGate from './components/ServiceStateGate';
 import CurrentNightCloseoutPage from './components/CurrentNightCloseoutPage';
 import { canAccessCurrentCloseout, canAccessAdminArea } from './utils/adminRbac';
 import AccessManagementPage from './components/accessManagement/AccessManagementPage';
+import IncidenciasPage from './components/IncidenciasPage';
 import EconomiaPage from './components/EconomiaPage';
 import RepartidorPage from './components/repartidor/RepartidorPage';
 import ShadowPreviewPanel from './components/ShadowPreviewPanel';
@@ -76,6 +77,7 @@ export default function App({ skipSplash = false } = {}) {
     const dest  = path === 'servizio'          ? 'servicio'
                 : path === 'cierre'            ? 'closeout'
                 : path === 'accesos'           ? 'accessmanagement'
+                : path === 'incidencias'       ? 'incidencias'
                 : path === 'shadow-preview'    ? 'shadowpreview'
                 : path === 'premium-proposals' ? 'premiumproposalslab'
                 : path === 'print-preview' && isPrintPreviewEnabled() ? 'printpreview'
@@ -115,6 +117,18 @@ export default function App({ skipSplash = false } = {}) {
   // so the V3 access-management API is never called for a non-owner.
   useEffect(() => {
     if (screen !== 'accessmanagement') return;
+    if (canAccessAdminArea(auth.getRole())) return;
+    setScreen(startedAtRepartidor.current ? 'repartidor' : 'home');
+  }, [screen, pinUnlocked]);
+
+  // SERVICE CLOSEOUT V2 / SLICE 4B — same double-check pattern as the
+  // access-management gate above: a non-admin reaching /incidencias (deep
+  // link or a stale render) is bounced back before IncidenciasPage's JSX
+  // conditional even considers mounting it, so the admin-only backend action
+  // is never called for a non-admin — defense in depth on top of the
+  // always-on backend enforcement (Slice 4A.1).
+  useEffect(() => {
+    if (screen !== 'incidencias') return;
     if (canAccessAdminArea(auth.getRole())) return;
     setScreen(startedAtRepartidor.current ? 'repartidor' : 'home');
   }, [screen, pinUnlocked]);
@@ -454,7 +468,7 @@ export default function App({ skipSplash = false } = {}) {
       <style>{G}</style>
       <DevHeartbeatSender/>
       {screen !== "splash" && <OpsHealthBadge/>}
-      {screen !== "splash" && screen !== "booting" && <OperationalMenu onLogout={doOperationalLogout} onAccessManagement={()=>setScreen("accessmanagement")}/>}
+      {screen !== "splash" && screen !== "booting" && <OperationalMenu onLogout={doOperationalLogout} onAccessManagement={()=>setScreen("accessmanagement")} onIncidencias={()=>setScreen("incidencias")}/>}
       {screen==="splash"   && <Splash onDone={()=>{ postSplashAction.current(); }}/>}
       {screen==="home"     && <Home
           onServizio={()=>withPin(()=>setScreen("servicio"))}
@@ -487,6 +501,9 @@ export default function App({ skipSplash = false } = {}) {
       {screen==="economia" && <EconomiaPage onBack={()=>setScreen("home")}/>}
       {screen==="accessmanagement" && canAccessAdminArea(auth.getRole()) && (
         <AccessManagementPage onBack={()=>setScreen("home")} onLogout={doOperationalLogout}/>
+      )}
+      {screen==="incidencias" && canAccessAdminArea(auth.getRole()) && (
+        <IncidenciasPage onBack={()=>setScreen("home")}/>
       )}
       {screen==="repartidor" && <RepartidorPage
           ordenes={ordenes}

@@ -43,16 +43,23 @@ export function useSilentServiceEnsure({ role } = {}) {
   const [phase, setPhase] = useState(ENSURE_PHASE.IDLE);
   const [session, setSession] = useState(null);
   const [exception, setException] = useState(null);
+  // SERVICE CLOSEOUT V2 / SLICE 4B — optional, read-only, non-blocking
+  // carryover advisory riding the SAME ensure response; never a second
+  // request. null whenever absent (backend read-model degrade, or nothing
+  // to report) — never an error state on its own.
+  const [previousCloseoutIncidents, setPreviousCloseoutIncidents] = useState(null);
   const liveRef = useRef(true);
 
   const settle = useCallback((outcome) => {
     if (!liveRef.current) return;
     if (outcome.kind === ENSURE_OUTCOME.ALLOWED) {
       setSession(outcome.session);
+      setPreviousCloseoutIncidents(outcome.previousCloseoutIncidents || null);
       setException(null);
       setPhase(ENSURE_PHASE.READY);
       return;
     }
+    setPreviousCloseoutIncidents(null);
     setException(outcome);
     setPhase(ENSURE_PHASE.EXCEPTION);
   }, []);
@@ -72,5 +79,5 @@ export function useSilentServiceEnsure({ role } = {}) {
   const retry = useCallback(() => { run(ENSURE_PHASE.RETRYING); }, [run]);
   const recheckSilently = useCallback(() => { run(null); }, [run]);
 
-  return { phase, session, exception, retry, recheckSilently };
+  return { phase, session, exception, previousCloseoutIncidents, retry, recheckSilently };
 }

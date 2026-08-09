@@ -32,10 +32,11 @@ import { useEffect, useRef } from 'react';
 import { useSilentServiceEnsure, ENSURE_PHASE } from '../hooks/useSilentServiceEnsure';
 import { ensuredStatusLabel } from '../utils/serviceEnsureOutcome';
 import ServiceExceptionPanel from './service/ServiceExceptionPanel';
+import PreviousCloseoutIncidentsBanner from './service/PreviousCloseoutIncidentsBanner';
 
 export default function ServiceStateGate({ role, actor, onCloseout, children }) {
   const ensure = useSilentServiceEnsure({ role });
-  const { phase, session, exception, retry, recheckSilently } = ensure;
+  const { phase, session, exception, previousCloseoutIncidents, retry, recheckSilently } = ensure;
   const recheckRef = useRef(recheckSilently);
   recheckRef.current = recheckSilently;
 
@@ -66,6 +67,12 @@ export default function ServiceStateGate({ role, actor, onCloseout, children }) 
           }}>
           {ensuredStatusLabel(session)}
         </div>
+        {/* SERVICE CLOSEOUT V2 / SLICE 4B — compact, non-blocking, informational
+            only. Never covers order controls (fixed, pointerEvents:none, sits
+            below the status pill above), never replaces {children}, never a
+            modal. Renders nothing when there is nothing actionable to report
+            (see PreviousCloseoutIncidentsBanner/describePreviousCloseoutIncidents). */}
+        <PreviousCloseoutIncidentsBanner summary={previousCloseoutIncidents} />
         {children}
       </>
     );
