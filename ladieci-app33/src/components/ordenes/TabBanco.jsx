@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { C } from '../../constants';
 import { isCompletedState, orderStateRank } from '../../core/orders';
 import OrdenCard from './OrdenCard';
+import { buildVisibleOrderLabels } from '../../utils/orderNumber';
 
 const sortOrdenes = (list) => list.sort((a,b) => {
   const ra = orderStateRank(a.estado);
@@ -16,9 +17,12 @@ const TabBanco = ({ordenes, onModifica, onElimina, onConfirm, onForzarEntrega, v
   const all     = ordenes.filter(o=>o.canal==="BANCO");
   const activos = sortOrdenes(all.filter(o=>!isCompletedState(o.estado)));
   const done    = sortOrdenes(all.filter(o=>isCompletedState(o.estado)));
+  // One shared collision pass over everything rendered in this tab -- activos
+  // and done must never disagree about a shared label.
+  const labels = buildVisibleOrderLabels(all);
 
   const cardProps = (o) => ({
-    o, onModifica, accentColor:C.avana,
+    o, label: labels.get(o.id), onModifica, accentColor:C.avana,
     onElimina, onConfirm, onForzarEntrega, vipIds, loadingIds
   });
 

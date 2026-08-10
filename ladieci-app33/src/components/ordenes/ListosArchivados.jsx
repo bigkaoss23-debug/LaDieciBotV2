@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { C } from '../../constants';
-import { formatOrderNumber } from '../../utils/orderNumber';
+import { buildVisibleOrderLabels, resolveVisibleOrderLabel } from '../../utils/orderNumber';
 import { resolveItemProductNames } from '../../menu/itemDisplay';
 
 // LISTOS_UNIFICADO_V1 -- one compact, collapsed-by-default row at the bottom
@@ -19,6 +19,9 @@ const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [] }) => {
   // language-guard: allow-legacy existing backend field name (tipo_consegna), not new vocabulary
   const delivery = retiradosTakeaway.filter(o => o.tipo_consegna === "DOMICILIO");
   const total = servedSala.length + recogida.length + delivery.length;
+  // P1-A -- one collision pass across both sections together (they render in
+  // the same expanded view at once).
+  const orderLabels = buildVisibleOrderLabels(retiradosTakeaway);
 
   const sectionLabel = {
     fontSize: 10, fontWeight: 800, letterSpacing: "1.5px", textTransform: "uppercase",
@@ -64,7 +67,7 @@ const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [] }) => {
             ? <div style={{ ...rowStyle, opacity: 0.6 }}>Nada todavía.</div>
             : recogida.map((o) => (
               <div key={o.id} style={rowStyle}>
-                <strong>{formatOrderNumber(o)} · {o.nombre}</strong>
+                <strong>{resolveVisibleOrderLabel(o, orderLabels)} · {o.nombre}</strong>
                 <div style={{ marginTop: 2, opacity: 0.8 }}>
                   {(Array.isArray(o.items) ? o.items : []).map((item) => resolveItemProductNames(item).primary).filter(Boolean).join(", ") || "—"}
                 </div>
@@ -76,7 +79,7 @@ const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [] }) => {
             ? <div style={{ ...rowStyle, opacity: 0.6 }}>Nada todavía.</div>
             : delivery.map((o) => (
               <div key={o.id} style={rowStyle}>
-                <strong>{formatOrderNumber(o)} · {o.nombre}</strong>
+                <strong>{resolveVisibleOrderLabel(o, orderLabels)} · {o.nombre}</strong>
                 <div style={{ marginTop: 2, opacity: 0.8 }}>
                   {(Array.isArray(o.items) ? o.items : []).map((item) => resolveItemProductNames(item).primary).filter(Boolean).join(", ") || "—"}
                 </div>

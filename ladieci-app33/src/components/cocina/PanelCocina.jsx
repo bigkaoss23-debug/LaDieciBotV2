@@ -15,7 +15,7 @@ import {
   manualGiroSortAnchorMs,
   resolveGiroReadyBy
 } from './manualGiroCocina';
-import { formatOrderNumber } from '../../utils/orderNumber';
+import { buildVisibleOrderLabels, resolveVisibleOrderLabel } from '../../utils/orderNumber';
 
 // COCINA_CARD_PIXEL_GRID: costanti griglia visiva unica per le card Cocina.
 // RIBBON_H = altezza fissa del top slot (ribbon) uguale per delivery e retiro.
@@ -125,6 +125,10 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       if(aH) return -1; if(bH) return 1;
       return (a.ts||0) - (b.ts||0);
     });
+
+  // P1-A -- see TabCocina.jsx's own comment; same collision pass, this is the
+  // fullscreen/focus variant of the same board.
+  const orderLabels = buildVisibleOrderLabels(activos);
 
   const nowStr = new Date(now).toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"});
   const dateStr = new Date(now).toLocaleDateString("es",{weekday:"short",day:"numeric",month:"short"});
@@ -287,7 +291,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                     <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
                       {/* COCINA_CARD_PIXEL_GRID: cliente SOTTO il numero ordine (stacked).
                           Numero dominante (24, mono, 900); cliente secondario con ellipsis. */}
-                      <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:24,lineHeight:1}}>{formatOrderNumber(o)}</div>
+                      <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:24,lineHeight:1}}>{resolveVisibleOrderLabel(o, orderLabels)}</div>
                       <div style={{fontFamily:SYS_FONT,color:fc.textLight,opacity:0.82,fontWeight:600,fontSize:14,lineHeight:1.15,marginTop:4,
                         whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {o.nombre}</div>
                       {/* COCINA_DELIVERY_CARD_COMPACT_UI: chip zona (Q2/Q5) RETIRADO de Cocina

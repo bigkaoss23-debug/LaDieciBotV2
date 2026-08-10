@@ -12,7 +12,7 @@ import {
 } from '../../menu/itemDisplay';
 import { formatOrderNumber } from '../../utils/orderNumber';
 
-const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, onOpenTicket, vipIds, loadingIds = new Set()}) => {
+const OrdenCard = ({o, label, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, onOpenTicket, vipIds, loadingIds = new Set()}) => {
   const busy = loadingIds.has(o.id);
   const isSaving = o._localPhase === "saving";
   const isVip = !!(o.cliente_id && vipIds && vipIds.has && vipIds.has(o.cliente_id));
@@ -115,7 +115,7 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
     <div style={{position:"absolute",top:0,left:"6%",right:"6%",height:1,
       background:`linear-gradient(90deg,transparent,${s.shimmer},transparent)`,pointerEvents:"none"}}/>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7,flexWrap:"wrap"}}>
-      <span style={{fontFamily:"'DM Mono',monospace",fontWeight:800,color:s.text,fontSize:16}}>{o._localPhase === "saving" ? "Nuevo" : formatOrderNumber(o)}</span>
+      <span style={{fontFamily:"'DM Mono',monospace",fontWeight:800,color:s.text,fontSize:16}}>{o._localPhase === "saving" ? "Nuevo" : (label ?? formatOrderNumber(o))}</span>
       <span style={{color:s.text,fontWeight:700}}>
         👤 {o.nombre}
         {isVip && <span title="Cliente VIP" style={{marginLeft:4,color:"#FACC15",filter:"drop-shadow(0 0 3px rgba(250,204,21,0.6))"}}>⭐</span>}

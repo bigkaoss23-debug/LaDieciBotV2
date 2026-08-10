@@ -6,7 +6,7 @@ import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
 import { isPaymentFailure, describePaymentFailure } from '../../utils/paymentOutcome';
-import { formatOrderNumber } from '../../utils/orderNumber';
+import { formatOrderNumber, buildVisibleOrderLabels, resolveVisibleOrderLabel } from '../../utils/orderNumber';
 
 // Helpers tempi: hora consegna ↔ horaForno (= partenza driver = uscita pizza forno)
 const _tm = (t) => { if (!t) return null; const [h,m] = t.split(":").map(Number); return h*60+m; };
@@ -1213,22 +1213,26 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       </button>
       {apertoConsegnati && (
         <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: "0 0 12px 12px", padding: "8px 14px" }}>
-          {consegnati.map((o, i) => {
-            const its = (Array.isArray(o.items) ? o.items : []).filter(it => it.n !== "Entrega a domicilio");
-            const totNum = (Number(o.totale) > 0) ? Number(o.totale) : calcTotale(its, o.tipo_consegna || "DOMICILIO");
-            const tot = totNum.toFixed(2);
-            return (
-              <div key={o.id} style={{
-                display: "flex", justifyContent: "space-between",
-                padding: "8px 0",
-                borderBottom: i < consegnati.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
-                fontSize: 14, color: "rgba(255,255,255,0.8)"
-              }}>
-                <span style={{ fontWeight: 700 }}>{formatOrderNumber(o)} · {o.nombre}</span>
-                <span style={{ color: "#4ade80", fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{tot}€</span>
-              </div>
-            );
-          })}
+          {(() => {
+            // P1-A -- collision pass over this flat list.
+            const orderLabels = buildVisibleOrderLabels(consegnati);
+            return consegnati.map((o, i) => {
+              const its = (Array.isArray(o.items) ? o.items : []).filter(it => it.n !== "Entrega a domicilio");
+              const totNum = (Number(o.totale) > 0) ? Number(o.totale) : calcTotale(its, o.tipo_consegna || "DOMICILIO");
+              const tot = totNum.toFixed(2);
+              return (
+                <div key={o.id} style={{
+                  display: "flex", justifyContent: "space-between",
+                  padding: "8px 0",
+                  borderBottom: i < consegnati.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
+                  fontSize: 14, color: "rgba(255,255,255,0.8)"
+                }}>
+                  <span style={{ fontWeight: 700 }}>{resolveVisibleOrderLabel(o, orderLabels)} · {o.nombre}</span>
+                  <span style={{ color: "#4ade80", fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{tot}€</span>
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
     </div>

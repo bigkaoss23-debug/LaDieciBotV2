@@ -6,7 +6,7 @@ import { applyUiOffset } from '../../utils/uiOffset';
 import Suoni from '../../sounds';
 import { ORDER_STATES, isCompletedState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
 import { isPaymentFailure, describePaymentFailure } from '../../utils/paymentOutcome';
-import { formatOrderNumber } from '../../utils/orderNumber';
+import { formatOrderNumber, buildVisibleOrderLabels, resolveVisibleOrderLabel } from '../../utils/orderNumber';
 
 const mapsUrl = (dir) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((dir || "") + " Roquetas de Mar")}`;
@@ -827,23 +827,27 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
                   </button>
                   {apertoConsegnati && (
                     <div style={{ background: "#fff", borderRadius: "0 0 12px 12px", padding: "8px 14px" }}>
-                      {consegnati.map((o, i) => {
-                        const its = Array.isArray(o.items) ? o.items : [];
-                        const clean = its.filter(it => it.n !== "Entrega a domicilio");
-                        const totNum = (Number(o.totale) > 0) ? Number(o.totale) : calcTotale(clean, o.tipo_consegna || "DOMICILIO");
-                        const tot = totNum.toFixed(2);
-                        return (
-                          <div key={o.id} style={{
-                            display: "flex", justifyContent: "space-between",
-                            padding: "8px 0",
-                            borderBottom: i < consegnati.length - 1 ? "1px solid #F3F4F6" : "none",
-                            fontSize: 15, color: "#374151"
-                          }}>
-                            <span style={{ fontWeight: 700 }}>{formatOrderNumber(o)} · {o.nombre}</span>
-                            <span style={{ color: "#16A34A", fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{tot}€</span>
-                          </div>
-                        );
-                      })}
+                      {(() => {
+                        // P1-A -- collision pass over this flat list.
+                        const orderLabels = buildVisibleOrderLabels(consegnati);
+                        return consegnati.map((o, i) => {
+                          const its = Array.isArray(o.items) ? o.items : [];
+                          const clean = its.filter(it => it.n !== "Entrega a domicilio");
+                          const totNum = (Number(o.totale) > 0) ? Number(o.totale) : calcTotale(clean, o.tipo_consegna || "DOMICILIO");
+                          const tot = totNum.toFixed(2);
+                          return (
+                            <div key={o.id} style={{
+                              display: "flex", justifyContent: "space-between",
+                              padding: "8px 0",
+                              borderBottom: i < consegnati.length - 1 ? "1px solid #F3F4F6" : "none",
+                              fontSize: 15, color: "#374151"
+                            }}>
+                              <span style={{ fontWeight: 700 }}>{resolveVisibleOrderLabel(o, orderLabels)} · {o.nombre}</span>
+                              <span style={{ color: "#16A34A", fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{tot}€</span>
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
                   )}
                 </div>
