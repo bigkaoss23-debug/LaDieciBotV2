@@ -131,6 +131,40 @@ describe('classifyEnsureAttempt — a still-open OTHER-kind session grants opera
   });
 });
 
+describe('classifyEnsureAttempt — a session mid-close does not block the operational surface (P0-C1)', () => {
+  test('SERVICE_SESSION_CLOSING with a real session -> ALLOWED, not an exception', () => {
+    const res = {
+      success: false, code: 'SERVICE_SESSION_CLOSING',
+      session: { id: 'uuid-closing-1', serviceKind: 'PRANZO', businessDate: '2026-08-10', status: 'closing', openedAt: '2026-08-10T08:07:41.000' },
+      scheduleState: 'SERA_WINDOW', businessDate: '2026-08-10', _status: 409, _ok: false,
+    };
+    const o = classifyEnsureAttempt(res);
+    expect(o.kind).toBe(ENSURE_OUTCOME.ALLOWED);
+    expect(o.created).toBe(false);
+    expect(o.code).toBe('SERVICE_SESSION_CLOSING');
+    // Lifecycle truth is preserved, never faked to 'open'.
+    expect(o.session.status).toBe('closing');
+  });
+
+  test('SERVICE_SESSION_CLOSING with no session at all still blocks (defensive: nothing real to operate on)', () => {
+    const res = { success: false, code: 'SERVICE_SESSION_CLOSING', session: null, scheduleState: 'SERA_WINDOW', businessDate: '2026-08-10', _status: 409, _ok: false };
+    const o = classifyEnsureAttempt(res);
+    expect(o.kind).toBe('SERVICE_SESSION_CLOSING');
+    expect(o.kind).not.toBe(ENSURE_OUTCOME.ALLOWED);
+  });
+
+  test('SERVICE_SESSION_CLOSING with a session missing an id still blocks (defensive: cannot scope operational reads without one)', () => {
+    const res = {
+      success: false, code: 'SERVICE_SESSION_CLOSING',
+      session: { id: null, serviceKind: 'PRANZO', businessDate: '2026-08-10', status: 'closing', openedAt: '2026-08-10T08:07:41.000' },
+      scheduleState: 'SERA_WINDOW', businessDate: '2026-08-10', _status: 409, _ok: false,
+    };
+    const o = classifyEnsureAttempt(res);
+    expect(o.kind).toBe('SERVICE_SESSION_CLOSING');
+    expect(o.kind).not.toBe(ENSURE_OUTCOME.ALLOWED);
+  });
+});
+
 describe('classifyEnsureAttempt — transport/auth, never conflated with a domain decision', () => {
   test('401 is DENIED', () => {
     expect(classifyEnsureAttempt({ _status: 401, _ok: false, error: 'sesión expirada' }).kind).toBe(ENSURE_OUTCOME.DENIED);
@@ -198,5 +232,16 @@ describe('ensuredStatusLabel — sourced ONLY from the backend session, never th
   test('never leaks the raw PRANZO/SERA token, whatever the session', () => {
     expect(ensuredStatusLabel(PRANZO_CREATED.session)).not.toMatch(/PRANZO/);
     expect(ensuredStatusLabel(SERA_REUSED.session)).not.toMatch(/SERA/);
+  });
+
+  // P0-C1 — a session handed back via the SERVICE_SESSION_CLOSING upgrade
+  // (see classifyEnsureAttempt above) must never claim "Abierto": the pill is
+  // the one place this status is summarized to the operator, and lifecycle
+  // truth must be preserved, not hidden behind a fake "all clear".
+  test('a closing session renders "Cerrando", never "Abierto"', () => {
+    const label = ensuredStatusLabel({ serviceKind: 'PRANZO', businessDate: '2026-08-10', status: 'closing', openedAt: '2026-08-10T08:07:41.000' });
+    expect(label).toContain('Cerrando');
+    expect(label).not.toContain('Abierto');
+    expect(label).not.toMatch(/PRANZO/);
   });
 });

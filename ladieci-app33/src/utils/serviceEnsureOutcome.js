@@ -165,6 +165,33 @@ export function classifyEnsureAttempt(res) {
     });
   }
 
+  // P0-C1 — AVAILABILITY CONTAINMENT. A session mid-close is transitional
+  // lifecycle metadata, never an app-wide outage on its own (see
+  // SERVICE_LIFECYCLE_ECONOMIC_BOUNDARY_AUDIT_REPORT.md §4/§7.6): before this,
+  // SERVICE_SESSION_CLOSING always fell through to the blocking exception
+  // panel below, which — because ServiceStateGate wraps the entire Servicio
+  // shell — took Mesa/Cocina/Listos/Teléfono/Banco/Entregas all offline for
+  // as long as the close attempt stayed stuck, not just the closing session's
+  // own board. The backend always attaches a real session (with a real id) to
+  // THIS specific code (ensureServiceSession.js's pre-check reads it before
+  // ever reaching a window decision) — same "hand back what's real and
+  // operable" precedent as the LUNCH/OTHER branch just above, extended to a
+  // session that is itself the one closing. `session.status` is preserved
+  // exactly as `'closing'`, never rewritten to `'open'` — this is a truthful
+  // ALLOWED, not a fake one; ensuredStatusLabel below renders it accordingly.
+  // A missing session (should not happen for this code, but defensive) still
+  // falls through to the blocking exception below — a true integrity gap is
+  // never hidden behind a fake success.
+  if (code === ENSURE_OUTCOME.SERVICE_SESSION_CLOSING && res.session && res.session.id) {
+    return Object.freeze({
+      kind: ENSURE_OUTCOME.ALLOWED,
+      created: false,
+      code,
+      session: res.session,
+      previousCloseoutIncidents: res.previousCloseoutIncidents || null,
+    });
+  }
+
   if (code && SCHEDULE_OR_SESSION_CODES.has(code)) return domainOutcome(code, res);
 
   return domainOutcome(ENSURE_OUTCOME.UNKNOWN, res);
@@ -180,7 +207,12 @@ const KIND_LABEL = Object.freeze({ PRANZO: 'Servicio de mediodía', SERA: 'Servi
 export function ensuredStatusLabel(session) {
   if (!session) return '';
   const label = (session.serviceKind && KIND_LABEL[session.serviceKind]) || 'Servicio';
-  const parts = [`${label} · Abierto`];
+  // P0-C1 — a session handed back while status:'closing' (see the
+  // SERVICE_SESSION_CLOSING branch in classifyEnsureAttempt above) must never
+  // claim "Abierto": that would misrepresent real lifecycle state on the one
+  // pill that summarizes it. Any other/legacy status (including missing,
+  // pre-V2-lifecycle sessions) keeps the original "Abierto" wording unchanged.
+  const parts = [session.status === 'closing' ? `${label} · Cerrando` : `${label} · Abierto`];
   if (session.businessDate) parts.push(String(session.businessDate));
   if (session.openedAt) {
     const d = new Date(session.openedAt);
