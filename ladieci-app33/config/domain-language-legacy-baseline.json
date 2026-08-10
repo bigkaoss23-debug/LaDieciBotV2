@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-05T18:35:39.315Z",
+  "generatedAt": "2026-08-10T17:36:37.559Z",
   "entries": [
     {
       "file": "migrations/001_delivery_system.sql",
@@ -534,7 +534,7 @@
     {
       "file": "src/components/ItemPickerModal.jsx",
       "term": "cucina",
-      "count": 4
+      "count": 2
     },
     {
       "file": "src/components/ItemPickerModal.jsx",
@@ -765,6 +765,11 @@
       "file": "src/components/repartidor/RepartidorPage.jsx",
       "term": "pizze",
       "count": 1
+    },
+    {
+      "file": "src/components/serviceStateGateClosingSession.test.js",
+      "term": "pranzo",
+      "count": 2
     },
     {
       "file": "src/components/serviceStateGateStillOpenOtherKind.test.js",
@@ -1284,7 +1289,7 @@
     {
       "file": "src/utils/serviceEnsureOutcome.test.js",
       "term": "pranzo",
-      "count": 20
+      "count": 24
     },
     {
       "file": "src/utils/serviceEnsureOutcome.test.js",
