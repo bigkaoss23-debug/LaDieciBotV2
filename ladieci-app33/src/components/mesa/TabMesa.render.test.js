@@ -11,6 +11,7 @@ jest.mock("../../mesa/mesaApi", () => ({
     floor: jest.fn(),
     openTable: jest.fn(),
     releaseEmptyTable: jest.fn(),
+    closeTable: jest.fn(),
     saveTable: jest.fn(),
     addCommand: jest.fn(),
     markServed: jest.fn(),
@@ -592,9 +593,56 @@ test("an occupied Mesa with an order shows a green (not red) thick border, coman
   expect(dialog.textContent).toContain("En cocina");
   expect(dialog.textContent).not.toContain("Crear pedido");
   expect(dialog.textContent).not.toContain("Añadir pedido");
-  expect(dialog.textContent).not.toContain("Cerrar mesa");
+  // P0-B.1 -- Cerrar mesa is no longer gated on coversTotal == null: an
+  // occupied table (even mid-order) can attempt the explicit close, and the
+  // backend (mesa_close_session_v1) is what actually decides whether
+  // outstanding balance or pending kitchen work blocks it.
+  expect(dialog.textContent).toContain("Cerrar mesa");
   click(buttonByText(container, "＋ Nueva comanda"));
   expect(onNewCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "table-1" }));
+  unmount(container, root);
+});
+
+test("confirming Cerrar mesa on an OCCUPIED table calls closeTable (not releaseEmptyTable), and a blocked close surfaces the backend's error", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }], time: "21:00" }] }) }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  mesaApi.closeTable.mockRejectedValueOnce({ code: "MESA_TABLE_HAS_ACTIVE_ORDERS" });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Cerrar mesa"));
+  const confirmDialog = container.querySelector('[role="alertdialog"]');
+  // Dialog copy must not claim the table is empty when it plainly is not.
+  expect(confirmDialog.textContent).not.toContain("La mesa está vacía");
+  click(buttonByText(confirmDialog, "Cerrar mesa"));
+  await flush();
+  expect(mesaApi.closeTable).toHaveBeenCalledTimes(1);
+  expect(mesaApi.closeTable).toHaveBeenCalledWith("session-x");
+  expect(mesaApi.releaseEmptyTable).not.toHaveBeenCalled();
+  // Blocked: dialog stays open and shows the mapped error, table not closed.
+  expect(container.querySelector('[role="alertdialog"]')).toBeTruthy();
+  expect(describeMesaError).toHaveBeenCalledWith({ code: "MESA_TABLE_HAS_ACTIVE_ORDERS" });
+  unmount(container, root);
+});
+
+test("confirming Cerrar mesa on a settled OCCUPIED table (paid, no pending orders) closes it via closeTable", async () => {
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 0, commands: [] }) }
+    : table);
+  mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: openTables });
+  mesaApi.floor.mockResolvedValueOnce({ ok: true, tables: floorTables });
+  mesaApi.closeTable.mockResolvedValueOnce({ ok: true, status: "closed", forced: false });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Cerrar mesa"));
+  const confirmDialog = container.querySelector('[role="alertdialog"]');
+  click(buttonByText(confirmDialog, "Cerrar mesa"));
+  await flush();
+  expect(mesaApi.closeTable).toHaveBeenCalledWith("session-x");
+  expect(mesaApi.pay).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alertdialog"]')).toBeFalsy();
+  expect(container.querySelector('[role="dialog"]')).toBeFalsy();
   unmount(container, root);
 });
 

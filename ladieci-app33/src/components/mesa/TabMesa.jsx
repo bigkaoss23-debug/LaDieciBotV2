@@ -415,7 +415,7 @@ function Modal({ title, subtitle, onClose, children, width = 760, size }) {
 // controls: it always renders, always waits for a real click, and its result
 // is never ambiguous. Escape and the backdrop both cancel; Tab is trapped
 // between the two buttons since this is the only focusable content.
-function CerrarMesaDialog({ tableNumber, busy, error, onCancel, onConfirm }) {
+function CerrarMesaDialog({ tableNumber, empty, busy, error, onCancel, onConfirm }) {
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
 
@@ -441,7 +441,9 @@ function CerrarMesaDialog({ tableNumber, busy, error, onCancel, onConfirm }) {
         <div id="cerrar-mesa-title" style={{ fontWeight: 950, fontSize: 19 }}>{`Cerrar Mesa ${tableNumber}`}</div>
       </div>
       <div className="mesa-modal-body">
-        <p id="cerrar-mesa-body" className="mesa-muted">La mesa está vacía y no tiene comandas ni pagos.</p>
+        <p id="cerrar-mesa-body" className="mesa-muted">
+          {empty ? "La mesa está vacía y no tiene comandas ni pagos." : "La mesa quedará libre para nuevos clientes."}
+        </p>
         {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
         <div className="mesa-actions" style={{ marginTop: 16 }}>
           <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>Cancelar</button>
@@ -699,10 +701,20 @@ function MesaWorkspace({
   const [confirmingClose, setConfirmingClose] = useState(false);
   const openCloseConfirm = () => setConfirmingClose(true);
   const cancelCloseConfirm = () => { if (!busy) { setConfirmingClose(false); setError(""); } };
+  // P0-B.1 — a never-ordered table (coversTotal == null) still goes through
+  // releaseEmptyTable; an occupied table (real comandas, possibly already
+  // fully paid) goes through the new explicit closeTable. Same dialog, same
+  // confirmation, same error banner either way -- the backend decides
+  // whether the close is actually allowed right now (unpaid balance or
+  // genuine pending Cocina work both come back as a normal error here, not
+  // a crash or a silent no-op).
   const confirmClose = async () => {
     setBusy(true); setError("");
-    try { await mesaApi.releaseEmptyTable(session.id); setConfirmingClose(false); await onRefresh(); }
-    catch (err) { setError(describeMesaError(err)); setBusy(false); }
+    try {
+      if (session.coversTotal == null) await mesaApi.releaseEmptyTable(session.id);
+      else await mesaApi.closeTable(session.id);
+      setConfirmingClose(false); await onRefresh();
+    } catch (err) { setError(describeMesaError(err)); setBusy(false); }
   };
   // The real, authoritative Cocina submit -- the ONLY place a Mesa comanda
   // reaches the backend. One request, button disabled while in flight (both
@@ -771,7 +783,7 @@ function MesaWorkspace({
       <div className="mesa-actions">
         {!draft && <button className="mesa-btn primary" onClick={() => onNewCommand(table)}>＋ Nueva comanda</button>}
         <button className="mesa-btn gold" onClick={() => setShowAccount(true)}>Ver cuenta</button>
-        {session.coversTotal == null && !draft && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
+        {!draft && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
       </div>
       {nextReservation && <div className="mesa-section">
         <button type="button" onClick={() => setReservationOpen((value) => !value)}
@@ -789,7 +801,7 @@ function MesaWorkspace({
       {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
     </Modal>
     {showAccount && <VerCuentaModal table={table} onClose={() => setShowAccount(false)} onRefresh={onRefresh} onPrint={onPrint} />}
-    {confirmingClose && <CerrarMesaDialog tableNumber={table.number} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
+    {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
   </>;
 }
 

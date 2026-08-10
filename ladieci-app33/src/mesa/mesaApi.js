@@ -65,6 +65,12 @@ export const mesaApi = Object.freeze({
   releaseEmptyTable(sessionId) {
     return request("POST", `/sessions/${encodeURIComponent(sessionId)}/release`, {});
   },
+  // P0-B.1 — the explicit close for an OCCUPIED table (releaseEmptyTable
+  // above stays scoped to the never-ordered case). No force param exposed
+  // here: force-close is backend-only in this phase, no frontend UI for it.
+  closeTable(sessionId) {
+    return request("POST", `/sessions/${encodeURIComponent(sessionId)}/close`, {});
+  },
   saveTable(tableId, table) {
     return request("PUT", `/tables/${encodeURIComponent(tableId || "new")}`, table);
   },
@@ -127,6 +133,8 @@ const ERROR_MESSAGES = Object.freeze({
   MESA_COVERS_NOT_SET: "Todavía no se han indicado los comensales de esta mesa.",
   MESA_COVERS_IMMUTABLE: "No se pueden reducir los comensales ya registrados.",
   MESA_TABLE_HAS_ORDERS: "Esta mesa ya tiene comandas; cobra la cuenta para cerrarla.",
+  MESA_TABLE_NOT_SETTLED: "Esta mesa todavía tiene saldo pendiente. Cóbralo antes de cerrar la mesa.",
+  MESA_TABLE_HAS_ACTIVE_ORDERS: "Esta mesa tiene comandas sin terminar en Cocina. Complétalas antes de cerrar la mesa.",
   MESA_RELOGIN_REQUIRED: "Vuelve a entrar con tu PIN antes de cobrar.",
   MESA_UNAUTHENTICATED: "La sesión ha caducado.",
   MESA_SESSION_STALE: "Tu acceso ha cambiado. Vuelve a entrar.",
