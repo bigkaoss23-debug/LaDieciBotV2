@@ -51,6 +51,11 @@ export default function MesaListaView({ onSelectTable, notify }) {
         const todayReservations = bookedForToday(table);
         const state = tableState(table, todayReservations);
         const ready = hasReadyOrder(table);
+        // MESA_PHONE_VISUAL_PARITY_V2 -- same reservation fact Mapa's own
+        // floor badge shows (bookedForToday.length > 0), independent of
+        // Libre/Ocupada -- so an occupied table that's ALSO booked tonight
+        // still surfaces that as an extra signal, not silently dropped.
+        const hasReservation = todayReservations.length > 0;
         return <button key={table.id} onClick={() => onSelectTable(table.id)} className="mesa-row mesa-row-tap" style={{
           width: "100%", textAlign: "left", cursor: "pointer",
           borderLeft: `4px solid ${state.color}`,
@@ -58,6 +63,7 @@ export default function MesaListaView({ onSelectTable, notify }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
             <strong style={{ fontSize: 18 }}>Mesa {table.number}</strong>
             <span style={{ color: state.color, fontWeight: 800, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.3 }}>{state.label}</span>
+            {hasReservation && <span title="Tiene reserva" aria-label="Tiene reserva" style={{ fontSize: 13 }}>🔖</span>}
             {ready && <span className="mesa-badge" style={{ position: "static", background: "#22C55E", color: "#04210f" }}>Listo</span>}
           </div>
           <span className="mesa-muted">👥 máx {table.capacity ?? "—"}</span>

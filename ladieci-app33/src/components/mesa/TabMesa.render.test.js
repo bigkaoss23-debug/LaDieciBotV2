@@ -1272,7 +1272,7 @@ test("reopening a rectangular table saved with a manual, off-preset capacity (10
   unmount(container, root);
 });
 
-test("a Reservas · Beta row is compact, entirely clickable, and opens Modificar / mover for that reservation", async () => {
+test("a Reservas row is compact, entirely clickable, and opens Modificar / mover for that reservation", async () => {
   const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   mesaApi.floor.mockResolvedValue({
     ok: true,
@@ -1284,11 +1284,42 @@ test("a Reservas · Beta row is compact, entirely clickable, and opens Modificar
   click(buttonByText(container, "📅 Reservas · Beta"));
   const dialog = container.querySelector('[role="dialog"]');
   const row = dialog.querySelector(".mesa-row");
-  expect(row.textContent).toContain("Beatriz Soler · Mesa 1 · 2 pax");
-  // No inline action buttons in the compact list row -- clicking the row itself opens edit.
+  expect(row.textContent).toContain("Beatriz Soler");
+  expect(row.textContent).toContain("Mesa 1");
+  expect(row.textContent).toContain("2 personas");
+  expect(row.textContent).toContain("Confirmada");
+  // No NESTED action buttons in the row -- it is itself the one tap target.
   expect(row.querySelector("button")).toBeFalsy();
   click(row);
   expect(container.querySelector('[role="dialog"]').textContent).toContain("Modificar / mover reserva");
+  unmount(container, root);
+});
+
+// MESA_PHONE_VISUAL_PARITY_V2 -- conflict is a real, derived fact (a booked
+// reservation on a table someone else is already occupying), read from the
+// exact same table.status the floor tiles' own fill color uses -- this test
+// guards that the agenda can never show "Confirmada" for that case, or fail
+// to show it for an ordinary (non-conflicting) booking.
+test("Reservas shows a real Conflicto/Ocupada chip when a booked table is already occupied by someone else, Confirmada otherwise", async () => {
+  const reservedAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  mesaApi.floor.mockResolvedValue({
+    ok: true,
+    tables: floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession(), reservations: [{ id: "r-conflict", tableId: table.id, status: "booked", guestName: "Conflict Guest", coversTotal: 2, reservedAt, durationMinutes: 120, note: "", version: 1 }] }
+      : index === 1
+        ? { ...table, reservations: [{ id: "r-ok", tableId: table.id, status: "booked", guestName: "Fine Guest", coversTotal: 2, reservedAt, durationMinutes: 120, note: "", version: 1 }] }
+        : table),
+  });
+  const { container, root } = await mount("waiter");
+  click(buttonByText(container, "📅 Reservas · Beta"));
+  const dialog = container.querySelector('[role="dialog"]');
+  const rows = Array.from(dialog.querySelectorAll(".mesa-row"));
+  const conflictRow = rows.find((row) => row.textContent.includes("Conflict Guest"));
+  const fineRow = rows.find((row) => row.textContent.includes("Fine Guest"));
+  expect(conflictRow.textContent).toContain("Conflicto");
+  expect(conflictRow.className).toContain("conflict");
+  expect(fineRow.textContent).toContain("Confirmada");
+  expect(fineRow.className).not.toContain("conflict");
   unmount(container, root);
 });
 

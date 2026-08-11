@@ -30,22 +30,36 @@ function useClock() {
   return now;
 }
 
+// MESA_PHONE_VISUAL_PARITY_V2 -- Reservas is now a genuine, uniformly-styled
+// nav item, in its approved position (center), not a separate raised FAB
+// (see navButtonStyle below and its own comment) -- the mockup's bottom nav
+// treats all five identically, and a floating red/gold circle read as "a
+// recording button or an unrelated FAB", not navigation.
 const NAV_ITEMS = [
   { id: "mapa", icon: "🗺", label: "Mapa" },
   { id: "lista", icon: "☰", label: "Lista" },
+  { id: "reservas", icon: "📅", label: "Reservas" },
   { id: "listos", icon: "✅", label: "Listos" },
   { id: "mas", icon: "⋯", label: "Más" },
 ];
 
-// MOBILE_SHELL_POLISH_01 -- one shared definition so the two NAV_ITEMS halves
-// (either side of the center + button) can never drift apart in size again.
+// MOBILE_SHELL_POLISH_01 -- one shared definition so all five nav items can
+// never drift apart in size/treatment again.
+// MESA_PHONE_VISUAL_PARITY_V2 -- active state is now a filled/bordered pill
+// behind the icon+label (matching the approved mockup) instead of just a
+// color swap -- "immediately obvious", per the brief, and the SAME treatment
+// for every item including Reservas (no more raised gold FAB).
 function navButtonStyle(active) {
   return {
-    display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-    background: "none", border: "none", padding: "6px 12px", cursor: "pointer",
-    minWidth: 52, minHeight: 48,
-    color: active ? "#FF6A45" : "rgba(255,255,255,.45)",
-    fontWeight: active ? 800 : 600, fontSize: 12,
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
+    background: active ? "linear-gradient(180deg, rgba(215,168,75,.24), rgba(215,168,75,.09))" : "transparent",
+    border: active ? "1px solid rgba(215,168,75,.5)" : "1px solid transparent",
+    borderRadius: 14, padding: "8px 6px 7px", cursor: "pointer",
+    flex: "1 1 0", minWidth: 0, minHeight: 52,
+    color: active ? "#f3d9a4" : "rgba(255,255,255,.5)",
+    fontWeight: active ? 800 : 650, fontSize: 11,
+    boxShadow: active ? "0 3px 10px rgba(215,168,75,.2), inset 0 1px 0 rgba(255,255,255,.08)" : "none",
+    transition: "background .15s, border-color .15s, color .15s, box-shadow .15s",
   };
 }
 
@@ -94,9 +108,18 @@ export default function MesaPhoneShell({
     setMesaAction({ token: Date.now(), type: "selectTable", tableId });
     setShellTab("mapa");
   };
+  // MESA_PHONE_VISUAL_PARITY_V2 -- shellTab becomes its own "reservas" value
+  // (previously this parked on "mapa") so the nav's Reservas item can show
+  // a real, distinct active state (see the Mapa wrapper's display condition
+  // below, which now also stays mounted/visible for "reservas" -- same
+  // underlying map+overlay, just a different nav highlight and header
+  // title). This is the only call site for this action (the table modal's
+  // own RESERVAS section calls TabMesa's internal state directly, and
+  // deliberately does NOT move the outer nav selection -- see its own
+  // comment where that happens).
   const openReservations = () => {
     setMesaAction({ token: Date.now(), type: "reservations" });
-    setShellTab("mapa");
+    setShellTab("reservas");
   };
   const openEditing = () => {
     setMesaAction({ token: Date.now(), type: "editing" });
@@ -127,14 +150,37 @@ export default function MesaPhoneShell({
       <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}>
         {isAdmin && backArrowButton(onExit)}
       </div>
+      {/* MESA_PHONE_VISUAL_PARITY_V2 -- each screen gets its own contextual
+          title (matching the approved mockup's Mapa/Lista/Reservas headers)
+          instead of always showing the live clock. Mapa keeps the clock --
+          it already matched the reference closely -- Lista/Listos/Más get a
+          plain title+subtitle. Reservas' own header briefly shows behind the
+          agenda overlay it opens (see openReservations); this is the same
+          pattern Lista/Listos/Más already use, just one more case. */}
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontVariantNumeric: "tabular-nums", fontWeight: 900, fontSize: 30, letterSpacing: 0.5, lineHeight: 1.1 }}>
-          {now.toLocaleTimeString("es-ES")}
-        </div>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", marginTop: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.verde, display: "inline-block" }} />
-          SERVICIO · {now.toLocaleDateString("es-ES", { day: "2-digit", month: "short" }).toUpperCase().replace(".", "")}
-        </div>
+        {shellTab === "lista" ? <>
+          <div style={{ fontWeight: 900, fontSize: 21, letterSpacing: 0.2 }}>Mesas</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.45)", marginTop: 3, fontWeight: 700 }}>Estado en tiempo real</div>
+        </> : shellTab === "reservas" ? <>
+          <div style={{ fontWeight: 900, fontSize: 21, letterSpacing: 0.2 }}>Reservas</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.45)", marginTop: 3, fontWeight: 700 }}>
+            {now.toLocaleDateString("es-ES", { weekday: "long", day: "2-digit", month: "long" }).toUpperCase()}
+          </div>
+        </> : shellTab === "listos" ? <>
+          <div style={{ fontWeight: 900, fontSize: 21, letterSpacing: 0.2 }}>Listos</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.45)", marginTop: 3, fontWeight: 700 }}>Comandas listas para servir</div>
+        </> : shellTab === "mas" ? <>
+          <div style={{ fontWeight: 900, fontSize: 21, letterSpacing: 0.2 }}>Más</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.45)", marginTop: 3, fontWeight: 700 }}>Acciones secundarias</div>
+        </> : <>
+          <div style={{ fontVariantNumeric: "tabular-nums", fontWeight: 900, fontSize: 30, letterSpacing: 0.5, lineHeight: 1.1 }}>
+            {now.toLocaleTimeString("es-ES")}
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", marginTop: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.verde, display: "inline-block" }} />
+            SERVICIO · {now.toLocaleDateString("es-ES", { day: "2-digit", month: "short" }).toUpperCase().replace(".", "")}
+          </div>
+        </>}
       </div>
     </header>
 
@@ -159,7 +205,7 @@ export default function MesaPhoneShell({
           on the wrapper keeps this a no-op for layout when visible -- byte-
           identical to TabMesa being a direct flex child of this <main>, as
           it was before this change. */}
-      <div style={{ display: shellTab === "mapa" ? "contents" : "none" }}>
+      <div style={{ display: (shellTab === "mapa" || shellTab === "reservas") ? "contents" : "none" }}>
         <TabMesa
           role={role} notify={notify} onNewCommand={onNewCommand} onCountChange={onCountChange}
           refreshKey={refreshKey} compact hideToolbar hideDock initialAction={mesaAction}
@@ -171,64 +217,31 @@ export default function MesaPhoneShell({
       {shellTab === "mas" && <MasScreen role={role} onPersonalizar={openEditing} />}
     </main>
 
+    {/* MESA_PHONE_VISUAL_PARITY_V2 -- raised/tactile 3D nav bar (approved
+        mockup): an outer wrapper carries the "lifted off the screen" depth
+        (top highlight inset + a stronger drop shadow than before) so the bar
+        reads as a substantial physical object, not five icons floating on
+        black. All five items (Mapa/Lista/Reservas/Listos/Más) are now one
+        uniform row, same navButtonStyle, same pill active-state -- Reservas
+        no longer gets special raised-FAB treatment (see P1_D_TABLE_FIRST_01's
+        old comment, superseded): the approved reference treats bottom-nav
+        selection as pure navigation state, with Reservas' own gold identity
+        expressed inside the screen content instead (see ReservationAgenda). */}
     <nav style={{
-      flexShrink: 0, display: "flex", alignItems: "flex-end", justifyContent: "space-around",
-      // HEADER_NAV_REFINEMENT_01 -- rounded top corners + an upward shadow
-      // read as a real, deliberately-placed bottom bar rather than a flat
-      // strip glued to the screen edge (same idea as the header's own
-      // hairline: framing, not decoration). The 20px base bottom padding
-      // (up from 16px) is the requested extra breathing room, still additive
-      // with -- not instead of -- the real safe-area inset on a notched
-      // device.
-      padding: "16px 12px calc(20px + env(safe-area-inset-bottom, 0px))",
-      background: "rgba(18,17,15,.94)", backdropFilter: "blur(14px)",
-      borderTop: "1px solid rgba(208,184,145,.22)",
-      borderRadius: "20px 20px 0 0",
-      boxShadow: "0 -8px 24px rgba(0,0,0,.35)",
+      flexShrink: 0, display: "flex", alignItems: "stretch", justifyContent: "space-around", gap: 4,
+      padding: "10px 8px calc(14px + env(safe-area-inset-bottom, 0px))",
+      background: "linear-gradient(180deg, rgba(27,24,19,.97), rgba(13,12,11,.98))",
+      backdropFilter: "blur(14px)",
+      borderTop: "1px solid rgba(255,255,255,.07)",
+      borderRadius: "22px 22px 0 0",
+      boxShadow: "0 -16px 32px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 0 1px rgba(0,0,0,.3)",
     }}>
-      {NAV_ITEMS.slice(0, 2).map((item) => {
+      {NAV_ITEMS.map((item) => {
         const active = shellTab === item.id;
-        return <button key={item.id} onClick={() => setShellTab(item.id)} style={navButtonStyle(active)}>
-          <span style={{ fontSize: 25 }}>{item.icon}</span>
-          {item.label}
-        </button>;
-      })}
-
-      {/* P1_D_TABLE_FIRST_01 -- the global "+" was a UX mistake: it let
-          someone start an order before a table was ever chosen, needing a
-          second table-selection step (see MesaWorkspace's own "＋ Nueva
-          comanda", now the one and only order entrypoint, always already
-          table-scoped). This freed center slot is Reservas instead -- same
-          raised-circle position/size/shadow-style as the button it replaces,
-          with a label added underneath (matching every other nav item)
-          since a calendar glyph alone is less self-evident than "+" was.
-          MESA_PHONE_POLISH_01 -- the circle's own color is gold, not the
-          fiery red/orange the old "+" carried over from: red/orange read as
-          "record" or "urgent", not "reservations", confirmed live. Gold
-          (#d7a84b family) is this app's OWN existing accent for reservation
-          context specifically -- the table modal's active RESERVAS section
-          (TabMesa.jsx's .mesa-card-section.active), "Ver cuenta", and every
-          other gold mesa-btn already use it -- so this reuses an established
-          color language rather than inventing a new one. */}
-      <button onClick={openReservations} title="Reservas" aria-label="Reservas" style={{
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-        width: 68, marginTop: -28, background: "none", border: "none", padding: 0, cursor: "pointer",
-      }}>
-        <span aria-hidden="true" style={{
-          width: 68, height: 68, borderRadius: "50%",
-          background: `linear-gradient(180deg, #E8C874 0%, #D7A84B 55%, #9C7A2E 100%)`,
-          border: "3px solid #0b0b0a", color: "#2b2004", fontSize: 30, fontWeight: 700,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 0 16px rgba(215,168,75,.45), 0 6px 18px rgba(0,0,0,.5)",
-        }}>📅</span>
-        <span style={{ color: "rgba(255,255,255,.75)", fontWeight: 700, fontSize: 11 }}>Reservas</span>
-      </button>
-
-      {NAV_ITEMS.slice(2).map((item) => {
-        const active = shellTab === item.id;
-        return <button key={item.id} onClick={() => setShellTab(item.id)} style={navButtonStyle(active)}>
-          <span style={{ fontSize: 25 }}>{item.icon}</span>
-          {item.label}
+        return <button key={item.id} onClick={() => item.id === "reservas" ? openReservations() : setShellTab(item.id)}
+          title={item.label} aria-label={item.label} style={navButtonStyle(active)}>
+          <span aria-hidden="true" style={{ fontSize: 22 }}>{item.icon}</span>
+          <span>{item.label}</span>
         </button>;
       })}
     </nav>

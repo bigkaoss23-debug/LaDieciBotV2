@@ -271,8 +271,8 @@ const css = `
 .mesa-root.compact{display:flex;flex-direction:column;height:100%;min-height:0}
 .mesa-root.compact .mesa-board{flex:1 1 auto;min-height:0}
 .mesa-root.compact .mesa-dock{flex:0 0 auto;margin-top:8px}
-.mesa-board{position:relative;min-height:420px;border:1px solid rgba(208,184,145,.22);border-radius:22px;overflow:hidden;background:radial-gradient(circle at 50% 45%,rgba(215,168,75,.08),transparent 50%),linear-gradient(135deg,#171512,#0d0c0b)}
-.mesa-board:before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:32px 32px;pointer-events:none}
+.mesa-board{position:relative;min-height:420px;border:1px solid rgba(208,184,145,.22);border-radius:22px;overflow:hidden;background:radial-gradient(circle at 50% 38%,rgba(215,168,75,.12),transparent 55%),radial-gradient(ellipse at 50% 114%,rgba(0,0,0,.62),transparent 62%),linear-gradient(150deg,#1c1916,#0a0908 68%);box-shadow:inset 0 0 70px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.05)}
+.mesa-board:before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);background-size:32px 32px;pointer-events:none}
 /* The card shows only number + capacity + up to two small corner badges --
    nothing that varies in length (no name, no price, no free text) -- so a
    single fixed box already covers every state and this never needs per-state
@@ -282,8 +282,8 @@ const css = `
 /* box-sizing:border-box is what makes the "occupied" border able to go from
    2px to 4px (see .mesa-table.thick below) without growing the box: width/
    height stay the outer, rendered size regardless of border-width. */
-.mesa-table{box-sizing:border-box;position:absolute;transform:translate(-50%,-50%);width:100px;height:100px;padding:8px;overflow:visible;-webkit-tap-highlight-color:transparent;border-style:solid;border-width:2px;border-color:var(--tc);color:#fff;background:var(--tb);box-shadow:0 8px 22px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.16);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none;user-select:none;transition:box-shadow .15s,filter .15s}
-.mesa-table:hover{filter:brightness(1.14);box-shadow:0 10px 26px rgba(0,0,0,.46),0 0 20px color-mix(in srgb,var(--tc) 28%,transparent)}
+.mesa-table{box-sizing:border-box;position:absolute;transform:translate(-50%,-50%);width:100px;height:100px;padding:8px;overflow:visible;-webkit-tap-highlight-color:transparent;border-style:solid;border-width:2px;border-color:var(--tc);color:#fff;background-color:var(--tb);background-image:radial-gradient(circle at 30% 22%,rgba(255,255,255,.34),rgba(255,255,255,0) 46%),linear-gradient(165deg,rgba(255,255,255,.12),rgba(0,0,0,.24) 72%);box-shadow:0 14px 26px rgba(0,0,0,.5),0 3px 0 rgba(0,0,0,.35),inset 0 2px 2px rgba(255,255,255,.3),inset 0 -8px 14px rgba(0,0,0,.32);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none;user-select:none;transition:box-shadow .15s,filter .15s}
+.mesa-table:hover{filter:brightness(1.1);box-shadow:0 16px 30px rgba(0,0,0,.55),0 0 20px color-mix(in srgb,var(--tc) 30%,transparent),inset 0 2px 2px rgba(255,255,255,.32),inset 0 -8px 14px rgba(0,0,0,.32)}
 /* MESA_POINTER_TARGET_SHIFT fix -- the global button:active{transform:scale(.96)}
    (constants.js G, mounted app-wide) has higher specificity (0,1,1) than the bare
    .mesa-table{transform:translate(-50%,-50%)} above (0,1,0), so on native :active
@@ -334,16 +334,23 @@ const css = `
    THIS same table; the ref-based dedupe in openWalkIn already guarded
    against that, this is belt-and-braces plus the visual cue. */
 .mesa-table.opening{opacity:.55;filter:grayscale(.35);cursor:wait;pointer-events:none}
-.mesa-table.selected{box-shadow:0 0 0 3px rgba(247,240,223,.75),0 8px 22px rgba(0,0,0,.34)}
-@keyframes mesa-ready-pulse{0%,100%{box-shadow:0 8px 22px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.16),0 0 0 0 rgba(34,197,94,0)}50%{box-shadow:0 8px 22px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.16),0 0 22px 7px rgba(34,197,94,.65)}}
+.mesa-table.selected{box-shadow:0 0 0 3px rgba(247,240,223,.75),0 14px 26px rgba(0,0,0,.5),inset 0 2px 2px rgba(255,255,255,.3),inset 0 -8px 14px rgba(0,0,0,.32)}
+@keyframes mesa-ready-pulse{0%,100%{box-shadow:0 14px 26px rgba(0,0,0,.5),inset 0 2px 2px rgba(255,255,255,.3),inset 0 -8px 14px rgba(0,0,0,.32),0 0 0 0 rgba(34,197,94,0)}50%{box-shadow:0 14px 26px rgba(0,0,0,.5),inset 0 2px 2px rgba(255,255,255,.3),inset 0 -8px 14px rgba(0,0,0,.32),0 0 22px 7px rgba(34,197,94,.65)}}
 .mesa-table.ready-pulse{animation:mesa-ready-pulse 1.35s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){
-  .mesa-table.ready-pulse{animation:none;filter:brightness(1.22);box-shadow:0 8px 22px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.16),0 0 14px 3px rgba(34,197,94,.6)}
+  .mesa-table.ready-pulse{animation:none;filter:brightness(1.22);box-shadow:0 14px 26px rgba(0,0,0,.5),inset 0 2px 2px rgba(255,255,255,.3),inset 0 -8px 14px rgba(0,0,0,.32),0 0 14px 3px rgba(34,197,94,.6)}
 }
-.mesa-number{font-size:26px;font-weight:900;line-height:1}
+.mesa-number{font-size:26px;font-weight:900;line-height:1;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .mesa-capacity{font-size:11px;font-weight:800;color:#e7dcc7;display:flex;align-items:center;gap:3px}
 .mesa-badge{position:absolute;z-index:2;border-radius:999px;font-weight:900;box-shadow:0 2px 6px rgba(0,0,0,.4)}
-.mesa-badge-reserved{top:-9px;right:-9px;padding:3px 7px;font-size:9px;line-height:1.4;background:#EAB308;color:#241c02;white-space:nowrap;text-transform:uppercase;letter-spacing:.3px}
+/* MESA_PHONE_VISUAL_PARITY_V2 -- a restrained icon badge, not a text pill:
+   shown whenever a table has a relevant reservation tonight, independent of
+   occupied/free fill (see reservationBadge in the floor render below). The
+   .conflict variant (booked reservation on a table that's already occupied
+   by someone else) recolors the badge red -- an ADDITIONAL signal layered on
+   top of the occupied-red fill, never a replacement for it. */
+.mesa-badge-reserved{top:-8px;right:-8px;width:23px;height:23px;display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1;background:linear-gradient(180deg,#F3CA6A,#D7A84B 55%,#9C7A2E);border:2px solid #0b0b0a}
+.mesa-badge-reserved.conflict{background:linear-gradient(180deg,#FB8A7C,#EF4444 55%,#B91C1C)}
 .mesa-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
 .mesa-legend{display:flex;gap:12px;flex-wrap:wrap;color:#b9ad99;font-size:12px;font-weight:800}.mesa-legend span{display:flex;align-items:center;gap:5px}.mesa-dot{width:8px;height:8px;border-radius:50%}
 /* Edit-mode helper text: a single discreet line immediately above the
@@ -414,8 +421,9 @@ const css = `
    app has no theme layer yet), but a future Light-mode pass can override
    them from an ancestor (e.g. a data-theme="light" rule) without touching
    this component again -- documented, not built, per this slice's own scope. */
-.mesa-row-tap{-webkit-appearance:none;appearance:none;font-family:inherit;background:var(--mesa-row-bg,rgba(255,255,255,.035));color:var(--mesa-row-fg,#f7f0df);border:none;border-radius:13px;padding:11px 12px;margin-bottom:8px}
+.mesa-row-tap{-webkit-appearance:none;appearance:none;font-family:inherit;background-color:var(--mesa-row-bg,rgba(255,255,255,.035));background-image:linear-gradient(165deg,rgba(255,255,255,.05),rgba(255,255,255,0) 55%);color:var(--mesa-row-fg,#f7f0df);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:14px 14px;margin-bottom:10px;box-shadow:0 6px 16px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.05);transition:transform .12s,box-shadow .12s}
 .mesa-row-tap:last-child{margin-bottom:0}
+.mesa-row-tap:active{transform:scale(.985);box-shadow:0 2px 8px rgba(0,0,0,.32)}
 /* A table with many comandas can grow taller than fits on screen -- this
    scrolls on its own, bounded, so the primary action buttons/close button
    that come AFTER it in the sheet never get pushed out of view (the whole
@@ -433,6 +441,22 @@ const css = `
 .mesa-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mesa-label{display:block;color:#b9ad99;font-size:12px;font-weight:800;margin-bottom:6px}.mesa-methods{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.mesa-method{border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:11px 7px;background:rgba(255,255,255,.035);color:#fff;font-weight:850;cursor:pointer}.mesa-method.active{border-color:var(--mc);box-shadow:inset 0 0 0 1px var(--mc);background:color-mix(in srgb,var(--mc) 18%,transparent)}
 .mesa-lines{max-height:260px;overflow:auto;border:1px solid rgba(208,184,145,.15);border-radius:12px;padding:4px 11px}.mesa-line-check{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer}.mesa-line-check:last-child{border-bottom:0}.mesa-line-check input{width:18px;height:18px;accent-color:#d7a84b}
 .mesa-banner{border:1px solid rgba(56,189,248,.35);border-radius:13px;padding:12px 14px;background:rgba(56,189,248,.09);color:#b9eaff;font-size:13px;line-height:1.45}.mesa-error{border-color:rgba(232,52,28,.5);background:rgba(232,52,28,.1);color:#ffaaa0}
+/* MESA_PHONE_VISUAL_PARITY_V2 -- reservation-agenda rows (ReservationAgendaRow).
+   .mesa-row (existing) still supplies the flex/gap layout; these add the
+   elevated-card depth + the conflict-tinted variant. Declared after
+   .mesa-row on purpose so its border/background/radius/padding win the
+   cascade for that shared class without needing !important. NOTE: this
+   comment block is literal <style> textContent at runtime (it lives inside
+   the css template string) -- MesaPhoneShell.test.js's Más-screen tests
+   assert the phone shell's <main> textContent stays scoped to Más's own
+   content while TabMesa (source of this stylesheet) stays mounted-but-
+   hidden behind it, so avoid spelling this screen's nav label in here. */
+.mesa-reservation-row{cursor:pointer;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px 13px;margin-bottom:9px;background:rgba(255,255,255,.035);box-shadow:0 6px 14px rgba(0,0,0,.26);transition:transform .12s,box-shadow .12s}
+.mesa-reservation-row:last-child{margin-bottom:0}
+.mesa-reservation-row:active{transform:scale(.985)}
+.mesa-reservation-row.conflict{background:rgba(239,68,68,.11);border-color:rgba(239,68,68,.4)}
+.mesa-reservation-time{font-size:17px;font-weight:900;font-variant-numeric:tabular-nums;flex-shrink:0;min-width:46px}
+.mesa-reservation-row.conflict .mesa-reservation-time{color:#ff9c90}
 .mesa-reservation{border:1px solid rgba(239,68,68,.38);border-radius:14px;padding:12px;background:rgba(239,68,68,.09);margin-top:9px}.mesa-reservation-main{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.mesa-reservation-name{font-size:15px;font-weight:950}.mesa-reservation-time{color:#ff8d83;font-size:16px;font-weight:950;white-space:nowrap}.mesa-reservation-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.mesa-btn.small{padding:7px 10px;border-radius:10px;font-size:12px}.mesa-btn.red{background:#C62828;border-color:#EF4444;color:#fff}.mesa-textarea{min-height:88px;resize:vertical}.mesa-menu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.mesa-menu-action{min-height:72px;text-align:left;display:flex;flex-direction:column;justify-content:center}.mesa-menu-action strong{font-size:14px}.mesa-menu-action span{font-size:11px;color:#a99d89;margin-top:3px}
 /* P1_D_TABLE_FIRST_01 -- MesaWorkspace's compactCard presentation (phone
    shell only, compact prop -- see the compactCard branch below). A dedicated
@@ -944,7 +968,15 @@ function MesaWorkspace({
                 (plain) -- P0-B.1 semantics untouched either way. */}
             <div className="mesa-actions" style={{ marginTop: 16 }}>
               {!draft && <button className="mesa-btn primary" onClick={() => onNewCommand(table)}>＋ Nueva comanda</button>}
-              <button className="mesa-btn gold" onClick={() => setShowAccount(true)}>Ver cuenta</button>
+              {/* MESA_PHONE_VISUAL_PARITY_V2 -- gold only once there is a
+                  real account to review (hasOrders, the exact same signal
+                  the COMANDAS section above already uses); otherwise the
+                  plain neutral .mesa-btn look Cerrar mesa already uses, so
+                  the button never reads as "something needs your attention"
+                  when the table has nothing billed yet. Still fully
+                  tappable either way -- VerCuentaModal itself handles the
+                  zero-total state, this only changes the visual weight. */}
+              <button className={`mesa-btn${hasOrders ? " gold" : ""}`} onClick={() => setShowAccount(true)}>Ver cuenta</button>
               {!draft && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
             </div>
             {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
@@ -1000,7 +1032,11 @@ function MesaWorkspace({
       </div>}
       <div className="mesa-actions">
         {!draft && <button className="mesa-btn primary" onClick={() => onNewCommand(table)}>＋ Nueva comanda</button>}
-        <button className="mesa-btn gold" onClick={() => setShowAccount(true)}>Ver cuenta</button>
+        {/* MESA_PHONE_VISUAL_PARITY_V2 -- same false-positive-gold fix as the
+            compactCard branch above, applied here too since it is a shared
+            visual-correctness rule (real state, not "the button merely
+            exists"), not a phone-only concern. */}
+        <button className={`mesa-btn${hasOrders ? " gold" : ""}`} onClick={() => setShowAccount(true)}>Ver cuenta</button>
         {!draft && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
       </div>
       {nextReservation && <div className="mesa-section">
@@ -1121,8 +1157,35 @@ function ReservationModal({ tables, initialTableId, reservation, onClose, onSave
   </Modal>;
 }
 
-// Reservas · Beta: search by name/phone and an optional per-table filter (used
-// by the "Ver reservas de la noche" shortcut from a table's own popup). Full
+// MESA_PHONE_VISUAL_PARITY_V2 -- compact, entirely-clickable agenda row (tap
+// -> Modificar / mover); the floor popup's own ReservationItem stays the
+// full-detail-plus-actions card, used only there where a single reservation
+// is already in focus. `conflict` (booked reservation on a table someone
+// else is already occupying) is a real, derived fact -- table.status is the
+// same authoritative field the floor tiles' own fill color reads, not a
+// fabricated UI state -- so this can never disagree with what Mapa/Lista show.
+function ReservationAgendaRow({ table, reservation, onEdit }) {
+  const conflict = table.status === "open";
+  return <button type="button" className={`mesa-row mesa-reservation-row${conflict ? " conflict" : ""}`}
+    style={{ width: "100%", textAlign: "left", font: "inherit", color: "inherit" }}
+    onClick={() => onEdit(reservation)}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+      <div className="mesa-reservation-time">{reservationTimeLabel(reservation)}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 800, fontSize: 14 }}>Mesa {table.number}</div>
+        <div className="mesa-muted" style={{ fontSize: 12, marginTop: 1 }}>{reservation.guestName} · {reservation.coversTotal} persona{reservation.coversTotal === 1 ? "" : "s"}</div>
+      </div>
+    </div>
+    <span className="mesa-chip" style={conflict
+      ? { borderColor: "#EF4444", color: "#ff9c90", background: "rgba(239,68,68,.16)", whiteSpace: "nowrap", flexShrink: 0 }
+      : { borderColor: "#22C55E", color: "#22C55E", background: "rgba(34,197,94,.14)", whiteSpace: "nowrap", flexShrink: 0 }}>
+      {conflict ? "Conflicto · Ocupada" : "Confirmada"}
+    </span>
+  </button>;
+}
+
+// Reservas: search by name/phone and an optional per-table filter (used by
+// the "Ver reservas de la noche" shortcut from a table's own popup). Full
 // date-range navigation, cross-day management and conflict tooling are left
 // for a later slice -- this covers tonight's active bookings only, same as
 // the data the floor already loads.
@@ -1142,19 +1205,25 @@ function ReservationAgenda({ tables, onClose, onNew, onEdit, onChanged, onOpened
       || reservation.guestName?.toLowerCase().includes(needle)
       || reservation.guestPhone?.toLowerCase().includes(needle))
     .sort((a, b) => String(a.reservation.reservedAt).localeCompare(String(b.reservation.reservedAt)));
-  return <Modal title="Reservas · Beta" subtitle="Reservas activas de hoy" onClose={onClose} width={760}>
+  const todayLabel = new Intl.DateTimeFormat("es-ES", { timeZone: MADRID_TIMEZONE, weekday: "long", day: "2-digit", month: "long" }).format(new Date());
+  return <Modal title="Reservas" subtitle="Reservas activas de hoy" onClose={onClose} width={760} size="tall">
+    <div className="mesa-muted" style={{ fontSize: 12, fontWeight: 800, letterSpacing: .3, textTransform: "uppercase", marginBottom: 12 }}>{todayLabel}</div>
     <div className="mesa-form-grid" style={{ marginBottom: 14 }}>
       <div><label className="mesa-label">Buscar por nombre o teléfono</label><input className="mesa-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ej. Antonio o 600…" /></div>
       <div><label className="mesa-label">Mesa</label><select className="mesa-input" value={tableFilter} onChange={(event) => setTableFilter(event.target.value)}><option value="">Todas las mesas</option>{tables.map((table) => <option key={table.id} value={table.id}>Mesa {table.number}</option>)}</select></div>
     </div>
-    <div className="mesa-actions" style={{ marginTop: 0 }}><button className="mesa-btn gold" onClick={onNew}>＋ Nueva reserva</button></div>
-    {/* Compact, entirely-clickable rows here (tap -> Modificar / mover); the
-        floor popup's own ReservationItem stays the full-detail-plus-actions
-        card, used only there where a single reservation is already in focus. */}
-    {rows.length === 0 ? <div className="mesa-muted">No hay reservas que coincidan.</div> : rows.map(({ table, reservation }) => <div key={reservation.id} className="mesa-row" style={{ cursor: "pointer" }} onClick={() => onEdit(reservation)}>
-      <span>{reservation.guestName} · Mesa {table.number} · {reservation.coversTotal} pax</span>
-      <span className="mesa-chip">{reservationTimeLabel(reservation)}</span>
-    </div>)}
+    {/* MESA_PHONE_VISUAL_PARITY_V2 -- agenda-first: the actual list of
+        tonight's reservations is the primary content on screen; "+ Nueva
+        reserva" is a prominent CTA AFTER it, never leading the screen the
+        way a big empty form would (see the brief's own "do not lead with a
+        large empty form when reservations exist" instruction). Same
+        handler/classes as before -- only its position in the tree moved. */}
+    {rows.length === 0 ? <div className="mesa-muted">No hay reservas que coincidan.</div> : <div>
+      {rows.map(({ table, reservation }) => <ReservationAgendaRow key={reservation.id} table={table} reservation={reservation} onEdit={onEdit} />)}
+    </div>}
+    <div className="mesa-actions" style={{ marginTop: 16 }}>
+      <button className="mesa-btn gold" onClick={onNew} style={{ flex: 1, padding: "14px 16px", fontSize: 15 }}>＋ Nueva reserva</button>
+    </div>
   </Modal>;
 }
 
@@ -1608,12 +1677,16 @@ export default function TabMesa({
         // red/green one during editing.
         const ready = !editing && hasReadyOrder(table);
         const selected = table.id === menuId || table.id === selectedId;
-        // The floor tile itself only ever shows "Reservado" (a fact, at a
-        // glance) -- not the reservation's clock time, which used to sit in
-        // this same corner badge and reads as a second number competing with
-        // the table number for attention. Full reservation detail (name,
-        // time, covers, phone) lives one tap away, inside the popup.
-        const isReservedFree = state === STATUS.reserved && !!nextReservation;
+        // MESA_PHONE_VISUAL_PARITY_V2 -- the floor tile itself only ever
+        // shows a small icon badge (a fact, at a glance) -- not the
+        // reservation's clock time, which would read as a second number
+        // competing with the table number for attention. Full reservation
+        // detail (name, time, covers, phone) lives one tap away, inside the
+        // popup. Reservation and occupancy are independent facts (see
+        // isRelevantReservation/tableState): the badge shows whenever a
+        // relevant reservation exists tonight, regardless of fill color: it
+        // never replaces the occupied-red fill, only adds to it (.conflict).
+        const reservationBadge = nextReservation ? { conflict: state === STATUS.occupied } : null;
         // FREE_TABLE_OPEN_LATENCY_01 -- per-table pending feedback, see
         // openingIds' own comment: immediate, scoped to this one tile only.
         const opening = openingIds.has(table.id);
@@ -1633,7 +1706,7 @@ export default function TabMesa({
           if (!editing && table.status === "open") { setSelectedId(table.id); return; }
           setMenuId(table.id);
         }}>
-          {isReservedFree && <span className="mesa-badge mesa-badge-reserved">Reservada</span>}
+          {reservationBadge && <span className={`mesa-badge mesa-badge-reserved${reservationBadge.conflict ? " conflict" : ""}`} title={reservationBadge.conflict ? "Reserva en conflicto: mesa ya ocupada" : "Mesa reservada"} aria-label={reservationBadge.conflict ? "Reserva en conflicto" : "Reservada"}>🔖</span>}
           <strong className="mesa-number">{table.number}</strong>
           <span className="mesa-capacity">👥 máx {table.capacity ?? "—"}</span>
         </button>;

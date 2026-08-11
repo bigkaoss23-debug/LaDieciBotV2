@@ -254,7 +254,10 @@ describe("Mesa button color semantics", () => {
 
   test("Nueva reserva (both entry points: table popup and Reservas · Beta) uses gold, not red", () => {
     expect(source).toContain('<button className="mesa-btn small gold" onClick={onNewReservation}>＋ Nueva reserva</button>');
-    expect(source).toContain('<button className="mesa-btn gold" onClick={onNew}>＋ Nueva reserva</button>');
+    // MESA_PHONE_VISUAL_PARITY_V2 -- the agenda's own Nueva reserva is now a
+    // wide, prominent bottom CTA (matching the approved mockup) via an added
+    // inline style, not just the bare .mesa-btn.gold default sizing.
+    expect(source).toContain('<button className="mesa-btn gold" onClick={onNew} style={{ flex: 1, padding: "14px 16px", fontSize: 15 }}>＋ Nueva reserva</button>');
   });
 
   test("ReservationModal's save action uses gold, matching every other save/confirm button", () => {
@@ -286,8 +289,8 @@ describe("Mesa reservations", () => {
     expect(source).toContain('Ver reservas de la noche');
   });
 
-  test("Reservas is labelled Beta and supports a name/phone search", () => {
-    expect(source).toContain('title="Reservas · Beta"');
+  test("Reservas is no longer labelled Beta (matches the approved mockup) and still supports a name/phone search", () => {
+    expect(source).toContain('title="Reservas"');
     expect(source).toContain('Buscar por nombre o teléfono');
   });
 });
