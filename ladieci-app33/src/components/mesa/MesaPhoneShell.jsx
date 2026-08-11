@@ -95,7 +95,15 @@ export default function MesaPhoneShell({
     <header style={{
       flexShrink: 0, position: "relative",
       display: "flex", alignItems: "center", justifyContent: "center",
+      // App.jsx mounts two position:fixed banners above everything (the
+      // service-status line and, when any exist, the pending-incidents
+      // warning -- both outside this component, outside Mesa's own scope
+      // to touch) that stack up to ~63px tall from the true viewport top.
+      // The old ServicioPage header was tall enough to clear them by
+      // accident; this shorter one needs to reserve that same clearance on
+      // purpose so the clock never renders underneath them.
       padding: "10px 14px 8px",
+      paddingTop: "calc(68px + env(safe-area-inset-top, 0px))",
     }}>
       <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}>
         {isAdmin && backArrowButton(onExit)}
