@@ -73,7 +73,7 @@ async function mount(overrides = {}) {
     role: "admin", notify: jest.fn(), onNewCommand: jest.fn(), onCountChange: jest.fn(),
     refreshKey: 0, mesaDrafts: {}, onClearDraft: jest.fn(), onSendToCocina: jest.fn(),
     listosElement: <div data-testid="listos-stub">LISTOS_STUB</div>,
-    onNewOrder: jest.fn(), onExit: jest.fn(),
+    onExit: jest.fn(),
     ...overrides,
   };
   await act(async () => { root.render(<MesaPhoneShell {...props} />); });
@@ -110,20 +110,43 @@ describe("MesaPhoneShell -- default screen and nav", () => {
     unmount(container, root);
   });
 
-  test("bottom nav is exactly Mapa / Lista / + / Listos / Más, in that order", async () => {
+  test("bottom nav is exactly Mapa / Lista / Reservas / Listos / Más, in that order", async () => {
     const { container, root } = await mount();
     const nav = container.querySelector("nav");
     const labels = Array.from(nav.children).map((el) => (el.getAttribute("aria-label") || el.textContent).trim());
-    expect(labels.map((l, i) => l.includes(["Mapa", "Lista", "Nuevo pedido", "Listos", "Más"][i]))).toEqual([true, true, true, true, true]);
+    expect(labels.map((l, i) => l.includes(["Mapa", "Lista", "Reservas", "Listos", "Más"][i]))).toEqual([true, true, true, true, true]);
+    unmount(container, root);
+  });
+
+  // P1_D_TABLE_FIRST_01 -- the global "+" was a UX mistake (it let someone
+  // start an order before a table was chosen, forcing a second table-
+  // selection step); it must not be reachable from the shell at all anymore.
+  test("the global + / Nuevo pedido entrypoint no longer exists anywhere in the shell", async () => {
+    const { container, root } = await mount();
+    expect(container.querySelector('[aria-label="Nuevo pedido"]')).toBeNull();
+    expect(container.textContent).not.toContain("Nuevo pedido");
     unmount(container, root);
   });
 });
 
-describe("MesaPhoneShell -- center + is the real Nuevo Pedido entrypoint, nothing new", () => {
-  test("tapping the center + calls the caller's onNewOrder, not a new/duplicate order flow", async () => {
-    const { container, root, props } = await mount();
-    click(container.querySelector('[aria-label="Nuevo pedido"]'));
-    expect(props.onNewOrder).toHaveBeenCalledTimes(1);
+describe("MesaPhoneShell -- center nav slot is now Reservas (global, whole-room)", () => {
+  test("tapping the center Reservas button opens the real reservations agenda, whole-room (not filtered to any one table)", async () => {
+    const { container, root } = await mount();
+    click(container.querySelector('[aria-label="Reservas"]'));
+    await flush();
+    expect(container.textContent).toContain("Reservas activas de hoy");
+    // The agenda's own table-filter <select> reads "" (its "Todas las
+    // mesas" option) when unscoped -- checking .value, not just that the
+    // option's text exists in the DOM, since it would either way.
+    expect(container.querySelector(".mesa-form-grid select").value).toBe("");
+    unmount(container, root);
+  });
+
+  test("Reservas is reachable identically for operator, the real reachable non-admin role", async () => {
+    const { container, root } = await mount({ role: "operator" });
+    click(container.querySelector('[aria-label="Reservas"]'));
+    await flush();
+    expect(container.textContent).toContain("Reservas activas de hoy");
     unmount(container, root);
   });
 });
@@ -178,21 +201,31 @@ describe("MesaPhoneShell -- Lista shows the same authoritative Mesa data as Mapa
 });
 
 describe("MesaPhoneShell -- Más is scoped to Mesa-operational actions only, role-aware", () => {
-  test("admin sees both Reservas and Personalizar sala", async () => {
+  // P1_D_TABLE_FIRST_01 -- Reservas is first-class bottom navigation now
+  // (see the "center nav slot" describe block above), so Más no longer
+  // duplicates it -- Personalizar sala (admin-only) is its only remaining
+  // content.
+  test("admin sees Personalizar sala; Reservas is NOT duplicated here anymore", async () => {
     const { container, root } = await mount({ role: "admin" });
     click(navButton(container, "Más"));
     await flush();
-    expect(container.textContent).toContain("Reservas");
-    expect(container.textContent).toContain("Personalizar sala");
+    // Scoped to <main> only -- the bottom <nav> legitimately says "Reservas"
+    // as its own center label regardless of which screen is active; that is
+    // not the same as Más's own content duplicating it.
+    const main = container.querySelector("main").textContent;
+    expect(main).toContain("Personalizar sala");
+    expect(main).not.toContain("Reservas");
     unmount(container, root);
   });
 
-  test("operator sees Reservas but NOT Personalizar sala (room editing stays admin-only, same as the map's own dock)", async () => {
+  test("operator sees the empty-state message -- room editing stays admin-only and Reservas lives on the bottom nav for everyone, not inside Más", async () => {
     const { container, root } = await mount({ role: "operator" });
     click(navButton(container, "Más"));
     await flush();
-    expect(container.textContent).toContain("Reservas");
-    expect(container.textContent).not.toContain("Personalizar sala");
+    const main = container.querySelector("main").textContent;
+    expect(main).not.toContain("Personalizar sala");
+    expect(main).not.toContain("Reservas");
+    expect(main).toContain("No hay acciones secundarias disponibles");
     unmount(container, root);
   });
 
@@ -214,16 +247,6 @@ describe("MesaPhoneShell -- Más is scoped to Mesa-operational actions only, rol
     await flush();
     expect(container.querySelector(".mesa-board")).not.toBeNull();
     expect(container.textContent).toContain("Salir de Personalizar sala");
-    unmount(container, root);
-  });
-
-  test("Más's Reservas switches to Mapa with the reservations agenda already open", async () => {
-    const { container, root } = await mount({ role: "admin" });
-    click(navButton(container, "Más"));
-    await flush();
-    click(byText(container, "button", "📅 Reservas"));
-    await flush();
-    expect(container.textContent).toContain("Reservas activas de hoy");
     unmount(container, root);
   });
 });

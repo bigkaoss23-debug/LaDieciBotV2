@@ -60,27 +60,30 @@ function backArrowButton(onExit) {
   }}>←</button>;
 }
 
-function MasScreen({ role, onReservas, onPersonalizar }) {
+// P1_D_TABLE_FIRST_01 -- Reservas is now first-class bottom navigation (see
+// the center nav button below), so it is no longer duplicated here. Más's
+// only remaining secondary function is room editing, which stays admin-only
+// exactly as before -- canManageMesaReservations is no longer needed in this
+// component at all.
+function MasScreen({ role, onPersonalizar }) {
   const canEdit = canEditMesaRoom(role);
-  const canManageReservations = canManageMesaReservations(role);
   const rowStyle = {
     width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12,
     padding: "16px 14px", borderRadius: 14, border: "1px solid rgba(208,184,145,.18)",
     background: "rgba(255,255,255,.03)", color: "#f7f0df", fontSize: 15, fontWeight: 700,
     cursor: "pointer", marginBottom: 10,
   };
-  if (!canManageReservations && !canEdit) {
+  if (!canEdit) {
     return <div style={{ padding: 16, color: "rgba(255,255,255,.5)", fontSize: 14 }}>No hay acciones secundarias disponibles para este acceso.</div>;
   }
   return <div style={{ padding: 14 }}>
-    {canManageReservations && <button style={rowStyle} onClick={onReservas}><span style={{ fontSize: 20 }}>📅</span> Reservas</button>}
-    {canEdit && <button style={rowStyle} onClick={onPersonalizar}><span style={{ fontSize: 20 }}>🛠</span> Personalizar sala</button>}
+    <button style={rowStyle} onClick={onPersonalizar}><span style={{ fontSize: 20 }}>🛠</span> Personalizar sala</button>
   </div>;
 }
 
 export default function MesaPhoneShell({
   role, notify, onNewCommand, onCountChange, refreshKey, mesaDrafts, onClearDraft, onSendToCocina,
-  listosElement, onNewOrder, onExit,
+  listosElement, onExit,
 }) {
   const [shellTab, setShellTab] = useState("mapa");
   const [mesaAction, setMesaAction] = useState(null);
@@ -143,7 +146,7 @@ export default function MesaPhoneShell({
       />}
       {shellTab === "lista" && <MesaListaView notify={notify} onSelectTable={goToTable} />}
       {shellTab === "listos" && listosElement}
-      {shellTab === "mas" && <MasScreen role={role} onReservas={openReservations} onPersonalizar={openEditing} />}
+      {shellTab === "mas" && <MasScreen role={role} onPersonalizar={openEditing} />}
     </main>
 
     <nav style={{
@@ -169,14 +172,28 @@ export default function MesaPhoneShell({
         </button>;
       })}
 
-      <button onClick={onNewOrder} title="Nuevo pedido" aria-label="Nuevo pedido" style={{
-        width: 68, height: 68, borderRadius: "50%", marginTop: -28,
-        background: `linear-gradient(180deg, #FF6040 0%, #E8341C 60%, #A01808 100%)`,
-        border: "3px solid #0b0b0a", color: "#fff", fontSize: 32, fontWeight: 700,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        boxShadow: "0 0 20px rgba(232,52,28,.55), 0 6px 18px rgba(0,0,0,.5)",
-        cursor: "pointer", flexShrink: 0,
-      }}>+</button>
+      {/* P1_D_TABLE_FIRST_01 -- the global "+" was a UX mistake: it let
+          someone start an order before a table was ever chosen, needing a
+          second table-selection step (see MesaWorkspace's own "＋ Nueva
+          comanda", now the one and only order entrypoint, always already
+          table-scoped). This freed center slot is Reservas instead -- same
+          raised-circle treatment/position/gradient/shadow as the button it
+          replaces, with a label added underneath (matching every other nav
+          item) since a calendar glyph alone is less self-evident than "+"
+          was. */}
+      <button onClick={openReservations} title="Reservas" aria-label="Reservas" style={{
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+        width: 68, marginTop: -28, background: "none", border: "none", padding: 0, cursor: "pointer",
+      }}>
+        <span aria-hidden="true" style={{
+          width: 68, height: 68, borderRadius: "50%",
+          background: `linear-gradient(180deg, #FF6040 0%, #E8341C 60%, #A01808 100%)`,
+          border: "3px solid #0b0b0a", color: "#fff", fontSize: 30, fontWeight: 700,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "0 0 20px rgba(232,52,28,.55), 0 6px 18px rgba(0,0,0,.5)",
+        }}>📅</span>
+        <span style={{ color: "rgba(255,255,255,.75)", fontWeight: 700, fontSize: 11 }}>Reservas</span>
+      </button>
 
       {NAV_ITEMS.slice(2).map((item) => {
         const active = shellTab === item.id;

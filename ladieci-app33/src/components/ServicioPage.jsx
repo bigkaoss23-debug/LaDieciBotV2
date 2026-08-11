@@ -1287,7 +1287,6 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         onClearDraft={(sessionId) => setMesaDrafts((prev) => { const next = { ...prev }; delete next[sessionId]; return next; })}
         onSendToCocina={sendMesaCommandToCocina}
         listosElement={listosElement}
-        onNewOrder={() => { setMesaCommandTarget(null); setPrefillCliente(null); setShowNuevo(true); }}
         onExit={() => setTab("wa")}
       /> : <>
       {/* ── HEADER glass 3D ── */}

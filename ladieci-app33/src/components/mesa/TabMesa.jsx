@@ -402,6 +402,20 @@ const css = `
 .mesa-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:16px}.mesa-stat{border:1px solid rgba(208,184,145,.17);border-radius:13px;padding:11px;background:rgba(255,255,255,.025)}.mesa-stat small{display:block;color:#9f9380;font-size:10px;font-weight:800;text-transform:uppercase}.mesa-stat strong{display:block;margin-top:4px;font-size:17px}
 .mesa-actions{display:flex;gap:8px;flex-wrap:wrap;margin:15px 0}.mesa-section{margin-top:18px}.mesa-section h3{margin:0 0 9px;color:#d9c8aa;font-size:12px;text-transform:uppercase;letter-spacing:.8px}
 .mesa-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(255,255,255,.065);padding:9px 2px;font-size:13px}.mesa-row:last-child{border-bottom:0}.mesa-muted{color:#978d7c}.mesa-chip{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800;color:#ddd2bf}
+/* P1_D_LISTA_THEME_01 -- .mesa-row above is written for plain <div> rows
+   nested inside an already-dark .mesa-modal (VerCuentaModal's payment-method
+   list, etc.), so it never needed its own background/color/appearance reset.
+   MesaListaView renders its rows as native <button> elements instead (a real
+   tap target, not just a modal list item) -- a bare <button> pulls in the
+   browser's own light UA chrome (white/grey face, dark text) for every
+   property this class doesn't set, which is exactly the "bright white
+   surface in a dark app" bug. --mesa-row-bg/-fg are real custom properties,
+   not just a comment: today they only ever resolve to their fallback (this
+   app has no theme layer yet), but a future Light-mode pass can override
+   them from an ancestor (e.g. a data-theme="light" rule) without touching
+   this component again -- documented, not built, per this slice's own scope. */
+.mesa-row-tap{-webkit-appearance:none;appearance:none;font-family:inherit;background:var(--mesa-row-bg,rgba(255,255,255,.035));color:var(--mesa-row-fg,#f7f0df);border:none;border-radius:13px;padding:11px 12px;margin-bottom:8px}
+.mesa-row-tap:last-child{margin-bottom:0}
 /* A table with many comandas can grow taller than fits on screen -- this
    scrolls on its own, bounded, so the primary action buttons/close button
    that come AFTER it in the sheet never get pushed out of view (the whole
@@ -420,6 +434,34 @@ const css = `
 .mesa-lines{max-height:260px;overflow:auto;border:1px solid rgba(208,184,145,.15);border-radius:12px;padding:4px 11px}.mesa-line-check{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer}.mesa-line-check:last-child{border-bottom:0}.mesa-line-check input{width:18px;height:18px;accent-color:#d7a84b}
 .mesa-banner{border:1px solid rgba(56,189,248,.35);border-radius:13px;padding:12px 14px;background:rgba(56,189,248,.09);color:#b9eaff;font-size:13px;line-height:1.45}.mesa-error{border-color:rgba(232,52,28,.5);background:rgba(232,52,28,.1);color:#ffaaa0}
 .mesa-reservation{border:1px solid rgba(239,68,68,.38);border-radius:14px;padding:12px;background:rgba(239,68,68,.09);margin-top:9px}.mesa-reservation-main{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.mesa-reservation-name{font-size:15px;font-weight:950}.mesa-reservation-time{color:#ff8d83;font-size:16px;font-weight:950;white-space:nowrap}.mesa-reservation-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.mesa-btn.small{padding:7px 10px;border-radius:10px;font-size:12px}.mesa-btn.red{background:#C62828;border-color:#EF4444;color:#fff}.mesa-textarea{min-height:88px;resize:vertical}.mesa-menu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.mesa-menu-action{min-height:72px;text-align:left;display:flex;flex-direction:column;justify-content:center}.mesa-menu-action strong{font-size:14px}.mesa-menu-action span{font-size:11px;color:#a99d89;margin-top:3px}
+/* P1_D_TABLE_FIRST_01 -- MesaWorkspace's compactCard presentation (phone
+   shell only, compact prop -- see the compactCard branch below). A dedicated
+   overlay/card pair, NOT a variant of .mesa-overlay/.mesa-modal, so nothing
+   here can ever affect any other modal in this file (VerCuentaModal,
+   ReservationAgenda, TableContextPopup, the non-compact MesaWorkspace
+   itself, etc. all keep their exact current behavior everywhere, including
+   inside this same shell). True flexbox center, not bottom-anchored; a
+   stronger dim+blur than the shared overlay's own; a card that sizes to its
+   own now-genuinely-compact content instead of stretching full-width/near-
+   full-height -- this is what replaces "almost the entire screen goes dark,
+   a tiny sheet clings to the bottom".
+*/
+.mesa-table-card-overlay{position:fixed;inset:0;z-index:1200;background:rgba(6,5,4,.74);backdrop-filter:blur(11px);display:flex;align-items:center;justify-content:center;padding:20px}
+.mesa-table-card{width:min(400px,100%);max-height:86vh;overflow:auto;border:1px solid rgba(208,184,145,.3);border-radius:22px;background:#14120f;color:#f8f0df;box-shadow:0 30px 90px rgba(0,0,0,.6)}
+.mesa-table-card-head{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 18px 6px;background:#14120f}
+.mesa-table-card-body{padding:6px 18px 20px}
+/* A "compact section" is the shared visual language for COMANDAS/RESERVAS:
+   muted/quiet when there is nothing to report, a brighter border+label+dot
+   once there's something the operator should notice -- same rule, same
+   markup, both sections, so they can never visually drift apart. */
+.mesa-card-section{border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px 14px;margin-top:10px;cursor:pointer}
+.mesa-card-section:first-child{margin-top:0}
+.mesa-card-section.muted{opacity:.62}
+.mesa-card-section.active{border-color:rgba(215,168,75,.4);background:rgba(215,168,75,.07)}
+.mesa-card-section-label{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:900;letter-spacing:.6px;text-transform:uppercase;color:#9f9380}
+.mesa-card-section.active .mesa-card-section-label{color:#e9c983}
+.mesa-card-section-summary{margin-top:5px;font-size:14px;font-weight:700}
+.mesa-card-section.muted .mesa-card-section-summary{color:#7c7263;font-weight:600}
 .mesa-print-layer{display:none}.mesa-print-sheet{width:58mm;margin:0 auto;color:#000;background:#fff;font:12px/1.35 'DM Mono',monospace}.mesa-print-sheet h1,.mesa-print-sheet h2,.mesa-print-sheet p{margin:0}.mesa-print-sheet .sep{border-top:1px dashed #000;margin:8px 0}.mesa-print-row{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.mesa-print-row span:first-child{min-width:0;overflow-wrap:anywhere}.mesa-print-total{font-size:18px;font-weight:900;text-align:right;margin:8px 0}.mesa-print-center{text-align:center}.mesa-print-small{font-size:10px}
 @media(max-width:620px){.mesa-board{min-height:440px}.mesa-summary{grid-template-columns:1fr 1fr}.mesa-form-grid,.mesa-menu-grid{grid-template-columns:1fr}.mesa-methods{grid-template-columns:1fr}.mesa-modal-body{padding:15px}.mesa-modal-head{padding:14px 15px}}
 /* Phone: every modal in this component becomes a near-full-screen bottom
@@ -728,6 +770,12 @@ function MesaWorkspace({
   table, onClose, onNewCommand, onRefresh, onPrint,
   canManageReservations, onEditReservation, onViewNight, onChanged, onOpened,
   notify, draft, onClearDraft, onSendToCocina,
+  // P1_D_TABLE_FIRST_01 -- phone shell only (compact prop threaded straight
+  // through from the main TabMesa render, see below). Every state/handler
+  // above and below is 100% shared; only the final `return` branches, so the
+  // non-compact (tablet/desktop) path stays byte-identical to before this
+  // slice, everywhere it's reached, including outside this shell.
+  compactCard = false,
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -741,6 +789,12 @@ function MesaWorkspace({
   // Collapsed by default -- the draft must read as a compact one-line summary
   // inline in the workspace, not a second full-page view (see Fase 5 spec).
   const [draftExpanded, setDraftExpanded] = useState(false);
+  // compactCard only: the detailed per-comanda list is collapsed behind the
+  // one-line aggregate summary by default (see the brief's own "do not dump
+  // the entire order contents" instruction) -- unused, harmless, on the
+  // non-compact path, same as every other single-branch-only state above
+  // would be if it happened to not apply to one specific return.
+  const [comandasExpanded, setComandasExpanded] = useState(false);
   const session = table.session;
   const hasOrders = (session?.commands?.length || 0) > 0;
   const todayReservations = bookedForToday(table);
@@ -793,6 +847,114 @@ function MesaWorkspace({
   // "Mesa 6 (4 pax)" -- no "Ocupada", no second line, no cubiertos wording.
   // Unknown covers -> just "Mesa 6".
   const title = `Mesa ${table.number}${session.coversTotal != null ? ` (${session.coversTotal} pax)` : ""}`;
+
+  // P1_D_TABLE_FIRST_01 -- centered focused table modal (phone shell only).
+  // Reuses every handler/state above unchanged (Nueva comanda/Ver cuenta/
+  // Cerrar mesa call the exact same functions the non-compact branch below
+  // calls) -- only the presentation and the COMANDAS/RESERVAS summary
+  // sections are new. Not a Modal (see the dedicated mesa-table-card-*
+  // classes' own comment): a true centered card, sized to its own compact
+  // content, dimming the map strongly behind it rather than anchoring a
+  // bottom sheet that leaves most of the screen a meaningless dark void.
+  if (compactCard) {
+    // Same pure per-comanda product-count CommandCard already computes,
+    // just summed across every comanda on this table -- not new money/
+    // quantity logic, an aggregate of an already-used computation. Money
+    // itself comes from session.total (the same authoritative figure
+    // VerCuentaModal's own "Total" stat shows), never re-derived here.
+    const totalArticles = (session.commands || []).reduce((sum, command) =>
+      sum + (command.items || []).reduce((s, item) => s + (Number(item.q) || 1), 0), 0);
+    const comandasSummary = hasOrders
+      ? `Pedido en curso · ${totalArticles} artículo${totalArticles === 1 ? "" : "s"} · ${euro(session.total)}`
+      : "Todavía no hay comandas.";
+    const reservasSummary = nextReservation
+      ? `${nextReservation.guestName} · ${reservationTimeLabel(nextReservation)}${todayReservations.length > 1 ? ` · +${todayReservations.length - 1} más` : ""}`
+      : "Sin reserva para esta mesa.";
+    return <>
+      <div className="mesa-table-card-overlay" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="mesa-table-card">
+          <div className="mesa-table-card-head">
+            <div style={{ fontWeight: 950, fontSize: 20 }}>{title}</div>
+            <button className="mesa-close" onClick={onClose} aria-label="Cerrar">×</button>
+          </div>
+          <div className="mesa-table-card-body">
+            {/* Tap toggles the detailed (existing, unmodified CommandCard)
+                list -- never dumped open by default, per the brief's own
+                "the operator only needs a compact summary" instruction. */}
+            <div className={`mesa-card-section ${hasOrders ? "active" : "muted"}`} data-testid="mesa-card-comandas" onClick={() => setComandasExpanded((value) => !value)}>
+              <div className="mesa-card-section-label">
+                <i className="mesa-dot" style={{ width: 6, height: 6, background: hasOrders ? "#d7a84b" : "#5a5348" }} />
+                Comandas
+              </div>
+              <div className="mesa-card-section-summary">{comandasSummary}</div>
+              {hasOrders && comandasExpanded && <div className="mesa-commands-scroll" style={{ marginTop: 10 }} onClick={(event) => event.stopPropagation()}>
+                {session.commands.map((command) => <CommandCard key={command.id} command={command}
+                  action={command.state === "LISTO" ? <button className="mesa-btn green" style={{ marginLeft: "auto" }} disabled={busy} onClick={() => markServed(command.id)}>✓ Servida</button> : null} />)}
+              </div>}
+            </div>
+
+            {/* Tap opens the real, existing ReservationAgenda filtered to
+                this table (onViewNight, unconditionally -- the non-compact
+                branch below only exposes this once there are 2+ bookings;
+                here it's the section's own always-available tap target,
+                whether there are 0, 1 or several). Same data, same
+                mesaApi, no parallel reservation store. */}
+            <div className={`mesa-card-section ${nextReservation ? "active" : "muted"}`} data-testid="mesa-card-reservas" onClick={() => { if (canManageReservations) onViewNight(); }}>
+              <div className="mesa-card-section-label">
+                <i className="mesa-dot" style={{ width: 6, height: 6, background: nextReservation ? STATUS.reserved.color : "#5a5348" }} />
+                Reservas
+              </div>
+              <div className="mesa-card-section-summary">{reservasSummary}</div>
+            </div>
+
+            {draft && <div className="mesa-section" data-testid="mesa-draft-panel">
+              <button type="button" data-testid="mesa-draft-toggle" onClick={() => setDraftExpanded((value) => !value)} style={{
+                display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none",
+                border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left",
+              }}>
+                <h3 style={{ margin: 0 }}>Comanda por confirmar</h3>
+                <span className="mesa-muted" style={{ marginLeft: "auto" }}>{draftItemCount} artículo{draftItemCount === 1 ? "" : "s"} · {euro(draftTotal)}</span>
+                <span style={{ color: "#a99d89", transform: draftExpanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
+              </button>
+              {draftExpanded && <div className="mesa-command-card" style={{ marginTop: 8 }}>
+                {draft.items.map((item, index) => (
+                  <div key={item._uid || index} style={{ marginBottom: index < draft.items.length - 1 ? 8 : 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <span>{item.q}× {item.fantasyName || item.n}{item.classicName ? ` / ${item.classicName}` : ""}</span>
+                      <strong>{euro((Number(item.p) || 0) * (Number(item.q) || 0))}</strong>
+                    </div>
+                    {(item.extras || []).length > 0 && <div className="mesa-muted" style={{ fontSize: 12 }}>+{item.extras.map((extra) => extra.name).join(", ")}</div>}
+                    {(item.removedIngredients || []).length > 0 && <div className="mesa-muted" style={{ fontSize: 12 }}>Sin: {item.removedIngredients.join(", ")}</div>}
+                    {item.notes && <div className="mesa-command-note">Nota: {item.notes}</div>}
+                  </div>
+                ))}
+                {draft.nota && <div className="mesa-command-note">Nota general: {draft.nota}</div>}
+                <div style={{ marginTop: 8, textAlign: "right", fontWeight: 900 }}>{euro(draftTotal)}</div>
+              </div>}
+              <div className="mesa-actions">
+                <button className="mesa-btn" disabled={sendingDraft} onClick={() => onNewCommand(table)}>Modificar</button>
+                <button className="mesa-btn green" disabled={sendingDraft} onClick={sendToCocina}>{sendingDraft ? "Enviando…" : "Enviar a cocina"}</button>
+              </div>
+            </div>}
+
+            {/* Same three actions, same handlers, same conditions as the
+                non-compact branch -- only grouped under the new sections
+                instead of a plain Modal. Nueva comanda strongest (primary),
+                Ver cuenta clearly visible (gold), Cerrar mesa lower emphasis
+                (plain) -- P0-B.1 semantics untouched either way. */}
+            <div className="mesa-actions" style={{ marginTop: 16 }}>
+              {!draft && <button className="mesa-btn primary" onClick={() => onNewCommand(table)}>＋ Nueva comanda</button>}
+              <button className="mesa-btn gold" onClick={() => setShowAccount(true)}>Ver cuenta</button>
+              {!draft && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
+            </div>
+            {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
+          </div>
+        </div>
+      </div>
+      {showAccount && <VerCuentaModal table={table} onClose={() => setShowAccount(false)} onRefresh={onRefresh} onPrint={onPrint} />}
+      {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
+    </>;
+  }
 
   return <>
     <Modal title={title} onClose={onClose} size={hasOrders || draft ? "tall" : undefined}>
@@ -1336,7 +1498,14 @@ export default function TabMesa({
     if (!initialAction || initialAction.token === appliedActionTokenRef.current) return;
     if (initialAction.type === "reservations") {
       appliedActionTokenRef.current = initialAction.token;
-      setMenuId(null); setShowReservations(true);
+      setMenuId(null);
+      // P1_D_TABLE_FIRST_01 -- this same action type now has two callers:
+      // the bottom nav's global Reservas (no tableId -> explicit null,
+      // never leaking a stale filter from a previous table-scoped open) and
+      // the table modal's own RESERVAS section (tableId set -> same
+      // filtered-agenda behavior "Ver reservas de la noche" already used).
+      setReservationsFilterTableId(initialAction.tableId ?? null);
+      setShowReservations(true);
       return;
     }
     if (initialAction.type === "editing") {
@@ -1510,10 +1679,11 @@ export default function TabMesa({
       draft={mesaDrafts[selected.session.id] || null}
       onClearDraft={onClearDraft}
       onSendToCocina={onSendToCocina}
+      compactCard={compact}
     />}
     {settingsTable && <TableSettingsModal table={settingsTable} onClose={() => setSettingsId(null)} onSaved={() => load()} />}
     {showAdd && <AddTableModal tables={tables} onClose={() => setShowAdd(false)} onSaved={() => load()} />}
-    {showReservations && <ReservationAgenda tables={activeTables} initialTableId={reservationsFilterTableId} onClose={() => { setShowReservations(false); setReservationsFilterTableId(null); }} onNew={() => openEditor()} onEdit={(reservation) => openEditor(reservation)} onChanged={() => load({ quiet: true })} onOpened={opened} />}
+    {showReservations && <ReservationAgenda tables={activeTables} initialTableId={reservationsFilterTableId} onClose={() => { setShowReservations(false); setReservationsFilterTableId(null); }} onNew={() => openEditor(null, reservationsFilterTableId)} onEdit={(reservation) => openEditor(reservation)} onChanged={() => load({ quiet: true })} onOpened={opened} />}
     {reservationEditor && <ReservationModal tables={activeTables} initialTableId={reservationEditor.tableId} reservation={reservationEditor.reservation} onClose={() => setReservationEditor(null)} onSaved={() => load()} />}
     {printDocument && <PrintPreview document={printDocument} onClose={() => setPrintDocument(null)} />}
   </div>;

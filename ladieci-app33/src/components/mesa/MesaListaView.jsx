@@ -51,7 +51,7 @@ export default function MesaListaView({ onSelectTable, notify }) {
         const todayReservations = bookedForToday(table);
         const state = tableState(table, todayReservations);
         const ready = hasReadyOrder(table);
-        return <button key={table.id} onClick={() => onSelectTable(table.id)} className="mesa-row" style={{
+        return <button key={table.id} onClick={() => onSelectTable(table.id)} className="mesa-row mesa-row-tap" style={{
           width: "100%", textAlign: "left", cursor: "pointer",
           borderLeft: `4px solid ${state.color}`,
         }}>
