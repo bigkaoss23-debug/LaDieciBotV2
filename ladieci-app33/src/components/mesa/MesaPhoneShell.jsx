@@ -37,6 +37,18 @@ const NAV_ITEMS = [
   { id: "mas", icon: "⋯", label: "Más" },
 ];
 
+// MOBILE_SHELL_POLISH_01 -- one shared definition so the two NAV_ITEMS halves
+// (either side of the center + button) can never drift apart in size again.
+function navButtonStyle(active) {
+  return {
+    display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+    background: "none", border: "none", padding: "6px 12px", cursor: "pointer",
+    minWidth: 52, minHeight: 48,
+    color: active ? "#FF6A45" : "rgba(255,255,255,.45)",
+    fontWeight: active ? 800 : 600, fontSize: 12,
+  };
+}
+
 function backArrowButton(onExit) {
   return <button onClick={onExit} title="Volver a Servicio" aria-label="Volver a Servicio" style={{
     background: "rgba(255,255,255,0.06)",
@@ -132,27 +144,28 @@ export default function MesaPhoneShell({
 
     <nav style={{
       flexShrink: 0, display: "flex", alignItems: "flex-end", justifyContent: "space-around",
-      padding: "8px 10px calc(8px + env(safe-area-inset-bottom, 0px))",
+      // MOBILE_SHELL_POLISH_01 -- sized up after real-device validation found
+      // the original bar too compressed for one-handed thumb use. The 16px
+      // base bottom padding (on top of, not instead of, the safe-area inset)
+      // is the "few millimetres" of dark breathing room requested: it holds
+      // even on a device with zero inset, and grows further on one with a
+      // real home-indicator area.
+      padding: "14px 12px calc(16px + env(safe-area-inset-bottom, 0px))",
       background: "rgba(18,17,15,.92)", backdropFilter: "blur(14px)",
       borderTop: "1px solid rgba(208,184,145,.14)",
     }}>
       {NAV_ITEMS.slice(0, 2).map((item) => {
         const active = shellTab === item.id;
-        return <button key={item.id} onClick={() => setShellTab(item.id)} style={{
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-          background: "none", border: "none", padding: "4px 10px", cursor: "pointer",
-          color: active ? "#FF6A45" : "rgba(255,255,255,.45)",
-          fontWeight: active ? 800 : 600, fontSize: 11,
-        }}>
-          <span style={{ fontSize: 19 }}>{item.icon}</span>
+        return <button key={item.id} onClick={() => setShellTab(item.id)} style={navButtonStyle(active)}>
+          <span style={{ fontSize: 25 }}>{item.icon}</span>
           {item.label}
         </button>;
       })}
 
       <button onClick={onNewOrder} title="Nuevo pedido" aria-label="Nuevo pedido" style={{
-        width: 58, height: 58, borderRadius: "50%", marginTop: -22,
+        width: 68, height: 68, borderRadius: "50%", marginTop: -28,
         background: `linear-gradient(180deg, #FF6040 0%, #E8341C 60%, #A01808 100%)`,
-        border: "3px solid #0b0b0a", color: "#fff", fontSize: 28, fontWeight: 700,
+        border: "3px solid #0b0b0a", color: "#fff", fontSize: 32, fontWeight: 700,
         display: "flex", alignItems: "center", justifyContent: "center",
         boxShadow: "0 0 20px rgba(232,52,28,.55), 0 6px 18px rgba(0,0,0,.5)",
         cursor: "pointer", flexShrink: 0,
@@ -160,13 +173,8 @@ export default function MesaPhoneShell({
 
       {NAV_ITEMS.slice(2).map((item) => {
         const active = shellTab === item.id;
-        return <button key={item.id} onClick={() => setShellTab(item.id)} style={{
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-          background: "none", border: "none", padding: "4px 10px", cursor: "pointer",
-          color: active ? "#FF6A45" : "rgba(255,255,255,.45)",
-          fontWeight: active ? 800 : 600, fontSize: 11,
-        }}>
-          <span style={{ fontSize: 19 }}>{item.icon}</span>
+        return <button key={item.id} onClick={() => setShellTab(item.id)} style={navButtonStyle(active)}>
+          <span style={{ fontSize: 25 }}>{item.icon}</span>
           {item.label}
         </button>;
       })}

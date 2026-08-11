@@ -121,7 +121,10 @@ describe('rule C: no operational session lands on the PIN, not Home or the accou
 
 describe('operational menu', () => {
   test('rendered on authenticated operational screens, not on splash/booting', () => {
-    expect(APP).toMatch(/screen !== "splash" && screen !== "booting" && <OperationalMenu/);
+    // MOBILE_SHELL_POLISH_01 -- also gated off while the Mesa phone shell is
+    // on screen (its own back arrow replaces this menu there); the original
+    // splash/booting guard is unchanged, just joined by a third condition.
+    expect(APP).toMatch(/screen !== "splash" && screen !== "booting" && !mesaPhoneShellActive && <OperationalMenu/);
   });
 
   test('hidden without a canonical token', () => {

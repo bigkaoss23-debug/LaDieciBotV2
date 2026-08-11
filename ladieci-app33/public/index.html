@@ -7,6 +7,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>La Dieci</title>
+    <!-- MOBILE_SHELL_POLISH_01 -- the app's own dark background (constants.js
+         G, html,body,#root{background:#070707}) is injected by React via a
+         <style> tag, so it does not exist yet during the static first paint
+         before JS loads/hydrates. On a fast desktop dev reload that gap is
+         imperceptible; on a real phone (slower parse/hydrate) it shows as a
+         plain white flash/canvas around the app before anything renders.
+         This static rule -- present in the HTML itself, no JS required --
+         closes that gap. Same color as C.nero/the G rule on purpose: once
+         React mounts, the two rules agree and nothing visibly changes. -->
+    <style>html,body{background:#070707}</style>
   </head>
   <body>
     <noscript>Necesitas JavaScript para usar esta app.</noscript>

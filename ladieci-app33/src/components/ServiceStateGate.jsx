@@ -34,7 +34,7 @@ import { ensuredStatusLabel } from '../utils/serviceEnsureOutcome';
 import ServiceExceptionPanel from './service/ServiceExceptionPanel';
 import PreviousCloseoutIncidentsBanner from './service/PreviousCloseoutIncidentsBanner';
 
-export default function ServiceStateGate({ role, actor, onCloseout, children }) {
+export default function ServiceStateGate({ role, actor, onCloseout, children, hideStatusChrome = false }) {
   const ensure = useSilentServiceEnsure({ role });
   const { phase, session, exception, previousCloseoutIncidents, retry, recheckSilently } = ensure;
   const recheckRef = useRef(recheckSilently);
@@ -56,23 +56,32 @@ export default function ServiceStateGate({ role, actor, onCloseout, children }) 
   if (phase === ENSURE_PHASE.READY) {
     return (
       <>
-        <div
-          data-testid="service-open-status"
-          style={{
-            position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 140,
-            background: 'rgba(46,213,115,0.10)', border: '1px solid rgba(46,213,115,0.32)',
-            borderRadius: 999, padding: '4px 14px', color: 'rgba(120,231,168,0.9)',
-            fontSize: 11, fontWeight: 700, letterSpacing: 0.3, pointerEvents: 'none',
-            whiteSpace: 'nowrap',
-          }}>
-          {ensuredStatusLabel(session)}
-        </div>
+        {/* MOBILE_SHELL_POLISH_01 -- hideStatusChrome is set only by the Mesa
+            phone shell (ServicioPage -> App.jsx), which has its own compact
+            header and its own admin-only back arrow. Neither the session
+            status nor any pending incidents are discarded: recheckSilently/
+            previousCloseoutIncidents keep running underneath exactly as
+            before, and both reappear the instant the admin steps back out to
+            the normal Servicio view (hideStatusChrome flips false again). */}
+        {!hideStatusChrome && (
+          <div
+            data-testid="service-open-status"
+            style={{
+              position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 140,
+              background: 'rgba(46,213,115,0.10)', border: '1px solid rgba(46,213,115,0.32)',
+              borderRadius: 999, padding: '4px 14px', color: 'rgba(120,231,168,0.9)',
+              fontSize: 11, fontWeight: 700, letterSpacing: 0.3, pointerEvents: 'none',
+              whiteSpace: 'nowrap',
+            }}>
+            {ensuredStatusLabel(session)}
+          </div>
+        )}
         {/* SERVICE CLOSEOUT V2 / SLICE 4B — compact, non-blocking, informational
             only. Never covers order controls (fixed, pointerEvents:none, sits
             below the status pill above), never replaces {children}, never a
             modal. Renders nothing when there is nothing actionable to report
             (see PreviousCloseoutIncidentsBanner/describePreviousCloseoutIncidents). */}
-        <PreviousCloseoutIncidentsBanner summary={previousCloseoutIncidents} />
+        {!hideStatusChrome && <PreviousCloseoutIncidentsBanner summary={previousCloseoutIncidents} />}
         {children}
       </>
     );

@@ -52,7 +52,7 @@ const LiveTime = () => {
 };
 
 // ─── SERVICIO PAGE ────────────────────────────────────
-const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncStatus,convConfermata=[],pendingPatches}) => {
+const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncStatus,convConfermata=[],pendingPatches,onMesaPhoneShellActiveChange}) => {
   const observeOrderTransition = (action, id, to, metadata) => {
     const current = ordenes.find(o => o.id === id);
     logTransition({
@@ -150,6 +150,19 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   // Reuses headerPhone rather than a new breakpoint on purpose: it's already
   // the established "this is a phone" signal in this exact file.
   const showMesaPhoneShell = MESA_UI_ENABLED && headerPhone && tab === "banco";
+  // MOBILE_SHELL_POLISH_01 -- App.jsx owns the global "P" avatar (Operational
+  // Menu) and health badge, and ServiceStateGate (ServicioPage's own parent)
+  // owns the service-status/incidents banners -- none of them are reachable
+  // from inside this component's own render, so the only way to suppress
+  // them while the phone shell is on screen is to report the flag upward and
+  // let each of those, independently, decide to skip their own chrome. The
+  // cleanup on unmount matters: if an admin exits Servicio entirely (not just
+  // out of the phone shell) while this was true, the flag must not get stuck
+  // hiding the avatar on every other screen.
+  useEffect(() => {
+    onMesaPhoneShellActiveChange?.(showMesaPhoneShell);
+    return () => onMesaPhoneShellActiveChange?.(false);
+  }, [showMesaPhoneShell, onMesaPhoneShellActiveChange]);
   // VIP set — cliente_id dei clienti che oggi sono sopra soglia (calcolata su Railway).
   // Si aggiorna alla mount + ogni 5 min. Usato dalle card per mostrare la ⭐.
   const [vipIds, setVipIds] = useState(() => new Set());

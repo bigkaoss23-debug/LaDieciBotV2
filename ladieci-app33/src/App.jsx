@@ -40,6 +40,14 @@ export default function App({ skipSplash = false } = {}) {
     if (path === 'repartidor') return 'repartidor';
     return skipSplash ? 'booting' : 'splash';
   });
+  // MOBILE_SHELL_POLISH_01 -- true while ServicioPage's own Mesa phone shell
+  // is on screen. Reported upward by ServicioPage (the only place that knows
+  // its own width/tab state); read here to keep the global "P" avatar/health
+  // badge and ServiceStateGate's own status/incidents banners off the
+  // dedicated Mesa view (which already has its own back arrow for admin) --
+  // none of that chrome is deleted or disabled, just not painted on top of
+  // this one screen. Everywhere else it stays exactly as before.
+  const [mesaPhoneShellActive, setMesaPhoneShellActive] = useState(false);
   // true se la sessione è iniziata sul link /repartidor — il back button non deve mai
   // mostrare la Home (il delivery non ha accesso al pannello operatore)
   const startedAtRepartidor = useRef(
@@ -467,8 +475,8 @@ export default function App({ skipSplash = false } = {}) {
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:C.nero}}>
       <style>{G}</style>
       <DevHeartbeatSender/>
-      {screen !== "splash" && <OpsHealthBadge/>}
-      {screen !== "splash" && screen !== "booting" && <OperationalMenu onLogout={doOperationalLogout} onAccessManagement={()=>setScreen("accessmanagement")} onIncidencias={()=>setScreen("incidencias")}/>}
+      {screen !== "splash" && !mesaPhoneShellActive && <OpsHealthBadge/>}
+      {screen !== "splash" && screen !== "booting" && !mesaPhoneShellActive && <OperationalMenu onLogout={doOperationalLogout} onAccessManagement={()=>setScreen("accessmanagement")} onIncidencias={()=>setScreen("incidencias")}/>}
       {screen==="splash"   && <Splash onDone={()=>{ postSplashAction.current(); }}/>}
       {screen==="home"     && <Home
           onServizio={()=>withPin(()=>setScreen("servicio"))}
@@ -483,13 +491,15 @@ export default function App({ skipSplash = false } = {}) {
           order-entry screen whose every write the DB trigger would refuse. */}
       {screen==="servicio" && (
         <ServiceStateGate role={auth.getRole()} actor={auth.getActor()}
-            onCloseout={canAccessCurrentCloseout(auth.getRole()) ? ()=>setScreen("closeout") : null}>
+            onCloseout={canAccessCurrentCloseout(auth.getRole()) ? ()=>setScreen("closeout") : null}
+            hideStatusChrome={mesaPhoneShellActive}>
           <ServicioPage onBack={()=>setScreen("home")}
             onCloseout={canAccessCurrentCloseout(auth.getRole()) ? ()=>setScreen("closeout") : null}
             ordenes={ordenes} setOrdenes={setOrdenes}
             waMsgs={waMsgs} setWaMsgs={setWaMsgs} notify={notify} syncStatus={syncStatus}
             convConfermata={convConfermata}
-            pendingPatches={pendingPatches}/>
+            pendingPatches={pendingPatches}
+            onMesaPhoneShellActiveChange={setMesaPhoneShellActive}/>
         </ServiceStateGate>
       )}
       {screen==="closeout" && canAccessCurrentCloseout(auth.getRole()) && (
