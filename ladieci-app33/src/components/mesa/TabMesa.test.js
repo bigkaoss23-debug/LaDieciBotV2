@@ -273,7 +273,11 @@ describe("Mesa reservations", () => {
 
   test("keeps reservation work available to waiter without exposing room settings", () => {
     expect(source).toContain('"cashier", "waiter", "shift_manager"');
-    expect(source).toContain('const canEdit = role === "admin" || role === "owner";');
+    // MESA_PHONE_SHELL_01 -- this check moved into the exported canEditMesaRoom()
+    // (MesaPhoneShell's Más screen reuses it), same exact condition either way.
+    expect(source).toContain('function canEditMesaRoom(role) {');
+    expect(source).toContain('return role === "admin" || role === "owner";');
+    expect(source).toContain('const canEdit = canEditMesaRoom(role);');
     expect(source).toContain('mesaApi.updateReservation');
   });
 

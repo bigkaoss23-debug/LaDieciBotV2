@@ -10,6 +10,7 @@ import TabWA from './wa/TabWA';
 import TabManual from './ordenes/TabManual';
 import TabBanco from './ordenes/TabBanco';
 import TabMesa from './mesa/TabMesa';
+import MesaPhoneShell from './mesa/MesaPhoneShell';
 import MesaOrderBuilder from './mesa/MesaOrderBuilder';
 import TabListos, { caricoTotale } from './ordenes/TabListos';
 import ListosUnificado from './ordenes/ListosUnificado';
@@ -144,6 +145,11 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const [chiudiModal, setChiudiModal] = useState(null); // null | { completati, attivi, loading, step }
   const headerWidth = useWidth();
   const headerPhone = headerWidth < 520;
+  // MESA_PHONE_SHELL_01 -- below this same width, Mesa gets its own dedicated
+  // phone shell (MesaPhoneShell) instead of ServicioPage's normal chrome.
+  // Reuses headerPhone rather than a new breakpoint on purpose: it's already
+  // the established "this is a phone" signal in this exact file.
+  const showMesaPhoneShell = MESA_UI_ENABLED && headerPhone && tab === "banco";
   // VIP set — cliente_id dei clienti che oggi sono sopra soglia (calcolata su Railway).
   // Si aggiorna alla mount + ogni 5 min. Usato dalle card per mostrare la ⭐.
   const [vipIds, setVipIds] = useState(() => new Set());
@@ -1026,6 +1032,53 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   // a blank page (tabContent() returns null for unknown ids).
   useEffect(() => { if (tab === "paraservir") setTab("listos"); }, [tab]);
 
+  // MESA_PHONE_SHELL_01 -- pulled out of tabContent() so MesaPhoneShell can
+  // render the exact same authoritative Listos surface (not a reimplementation)
+  // without a second, drifting copy of this prop list.
+  const listosElement = <ListosUnificado ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} loadingIds={loadingIds}
+    vipIds={vipIds}
+    waMsgs={waMsgs}
+    notify={notify}
+    refreshKey={mesaRefreshKey}
+    onSalaCountChange={setSalaN}
+    listosN={listosN}
+    onCambiaPago={async (id, nuovoMetodo) => {
+      logPaymentUpdate({
+        component: "ServicioPage",
+        action: "onCambiaPago",
+        orderId: id,
+        metadata: {
+          reason: "updateEstado usato anche per modificare metodo pagamento",
+          estado: ORDER_STATES.RETIRADO,
+          nuovoMetodo,
+        },
+      });
+      // S2-7D6E — this handler used to have NO in-flight guard, wrote the new method
+      // optimistically and NEVER rolled it back, and swallowed every failure into a
+      // console.error. The operator saw the badge change and believed the till had been
+      // corrected even when nothing reached the backend. It now behaves like every other
+      // mutation: guarded against double clicks, rolled back on failure, and audible.
+      if (!beginAction(id)) return;
+      const prevMetodo = (ordenes.find(o => o.id === id) || {}).metodo_pago;
+      setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: nuovoMetodo} : o));
+      try {
+        const res = await api.updateEstado(id, ORDER_STATES.RETIRADO, nuovoMetodo);
+        if (isPaymentFailure(res)) {
+          setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: prevMetodo} : o));
+          const { message } = describePaymentFailure(res);
+          notify("❌ " + message, C.rosso);
+        }
+      } catch(err) {
+        console.error("cambiaPago:", err);
+        setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: prevMetodo} : o));
+        notify("❌ Error de red — el método de pago no se ha cambiado.", C.rosso);
+      } finally { endAction(id); }
+    }}
+    onViewChat={(waId) => {
+      const msg = waMsgs.find(m => String(m.wa_id||m.tel||"").replace("+","") === String(waId||"").replace("+",""));
+      if (msg) { setChatStoricoSel(msg.id); setTab("wa"); }
+    }}/>;
+
   const tabContent = () => {
     if(tab==="wa")     return <TabWA
       msgsOrdini={waMsgsOrdini}
@@ -1200,49 +1253,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     // Suoni.mesaListo(), only runs while Listos is the active tab. The
     // floor's own ready-pulse (TabMesa) stays the notification available
     // outside this tab.
-    if(tab==="listos") return <ListosUnificado ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} loadingIds={loadingIds}
-      vipIds={vipIds}
-      waMsgs={waMsgs}
-      notify={notify}
-      refreshKey={mesaRefreshKey}
-      onSalaCountChange={setSalaN}
-      listosN={listosN}
-      onCambiaPago={async (id, nuovoMetodo) => {
-        logPaymentUpdate({
-          component: "ServicioPage",
-          action: "onCambiaPago",
-          orderId: id,
-          metadata: {
-            reason: "updateEstado usato anche per modificare metodo pagamento",
-            estado: ORDER_STATES.RETIRADO,
-            nuovoMetodo,
-          },
-        });
-        // S2-7D6E — this handler used to have NO in-flight guard, wrote the new method
-        // optimistically and NEVER rolled it back, and swallowed every failure into a
-        // console.error. The operator saw the badge change and believed the till had been
-        // corrected even when nothing reached the backend. It now behaves like every other
-        // mutation: guarded against double clicks, rolled back on failure, and audible.
-        if (!beginAction(id)) return;
-        const prevMetodo = (ordenes.find(o => o.id === id) || {}).metodo_pago;
-        setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: nuovoMetodo} : o));
-        try {
-          const res = await api.updateEstado(id, ORDER_STATES.RETIRADO, nuovoMetodo);
-          if (isPaymentFailure(res)) {
-            setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: prevMetodo} : o));
-            const { message } = describePaymentFailure(res);
-            notify("❌ " + message, C.rosso);
-          }
-        } catch(err) {
-          console.error("cambiaPago:", err);
-          setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: prevMetodo} : o));
-          notify("❌ Error de red — el método de pago no se ha cambiado.", C.rosso);
-        } finally { endAction(id); }
-      }}
-      onViewChat={(waId) => {
-        const msg = waMsgs.find(m => String(m.wa_id||m.tel||"").replace("+","") === String(waId||"").replace("+",""));
-        if (msg) { setChatStoricoSel(msg.id); setTab("wa"); }
-      }}/>;
+    if(tab==="listos") return listosElement;
     if(tab==="cocina")   return <TabCocina ordenes={ordenes} onListo={setListo} loadingIds={loadingIds} msgsPreguntas={waMsgsPreguntas} pizzeFatte={pizzeFatteStasera}/>;
     if(tab==="entregas") return <TabEntregas ordenes={ordenes} setOrdenes={setOrdenes} notify={notify}/>;
     return null;
@@ -1253,6 +1264,19 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       flexDirection:"column",animation:"fadeIn .3s ease"}}>
       <DevPresence/>
 
+      {showMesaPhoneShell ? <MesaPhoneShell
+        role={auth.getRole()}
+        notify={notify}
+        onNewCommand={(table) => setMesaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name, coversTotal: table.session.coversTotal ?? null })}
+        onCountChange={setMesaN}
+        refreshKey={mesaRefreshKey}
+        mesaDrafts={mesaDrafts}
+        onClearDraft={(sessionId) => setMesaDrafts((prev) => { const next = { ...prev }; delete next[sessionId]; return next; })}
+        onSendToCocina={sendMesaCommandToCocina}
+        listosElement={listosElement}
+        onNewOrder={() => { setMesaCommandTarget(null); setPrefillCliente(null); setShowNuevo(true); }}
+        onExit={() => setTab("wa")}
+      /> : <>
       {/* ── HEADER glass 3D ── */}
       <div style={{
         background:"rgba(14,14,14,0.82)",
@@ -1633,6 +1657,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           🔑
         </button>
       </div>
+      </>}
 
       {/* Modal Cambiar PIN */}
       {showCambioPin && (

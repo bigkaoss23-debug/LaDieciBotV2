@@ -39,10 +39,15 @@ describe("2. Mesa stays in the main nav, Listos now renders ListosUnificado", ()
     expect(src).toMatch(/import ListosUnificado from ['"]\.\/ordenes\/ListosUnificado['"]/);
   });
   test("tab===\"listos\" renders <ListosUnificado ...> and nothing else", () => {
-    const idx = src.indexOf('tab==="listos"');
-    expect(idx).toBeGreaterThan(-1);
-    const line = src.slice(idx, src.indexOf("\n", idx));
-    expect(line).toMatch(/<ListosUnificado\b/);
+    // MESA_PHONE_SHELL_01 -- tabContent() now returns the shared `listosElement`
+    // (so MesaPhoneShell's own Listos screen can render the exact same authoritative
+    // element, not a second copy of this wiring) instead of the JSX inline; assert
+    // both ends of that indirection rather than the old single-line match.
+    const returnIdx = src.indexOf('tab==="listos"');
+    expect(returnIdx).toBeGreaterThan(-1);
+    const returnLine = src.slice(returnIdx, src.indexOf("\n", returnIdx));
+    expect(returnLine).toMatch(/return listosElement;/);
+    expect(src).toMatch(/const listosElement = <ListosUnificado\b/);
   });
   test("ListosUnificado receives the Sala plumbing (notify, refreshKey, onSalaCountChange, listosN)", () => {
     const idx = src.indexOf("<ListosUnificado");

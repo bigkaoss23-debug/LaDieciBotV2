@@ -14,6 +14,16 @@ const METHODS = [
 
 const RESERVATION_ROLES = new Set(["admin", "operator", "owner", "cashier", "waiter", "shift_manager", "legacy_operator"]);
 const MADRID_TIMEZONE = "Europe/Madrid";
+// Mirrors the exact `canEdit`/`canManageReservations` checks the component
+// itself uses below -- exported so MesaPhoneShell's Más screen can decide
+// which secondary actions to offer without duplicating (and risking drift
+// from) this same role logic.
+function canEditMesaRoom(role) {
+  return role === "admin" || role === "owner";
+}
+function canManageMesaReservations(role) {
+  return RESERVATION_ROLES.has(role);
+}
 
 // Three operative shapes, always offered in this exact order everywhere
 // (creation, edit, this picker, tests, the verification harness): Redonda ->
@@ -1187,9 +1197,16 @@ export default function TabMesa({
   // tab body does not, per the CSS's own comment on .mesa-root.compact.
   hideToolbar = false,
   mesaDrafts = {}, onClearDraft, onSendToCocina,
+  // MESA_PHONE_SHELL_01 -- one-shot deep link for a caller that mounts this
+  // component fresh (MesaPhoneShell's Mapa/Lista/Más screens) and needs it to
+  // land already on a specific table/mode, exactly as if the operator had
+  // tapped it themselves. `token` must change (e.g. Date.now()) to fire again
+  // for the same type/tableId -- a stale object reference is intentionally a
+  // no-op, not a repeat action.
+  initialAction = null,
 }) {
-  const canEdit = role === "admin" || role === "owner";
-  const canManageReservations = RESERVATION_ROLES.has(role);
+  const canEdit = canEditMesaRoom(role);
+  const canManageReservations = canManageMesaReservations(role);
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1297,6 +1314,37 @@ export default function TabMesa({
   // (ServicioPage) reads table.session.coversTotal to decide which step the
   // builder opens on.
   const startNewCommand = (table) => onNewCommand(table);
+
+  // MESA_PHONE_SHELL_01 -- applies `initialAction` exactly once per token.
+  // "selectTable" replays the SAME branch a real tap on that table's own
+  // button runs (free+unreserved -> open walk-in; open -> straight to the
+  // workspace; anything else -> the quick menu) rather than a shortcut of
+  // its own, so a table opened from Lista behaves identically to tapping it
+  // on the map. Waits for `tables` to be populated (the floor's own load()
+  // may still be in flight on a fresh mount) before resolving "selectTable".
+  const appliedActionTokenRef = useRef(null);
+  useEffect(() => {
+    if (!initialAction || initialAction.token === appliedActionTokenRef.current) return;
+    if (initialAction.type === "reservations") {
+      appliedActionTokenRef.current = initialAction.token;
+      setMenuId(null); setShowReservations(true);
+      return;
+    }
+    if (initialAction.type === "editing") {
+      appliedActionTokenRef.current = initialAction.token;
+      setEditing(true);
+      return;
+    }
+    if (initialAction.type === "selectTable") {
+      const table = tables.find((t) => t.id === initialAction.tableId && t.active);
+      if (!table) return; // tables still loading -- retry once they arrive
+      appliedActionTokenRef.current = initialAction.token;
+      const todayReservations = bookedForToday(table);
+      if (!editing && table.status === "free" && todayReservations.length === 0) { openWalkIn(table); return; }
+      if (!editing && table.status === "open") { setSelectedId(table.id); return; }
+      setMenuId(table.id);
+    }
+  }, [initialAction, tables, editing]);
 
   const savePosition = async (table) => {
     try {
@@ -1462,4 +1510,4 @@ export default function TabMesa({
   </div>;
 }
 
-export { equalShares, hasReadyOrder, css as mesaCss, resolveTablePositions, isRelevantReservation, responsiveTableSize, previewResponsiveTablePx, BOARD_WIDTH_REFERENCE, TABLE_MIN_SCALE };
+export { equalShares, hasReadyOrder, css as mesaCss, resolveTablePositions, isRelevantReservation, responsiveTableSize, previewResponsiveTablePx, BOARD_WIDTH_REFERENCE, TABLE_MIN_SCALE, STATUS, tableState, bookedForToday, canEditMesaRoom, canManageMesaReservations };
