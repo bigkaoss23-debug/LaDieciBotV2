@@ -1196,6 +1196,15 @@ export default function TabMesa({
   // embedding `compact` was built for), which this app's current ServicioPage
   // tab body does not, per the CSS's own comment on .mesa-root.compact.
   hideToolbar = false,
+  // MESA_PHONE_SHELL_01 -- MesaPhoneShell's own Más screen is now the entry
+  // point for Reservas/Personalizar sala on phone, so its Mapa view hides
+  // this dock's normal (not-editing) row entirely, to match the approved
+  // mockup's clean map with no button row of its own. Only the entry row:
+  // once editing is actually active, "Añadir mesa"/"Salir de Personalizar
+  // sala" stay visible regardless -- those are the map's own in-context
+  // controls for a mode already in progress, not a Más entry point, and
+  // there would be no other way to leave editing mode from the map itself.
+  hideDock = false,
   mesaDrafts = {}, onClearDraft, onSendToCocina,
   // MESA_PHONE_SHELL_01 -- one-shot deep link for a caller that mounts this
   // component fresh (MesaPhoneShell's Mapa/Lista/Más screens) and needs it to
@@ -1474,12 +1483,12 @@ export default function TabMesa({
         item of the root's own flex column (see .mesa-root.compact), so it
         sits at the true bottom with no gap; non-compact keeps the old
         position:fixed phone treatment (see the .mesa-dock media query). */}
-    <div className="mesa-dock">
+    {!(hideDock && !editing) && <div className="mesa-dock">
       {!editing && canManageReservations && <button className="mesa-btn primary" onClick={() => { setReservationsFilterTableId(null); setShowReservations(true); }}>📅 Reservas · Beta</button>}
       {canEdit && editing && <button className="mesa-btn gold" onClick={() => setShowAdd(true)}>＋ Añadir mesa</button>}
       {canEdit && <button className={`mesa-btn ${editing ? "primary" : ""}`} onClick={() => setEditing((value) => { const next = !value; if (!next) { setSettingsId(null); setShowAdd(false); setMenuId(null); } return next; })}>{editing ? "✓ Salir de Personalizar sala" : "🛠 Personalizar sala"}</button>}
       <button className="mesa-btn icon" title="Actualizar el plano" aria-label="Actualizar el plano" onClick={() => load()}>↻</button>
-    </div>
+    </div>}
     {menuTable && <TableContextPopup
       table={menuTable} canEdit={canEdit} editing={editing} canManageReservations={canManageReservations}
       onClose={() => setMenuId(null)}

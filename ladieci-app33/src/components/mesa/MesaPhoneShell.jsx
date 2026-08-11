@@ -122,7 +122,7 @@ export default function MesaPhoneShell({
     <main style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 10px 10px" }}>
       {shellTab === "mapa" && <TabMesa
         role={role} notify={notify} onNewCommand={onNewCommand} onCountChange={onCountChange}
-        refreshKey={refreshKey} compact hideToolbar initialAction={mesaAction}
+        refreshKey={refreshKey} compact hideToolbar hideDock initialAction={mesaAction}
         mesaDrafts={mesaDrafts} onClearDraft={onClearDraft} onSendToCocina={onSendToCocina}
       />}
       {shellTab === "lista" && <MesaListaView notify={notify} onSelectTable={goToTable} />}
