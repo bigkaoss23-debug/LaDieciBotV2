@@ -107,24 +107,28 @@ export default function MesaPhoneShell({
     <header style={{
       flexShrink: 0, position: "relative",
       display: "flex", alignItems: "center", justifyContent: "center",
-      // App.jsx mounts two position:fixed banners above everything (the
-      // service-status line and, when any exist, the pending-incidents
-      // warning -- both outside this component, outside Mesa's own scope
-      // to touch) that stack up to ~63px tall from the true viewport top.
-      // The old ServicioPage header was tall enough to clear them by
-      // accident; this shorter one needs to reserve that same clearance on
-      // purpose so the clock never renders underneath them.
-      padding: "10px 14px 8px",
-      paddingTop: "calc(68px + env(safe-area-inset-top, 0px))",
+      // HEADER_NAV_REFINEMENT_01 -- App.jsx's two position:fixed banners
+      // (service-status line, pending-incidents warning) are now suppressed
+      // for the whole time this shell is on screen (see App.jsx's
+      // mesaPhoneShellActive / ServicioPage's onMesaPhoneShellActiveChange),
+      // so this header no longer needs to reserve room to clear them -- that
+      // is exactly the ~50px of dead space that made the top area read as
+      // loose/floating. What's left is only real safe-area clearance for a
+      // notch/status bar, same order of magnitude as the bottom nav's own.
+      paddingTop: "calc(14px + env(safe-area-inset-top, 0px))",
+      paddingRight: 14, paddingBottom: 14, paddingLeft: 14,
+      // A single hairline, same tone as the nav's own border below, so the
+      // map reads as visually framed top and bottom rather than floating.
+      borderBottom: "1px solid rgba(208,184,145,.14)",
     }}>
       <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}>
         {isAdmin && backArrowButton(onExit)}
       </div>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontVariantNumeric: "tabular-nums", fontWeight: 900, fontSize: 30, letterSpacing: 0.5 }}>
+        <div style={{ fontVariantNumeric: "tabular-nums", fontWeight: 900, fontSize: 30, letterSpacing: 0.5, lineHeight: 1.1 }}>
           {now.toLocaleTimeString("es-ES")}
         </div>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", marginTop: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.verde, display: "inline-block" }} />
           SERVICIO · {now.toLocaleDateString("es-ES", { day: "2-digit", month: "short" }).toUpperCase().replace(".", "")}
         </div>
@@ -144,15 +148,18 @@ export default function MesaPhoneShell({
 
     <nav style={{
       flexShrink: 0, display: "flex", alignItems: "flex-end", justifyContent: "space-around",
-      // MOBILE_SHELL_POLISH_01 -- sized up after real-device validation found
-      // the original bar too compressed for one-handed thumb use. The 16px
-      // base bottom padding (on top of, not instead of, the safe-area inset)
-      // is the "few millimetres" of dark breathing room requested: it holds
-      // even on a device with zero inset, and grows further on one with a
-      // real home-indicator area.
-      padding: "14px 12px calc(16px + env(safe-area-inset-bottom, 0px))",
-      background: "rgba(18,17,15,.92)", backdropFilter: "blur(14px)",
-      borderTop: "1px solid rgba(208,184,145,.14)",
+      // HEADER_NAV_REFINEMENT_01 -- rounded top corners + an upward shadow
+      // read as a real, deliberately-placed bottom bar rather than a flat
+      // strip glued to the screen edge (same idea as the header's own
+      // hairline: framing, not decoration). The 20px base bottom padding
+      // (up from 16px) is the requested extra breathing room, still additive
+      // with -- not instead of -- the real safe-area inset on a notched
+      // device.
+      padding: "16px 12px calc(20px + env(safe-area-inset-bottom, 0px))",
+      background: "rgba(18,17,15,.94)", backdropFilter: "blur(14px)",
+      borderTop: "1px solid rgba(208,184,145,.22)",
+      borderRadius: "20px 20px 0 0",
+      boxShadow: "0 -8px 24px rgba(0,0,0,.35)",
     }}>
       {NAV_ITEMS.slice(0, 2).map((item) => {
         const active = shellTab === item.id;
