@@ -1253,7 +1253,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     if(tab==="banco")  return MESA_UI_ENABLED
       ? <TabMesa role={auth.getRole()} notify={notify} refreshKey={mesaRefreshKey} onCountChange={setMesaN} hideToolbar
           onNewCommand={(table) => {
-            setMesaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name, coversTotal: table.session.coversTotal ?? null });
+            setMesaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name, coversTotal: table.session.coversTotal ?? null, capacity: table.capacity ?? null });
           }}
           mesaDrafts={mesaDrafts}
           onClearDraft={(sessionId) => setMesaDrafts((prev) => { const next = { ...prev }; delete next[sessionId]; return next; })}
@@ -1280,7 +1280,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       {showMesaPhoneShell ? <MesaPhoneShell
         role={auth.getRole()}
         notify={notify}
-        onNewCommand={(table) => setMesaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name, coversTotal: table.session.coversTotal ?? null })}
+        onNewCommand={(table) => setMesaCommandTarget({ sessionId: table.session.id, tableNumber: table.number, tableName: table.name, coversTotal: table.session.coversTotal ?? null, capacity: table.capacity ?? null })}
         onCountChange={setMesaN}
         refreshKey={mesaRefreshKey}
         mesaDrafts={mesaDrafts}

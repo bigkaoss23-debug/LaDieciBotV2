@@ -139,11 +139,33 @@ export default function MesaPhoneShell({
     </header>
 
     <main style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 10px 10px" }}>
-      {shellTab === "mapa" && <TabMesa
-        role={role} notify={notify} onNewCommand={onNewCommand} onCountChange={onCountChange}
-        refreshKey={refreshKey} compact hideToolbar hideDock initialAction={mesaAction}
-        mesaDrafts={mesaDrafts} onClearDraft={onClearDraft} onSendToCocina={onSendToCocina}
-      />}
+      {/* MESA_PHONE_POLISH_01 -- Mapa (TabMesa) now stays mounted continuously
+          instead of being unmounted/remounted every time shellTab changes,
+          hidden via display:none (not conditional rendering) when another
+          screen is active. Lista's own goToTable and Más's openReservations/
+          openEditing all deep-link INTO Mapa via initialAction -- on a fresh
+          mount that always meant TabMesa's own `loading:true` start state,
+          which briefly replaces the whole screen with a plain "Cargando el
+          plano de mesas..." banner (no map, no modal) before the very floor
+          data the deep-link needs even exists. Tapping the same table
+          directly on Mapa never had that extra round trip, so this read as
+          "Lista doesn't behave like Mapa" even though the END state was
+          already correct -- confirmed live, and by reading TabMesa's own
+          loading-gated render. Keeping Mapa alive in the background (same
+          10s poll Lista's own independent view already runs regardless of
+          which screen is visible) means its `tables` state is already
+          populated by the time any deep-link fires, so initialAction
+          resolves on the same tick, with nothing to flash. display:contents
+          on the wrapper keeps this a no-op for layout when visible -- byte-
+          identical to TabMesa being a direct flex child of this <main>, as
+          it was before this change. */}
+      <div style={{ display: shellTab === "mapa" ? "contents" : "none" }}>
+        <TabMesa
+          role={role} notify={notify} onNewCommand={onNewCommand} onCountChange={onCountChange}
+          refreshKey={refreshKey} compact hideToolbar hideDock initialAction={mesaAction}
+          mesaDrafts={mesaDrafts} onClearDraft={onClearDraft} onSendToCocina={onSendToCocina}
+        />
+      </div>
       {shellTab === "lista" && <MesaListaView notify={notify} onSelectTable={goToTable} />}
       {shellTab === "listos" && listosElement}
       {shellTab === "mas" && <MasScreen role={role} onPersonalizar={openEditing} />}
@@ -177,20 +199,27 @@ export default function MesaPhoneShell({
           second table-selection step (see MesaWorkspace's own "＋ Nueva
           comanda", now the one and only order entrypoint, always already
           table-scoped). This freed center slot is Reservas instead -- same
-          raised-circle treatment/position/gradient/shadow as the button it
-          replaces, with a label added underneath (matching every other nav
-          item) since a calendar glyph alone is less self-evident than "+"
-          was. */}
+          raised-circle position/size/shadow-style as the button it replaces,
+          with a label added underneath (matching every other nav item)
+          since a calendar glyph alone is less self-evident than "+" was.
+          MESA_PHONE_POLISH_01 -- the circle's own color is gold, not the
+          fiery red/orange the old "+" carried over from: red/orange read as
+          "record" or "urgent", not "reservations", confirmed live. Gold
+          (#d7a84b family) is this app's OWN existing accent for reservation
+          context specifically -- the table modal's active RESERVAS section
+          (TabMesa.jsx's .mesa-card-section.active), "Ver cuenta", and every
+          other gold mesa-btn already use it -- so this reuses an established
+          color language rather than inventing a new one. */}
       <button onClick={openReservations} title="Reservas" aria-label="Reservas" style={{
         display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
         width: 68, marginTop: -28, background: "none", border: "none", padding: 0, cursor: "pointer",
       }}>
         <span aria-hidden="true" style={{
           width: 68, height: 68, borderRadius: "50%",
-          background: `linear-gradient(180deg, #FF6040 0%, #E8341C 60%, #A01808 100%)`,
-          border: "3px solid #0b0b0a", color: "#fff", fontSize: 30, fontWeight: 700,
+          background: `linear-gradient(180deg, #E8C874 0%, #D7A84B 55%, #9C7A2E 100%)`,
+          border: "3px solid #0b0b0a", color: "#2b2004", fontSize: 30, fontWeight: 700,
           display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 0 20px rgba(232,52,28,.55), 0 6px 18px rgba(0,0,0,.5)",
+          boxShadow: "0 0 16px rgba(215,168,75,.45), 0 6px 18px rgba(0,0,0,.5)",
         }}>📅</span>
         <span style={{ color: "rgba(255,255,255,.75)", fontWeight: 700, fontSize: 11 }}>Reservas</span>
       </button>

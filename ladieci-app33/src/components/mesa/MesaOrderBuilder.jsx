@@ -7,7 +7,24 @@ import { useOrderCart, isCustomRawItem } from '../../order/useOrderCart';
 import { createMesaRequestId } from '../../mesa/mesaApi';
 import PizzaCustomBuilder from '../PizzaCustomBuilder';
 
-const COVER_QUICK_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
+const COVER_QUICK_OPTIONS_FALLBACK = [1, 2, 3, 4, 5, 6, 7, 8];
+// MESA_PHONE_POLISH_01 -- the table already implies a likely covers range
+// (its own capacity, e.g. "máx 4"); proposing exactly that range instead of
+// a fixed 1-8 grid is both more relevant AND visually lighter for the
+// common case (a 4-top naturally becomes one row of 4, not two rows of 4).
+// Capped at 8 even for a larger table so the quick grid itself never grows
+// heavy -- anything beyond it (including, deliberately, beyond capacity
+// itself: audited against the backend's addCommand, which only bounds
+// covers to 1-99 with no capacity cap, since a real party can genuinely
+// exceed a table's nominal seating) is still reachable via the existing
+// custom-number input right below, unchanged. Missing/invalid capacity
+// (not expected on real staging data, but not guaranteed by the type)
+// falls back to the exact previous 1-8 grid -- byte-identical old behavior.
+function coverQuickOptions(capacity) {
+  const validCapacity = Number.isInteger(capacity) && capacity >= 1 ? capacity : null;
+  if (!validCapacity) return COVER_QUICK_OPTIONS_FALLBACK;
+  return Array.from({ length: Math.min(validCapacity, 8) }, (_, index) => index + 1);
+}
 
 /**
  * MesaOrderBuilder — Option C from the audit (V1_STAGING_MESA_ORDER_FLOW_
@@ -128,6 +145,7 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
 
   // ── Step 1: covers (only if missing) ──────────────────────────────────
   if (step === "covers") {
+    const quickOptions = coverQuickOptions(target?.capacity);
     return (
       <div onClick={onClose} style={overlayStyle}>
         <div role="dialog" aria-modal="true" aria-label={`Mesa ${target.tableNumber} comensales`} onClick={e => e.stopPropagation()} style={{ ...panelStyle, width: "min(440px, 92vw)", maxHeight: "auto" }}>
@@ -139,8 +157,8 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
           </div>
           <div style={{ padding: 18 }}>
             <div style={{ color: C.grigio, fontSize: 13, marginBottom: 14 }}>¿Cuántos comensales?</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
-              {COVER_QUICK_OPTIONS.map(n => (
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(quickOptions.length, 4)}, 1fr)`, gap: 10, marginBottom: 14 }}>
+              {quickOptions.map(n => (
                 <button key={n} data-testid={`covers-quick-${n}`} onClick={() => confirmCovers(n)} style={{
                   background: C.carbone2, border: `2px solid ${C.fumo}`, borderRadius: 12,
                   padding: "16px 0", color: C.bianco, fontSize: 20, fontWeight: 800, cursor: "pointer",
@@ -153,7 +171,7 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
                 data-testid="covers-custom-input"
                 onChange={e => { setCoversInput(e.target.value); setCoversError(""); }}
                 onKeyDown={e => { if (e.key === "Enter" && coversInput) confirmCovers(coversInput); }}
-                placeholder="Otro número (9-99)"
+                placeholder={`Otro número (${quickOptions.length + 1}-99)`}
                 style={{
                   flex: 1, background: C.carbone2, border: `1px solid ${C.fumo}`, borderRadius: 10,
                   color: C.bianco, padding: "12px 12px", fontSize: 15, boxSizing: "border-box",

@@ -200,6 +200,65 @@ describe("MesaPhoneShell -- Lista shows the same authoritative Mesa data as Mapa
   });
 });
 
+// MESA_PHONE_POLISH_01 -- Mapa used to be conditionally mounted/unmounted
+// per shellTab; a deep-link from Lista into a table always briefly showed
+// TabMesa's own fresh-mount "Cargando el plano de mesas..." banner before
+// the target table could open, which real testing found read as "Lista
+// doesn't behave like Mapa" even though the end state was already correct.
+// Fixed by keeping Mapa mounted continuously (hidden via display:none, not
+// unmounted) so its floor data is already loaded by the time any deep-link
+// fires. These tests cover the mechanism directly, not a timing race.
+describe("MesaPhoneShell -- Mapa stays mounted in the background (no loading flash on Lista deep-links)", () => {
+  test("Mapa's own board is present in the DOM even while Lista is the active screen, merely hidden", async () => {
+    const { container, root } = await mount();
+    expect(container.querySelector(".mesa-board")).not.toBeNull();
+    click(navButton(container, "Lista"));
+    await flush();
+    // Lista's own content is what's visible now...
+    expect(container.textContent).toContain("máx 4");
+    // ...but Mapa's board is still right there in the DOM, not unmounted --
+    // only its wrapper is display:none.
+    const board = container.querySelector(".mesa-board");
+    expect(board).not.toBeNull();
+    let node = board;
+    let hidden = false;
+    while (node && node !== container) { if (node.style?.display === "none") hidden = true; node = node.parentElement; }
+    expect(hidden).toBe(true);
+    unmount(container, root);
+  });
+
+  test("switching screens never re-fetches the floor for Mapa itself -- only mounted once, not once per switch", async () => {
+    const { container, root } = await mount();
+    const initialCalls = mesaApi.floor.mock.calls.length; // Mapa's own single mount-time call
+    click(navButton(container, "Lista"));
+    await flush(); // Lista's own independent view mounts fresh -- adds exactly one call, unrelated to Mapa
+    click(navButton(container, "Mapa"));
+    await flush();
+    click(navButton(container, "Listos"));
+    await flush();
+    click(navButton(container, "Mapa"));
+    await flush();
+    // Switching back to Mapa (twice) added nothing further, because Mapa
+    // was never remounted -- only Lista's own single mount above did.
+    expect(mesaApi.floor.mock.calls.length).toBe(initialCalls + 1);
+    unmount(container, root);
+  });
+
+  test("a table tapped from Lista opens instantly with no intermediate 'Cargando el plano de mesas' flash", async () => {
+    const { container, root } = await mount();
+    await flush(); // let Mapa's own background fetch fully settle first
+    click(navButton(container, "Lista"));
+    await flush();
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Mesa 2")));
+    // Deliberately no extra flush beyond the minimum microtask drain inside
+    // click() itself -- if Mapa had to cold-mount and refetch, the loading
+    // banner would still be showing right here.
+    expect(container.textContent).not.toContain("Cargando el plano de mesas");
+    expect(container.textContent).toContain("Comandas");
+    unmount(container, root);
+  });
+});
+
 describe("MesaPhoneShell -- Más is scoped to Mesa-operational actions only, role-aware", () => {
   // P1_D_TABLE_FIRST_01 -- Reservas is first-class bottom navigation now
   // (see the "center nav slot" describe block above), so Más no longer

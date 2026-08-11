@@ -73,6 +73,45 @@ test("covers null shows the compact covers step first", async () => {
   unmount(container, root);
 });
 
+// MESA_PHONE_POLISH_01 -- the covers quick-grid is now capacity-aware
+// (table.capacity threaded through ServicioPage -> mesaCommandTarget ->
+// this component's target prop) instead of always showing a fixed 1-8
+// grid, so a 4-seat table proposes exactly 1-4. Audited against the
+// backend's addCommand, which only bounds covers to 1-99 with no capacity
+// cap -- a party genuinely exceeding the table's nominal seating is still
+// valid, so the custom input must keep accepting it.
+test("capacity=4 shows quick options 1-4 only, not the old fixed 1-8 grid", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: null, capacity: 4 }) });
+  [1, 2, 3, 4].forEach((n) => expect(byTestId(container, `covers-quick-${n}`)).toBeTruthy());
+  [5, 6, 7, 8].forEach((n) => expect(byTestId(container, `covers-quick-${n}`)).toBeNull());
+  expect(byTestId(container, "covers-custom-input").placeholder).toBe("Otro número (5-99)");
+  unmount(container, root);
+});
+
+test("missing capacity falls back to the original 1-8 quick grid -- unchanged old behavior", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: null }) });
+  for (let n = 1; n <= 8; n++) expect(byTestId(container, `covers-quick-${n}`)).toBeTruthy();
+  expect(byTestId(container, "covers-custom-input").placeholder).toBe("Otro número (9-99)");
+  unmount(container, root);
+});
+
+test("a large table's quick grid is capped at 8, not one button per seat", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: null, capacity: 12 }) });
+  expect(byTestId(container, "covers-quick-8")).toBeTruthy();
+  expect(byTestId(container, "covers-quick-9")).toBeNull();
+  unmount(container, root);
+});
+
+test("a party larger than the table's capacity is still a valid custom entry, not blocked", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: null, capacity: 2 }) });
+  typeInto(byTestId(container, "covers-custom-input"), "5");
+  click(byTestId(container, "covers-custom-confirm"));
+  await flush();
+  expect(container.textContent).not.toContain("¿Cuántos comensales?");
+  expect(container.textContent).toContain("Nueva comanda — Mesa 3");
+  unmount(container, root);
+});
+
 // 2. picking covers -- opens the picker immediately
 test("picking covers opens the picker workspace immediately, no intermediate screen", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: null }) });
