@@ -47,6 +47,40 @@ function cardWidthOf(shape, shapePreset) {
   return 100;
 }
 
+// ── Responsive footprint: saved x/y are percentages of the board, so their
+// ON-SCREEN separation shrinks with the board's own width -- but each
+// shape's PIXEL size used to stay fixed (round/square always 100px;
+// rectangle/rectangle-long only stepped down once, at the same 620px
+// breakpoint .mesa-board's own min-height already uses). Below ~500px
+// board width that mismatch made independently-valid saved coordinates
+// (e.g. Mesa 4 at x=30,y=62 and Mesa 6 at x=50,y=50 -- only 20% apart
+// horizontally) collide on screen, confirmed live on real staging data at
+// every required phone width. BOARD_WIDTH_REFERENCE reuses that existing
+// 620px breakpoint as the width at/above which a shape keeps its original
+// full size (tablet/desktop -- already collision-free there); below it,
+// every shape shrinks together via the same CSS container-query-driven
+// scale, so it's continuous and needs no resize listener or extra render.
+// TABLE_MIN_SCALE floors round/square at 64px -- comfortably above the
+// ~44-48px minimum mobile tap target -- on the narrowest supported phones.
+const BOARD_WIDTH_REFERENCE = 620;
+const TABLE_MIN_SCALE = 0.64;
+function responsiveTableSize(basePx) {
+  const min = Math.round(basePx * TABLE_MIN_SCALE);
+  const cqw = Math.round((basePx / BOARD_WIDTH_REFERENCE * 100) * 1000) / 1000;
+  return `clamp(${min}px,${cqw}cqw,${basePx}px)`;
+}
+// Numeric mirror of what the CSS clamp() above resolves to for a given real
+// board width -- JSDOM (this app's test runner) never runs real layout, so
+// there is no way to assert on actual rendered pixels the way the browser
+// itself was used to verify this fix. This is the test-support stand-in:
+// same three constants, same formula, kept in lockstep with
+// responsiveTableSize() by construction rather than duplicated by hand.
+function previewResponsiveTablePx(basePx, boardWidthPx) {
+  const min = Math.round(basePx * TABLE_MIN_SCALE);
+  const preferred = (basePx / BOARD_WIDTH_REFERENCE) * boardWidthPx;
+  return Math.max(min, Math.min(basePx, preferred));
+}
+
 // ── Position resolution: valid saved coordinates are never touched, missing
 // ones get a deterministic fallback, out-of-range-but-real numbers get
 // clamped. See the root-cause note on the backend's buildFloor() --
@@ -255,6 +289,18 @@ const css = `
    press effect anywhere else in the app. */
 .mesa-table:active{transform:translate(-50%,-50%)}
 .mesa-table.round{border-radius:999px}.mesa-table.square{border-radius:16px}.mesa-table.rectangle{width:132px;border-radius:16px}.mesa-table.rectangle-long{width:168px;border-radius:16px}
+/* Responsive footprint override -- see responsiveTableSize() above for the
+   shared formula/reasoning. @supports keeps this a pure progressive
+   enhancement: a browser that doesn't understand container query units
+   ignores this whole block and the fixed px rules above stand untouched,
+   so nothing here can ever regress an unsupported browser below today's
+   already-shipped fixed-size behavior. */
+@supports (container-type: inline-size) {
+.mesa-board{container-type:inline-size}
+.mesa-table{width:${responsiveTableSize(100)};height:${responsiveTableSize(100)}}
+.mesa-table.rectangle{width:${responsiveTableSize(132)}}
+.mesa-table.rectangle-long{width:${responsiveTableSize(168)}}
+}
 /* Edit mode: "estoy moviendo/editando mesas", never "estoy leyendo el estado
    de cocina" -- a flat, neutral dashed border replaces whatever operational
    color/thickness --tc and .thick were carrying, uniformly across every
@@ -365,7 +411,7 @@ const css = `
 .mesa-banner{border:1px solid rgba(56,189,248,.35);border-radius:13px;padding:12px 14px;background:rgba(56,189,248,.09);color:#b9eaff;font-size:13px;line-height:1.45}.mesa-error{border-color:rgba(232,52,28,.5);background:rgba(232,52,28,.1);color:#ffaaa0}
 .mesa-reservation{border:1px solid rgba(239,68,68,.38);border-radius:14px;padding:12px;background:rgba(239,68,68,.09);margin-top:9px}.mesa-reservation-main{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.mesa-reservation-name{font-size:15px;font-weight:950}.mesa-reservation-time{color:#ff8d83;font-size:16px;font-weight:950;white-space:nowrap}.mesa-reservation-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.mesa-btn.small{padding:7px 10px;border-radius:10px;font-size:12px}.mesa-btn.red{background:#C62828;border-color:#EF4444;color:#fff}.mesa-textarea{min-height:88px;resize:vertical}.mesa-menu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.mesa-menu-action{min-height:72px;text-align:left;display:flex;flex-direction:column;justify-content:center}.mesa-menu-action strong{font-size:14px}.mesa-menu-action span{font-size:11px;color:#a99d89;margin-top:3px}
 .mesa-print-layer{display:none}.mesa-print-sheet{width:58mm;margin:0 auto;color:#000;background:#fff;font:12px/1.35 'DM Mono',monospace}.mesa-print-sheet h1,.mesa-print-sheet h2,.mesa-print-sheet p{margin:0}.mesa-print-sheet .sep{border-top:1px dashed #000;margin:8px 0}.mesa-print-row{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.mesa-print-row span:first-child{min-width:0;overflow-wrap:anywhere}.mesa-print-total{font-size:18px;font-weight:900;text-align:right;margin:8px 0}.mesa-print-center{text-align:center}.mesa-print-small{font-size:10px}
-@media(max-width:620px){.mesa-board{min-height:440px}.mesa-table.rectangle{width:118px}.mesa-table.rectangle-long{width:146px}.mesa-summary{grid-template-columns:1fr 1fr}.mesa-form-grid,.mesa-menu-grid{grid-template-columns:1fr}.mesa-methods{grid-template-columns:1fr}.mesa-modal-body{padding:15px}.mesa-modal-head{padding:14px 15px}}
+@media(max-width:620px){.mesa-board{min-height:440px}.mesa-summary{grid-template-columns:1fr 1fr}.mesa-form-grid,.mesa-menu-grid{grid-template-columns:1fr}.mesa-methods{grid-template-columns:1fr}.mesa-modal-body{padding:15px}.mesa-modal-head{padding:14px 15px}}
 /* Phone: every modal in this component becomes a near-full-screen bottom
    sheet instead of a small floating card with dead space on all sides --
    anchored to the bottom edge, full width, rounded top corners only,
@@ -1416,4 +1462,4 @@ export default function TabMesa({
   </div>;
 }
 
-export { equalShares, hasReadyOrder, css as mesaCss, resolveTablePositions, isRelevantReservation };
+export { equalShares, hasReadyOrder, css as mesaCss, resolveTablePositions, isRelevantReservation, responsiveTableSize, previewResponsiveTablePx, BOARD_WIDTH_REFERENCE, TABLE_MIN_SCALE };
