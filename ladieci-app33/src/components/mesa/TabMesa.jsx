@@ -271,13 +271,32 @@ const css = `
 .mesa-root.compact{display:flex;flex-direction:column;height:100%;min-height:0}
 .mesa-root.compact .mesa-board{flex:1 1 auto;min-height:0}
 .mesa-root.compact .mesa-dock{flex:0 0 auto;margin-top:8px}
-/* MESA_PHONE_MAPA_3D_P1E -- a physical dark room/floor, not a flat grid: a
-   soft warm ambient source near the upper-left (like a fixture spilling
-   light onto the room, never a scoreboard's flat glow), a top-to-bottom
-   floor gradient that recedes into shadow, and a bottom vignette so the
-   floor genuinely feels like it falls away toward the back of the room.
-   The grid (below) drops to near-invisible here -- see .editing. */
-.mesa-board{position:relative;min-height:420px;border:1px solid rgba(208,184,145,.22);border-radius:22px;overflow:hidden;background:radial-gradient(ellipse 65% 38% at 36% 10%,rgba(255,232,196,.06),transparent 62%),radial-gradient(circle at 52% 42%,rgba(215,168,75,.09),transparent 58%),radial-gradient(ellipse at 50% 116%,rgba(0,0,0,.68),transparent 62%),linear-gradient(180deg,#201c18 0%,#171512 16%,#0c0b0a 62%,#070605 100%);box-shadow:inset 0 0 80px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05),inset 0 44px 60px -46px rgba(0,0,0,.55)}
+/* MESA_PHONE_MAPA_FLOOR_ENV -- the room/environment carries the 3D feeling
+   here, not the tables (already tuned in the prior slice and intentionally
+   left alone this pass). Six layers, back to front:
+   1. base material gradient -- dark, warm-neutral, recedes top-to-bottom.
+   2. top wall/floor transition -- a soft dark band right at the top edge,
+      the one cue that reads as "a wall is behind this", not just a panel.
+   3. all-around vignette centered on the play area -- corners AND edges
+      darken, not just the bottom, so the room reads as bounded on every
+      side, not just receding into the distance.
+   4. a central "pool of light" -- broader and more distinctly brighter
+      than the old uniform gold wash, positioned over where the tables
+      actually cluster, so there is a real lit zone vs. a dim perimeter
+      (the "central play area vs. outer edges" separation).
+   5. a smaller, higher, cooler-warm ambient source toward the upper-left --
+      a second, asymmetric light, so the scene never reads as symmetric/
+      flat (kept from the prior slice, resized to complement #4 rather
+      than duplicate it).
+   6. an extremely faint diagonal sheen -- broad, low-alpha, material-grain
+      stand-in without an actual repeating texture (cheap: one more
+      gradient on one element, not a per-tile or per-frame cost).
+   The grid pseudo-element (below) is unaffected -- still absent in normal
+   mode, still restored during room-editing via .editing. NOTE: this
+   comment is literal <style> textContent at runtime (inside the css
+   template string) -- avoid spelling either editing-entry-point's nav
+   label in here, see MesaPhoneShell.test.js's Más-screen assertions. */
+.mesa-board{position:relative;min-height:420px;border:1px solid rgba(208,184,145,.22);border-radius:22px;overflow:hidden;background:linear-gradient(115deg,rgba(255,255,255,.035) 0%,transparent 26%,transparent 74%,rgba(255,255,255,.02) 100%),radial-gradient(ellipse 55% 26% at 28% 5%,rgba(255,225,190,.06),transparent 62%),radial-gradient(ellipse 62% 48% at 50% 40%,rgba(255,210,160,.13),rgba(255,210,160,.035) 55%,transparent 78%),radial-gradient(ellipse 122% 96% at 50% 40%,transparent 40%,rgba(0,0,0,.34) 76%,rgba(0,0,0,.62) 100%),linear-gradient(180deg,rgba(0,0,0,.3) 0%,transparent 10%),linear-gradient(180deg,#241f19 0%,#18140f 20%,#0d0b09 62%,#060504 100%);box-shadow:inset 0 0 90px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.05),inset 0 50px 70px -50px rgba(0,0,0,.55)}
 /* Fully absent in normal operator mode -- the reference floor shows no
    grid line at all -- and only fades in for room-editing mode (.editing,
    see the board's own className below), where positioning genuinely
