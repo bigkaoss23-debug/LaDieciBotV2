@@ -35,9 +35,15 @@ function useClock() {
 // (see navButtonStyle below and its own comment) -- the mockup's bottom nav
 // treats all five identically, and a floating red/gold circle read as "a
 // recording button or an unrelated FAB", not navigation.
+// MESA_PHONE_NAV_LABEL_MICROFIX -- visible label only, "Lista" -> "Sala":
+// removes the confusable Lista/Listos pair and reads as "Sala = the room's
+// tables, as a list" against "Mapa = the room's tables, graphically". The
+// internal id stays "lista" on purpose (shellTab value, initialAction
+// routing, MesaListaView itself, every test helper) -- nothing about the
+// underlying screen/component/data path changed, only this one string.
 const NAV_ITEMS = [
   { id: "mapa", icon: "🗺", label: "Mapa" },
-  { id: "lista", icon: "☰", label: "Lista" },
+  { id: "lista", icon: "☰", label: "Sala" },
   { id: "reservas", icon: "📅", label: "Reservas" },
   { id: "listos", icon: "✅", label: "Listos" },
   { id: "mas", icon: "⋯", label: "Más" },

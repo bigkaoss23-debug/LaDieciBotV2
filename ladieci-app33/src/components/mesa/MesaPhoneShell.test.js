@@ -110,11 +110,16 @@ describe("MesaPhoneShell -- default screen and nav", () => {
     unmount(container, root);
   });
 
-  test("bottom nav is exactly Mapa / Lista / Reservas / Listos / Más, in that order", async () => {
+  // MESA_PHONE_NAV_LABEL_MICROFIX -- visible label is "Sala" now (was
+  // "Lista"), specifically to remove the confusable Lista/Listos pair; the
+  // underlying screen/component/shellTab id are all still "lista" (see
+  // MesaPhoneShell.jsx's own comment on NAV_ITEMS), unchanged elsewhere in
+  // this file on purpose.
+  test("bottom nav is exactly Mapa / Sala / Reservas / Listos / Más, in that order", async () => {
     const { container, root } = await mount();
     const nav = container.querySelector("nav");
     const labels = Array.from(nav.children).map((el) => (el.getAttribute("aria-label") || el.textContent).trim());
-    expect(labels.map((l, i) => l.includes(["Mapa", "Lista", "Reservas", "Listos", "Más"][i]))).toEqual([true, true, true, true, true]);
+    expect(labels.map((l, i) => l.includes(["Mapa", "Sala", "Reservas", "Listos", "Más"][i]))).toEqual([true, true, true, true, true]);
     unmount(container, root);
   });
 
@@ -165,7 +170,7 @@ describe("MesaPhoneShell -- Listos reuses the exact authoritative element, not a
 describe("MesaPhoneShell -- Lista shows the same authoritative Mesa data as Mapa", () => {
   test("Lista lists both real tables by number, with their current state", async () => {
     const { container, root } = await mount();
-    click(navButton(container, "Lista"));
+    click(navButton(container, "Sala"));
     await flush();
     expect(container.textContent).toContain("Mesa 1");
     expect(container.textContent).toContain("Mesa 2");
@@ -176,7 +181,7 @@ describe("MesaPhoneShell -- Lista shows the same authoritative Mesa data as Mapa
 
   test("tapping a free table in Lista opens it in Mapa via the SAME action a map tap uses (openWalkIn -> mesaApi.openTable)", async () => {
     const { container, root } = await mount();
-    click(navButton(container, "Lista"));
+    click(navButton(container, "Sala"));
     await flush();
     click(byText(container, "button", null) || Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Mesa 1")));
     await flush();
@@ -188,7 +193,7 @@ describe("MesaPhoneShell -- Lista shows the same authoritative Mesa data as Mapa
 
   test("tapping an already-open table in Lista goes straight to its workspace, same as tapping it on the map", async () => {
     const { container, root } = await mount();
-    click(navButton(container, "Lista"));
+    click(navButton(container, "Sala"));
     await flush();
     click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Mesa 2")));
     await flush();
@@ -212,7 +217,7 @@ describe("MesaPhoneShell -- Mapa stays mounted in the background (no loading fla
   test("Mapa's own board is present in the DOM even while Lista is the active screen, merely hidden", async () => {
     const { container, root } = await mount();
     expect(container.querySelector(".mesa-board")).not.toBeNull();
-    click(navButton(container, "Lista"));
+    click(navButton(container, "Sala"));
     await flush();
     // Lista's own content is what's visible now...
     expect(container.textContent).toContain("máx 4");
@@ -230,7 +235,7 @@ describe("MesaPhoneShell -- Mapa stays mounted in the background (no loading fla
   test("switching screens never re-fetches the floor for Mapa itself -- only mounted once, not once per switch", async () => {
     const { container, root } = await mount();
     const initialCalls = mesaApi.floor.mock.calls.length; // Mapa's own single mount-time call
-    click(navButton(container, "Lista"));
+    click(navButton(container, "Sala"));
     await flush(); // Lista's own independent view mounts fresh -- adds exactly one call, unrelated to Mapa
     click(navButton(container, "Mapa"));
     await flush();
@@ -247,7 +252,7 @@ describe("MesaPhoneShell -- Mapa stays mounted in the background (no loading fla
   test("a table tapped from Lista opens instantly with no intermediate 'Cargando el plano de mesas' flash", async () => {
     const { container, root } = await mount();
     await flush(); // let Mapa's own background fetch fully settle first
-    click(navButton(container, "Lista"));
+    click(navButton(container, "Sala"));
     await flush();
     click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Mesa 2")));
     // Deliberately no extra flush beyond the minimum microtask drain inside
