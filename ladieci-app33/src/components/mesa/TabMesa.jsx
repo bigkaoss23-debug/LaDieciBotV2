@@ -271,32 +271,25 @@ const css = `
 .mesa-root.compact{display:flex;flex-direction:column;height:100%;min-height:0}
 .mesa-root.compact .mesa-board{flex:1 1 auto;min-height:0}
 .mesa-root.compact .mesa-dock{flex:0 0 auto;margin-top:8px}
-/* MESA_PHONE_MAPA_FLOOR_ENV -- the room/environment carries the 3D feeling
-   here, not the tables (already tuned in the prior slice and intentionally
-   left alone this pass). Six layers, back to front:
-   1. base material gradient -- dark, warm-neutral, recedes top-to-bottom.
-   2. top wall/floor transition -- a soft dark band right at the top edge,
-      the one cue that reads as "a wall is behind this", not just a panel.
-   3. all-around vignette centered on the play area -- corners AND edges
-      darken, not just the bottom, so the room reads as bounded on every
-      side, not just receding into the distance.
-   4. a central "pool of light" -- broader and more distinctly brighter
-      than the old uniform gold wash, positioned over where the tables
-      actually cluster, so there is a real lit zone vs. a dim perimeter
-      (the "central play area vs. outer edges" separation).
-   5. a smaller, higher, cooler-warm ambient source toward the upper-left --
-      a second, asymmetric light, so the scene never reads as symmetric/
-      flat (kept from the prior slice, resized to complement #4 rather
-      than duplicate it).
-   6. an extremely faint diagonal sheen -- broad, low-alpha, material-grain
-      stand-in without an actual repeating texture (cheap: one more
-      gradient on one element, not a per-tile or per-frame cost).
+/* MESA_MAP_LOCAL_SPOTLIGHT -- reversing the prior slice's room-level
+   lighting on purpose: painting light on the floor plane (a central pool,
+   asymmetric ambient sources) reads as a static backdrop, and worse,
+   doesn't move when a table does. Light now belongs to each table (see
+   .mesa-table::before below) and travels with it automatically, since it's
+   that same element's own pseudo-content. The floor's only job now is to
+   stay a dark, high-contrast, mostly-neutral surface that makes each
+   table's own local glow read clearly -- three restrained layers:
+   1. a soft dark band right at the top edge -- the one cue that reads as
+      "a wall is behind this", not just a flat panel.
+   2. a gentle all-around vignette -- corners and edges settle a little
+      darker than the middle, without any brightness peak of its own.
+   3. a dark, mostly-neutral material gradient (no warm/colored blobs).
    The grid pseudo-element (below) is unaffected -- still absent in normal
    mode, still restored during room-editing via .editing. NOTE: this
    comment is literal <style> textContent at runtime (inside the css
    template string) -- avoid spelling either editing-entry-point's nav
    label in here, see MesaPhoneShell.test.js's Más-screen assertions. */
-.mesa-board{position:relative;min-height:420px;border:1px solid rgba(208,184,145,.22);border-radius:22px;overflow:hidden;background:linear-gradient(115deg,rgba(255,255,255,.035) 0%,transparent 26%,transparent 74%,rgba(255,255,255,.02) 100%),radial-gradient(ellipse 55% 26% at 28% 5%,rgba(255,225,190,.06),transparent 62%),radial-gradient(ellipse 62% 48% at 50% 40%,rgba(255,210,160,.13),rgba(255,210,160,.035) 55%,transparent 78%),radial-gradient(ellipse 122% 96% at 50% 40%,transparent 40%,rgba(0,0,0,.34) 76%,rgba(0,0,0,.62) 100%),linear-gradient(180deg,rgba(0,0,0,.3) 0%,transparent 10%),linear-gradient(180deg,#241f19 0%,#18140f 20%,#0d0b09 62%,#060504 100%);box-shadow:inset 0 0 90px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.05),inset 0 50px 70px -50px rgba(0,0,0,.55)}
+.mesa-board{position:relative;min-height:420px;border:1px solid rgba(208,184,145,.22);border-radius:22px;overflow:hidden;background:linear-gradient(180deg,rgba(0,0,0,.3) 0%,transparent 9%),radial-gradient(ellipse 118% 92% at 50% 42%,transparent 48%,rgba(0,0,0,.3) 80%,rgba(0,0,0,.58) 100%),linear-gradient(180deg,#131110,#0a0908 55%,#050403 100%);box-shadow:inset 0 0 70px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.04)}
 /* Fully absent in normal operator mode -- the reference floor shows no
    grid line at all -- and only fades in for room-editing mode (.editing,
    see the board's own className below), where positioning genuinely
@@ -317,17 +310,41 @@ const css = `
 /* box-sizing:border-box is what makes the "occupied" border able to go from
    2px to 4px (see .mesa-table.thick below) without growing the box: width/
    height stay the outer, rendered size regardless of border-width. */
-/* MESA_PHONE_MAPA_3D_P1E -- elevated-disc lighting, not a glossy button: a
-   broad, soft ellipse of ambient top light (wide + low alpha, never a tight
-   hotspot) replaces the old tight radial "shine spot", and the cast shadow
-   below is now the dominant depth cue (a tight near-black contact shadow
-   right at the base plus a soft, offset-down cast shadow) so the table
-   reads as physically sitting above the floor rather than merely glowing.
-   background-color stays the exact semantic --tb fill (free/occupied/
-   reserved); background-image only layers ambient light/shade on top, so
-   the operational color meaning is untouched by this pass. */
-.mesa-table{box-sizing:border-box;position:absolute;transform:translate(-50%,-50%);width:100px;height:100px;padding:8px;overflow:visible;-webkit-tap-highlight-color:transparent;border-style:solid;border-width:2px;border-color:var(--tc);color:#fff;background-color:var(--tb);background-image:radial-gradient(ellipse 92% 70% at 40% 16%,rgba(255,255,255,.16),rgba(255,255,255,0) 62%),linear-gradient(172deg,rgba(255,255,255,.07) 0%,rgba(0,0,0,0) 42%,rgba(0,0,0,.30) 100%);box-shadow:0 2px 3px rgba(0,0,0,.42),0 18px 30px -8px rgba(0,0,0,.58),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none;user-select:none;transition:box-shadow .15s,filter .15s}
-.mesa-table:hover{filter:brightness(1.08);box-shadow:0 2px 3px rgba(0,0,0,.42),0 22px 36px -8px rgba(0,0,0,.62),0 0 18px color-mix(in srgb,var(--tc) 26%,transparent),inset 0 1px 1px rgba(255,255,255,.26),inset 0 -10px 15px rgba(0,0,0,.34)}
+/* MESA_MAP_LOCAL_SPOTLIGHT -- table = surface + puck-side + local spotlight
+   + shadow, as ONE moving visual unit (the brief's own framing). The puck
+   side (first box-shadow layer, 0 4px 0 0 <solid color>) is what actually
+   sells the angled/perspective read: a perfectly flat top-down disc would
+   show only its top face, never a visible edge beneath the rim, so a
+   thin solid-color step right under the border is the cheapest possible
+   way to imply "this is being viewed from slightly above/in front", with
+   zero risk to drag geometry -- it's a box-shadow value, box-shadow never
+   participates in layout or hit-testing. The side's own color is a
+   darkened color-mix() of --tc (the same border color already driving the
+   ring), so it reads as "this table's own edge in shadow", not a generic
+   grey slab. Contact + cast shadow (next two layers) are unchanged in
+   spirit from the prior slice -- tight near-black right at the base of
+   that side, soft and offset further out. background-color stays the
+   exact semantic --tb fill; background-image only layers ambient top
+   light on the face itself. See .mesa-table::before below for the local
+   floor spotlight -- the OTHER half of this same visual unit. */
+.mesa-table{box-sizing:border-box;position:absolute;transform:translate(-50%,-50%);width:100px;height:100px;padding:8px;overflow:visible;-webkit-tap-highlight-color:transparent;border-style:solid;border-width:2px;border-color:var(--tc);color:#fff;background-color:var(--tb);background-image:radial-gradient(ellipse 92% 70% at 40% 16%,rgba(255,255,255,.16),rgba(255,255,255,0) 62%),linear-gradient(172deg,rgba(255,255,255,.07) 0%,rgba(0,0,0,0) 42%,rgba(0,0,0,.30) 100%);box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 5px 5px rgba(0,0,0,.42),0 16px 26px -6px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none;user-select:none;transition:box-shadow .15s,filter .15s}
+/* MESA_MAP_LOCAL_SPOTLIGHT -- the local floor glow, the other half of the
+   table+spotlight+shadow unit. A pseudo-element of .mesa-table itself
+   (not a separate DOM node, not painted on .mesa-board) so it moves
+   atomically with the table on every drag frame -- there is no separate
+   position to reconcile, so no static residue at an old coordinate is
+   even possible by construction. --tg (set inline alongside --tc/--tb,
+   see the floor render loop) is occupancy-only -- deliberately NOT --tc,
+   so a reserved-but-free table's amber border never turns its spotlight
+   gold (the brief's own "not status overload" instruction). z-index:-1
+   keeps it behind this element's own opaque background (so the table's
+   own face is never tinted by its own glow, and the halo genuinely only
+   shows in the ring beyond the table's edge, where the floor is exposed);
+   pointer-events:none keeps the enlarged box purely decorative -- the
+   real tap/hit target stays exactly the table's own width/height, unlisted
+   here on purpose since a hit-target change is explicitly out of scope. */
+.mesa-table::before{content:"";position:absolute;inset:-38px;z-index:-1;pointer-events:none;background:radial-gradient(ellipse at center,color-mix(in srgb,var(--tg,#22C55E) 55%,#e8ac52 45%) 0%,color-mix(in srgb,var(--tg,#22C55E) 22%,transparent) 42%,transparent 74%)}
+.mesa-table:hover{filter:brightness(1.08);box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 60%,black),0 5px 5px rgba(0,0,0,.42),0 20px 32px -6px rgba(0,0,0,.6),0 0 16px color-mix(in srgb,var(--tc) 24%,transparent),inset 0 1px 1px rgba(255,255,255,.26),inset 0 -10px 15px rgba(0,0,0,.34)}
 /* MESA_POINTER_TARGET_SHIFT fix -- the global button:active{transform:scale(.96)}
    (constants.js G, mounted app-wide) has higher specificity (0,1,1) than the bare
    .mesa-table{transform:translate(-50%,-50%)} above (0,1,0), so on native :active
@@ -378,11 +395,11 @@ const css = `
    THIS same table; the ref-based dedupe in openWalkIn already guarded
    against that, this is belt-and-braces plus the visual cue. */
 .mesa-table.opening{opacity:.55;filter:grayscale(.35);cursor:wait;pointer-events:none}
-.mesa-table.selected{box-shadow:0 0 0 3px rgba(247,240,223,.75),0 2px 3px rgba(0,0,0,.42),0 18px 30px -8px rgba(0,0,0,.58),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34)}
-@keyframes mesa-ready-pulse{0%,100%{box-shadow:0 2px 3px rgba(0,0,0,.42),0 18px 30px -8px rgba(0,0,0,.58),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 0 0 rgba(34,197,94,0)}50%{box-shadow:0 2px 3px rgba(0,0,0,.42),0 18px 30px -8px rgba(0,0,0,.58),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 22px 7px rgba(34,197,94,.65)}}
+.mesa-table.selected{box-shadow:0 0 0 3px rgba(247,240,223,.75),0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 5px 5px rgba(0,0,0,.42),0 16px 26px -6px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34)}
+@keyframes mesa-ready-pulse{0%,100%{box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 5px 5px rgba(0,0,0,.42),0 16px 26px -6px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 0 0 rgba(34,197,94,0)}50%{box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 5px 5px rgba(0,0,0,.42),0 16px 26px -6px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 22px 7px rgba(34,197,94,.65)}}
 .mesa-table.ready-pulse{animation:mesa-ready-pulse 1.35s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){
-  .mesa-table.ready-pulse{animation:none;filter:brightness(1.22);box-shadow:0 2px 3px rgba(0,0,0,.42),0 18px 30px -8px rgba(0,0,0,.58),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 14px 3px rgba(34,197,94,.6)}
+  .mesa-table.ready-pulse{animation:none;filter:brightness(1.22);box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 5px 5px rgba(0,0,0,.42),0 16px 26px -6px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 14px 3px rgba(34,197,94,.6)}
 }
 .mesa-number{font-size:26px;font-weight:900;line-height:1;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .mesa-capacity{font-size:11px;font-weight:800;color:#e7dcc7;display:flex;align-items:center;gap:3px}
@@ -1712,6 +1729,15 @@ export default function TabMesa({
         const dragging = dragRef.current?.id === table.id;
         const hasOrders = table.status === "open" && (table.session?.commands?.length || 0) > 0;
         const border = tableBorder(state, hasOrders);
+        // MESA_MAP_LOCAL_SPOTLIGHT -- the local floor spotlight (--tg, see
+        // .mesa-table::before) is occupancy-only, deliberately NOT the same
+        // signal as --tc/border.color: a free-but-reserved table's border is
+        // amber (STATUS.reserved), and reusing that for the spotlight would
+        // make every reservation glow gold on the floor -- explicitly the
+        // "status overload" the brief warns against. The spotlight only
+        // ever asks "is someone sitting here right now", same binary the
+        // fill color's occupied-vs-not distinction already makes.
+        const glowColor = state === STATUS.occupied ? STATUS.occupied.color : STATUS.free.color;
         // Ready-pulse is an OPERATIONAL signal ("a dish is waiting") and
         // Personalizar sala is an EDITING context ("I'm moving/resizing
         // tables") -- the two must never compete for attention on the same
@@ -1740,7 +1766,7 @@ export default function TabMesa({
           border.thick ? "thick" : "", ready ? "ready-pulse" : "", selected ? "selected" : "",
           opening ? "opening" : "",
         ].filter(Boolean).join(" ");
-        return <button key={table.id} className={classes} style={{ left: `${table.x}%`, top: `${table.y}%`, "--tc": border.color, "--tb": state.bg }} onPointerDown={(event) => pointerDown(event, table)} onClick={() => {
+        return <button key={table.id} className={classes} style={{ left: `${table.x}%`, top: `${table.y}%`, "--tc": border.color, "--tb": state.bg, "--tg": glowColor }} onPointerDown={(event) => pointerDown(event, table)} onClick={() => {
           if (suppressClickRef.current === table.id) { suppressClickRef.current = null; return; }
           if (!editing && table.status === "free" && todayReservations.length === 0) { openWalkIn(table); return; }
           // An occupied table (outside Personalizar sala) goes straight to
