@@ -327,7 +327,7 @@ const css = `
    exact semantic --tb fill; background-image only layers ambient top
    light on the face itself. See .mesa-table::before below for the local
    floor spotlight -- the OTHER half of this same visual unit. */
-.mesa-table{box-sizing:border-box;position:absolute;transform:translate(-50%,-50%);width:100px;height:100px;padding:8px;overflow:visible;-webkit-tap-highlight-color:transparent;border-style:solid;border-width:2px;border-color:var(--tc);color:#fff;background-color:var(--tb);background-image:radial-gradient(ellipse 92% 70% at 40% 16%,rgba(255,255,255,.16),rgba(255,255,255,0) 62%),linear-gradient(172deg,rgba(255,255,255,.07) 0%,rgba(0,0,0,0) 42%,rgba(0,0,0,.30) 100%);box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 5px 5px rgba(0,0,0,.42),0 16px 26px -6px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none;user-select:none;transition:box-shadow .15s,filter .15s}
+.mesa-table{box-sizing:border-box;position:absolute;transform:translate(-50%,-50%);width:100px;height:100px;padding:8px;overflow:visible;-webkit-tap-highlight-color:transparent;border-style:solid;border-width:2px;border-color:var(--tc);color:#fff;background-color:var(--tb);background-image:radial-gradient(ellipse 92% 70% at 40% 16%,rgba(255,255,255,.16),rgba(255,255,255,0) 62%),linear-gradient(172deg,rgba(255,255,255,.07) 0%,rgba(0,0,0,0) 42%,rgba(0,0,0,.30) 100%);box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 3px 2px rgba(0,0,0,.55),0 9px 9px rgba(0,0,0,.4),0 22px 32px -8px rgba(0,0,0,.6),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none;user-select:none;transition:box-shadow .15s,filter .15s}
 /* MESA_MAP_LOCAL_SPOTLIGHT -- the local floor glow, the other half of the
    table+spotlight+shadow unit. A pseudo-element of .mesa-table itself
    (not a separate DOM node, not painted on .mesa-board) so it moves
@@ -336,15 +336,30 @@ const css = `
    even possible by construction. --tg (set inline alongside --tc/--tb,
    see the floor render loop) is occupancy-only -- deliberately NOT --tc,
    so a reserved-but-free table's amber border never turns its spotlight
-   gold (the brief's own "not status overload" instruction). z-index:-1
-   keeps it behind this element's own opaque background (so the table's
-   own face is never tinted by its own glow, and the halo genuinely only
-   shows in the ring beyond the table's edge, where the floor is exposed);
-   pointer-events:none keeps the enlarged box purely decorative -- the
-   real tap/hit target stays exactly the table's own width/height, unlisted
-   here on purpose since a hit-target change is explicitly out of scope. */
-.mesa-table::before{content:"";position:absolute;inset:-38px;z-index:-1;pointer-events:none;background:radial-gradient(ellipse at center,color-mix(in srgb,var(--tg,#22C55E) 55%,#e8ac52 45%) 0%,color-mix(in srgb,var(--tg,#22C55E) 22%,transparent) 42%,transparent 74%)}
-.mesa-table:hover{filter:brightness(1.08);box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 60%,black),0 5px 5px rgba(0,0,0,.42),0 20px 32px -6px rgba(0,0,0,.6),0 0 16px color-mix(in srgb,var(--tc) 24%,transparent),inset 0 1px 1px rgba(255,255,255,.26),inset 0 -10px 15px rgba(0,0,0,.34)}
+   gold (the brief's own "not status overload" instruction).
+   MESA_MAP_LOCAL_SPOTLIGHT_V2 -- the color itself is now mostly-neutral
+   warm amber with only a light, controlled contamination from --tg (16%
+   at the brightest stop, fading to 9% further out -- real light desaturates
+   as it dims, so the falloff itself gets warmer/less colored, not just
+   dimmer). A first version mixed --tg in at 55%, which produced a strongly
+   saturated green/red halo that read as neon/LED rather than ambient
+   light -- direct user feedback against a real reference photo. State
+   (free/occupied) still lives primarily on the table's own border/fill
+   (--tc/--tb, untouched here); the floor spotlight is deliberately a much
+   quieter signal than that -- state color belongs on the table itself, the
+   floor glow should read as mostly-neutral ambient light, not a colored
+   status indicator of its own. The outer color-mix() of each stop blends
+   toward transparent (not just
+   a low peak alpha) so the glow's own brightness tapers along with its
+   saturation. z-index:-1 keeps it behind this element's own opaque
+   background (so the table's own face is never tinted by its own glow,
+   and the halo genuinely only shows in the ring beyond the table's edge,
+   where the floor is exposed); pointer-events:none keeps the enlarged box
+   purely decorative -- the real tap/hit target stays exactly the table's
+   own width/height, unlisted here on purpose since a hit-target change is
+   explicitly out of scope. */
+.mesa-table::before{content:"";position:absolute;inset:-32px;z-index:-1;pointer-events:none;background:radial-gradient(ellipse at center,color-mix(in srgb,color-mix(in srgb,var(--tg,#22C55E) 16%,#e8ac52 84%) 46%,transparent) 0%,color-mix(in srgb,color-mix(in srgb,var(--tg,#22C55E) 9%,#e8ac52 91%) 20%,transparent) 32%,transparent 60%)}
+.mesa-table:hover{filter:brightness(1.08);box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 60%,black),0 3px 2px rgba(0,0,0,.55),0 9px 9px rgba(0,0,0,.4),0 26px 36px -8px rgba(0,0,0,.64),0 0 16px color-mix(in srgb,var(--tc) 24%,transparent),inset 0 1px 1px rgba(255,255,255,.26),inset 0 -10px 15px rgba(0,0,0,.34)}
 /* MESA_POINTER_TARGET_SHIFT fix -- the global button:active{transform:scale(.96)}
    (constants.js G, mounted app-wide) has higher specificity (0,1,1) than the bare
    .mesa-table{transform:translate(-50%,-50%)} above (0,1,0), so on native :active
@@ -395,11 +410,11 @@ const css = `
    THIS same table; the ref-based dedupe in openWalkIn already guarded
    against that, this is belt-and-braces plus the visual cue. */
 .mesa-table.opening{opacity:.55;filter:grayscale(.35);cursor:wait;pointer-events:none}
-.mesa-table.selected{box-shadow:0 0 0 3px rgba(247,240,223,.75),0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 5px 5px rgba(0,0,0,.42),0 16px 26px -6px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34)}
-@keyframes mesa-ready-pulse{0%,100%{box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 5px 5px rgba(0,0,0,.42),0 16px 26px -6px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 0 0 rgba(34,197,94,0)}50%{box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 5px 5px rgba(0,0,0,.42),0 16px 26px -6px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 22px 7px rgba(34,197,94,.65)}}
+.mesa-table.selected{box-shadow:0 0 0 3px rgba(247,240,223,.75),0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 3px 2px rgba(0,0,0,.55),0 9px 9px rgba(0,0,0,.4),0 22px 32px -8px rgba(0,0,0,.6),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34)}
+@keyframes mesa-ready-pulse{0%,100%{box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 3px 2px rgba(0,0,0,.55),0 9px 9px rgba(0,0,0,.4),0 22px 32px -8px rgba(0,0,0,.6),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 0 0 rgba(34,197,94,0)}50%{box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 3px 2px rgba(0,0,0,.55),0 9px 9px rgba(0,0,0,.4),0 22px 32px -8px rgba(0,0,0,.6),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 22px 7px rgba(34,197,94,.65)}}
 .mesa-table.ready-pulse{animation:mesa-ready-pulse 1.35s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){
-  .mesa-table.ready-pulse{animation:none;filter:brightness(1.22);box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 5px 5px rgba(0,0,0,.42),0 16px 26px -6px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 14px 3px rgba(34,197,94,.6)}
+  .mesa-table.ready-pulse{animation:none;filter:brightness(1.22);box-shadow:0 4px 0 0 color-mix(in srgb,var(--tc) 55%,black),0 3px 2px rgba(0,0,0,.55),0 9px 9px rgba(0,0,0,.4),0 22px 32px -8px rgba(0,0,0,.6),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 14px 3px rgba(34,197,94,.6)}
 }
 .mesa-number{font-size:26px;font-weight:900;line-height:1;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .mesa-capacity{font-size:11px;font-weight:800;color:#e7dcc7;display:flex;align-items:center;gap:3px}
