@@ -271,8 +271,24 @@ const css = `
 .mesa-root.compact{display:flex;flex-direction:column;height:100%;min-height:0}
 .mesa-root.compact .mesa-board{flex:1 1 auto;min-height:0}
 .mesa-root.compact .mesa-dock{flex:0 0 auto;margin-top:8px}
-.mesa-board{position:relative;min-height:420px;border:1px solid rgba(208,184,145,.22);border-radius:22px;overflow:hidden;background:radial-gradient(circle at 50% 38%,rgba(215,168,75,.12),transparent 55%),radial-gradient(ellipse at 50% 114%,rgba(0,0,0,.62),transparent 62%),linear-gradient(150deg,#1c1916,#0a0908 68%);box-shadow:inset 0 0 70px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.05)}
-.mesa-board:before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);background-size:32px 32px;pointer-events:none}
+/* MESA_PHONE_MAPA_3D_P1E -- a physical dark room/floor, not a flat grid: a
+   soft warm ambient source near the upper-left (like a fixture spilling
+   light onto the room, never a scoreboard's flat glow), a top-to-bottom
+   floor gradient that recedes into shadow, and a bottom vignette so the
+   floor genuinely feels like it falls away toward the back of the room.
+   The grid (below) drops to near-invisible here -- see .editing. */
+.mesa-board{position:relative;min-height:420px;border:1px solid rgba(208,184,145,.22);border-radius:22px;overflow:hidden;background:radial-gradient(ellipse 65% 38% at 36% 10%,rgba(255,232,196,.06),transparent 62%),radial-gradient(circle at 52% 42%,rgba(215,168,75,.09),transparent 58%),radial-gradient(ellipse at 50% 116%,rgba(0,0,0,.68),transparent 62%),linear-gradient(180deg,#201c18 0%,#171512 16%,#0c0b0a 62%,#070605 100%);box-shadow:inset 0 0 80px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05),inset 0 44px 60px -46px rgba(0,0,0,.55)}
+/* Near-invisible in normal operator mode (opacity multiplies the already-
+   faint .05 alpha lines down to ~.011); room-editing mode (.editing, see
+   the board's own className below) brings it back to full strength since
+   positioning genuinely benefits from it there. Pure opacity toggle -- the
+   grid geometry itself, and every drag/pointer calculation, are untouched
+   by this. NOTE: this comment is literal <style> textContent at runtime
+   (inside the css template string) -- MesaPhoneShell.test.js's Más-screen
+   tests assert <main> textContent stays scoped to Más's own content, so
+   avoid spelling either editing-entry-point's nav label in here. */
+.mesa-board:before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:32px 32px;pointer-events:none;opacity:.22;transition:opacity .2s ease}
+.mesa-board.editing:before{opacity:1}
 /* The card shows only number + capacity + up to two small corner badges --
    nothing that varies in length (no name, no price, no free text) -- so a
    single fixed box already covers every state and this never needs per-state
@@ -282,8 +298,17 @@ const css = `
 /* box-sizing:border-box is what makes the "occupied" border able to go from
    2px to 4px (see .mesa-table.thick below) without growing the box: width/
    height stay the outer, rendered size regardless of border-width. */
-.mesa-table{box-sizing:border-box;position:absolute;transform:translate(-50%,-50%);width:100px;height:100px;padding:8px;overflow:visible;-webkit-tap-highlight-color:transparent;border-style:solid;border-width:2px;border-color:var(--tc);color:#fff;background-color:var(--tb);background-image:radial-gradient(circle at 30% 22%,rgba(255,255,255,.34),rgba(255,255,255,0) 46%),linear-gradient(165deg,rgba(255,255,255,.12),rgba(0,0,0,.24) 72%);box-shadow:0 14px 26px rgba(0,0,0,.5),0 3px 0 rgba(0,0,0,.35),inset 0 2px 2px rgba(255,255,255,.3),inset 0 -8px 14px rgba(0,0,0,.32);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none;user-select:none;transition:box-shadow .15s,filter .15s}
-.mesa-table:hover{filter:brightness(1.1);box-shadow:0 16px 30px rgba(0,0,0,.55),0 0 20px color-mix(in srgb,var(--tc) 30%,transparent),inset 0 2px 2px rgba(255,255,255,.32),inset 0 -8px 14px rgba(0,0,0,.32)}
+/* MESA_PHONE_MAPA_3D_P1E -- elevated-disc lighting, not a glossy button: a
+   broad, soft ellipse of ambient top light (wide + low alpha, never a tight
+   hotspot) replaces the old tight radial "shine spot", and the cast shadow
+   below is now the dominant depth cue (a tight near-black contact shadow
+   right at the base plus a soft, offset-down cast shadow) so the table
+   reads as physically sitting above the floor rather than merely glowing.
+   background-color stays the exact semantic --tb fill (free/occupied/
+   reserved); background-image only layers ambient light/shade on top, so
+   the operational color meaning is untouched by this pass. */
+.mesa-table{box-sizing:border-box;position:absolute;transform:translate(-50%,-50%);width:100px;height:100px;padding:8px;overflow:visible;-webkit-tap-highlight-color:transparent;border-style:solid;border-width:2px;border-color:var(--tc);color:#fff;background-color:var(--tb);background-image:radial-gradient(ellipse 92% 70% at 40% 16%,rgba(255,255,255,.16),rgba(255,255,255,0) 62%),linear-gradient(172deg,rgba(255,255,255,.07) 0%,rgba(0,0,0,0) 42%,rgba(0,0,0,.30) 100%);box-shadow:0 2px 3px rgba(0,0,0,.42),0 18px 30px -8px rgba(0,0,0,.58),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none;user-select:none;transition:box-shadow .15s,filter .15s}
+.mesa-table:hover{filter:brightness(1.08);box-shadow:0 2px 3px rgba(0,0,0,.42),0 22px 36px -8px rgba(0,0,0,.62),0 0 18px color-mix(in srgb,var(--tc) 26%,transparent),inset 0 1px 1px rgba(255,255,255,.26),inset 0 -10px 15px rgba(0,0,0,.34)}
 /* MESA_POINTER_TARGET_SHIFT fix -- the global button:active{transform:scale(.96)}
    (constants.js G, mounted app-wide) has higher specificity (0,1,1) than the bare
    .mesa-table{transform:translate(-50%,-50%)} above (0,1,0), so on native :active
@@ -334,11 +359,11 @@ const css = `
    THIS same table; the ref-based dedupe in openWalkIn already guarded
    against that, this is belt-and-braces plus the visual cue. */
 .mesa-table.opening{opacity:.55;filter:grayscale(.35);cursor:wait;pointer-events:none}
-.mesa-table.selected{box-shadow:0 0 0 3px rgba(247,240,223,.75),0 14px 26px rgba(0,0,0,.5),inset 0 2px 2px rgba(255,255,255,.3),inset 0 -8px 14px rgba(0,0,0,.32)}
-@keyframes mesa-ready-pulse{0%,100%{box-shadow:0 14px 26px rgba(0,0,0,.5),inset 0 2px 2px rgba(255,255,255,.3),inset 0 -8px 14px rgba(0,0,0,.32),0 0 0 0 rgba(34,197,94,0)}50%{box-shadow:0 14px 26px rgba(0,0,0,.5),inset 0 2px 2px rgba(255,255,255,.3),inset 0 -8px 14px rgba(0,0,0,.32),0 0 22px 7px rgba(34,197,94,.65)}}
+.mesa-table.selected{box-shadow:0 0 0 3px rgba(247,240,223,.75),0 2px 3px rgba(0,0,0,.42),0 18px 30px -8px rgba(0,0,0,.58),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34)}
+@keyframes mesa-ready-pulse{0%,100%{box-shadow:0 2px 3px rgba(0,0,0,.42),0 18px 30px -8px rgba(0,0,0,.58),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 0 0 rgba(34,197,94,0)}50%{box-shadow:0 2px 3px rgba(0,0,0,.42),0 18px 30px -8px rgba(0,0,0,.58),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 22px 7px rgba(34,197,94,.65)}}
 .mesa-table.ready-pulse{animation:mesa-ready-pulse 1.35s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){
-  .mesa-table.ready-pulse{animation:none;filter:brightness(1.22);box-shadow:0 14px 26px rgba(0,0,0,.5),inset 0 2px 2px rgba(255,255,255,.3),inset 0 -8px 14px rgba(0,0,0,.32),0 0 14px 3px rgba(34,197,94,.6)}
+  .mesa-table.ready-pulse{animation:none;filter:brightness(1.22);box-shadow:0 2px 3px rgba(0,0,0,.42),0 18px 30px -8px rgba(0,0,0,.58),inset 0 1px 1px rgba(255,255,255,.22),inset 0 -10px 15px rgba(0,0,0,.34),0 0 14px 3px rgba(34,197,94,.6)}
 }
 .mesa-number{font-size:26px;font-weight:900;line-height:1;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .mesa-capacity{font-size:11px;font-weight:800;color:#e7dcc7;display:flex;align-items:center;gap:3px}
@@ -1660,7 +1685,7 @@ export default function TabMesa({
         <div className="mesa-legend">{Object.entries(STATUS).map(([id, item]) => <span key={id}><i className="mesa-dot" style={{ background: item.color }} />{item.label}</span>)}</div>
       </div>
     </div>}
-    <div className="mesa-board" ref={boardRef} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
+    <div className={`mesa-board${editing ? " editing" : ""}`} ref={boardRef} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
       {resolveTablePositions(activeTables).map((table) => {
         const todayReservations = bookedForToday(table);
         const nextReservation = todayReservations[0];
