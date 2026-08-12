@@ -278,16 +278,16 @@ const css = `
    floor genuinely feels like it falls away toward the back of the room.
    The grid (below) drops to near-invisible here -- see .editing. */
 .mesa-board{position:relative;min-height:420px;border:1px solid rgba(208,184,145,.22);border-radius:22px;overflow:hidden;background:radial-gradient(ellipse 65% 38% at 36% 10%,rgba(255,232,196,.06),transparent 62%),radial-gradient(circle at 52% 42%,rgba(215,168,75,.09),transparent 58%),radial-gradient(ellipse at 50% 116%,rgba(0,0,0,.68),transparent 62%),linear-gradient(180deg,#201c18 0%,#171512 16%,#0c0b0a 62%,#070605 100%);box-shadow:inset 0 0 80px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05),inset 0 44px 60px -46px rgba(0,0,0,.55)}
-/* Near-invisible in normal operator mode (opacity multiplies the already-
-   faint .05 alpha lines down to ~.011); room-editing mode (.editing, see
-   the board's own className below) brings it back to full strength since
-   positioning genuinely benefits from it there. Pure opacity toggle -- the
-   grid geometry itself, and every drag/pointer calculation, are untouched
-   by this. NOTE: this comment is literal <style> textContent at runtime
-   (inside the css template string) -- MesaPhoneShell.test.js's Más-screen
-   tests assert <main> textContent stays scoped to Más's own content, so
-   avoid spelling either editing-entry-point's nav label in here. */
-.mesa-board:before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:32px 32px;pointer-events:none;opacity:.22;transition:opacity .2s ease}
+/* Fully absent in normal operator mode -- the reference floor shows no
+   grid line at all -- and only fades in for room-editing mode (.editing,
+   see the board's own className below), where positioning genuinely
+   benefits from it. Pure opacity toggle -- the grid geometry itself, and
+   every drag/pointer calculation, are untouched by this. NOTE: this
+   comment is literal <style> textContent at runtime (inside the css
+   template string) -- MesaPhoneShell.test.js's Más-screen tests assert
+   <main> textContent stays scoped to Más's own content, so avoid spelling
+   either editing-entry-point's nav label in here. */
+.mesa-board:before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px);background-size:32px 32px;pointer-events:none;opacity:0;transition:opacity .2s ease}
 .mesa-board.editing:before{opacity:1}
 /* The card shows only number + capacity + up to two small corner badges --
    nothing that varies in length (no name, no price, no free text) -- so a
