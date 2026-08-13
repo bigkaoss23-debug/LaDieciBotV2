@@ -30,7 +30,18 @@ jest.mock("../../mesa/mesaApi", () => ({
 }));
 
 const TabMesa = require("./TabMesa").default;
-const { mesaApi } = require("../../mesa/mesaApi");
+const { mesaApi, describeMesaError } = require("../../mesa/mesaApi");
+
+// react-scripts' jest config sets resetMocks:true, which strips even the
+// factory-level `jest.fn((error) => ...)` implementation above before every
+// test -- without re-arming it here, setError(describeMesaError(err))
+// silently becomes setError(undefined) (falsy, so {error && <div
+// className="mesa-error">...} never mounts) in every rejected-close/rejected-
+// payment assertion added for the nav-consolidation slice. Same fix already
+// applied in TabMesa.render.test.js for the identical reason.
+beforeEach(() => {
+  describeMesaError.mockImplementation((error) => error?.code || "error");
+});
 
 const emptySession = { id: "s1", coversTotal: 2, coversRemaining: 2, total: 0, paid: 0, outstanding: 0, nextEqualShare: 0, paymentTotals: {}, commands: [], lines: [], payments: [] };
 const withOrdersSession = {
@@ -168,12 +179,209 @@ describe("MesaWorkspace compactCard -- table actions unchanged", () => {
     unmount(container, root);
   });
 
-  test("Ver cuenta opens the real, unchanged VerCuentaModal", async () => {
+  test("Ver cuenta drives the real, unchanged VerCuentaBody content, now in-place", async () => {
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
     click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Ver cuenta"));
     await flush();
-    expect(container.textContent).toContain("Cuenta");
     expect(container.textContent).toContain("Pendiente");
+    unmount(container, root);
+  });
+});
+
+// MESA_NAV_CONSOLIDATION_01 -- Ver cuenta / Cerrar mesa used to mount as a
+// second, independent full-viewport overlay (VerCuentaModal / CerrarMesaDialog,
+// each their own .mesa-overlay) stacked on top of this same card. This block
+// covers the replacement: one workspace, one modal layer, an internal back
+// control, and the outer × always closing the whole thing regardless of
+// which subview is showing.
+describe("MesaWorkspace compactCard -- Ver cuenta in-place (no second overlay)", () => {
+  test("Ver cuenta replaces the compact card content in-place -- one modal layer, detail not simultaneously rendered", async () => {
+    const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
+    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).not.toBeNull();
+
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Ver cuenta"));
+    await flush();
+
+    // Still exactly one workspace layer -- no second .mesa-overlay/.mesa-modal
+    // stacked on top of the compact card.
+    expect(container.querySelectorAll(".mesa-table-card-overlay").length).toBe(1);
+    expect(container.querySelector(".mesa-overlay")).toBeNull();
+    expect(container.querySelector(".mesa-modal")).toBeNull();
+
+    // Detail content is gone, not just visually covered by a second layer.
+    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).toBeNull();
+    expect(container.querySelector('[data-testid="mesa-card-reservas"]')).toBeNull();
+
+    const accountView = container.querySelector('[data-testid="mesa-card-view-account"]');
+    expect(accountView).not.toBeNull();
+    expect(accountView.textContent).toContain("Pendiente");
+    unmount(container, root);
+  });
+
+  test("internal back control (← Mesa N) restores the exact previous Mesa detail state", async () => {
+    const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession, number: 5 }) });
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Ver cuenta"));
+    await flush();
+
+    const back = container.querySelector('[data-testid="mesa-card-back"]');
+    expect(back).not.toBeNull();
+    expect(back.textContent).toContain("Mesa 5");
+
+    click(back);
+    await flush();
+    expect(container.querySelector('[data-testid="mesa-card-view-account"]')).toBeNull();
+    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).not.toBeNull();
+    unmount(container, root);
+  });
+});
+
+describe("MesaWorkspace compactCard -- Cerrar mesa in-place (no second overlay)", () => {
+  test("Cerrar mesa replaces the compact card content in-place -- one modal layer, real confirmation copy and buttons", async () => {
+    const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: emptySession, number: 5 }) });
+
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar mesa"));
+    await flush();
+
+    expect(container.querySelectorAll(".mesa-table-card-overlay").length).toBe(1);
+    expect(container.querySelector(".mesa-overlay")).toBeNull();
+    expect(container.querySelector(".mesa-modal")).toBeNull();
+    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).toBeNull();
+
+    const confirmView = container.querySelector('[data-testid="mesa-card-view-close-confirm"]');
+    expect(confirmView).not.toBeNull();
+    expect(confirmView.textContent).toContain("Cerrar Mesa 5");
+    expect(confirmView.getAttribute("role")).toBe("alertdialog");
+    expect(Array.from(confirmView.querySelectorAll("button")).map((b) => b.textContent.trim())).toEqual(["Cancelar", "Cerrar mesa"]);
+    unmount(container, root);
+  });
+
+  test("Cancelar returns to Mesa detail without any request", async () => {
+    const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: emptySession }) });
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar mesa"));
+    await flush();
+
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cancelar"));
+    await flush();
+
+    expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).toBeNull();
+    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).not.toBeNull();
+    expect(mesaApi.closeTable).not.toHaveBeenCalled();
+    expect(mesaApi.releaseEmptyTable).not.toHaveBeenCalled();
+    unmount(container, root);
+  });
+
+  test("the ← Mesa N back control also returns to Mesa detail from the close confirmation", async () => {
+    const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: emptySession, number: 5 }) });
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar mesa"));
+    await flush();
+
+    const back = container.querySelector('[data-testid="mesa-card-back"]');
+    expect(back.textContent).toContain("Mesa 5");
+    click(back);
+    await flush();
+
+    expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).toBeNull();
+    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).not.toBeNull();
+    unmount(container, root);
+  });
+});
+
+describe("MesaWorkspace compactCard -- outer × vs internal back", () => {
+  test("outer × closes the whole workspace from the account view, not just back to detail", async () => {
+    const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Ver cuenta"));
+    await flush();
+    expect(container.querySelector('[data-testid="mesa-card-view-account"]')).not.toBeNull();
+
+    click(container.querySelector(".mesa-close"));
+    await flush();
+    expect(container.querySelector(".mesa-table-card-overlay")).toBeNull();
+    unmount(container, root);
+  });
+
+  test("outer × closes the whole workspace from the Cerrar-mesa confirmation view", async () => {
+    const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: emptySession }) });
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar mesa"));
+    await flush();
+    expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).not.toBeNull();
+
+    click(container.querySelector(".mesa-close"));
+    await flush();
+    expect(container.querySelector(".mesa-table-card-overlay")).toBeNull();
+    unmount(container, root);
+  });
+});
+
+describe("MesaWorkspace compactCard -- table-local state isolation (key={table.id})", () => {
+  test("switching directly from one open table to another resets local error and subview state", async () => {
+    mesaApi.closeTable.mockRejectedValueOnce({ code: "MESA_TABLE_HAS_ACTIVE_ORDERS" });
+    const tableA = tableFixture({ id: "t1", number: 5, status: "open", session: withOrdersSession });
+    const tableB = tableFixture({ id: "t2", number: 6, x: 60, y: 60, status: "open", session: emptySession });
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableA, tableB] });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<TabMesa role="admin" notify={jest.fn()} onNewCommand={jest.fn()} onCountChange={jest.fn()}
+        compact={true} mesaDrafts={{}} onClearDraft={jest.fn()} onSendToCocina={jest.fn()} />);
+    });
+    await flush();
+
+    const byNumber = (n) => Array.from(container.querySelectorAll(".mesa-table")).find((b) => b.querySelector(".mesa-number")?.textContent === String(n));
+
+    click(byNumber(5));
+    await flush();
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar mesa"));
+    await flush();
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar mesa"));
+    await flush();
+
+    // Table 5 now shows a real, backend-mapped error, still on the close-confirm view.
+    expect(container.textContent).toContain("MESA_TABLE_HAS_ACTIVE_ORDERS");
+    expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).not.toBeNull();
+
+    // Switch straight to table 6's workspace without closing table 5's first --
+    // exactly the path that leaked state before key={table.id}.
+    click(byNumber(6));
+    await flush();
+
+    expect(container.textContent).not.toContain("MESA_TABLE_HAS_ACTIVE_ORDERS");
+    expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).toBeNull();
+    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).not.toBeNull();
+    expect(container.querySelector(".mesa-table-card-head").textContent).toContain("Mesa 6");
+    unmount(container, root);
+  });
+});
+
+describe("MesaWorkspace compactCard -- business behavior unchanged under in-place navigation", () => {
+  test("Ver cuenta in-place still drives the real payment flow (Cobrar todo -> mesaApi.pay)", async () => {
+    mesaApi.pay.mockResolvedValue({ amount: 24.5, outstandingAfter: 0 });
+    const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
+
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Ver cuenta"));
+    await flush();
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cobrar todo"));
+    await flush();
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Confirmar cobro"));
+    await flush();
+
+    expect(mesaApi.pay).toHaveBeenCalledWith("s1", expect.objectContaining({ mode: "full", coversSettled: 2 }));
+    unmount(container, root);
+  });
+
+  test("Cerrar mesa in-place still enforces the real backend blocker on a rejected close -- table stays open", async () => {
+    mesaApi.closeTable.mockRejectedValueOnce({ code: "MESA_TABLE_HAS_ACTIVE_ORDERS" });
+    const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
+
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar mesa"));
+    await flush();
+    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar mesa"));
+    await flush();
+
+    expect(mesaApi.closeTable).toHaveBeenCalledWith("s1");
+    expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).not.toBeNull();
+    expect(container.textContent).toContain("MESA_TABLE_HAS_ACTIVE_ORDERS");
     unmount(container, root);
   });
 });

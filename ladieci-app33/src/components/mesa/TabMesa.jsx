@@ -585,6 +585,11 @@ const css = `
 .mesa-card-section.active .mesa-card-section-label{color:#e9c983}
 .mesa-card-section-summary{margin-top:5px;font-size:14px;font-weight:700}
 .mesa-card-section.muted .mesa-card-section-summary{color:#7c7263;font-weight:600}
+/* MESA_NAV_CONSOLIDATION_01 -- the compact card's own in-place back control,
+   replacing the title only while a subview (Cuenta/Cerrar mesa) is showing.
+   Same weight/size as the title it replaces so the head never visually
+   jumps; a plain button, not a new visual language. */
+.mesa-card-back{display:flex;align-items:center;gap:8px;background:none;border:none;padding:0;margin:0;font:inherit;font-weight:950;font-size:20px;color:inherit;cursor:pointer;text-align:left}
 .mesa-print-layer{display:none}.mesa-print-sheet{width:58mm;margin:0 auto;color:#000;background:#fff;font:12px/1.35 'DM Mono',monospace}.mesa-print-sheet h1,.mesa-print-sheet h2,.mesa-print-sheet p{margin:0}.mesa-print-sheet .sep{border-top:1px dashed #000;margin:8px 0}.mesa-print-row{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.mesa-print-row span:first-child{min-width:0;overflow-wrap:anywhere}.mesa-print-total{font-size:18px;font-weight:900;text-align:right;margin:8px 0}.mesa-print-center{text-align:center}.mesa-print-small{font-size:10px}
 @media(max-width:620px){.mesa-board{min-height:440px}.mesa-summary{grid-template-columns:1fr 1fr}.mesa-form-grid,.mesa-menu-grid{grid-template-columns:1fr}.mesa-methods{grid-template-columns:1fr}.mesa-modal-body{padding:15px}.mesa-modal-head{padding:14px 15px}}
 /* Phone: every modal in this component becomes a near-full-screen bottom
@@ -636,10 +641,13 @@ function Modal({ title, subtitle, onClose, children, width = 760, size }) {
 // controls: it always renders, always waits for a real click, and its result
 // is never ambiguous. Escape and the backdrop both cancel; Tab is trapped
 // between the two buttons since this is the only focusable content.
-function CerrarMesaDialog({ tableNumber, empty, busy, error, onCancel, onConfirm }) {
-  const cancelRef = useRef(null);
-  const confirmRef = useRef(null);
-
+//
+// MESA_NAV_CONSOLIDATION_01 -- the focus-trap/Escape behavior below is
+// shared with the compact in-place CerrarMesaConfirm further down (same
+// confirmation, same keyboard rules; only the container differs -- a
+// standalone overlay here, in-place content inside the already-open compact
+// card there).
+function useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel }) {
   useEffect(() => {
     cancelRef.current?.focus();
     const onKeyDown = (event) => {
@@ -654,6 +662,12 @@ function CerrarMesaDialog({ tableNumber, empty, busy, error, onCancel, onConfirm
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [busy, onCancel]);
+}
+
+function CerrarMesaDialog({ tableNumber, empty, busy, error, onCancel, onConfirm }) {
+  const cancelRef = useRef(null);
+  const confirmRef = useRef(null);
+  useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel });
 
   return <div className="mesa-overlay" onClick={() => { if (!busy) onCancel(); }}>
     <div className="mesa-modal" role="alertdialog" aria-modal="true" aria-labelledby="cerrar-mesa-title" aria-describedby="cerrar-mesa-body"
@@ -671,6 +685,32 @@ function CerrarMesaDialog({ tableNumber, empty, busy, error, onCancel, onConfirm
           <button ref={confirmRef} className="mesa-btn danger" disabled={busy} onClick={onConfirm}>{busy ? "Cerrando…" : "Cerrar mesa"}</button>
         </div>
       </div>
+    </div>
+  </div>;
+}
+
+// MESA_NAV_CONSOLIDATION_01 -- compact-card in-place variant of the same
+// confirmation (identical copy, identical blockers/handlers, passed straight
+// through from MesaWorkspace; identical focus-trap via the shared hook
+// above). Rendered as plain content inside the compact card's own body (see
+// the compactCard branch of MesaWorkspace below) -- never a second
+// .mesa-overlay/.mesa-modal, so there is no nested-overlay stacking on
+// phone. The non-compact path keeps using the standalone CerrarMesaDialog
+// above, byte-for-byte unchanged.
+function CerrarMesaConfirm({ tableNumber, empty, busy, error, onCancel, onConfirm }) {
+  const cancelRef = useRef(null);
+  const confirmRef = useRef(null);
+  useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel });
+
+  return <div role="alertdialog" aria-labelledby="cerrar-mesa-title-inline" aria-describedby="cerrar-mesa-body-inline" data-testid="mesa-card-view-close-confirm">
+    <div id="cerrar-mesa-title-inline" style={{ fontWeight: 950, fontSize: 19 }}>{`Cerrar Mesa ${tableNumber}`}</div>
+    <p id="cerrar-mesa-body-inline" className="mesa-muted" style={{ marginTop: 8 }}>
+      {empty ? "La mesa está vacía y no tiene comandas ni pagos." : "La mesa quedará libre para nuevos clientes."}
+    </p>
+    {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
+    <div className="mesa-actions" style={{ marginTop: 16 }}>
+      <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>Cancelar</button>
+      <button ref={confirmRef} className="mesa-btn danger" disabled={busy} onClick={onConfirm}>{busy ? "Cerrando…" : "Cerrar mesa"}</button>
     </div>
   </div>;
 }
@@ -815,7 +855,13 @@ function PaymentModal({ table, mode, onClose, onPaid }) {
 // changes from "A LA ROMANA" to the neutral "DIVISIÓN POR PERSONA". The
 // equal_split PAYMENT mode itself is untouched at the API/PaymentModal level
 // -- no backend or ledger change, only this entry point is gone.
-function VerCuentaModal({ table, onClose, onRefresh, onPrint }) {
+//
+// MESA_NAV_CONSOLIDATION_01 -- VerCuentaBody below holds every bit of this
+// state/logic; VerCuentaModal is now a thin Modal wrapper around it (used by
+// the non-compact path, unchanged). The compact card's in-place "account"
+// view renders VerCuentaBody directly, no Modal wrapper, so there is no
+// second overlay -- same totals, same actions, same mesaApi calls either way.
+function VerCuentaBody({ table, onRefresh, onPrint }) {
   const [paymentMode, setPaymentMode] = useState(null);
   const [error, setError] = useState("");
   const session = table.session;
@@ -857,30 +903,37 @@ function VerCuentaModal({ table, onClose, onRefresh, onPrint }) {
   };
 
   return <>
-    <Modal title={`Mesa ${table.number} · Cuenta`} onClose={onClose}>
-      <div className="mesa-summary">
-        <div className="mesa-stat"><small>Total</small><strong>{euro(session.total)}</strong></div>
-        <div className="mesa-stat"><small>Cobrado</small><strong style={{ color: "#65d995" }}>{euro(session.paid)}</strong></div>
-        <div className="mesa-stat"><small>Pendiente</small><strong style={{ color: "#ffc65c" }}>{euro(session.outstanding)}</strong></div>
-        <div className="mesa-stat"><small>Personas</small><strong>{session.coversTotal == null ? "—" : `${session.coversRemaining}/${session.coversTotal}`}</strong></div>
+    <div className="mesa-summary">
+      <div className="mesa-stat"><small>Total</small><strong>{euro(session.total)}</strong></div>
+      <div className="mesa-stat"><small>Cobrado</small><strong style={{ color: "#65d995" }}>{euro(session.paid)}</strong></div>
+      <div className="mesa-stat"><small>Pendiente</small><strong style={{ color: "#ffc65c" }}>{euro(session.outstanding)}</strong></div>
+      <div className="mesa-stat"><small>Personas</small><strong>{session.coversTotal == null ? "—" : `${session.coversRemaining}/${session.coversTotal}`}</strong></div>
+    </div>
+    {table.status === "open" && <>
+      <div className="mesa-actions">
+        {session.outstanding > 0 && <button className="mesa-btn green" onClick={() => setPaymentMode("full")}>Cobrar todo</button>}
+        {remainingLines.length > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("item_selection")}>Elegir productos</button>}
+        {session.outstanding > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("custom_amount")}>Importe libre</button>}
       </div>
-      {table.status === "open" && <>
-        <div className="mesa-actions">
-          {session.outstanding > 0 && <button className="mesa-btn green" onClick={() => setPaymentMode("full")}>Cobrar todo</button>}
-          {remainingLines.length > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("item_selection")}>Elegir productos</button>}
-          {session.outstanding > 0 && <button className="mesa-btn" onClick={() => setPaymentMode("custom_amount")}>Importe libre</button>}
-        </div>
-        <div className="mesa-actions">
-          {session.outstanding > 0 && <button className="mesa-btn gold" onClick={() => onPrint(billDocument())}>🖨 Cuenta pendiente</button>}
-          {shares.length > 0 && <button className="mesa-btn" onClick={() => onPrint(splitDocument())}>🖨 Imprimir división</button>}
-        </div>
-      </>}
-      {paymentTotals.length > 0 && <div className="mesa-section"><h3>Cobrado por método</h3>{paymentTotals.map(([method, amount]) => <div className="mesa-row" key={method}><span>{METHODS.find((item) => item.id === method)?.label || method}</span><strong>{euro(amount)}</strong></div>)}</div>}
-      {remainingLines.length > 0 && <div className="mesa-section"><h3>Pendiente de pago</h3>{remainingLines.map((line) => <div className="mesa-row" key={line.id}><span>{line.description}</span><strong>{euro(line.remaining)}</strong></div>)}</div>}
-      {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
-    </Modal>
+      <div className="mesa-actions">
+        {session.outstanding > 0 && <button className="mesa-btn gold" onClick={() => onPrint(billDocument())}>🖨 Cuenta pendiente</button>}
+        {shares.length > 0 && <button className="mesa-btn" onClick={() => onPrint(splitDocument())}>🖨 Imprimir división</button>}
+      </div>
+    </>}
+    {paymentTotals.length > 0 && <div className="mesa-section"><h3>Cobrado por método</h3>{paymentTotals.map(([method, amount]) => <div className="mesa-row" key={method}><span>{METHODS.find((item) => item.id === method)?.label || method}</span><strong>{euro(amount)}</strong></div>)}</div>}
+    {remainingLines.length > 0 && <div className="mesa-section"><h3>Pendiente de pago</h3>{remainingLines.map((line) => <div className="mesa-row" key={line.id}><span>{line.description}</span><strong>{euro(line.remaining)}</strong></div>)}</div>}
+    {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
     {paymentMode && <PaymentModal table={table} mode={paymentMode} onClose={() => setPaymentMode(null)} onPaid={paid} />}
   </>;
+}
+
+// Thin wrapper for the non-compact (tablet/desktop) path -- unchanged
+// behavior, unchanged markup: VerCuentaBody's content inside the same
+// shared Modal it always rendered.
+function VerCuentaModal({ table, onClose, onRefresh, onPrint }) {
+  return <Modal title={`Mesa ${table.number} · Cuenta`} onClose={onClose}>
+    <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} />
+  </Modal>;
 }
 
 // MesaWorkspace -- the ONE operative surface for an occupied table (replaces
@@ -934,6 +987,13 @@ function MesaWorkspace({
   const [confirmingClose, setConfirmingClose] = useState(false);
   const openCloseConfirm = () => setConfirmingClose(true);
   const cancelCloseConfirm = () => { if (!busy) { setConfirmingClose(false); setError(""); } };
+  // MESA_NAV_CONSOLIDATION_01 -- derived, not a separate piece of state: the
+  // compact card's in-place workspace view is 100% determined by the two
+  // existing flags above, so it can never drift out of sync with them.
+  // Read only inside the compactCard branch below; harmless/unused on the
+  // non-compact path, same as comandasExpanded already is.
+  const workspaceView = confirmingClose ? "close-confirm" : showAccount ? "account" : "detail";
+  const backToDetail = () => { if (workspaceView === "account") setShowAccount(false); else cancelCloseConfirm(); };
   // P0-B.1 — a never-ordered table (coversTotal == null) still goes through
   // releaseEmptyTable; an occupied table (real comandas, possibly already
   // fully paid) goes through the new explicit closeTable. Same dialog, same
@@ -979,6 +1039,15 @@ function MesaWorkspace({
   // classes' own comment): a true centered card, sized to its own compact
   // content, dimming the map strongly behind it rather than anchoring a
   // bottom sheet that leaves most of the screen a meaningless dark void.
+  //
+  // MESA_NAV_CONSOLIDATION_01 -- Ver cuenta and Cerrar mesa used to mount as
+  // a second, independent full-viewport overlay stacked on top of this same
+  // card (VerCuentaModal / CerrarMesaDialog, each their own .mesa-overlay).
+  // They now render in-place, inside this one card, swapped in by
+  // workspaceView above -- one workspace, one modal layer, ever. The outer
+  // "×" always closes the whole workspace (onClose, unchanged); the head's
+  // back control only returns to "detail". Card dimensions, section styling
+  // and every handler are untouched below -- composition only.
   if (compactCard) {
     // Same pure per-comanda product-count CommandCard already computes,
     // just summed across every comanda on this table -- not new money/
@@ -993,14 +1062,18 @@ function MesaWorkspace({
     const reservasSummary = nextReservation
       ? `${nextReservation.guestName} · ${reservationTimeLabel(nextReservation)}${todayReservations.length > 1 ? ` · +${todayReservations.length - 1} más` : ""}`
       : "Sin reserva para esta mesa.";
-    return <>
-      <div className="mesa-table-card-overlay" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="mesa-table-card">
-          <div className="mesa-table-card-head">
-            <div style={{ fontWeight: 950, fontSize: 20 }}>{title}</div>
-            <button className="mesa-close" onClick={onClose} aria-label="Cerrar">×</button>
-          </div>
-          <div className="mesa-table-card-body">
+    return <div className="mesa-table-card-overlay" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="mesa-table-card">
+        <div className="mesa-table-card-head">
+          {workspaceView === "detail"
+            ? <div style={{ fontWeight: 950, fontSize: 20 }}>{title}</div>
+            : <button type="button" className="mesa-card-back" data-testid="mesa-card-back" onClick={backToDetail} aria-label={`Volver a ${title}`}>
+                <span aria-hidden="true">←</span> {title}
+              </button>}
+          <button className="mesa-close" onClick={onClose} aria-label="Cerrar">×</button>
+        </div>
+        <div className="mesa-table-card-body">
+          {workspaceView === "detail" && <>
             {/* Tap toggles the detailed (existing, unmodified CommandCard)
                 list -- never dumped open by default, per the brief's own
                 "the operator only needs a compact summary" instruction. */}
@@ -1078,13 +1151,13 @@ function MesaWorkspace({
               <button className={`mesa-btn${hasOrders ? " gold" : ""}`} onClick={() => setShowAccount(true)}>Ver cuenta</button>
               {!draft && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
             </div>
-            {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
-          </div>
+            {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
+          </>}
+          {workspaceView === "account" && <div data-testid="mesa-card-view-account"><VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} /></div>}
+          {workspaceView === "close-confirm" && <CerrarMesaConfirm tableNumber={table.number} empty={session.coversTotal == null} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
         </div>
       </div>
-      {showAccount && <VerCuentaModal table={table} onClose={() => setShowAccount(false)} onRefresh={onRefresh} onPrint={onPrint} />}
-      {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
-    </>;
+    </div>;
   }
 
   return <>
@@ -1850,7 +1923,17 @@ export default function TabMesa({
       onOpened={opened}
       onSettings={() => { setMenuId(null); setSettingsId(menuTable.id); }}
     />}
-    {selected?.status === "open" && <MesaWorkspace table={selected} onClose={() => setSelectedId(null)} onNewCommand={startNewCommand} onRefresh={() => load({ quiet: true })} onPrint={setPrintDocument}
+    {/* MESA_NAV_CONSOLIDATION_01 -- key={selected.id}: switching straight
+        from one open table to another (without an intermediate close, e.g.
+        tapping a second table's row while this one's workspace is already
+        mounted) must fully remount MesaWorkspace, not just re-render it
+        with new props. Without a key, React reuses the same instance across
+        tables and its local state (error, busy, showAccount,
+        confirmingClose, draftExpanded, comandasExpanded, ...) leaks from
+        the old table into the new one -- table.id is the same stable,
+        backend-issued identifier already used as the key for every table
+        button on the floor above, never an array index. */}
+    {selected?.status === "open" && <MesaWorkspace key={selected.id} table={selected} onClose={() => setSelectedId(null)} onNewCommand={startNewCommand} onRefresh={() => load({ quiet: true })} onPrint={setPrintDocument}
       canManageReservations={canManageReservations}
       onEditReservation={(reservation) => openEditor(reservation, selected.id)}
       onViewNight={() => { setSelectedId(null); setReservationsFilterTableId(selected.id); setShowReservations(true); }}
