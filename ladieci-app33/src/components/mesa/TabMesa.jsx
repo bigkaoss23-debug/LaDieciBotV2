@@ -3,6 +3,15 @@ import { C } from "../../constants";
 import { createMesaRequestId, describeMesaError, mesaApi } from "../../mesa/mesaApi";
 import { normalizeOrderLine } from "../../menu/normalizeOrderLine";
 import OrderLineView from "../order/OrderLineView";
+import HybridFloorScene, { hybridSceneCss } from "./HybridFloorScene";
+import { sceneGeometry, tableFootprint, tableGeometry, unprojectScreenPoint } from "./hybridScene";
+
+// MESA_HYBRID_3D — renderer selection only, never a domain switch. Off, this
+// file behaves byte-identically to before: same markup, same CSS, same drag
+// arithmetic, same tests. On, the floor gains an SVG scene behind the tiles
+// and each tile becomes a transparent, correctly-projected control over it.
+// Same flag convention as REACT_APP_MESA_ENABLED / the dynamic-menu flags.
+const MESA_HYBRID_3D = process.env.REACT_APP_MESA_HYBRID_3D_ENABLED === "true";
 
 const euro = (value) => new Intl.NumberFormat("es-ES", {
   style: "currency", currency: "EUR", minimumFractionDigits: 2,
@@ -1656,6 +1665,10 @@ export default function TabMesa({
   const dragRef = useRef(null);
   const suppressClickRef = useRef(null);
   const openingWalkInRef = useRef(new Set());
+  // MESA_HYBRID_3D -- the scene needs the board's real pixel box to build a
+  // room from it. Measured on mount and on resize only, never per drag frame:
+  // the drag path must not acquire a second layout read.
+  const [boardBox, setBoardBox] = useState(null);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
@@ -1669,6 +1682,28 @@ export default function TabMesa({
 
   useEffect(() => { load(); }, [load, refreshKey]);
   useEffect(() => { const timer = setInterval(() => load({ quiet: true }), 10000); return () => clearInterval(timer); }, [load]);
+  // MESA_HYBRID_3D -- keep boardBox in step with the board's real size. Runs
+  // only when the flag is on, so the default renderer gains no observer at
+  // all. `loading` is a dependency because the board element does not exist
+  // during the loading banner, so the observer has to re-attach once it does.
+  useEffect(() => {
+    if (!MESA_HYBRID_3D) return undefined;
+    const node = boardRef.current;
+    if (!node) return undefined;
+    const measure = () => {
+      const rect = node.getBoundingClientRect();
+      setBoardBox((prev) => (prev && prev.width === rect.width && prev.height === rect.height)
+        ? prev : { width: rect.width, height: rect.height });
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loading]);
 
   const selected = tables.find((table) => table.id === selectedId && table.active) || null;
   const menuTable = tables.find((table) => table.id === menuId && table.active) || null;
@@ -1794,13 +1829,29 @@ export default function TabMesa({
   // threshold nothing about the table changes and the click fires normally;
   // only once the pointer has genuinely traveled is it committed as a drag.
   const DRAG_THRESHOLD_PX = 6;
+  // MESA_HYBRID_3D -- one geometry per render, shared by the scene, the hit
+  // targets and the drag inverse projection, so all three can never disagree
+  // about where a table is.
+  const hybridGeom = (MESA_HYBRID_3D && boardBox && boardBox.width > 0)
+    ? sceneGeometry(boardBox.width, boardBox.height) : null;
   const pointerDown = (event, table) => {
     if (!editing) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    dragRef.current = {
+    const drag = {
       id: table.id, pointerId: event.pointerId, moved: false, table,
       startX: event.clientX, startY: event.clientY,
     };
+    // Record where inside the table the finger actually landed, so the table
+    // follows the finger instead of snapping its centre under it on the first
+    // move. Measured against the drawn TOP FACE, which is what the operator
+    // sees and grabs -- the projection anchor is the floor point below it.
+    if (hybridGeom && boardRef.current) {
+      const rect = boardRef.current.getBoundingClientRect();
+      const g = tableGeometry(table, hybridGeom);
+      drag.grabDX = (event.clientX - rect.left) - g.topX;
+      drag.grabDY = (event.clientY - rect.top) - g.topY;
+    }
+    dragRef.current = drag;
   };
   const pointerMove = (event) => {
     const drag = dragRef.current;
@@ -1817,8 +1868,27 @@ export default function TabMesa({
     // the board's overflow:hidden. Vertical margin stays fixed: height never
     // varies by shape.
     const halfWidthPct = Math.max(7, (cardWidthOf(drag.table.shape, drag.table.shapePreset) / 2 / rect.width) * 100);
-    const x = Math.max(halfWidthPct, Math.min(100 - halfWidthPct, ((event.clientX - rect.left) / rect.width) * 100));
-    const y = Math.max(11, Math.min(89, ((event.clientY - rect.top) / rect.height) * 100));
+    // MESA_HYBRID_3D -- the pointer moves in SCREEN space but what gets stored
+    // is always the logical floor coordinate, so a projected drag has to run
+    // the inverse projection here. Saving projected pixels would silently
+    // corrupt every saved position the moment the room geometry changed.
+    // The clamps below are identical in both paths: they are logical-space
+    // guards, and they must keep agreeing with resolveTablePositions'.
+    let rawX;
+    let rawY;
+    if (hybridGeom) {
+      const g = tableGeometry(drag.table, hybridGeom);
+      const topX = (event.clientX - rect.left) - (drag.grabDX || 0);
+      const topY = (event.clientY - rect.top) - (drag.grabDY || 0);
+      const logical = unprojectScreenPoint(topX, topY + g.lift, hybridGeom);
+      rawX = logical.x;
+      rawY = logical.y;
+    } else {
+      rawX = ((event.clientX - rect.left) / rect.width) * 100;
+      rawY = ((event.clientY - rect.top) / rect.height) * 100;
+    }
+    const x = Math.max(halfWidthPct, Math.min(100 - halfWidthPct, rawX));
+    const y = Math.max(11, Math.min(89, rawY));
     dragRef.current = { ...drag, moved: true, table: { ...drag.table, x, y } };
     setTables((current) => current.map((table) => table.id === drag.id ? { ...table, x, y } : table));
   };
@@ -1832,10 +1902,33 @@ export default function TabMesa({
       await savePosition(drag.table);
     }
   };
-  if (loading) return <div className="mesa-root"><style>{css}</style><div className="mesa-banner">Cargando el plano de mesas…</div></div>;
-  if (error && tables.length === 0) return <div className="mesa-root"><style>{css}</style><div className="mesa-banner mesa-error">{error}</div><button className="mesa-btn" style={{ marginTop: 10 }} onClick={() => load()}>Reintentar</button></div>;
+  // MESA_HYBRID_3D -- the descriptor the scene draws from. It calls the exact
+  // same pure selectors the tile below uses (bookedForToday / tableState /
+  // tableBorder / hasReadyOrder); it introduces no second source of truth and
+  // no parallel state machine. The scene can only ever draw what the domain
+  // already decided.
+  const hybridVisualOf = (table) => {
+    const todayReservations = bookedForToday(table);
+    const state = tableState(table, todayReservations);
+    const hasOrders = table.status === "open" && (table.session?.commands?.length || 0) > 0;
+    return {
+      id: table.id, x: table.x, y: table.y, number: table.number,
+      shape: table.shape, capacity: table.capacity,
+      // face tint follows OCCUPANCY; the rim follows the comanda signal --
+      // the same two independent signals the default renderer already carries
+      // in --tb and --tc, kept separate here for the same reason.
+      stateKey: state === STATUS.occupied ? "occupied" : state === STATUS.reserved ? "reserved" : "free",
+      rimColor: tableBorder(state, hasOrders).color,
+      ready: !editing && hasReadyOrder(table),
+      selected: table.id === menuId || table.id === selectedId,
+      opening: openingIds.has(table.id),
+    };
+  };
 
-  return <div className={`mesa-root${compact ? " compact" : ""}`}><style>{css}</style>
+  if (loading) return <div className="mesa-root"><style>{css}{MESA_HYBRID_3D ? hybridSceneCss : ""}</style><div className="mesa-banner">Cargando el plano de mesas…</div></div>;
+  if (error && tables.length === 0) return <div className="mesa-root"><style>{css}{MESA_HYBRID_3D ? hybridSceneCss : ""}</style><div className="mesa-banner mesa-error">{error}</div><button className="mesa-btn" style={{ marginTop: 10 }} onClick={() => load()}>Reintentar</button></div>;
+
+  return <div className={`mesa-root${compact ? " compact" : ""}`}><style>{css}{MESA_HYBRID_3D ? hybridSceneCss : ""}</style>
     {!compact && !hideToolbar && <div className="mesa-toolbar">
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         {/* Single room today; the selector stays a real <select> (not a static
@@ -1847,7 +1940,13 @@ export default function TabMesa({
         <div className="mesa-legend">{Object.entries(STATUS).map(([id, item]) => <span key={id}><i className="mesa-dot" style={{ background: item.color }} />{item.label}</span>)}</div>
       </div>
     </div>}
-    <div className={`mesa-board${editing ? " editing" : ""}`} ref={boardRef} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
+    <div className={`mesa-board${editing ? " editing" : ""}${hybridGeom ? " hybrid" : ""}`} ref={boardRef} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
+      {/* MESA_HYBRID_3D -- the scene paints the room and the table bodies and
+          is aria-hidden + pointer-events:none throughout. The tiles below stay
+          the only controls and the only accessible nodes, which is what keeps
+          a chair from ever becoming its own tap target. */}
+      {hybridGeom && <HybridFloorScene width={boardBox.width} height={boardBox.height}
+        visuals={resolveTablePositions(activeTables).map(hybridVisualOf)} />}
       {resolveTablePositions(activeTables).map((table) => {
         const todayReservations = bookedForToday(table);
         const nextReservation = todayReservations[0];
@@ -1890,9 +1989,21 @@ export default function TabMesa({
           "mesa-table", variantIdOf(table.shape, table.shapePreset),
           editing ? "is-editing" : "", dragging ? "is-dragging" : "",
           border.thick ? "thick" : "", ready ? "ready-pulse" : "", selected ? "selected" : "",
-          opening ? "opening" : "",
+          opening ? "opening" : "", hybridGeom ? "hybrid" : "",
         ].filter(Boolean).join(" ");
-        return <button key={table.id} className={classes} style={{ left: `${table.x}%`, top: `${table.y}%`, "--tc": border.color, "--tb": state.bg, "--tg": glowColor }} onPointerDown={(event) => pointerDown(event, table)} onClick={() => {
+        // MESA_HYBRID_3D -- the tile stops drawing itself and becomes a
+        // transparent control laid exactly over what the scene drew. Its box
+        // is the table PLUS its chairs (tableFootprint), so a tap on a chair
+        // belonging to this Mesa opens this Mesa -- but not the light pool,
+        // which is atmosphere, not a control. Same element, same handlers,
+        // same class vocabulary: only its geometry source changes.
+        const foot = hybridGeom ? tableFootprint(table, hybridGeom) : null;
+        const geo = hybridGeom ? tableGeometry(table, hybridGeom) : null;
+        const tileStyle = foot
+          ? { left: foot.left, top: foot.top, width: foot.width, height: foot.height,
+              "--tc": border.color, "--tb": state.bg, "--tg": glowColor }
+          : { left: `${table.x}%`, top: `${table.y}%`, "--tc": border.color, "--tb": state.bg, "--tg": glowColor };
+        return <button key={table.id} className={classes} style={tileStyle} onPointerDown={(event) => pointerDown(event, table)} onClick={() => {
           if (suppressClickRef.current === table.id) { suppressClickRef.current = null; return; }
           if (!editing && table.status === "free" && todayReservations.length === 0) { openWalkIn(table); return; }
           // An occupied table (outside Personalizar sala) goes straight to
@@ -1902,9 +2013,23 @@ export default function TabMesa({
           if (!editing && table.status === "open") { setSelectedId(table.id); return; }
           setMenuId(table.id);
         }}>
-          {reservationBadge && <span className={`mesa-badge mesa-badge-reserved${reservationBadge.conflict ? " conflict" : ""}`} title={reservationBadge.conflict ? "Reserva en conflicto: mesa ya ocupada" : "Mesa reservada"} aria-label={reservationBadge.conflict ? "Reserva en conflicto" : "Reservada"}>🔖</span>}
-          <strong className="mesa-number">{table.number}</strong>
-          <span className="mesa-capacity">👥 máx {table.capacity ?? "—"}</span>
+          {reservationBadge && <span className={`mesa-badge mesa-badge-reserved${reservationBadge.conflict ? " conflict" : ""}`}
+            style={foot ? { left: (geo.topX + geo.halfW * 0.58) - foot.left, top: (geo.topY - geo.halfH * 0.92) - foot.top, right: "auto" } : undefined}
+            title={reservationBadge.conflict ? "Reserva en conflicto: mesa ya ocupada" : "Mesa reservada"} aria-label={reservationBadge.conflict ? "Reserva en conflicto" : "Reservada"}>🔖</span>}
+          {foot
+            // Labels stay DOM, not SVG: they keep the app's own typography,
+            // stay screen-space (never foreshortened) and keep the exact
+            // .mesa-number / .mesa-capacity contract the rest of the app and
+            // the test suite already rely on. The person glyph is dropped
+            // here only because the chairs now carry capacity spatially.
+            ? <span className="mesa-hybrid-label" style={{ top: geo.topY - foot.top }}>
+                <strong className="mesa-number" style={{ fontSize: Math.round(geo.R * 0.8) }}>{table.number}</strong>
+                <span className="mesa-capacity" style={{ fontSize: Math.max(9, Math.round(geo.R * 0.235)) }}>máx {table.capacity ?? "—"}</span>
+              </span>
+            : <>
+                <strong className="mesa-number">{table.number}</strong>
+                <span className="mesa-capacity">👥 máx {table.capacity ?? "—"}</span>
+              </>}
         </button>;
       })}
     </div>
