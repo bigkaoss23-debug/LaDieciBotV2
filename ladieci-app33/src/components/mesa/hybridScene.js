@@ -27,6 +27,21 @@
 // tappable. The depth the size no longer carries is paid for in TONE instead
 // (see DEPTH_VEIL): distant tables sit deeper in shadow, which is simply what
 // happens in a room lit only by its own pendants.
+//
+// THE SECOND IDEA — THE CAMERA FRAMES THE TABLES, NOT THE COORDINATE SPACE
+// -----------------------------------------------------------------------
+// The logical floor is 0..100 in both axes, but no real room ever uses all of
+// it: the live staging floor occupies y 13..70, so a camera that dutifully
+// showed 0..100 spent ~30% of the phone's height rendering floor nobody ever
+// put a table on, split into two dead bands the eye reads as wasted screen.
+// `cameraFrame` therefore measures where the tables ACTUALLY are and maps that
+// band onto a fixed, art-directed window of the room (FRAME_LO..FRAME_HI), so
+// the composition lands identically whether the tables span 13..70 or 15..86.
+// This is a camera, never a data migration: x/y stay exactly the logical
+// coordinates the backend persists, `unprojectScreenPoint` inverts the framing
+// exactly, and a drag therefore still saves the same number it always did.
+// The frame is FROZEN for the duration of a drag (see TabMesa) so the camera
+// cannot chase the table under the operator's finger.
 // ===============================================================
 
 // ── Centralized visual tokens ──────────────────────────────────────────────
@@ -43,19 +58,41 @@ export const HYBRID_TOKENS = {
 
   // room proportions, all relative to the board box
   HALF_W: 0.64,       // half-width of the floor plane at the near edge
-  Y_FRONT: 0.965,     // where the near edge of the floor sits
-  DEPTH: 0.80,        // how much of the board height the floor spans.
-                      // MESA_HYBRID_VIEWPORT_01 — was 0.755, which left the
-                      // top ~20% of the board as back wall. That was already
-                      // the emptiest region of the screen, and constraining
-                      // the board to the real phone viewport (see the shell
-                      // fix) makes every remaining pixel worth more, so the
-                      // floor takes back most of it: wall drops to ~16.5%,
-                      // still enough to read as "a room with a wall behind
-                      // it" rather than a floating plane. Purely a framing
-                      // number — PK_ROOM/PK_OBJ are untouched, so the
-                      // perspective itself, the near/far scale delta and the
-                      // inverse projection drag all behave exactly as before.
+  Y_FRONT: 0.985,     // where the near edge of the floor sits
+  DEPTH: 0.885,       // how much of the board height the floor spans, i.e.
+                      // wall = Y_FRONT - DEPTH = 10% of the board.
+                      // ART DIRECTION RECOVERY — was 0.80 against Y_FRONT
+                      // 0.965, i.e. a 16.5% wall. On a phone that band sits
+                      // directly under an already-dark service header, so the
+                      // two merged into one ~175px block of black across the
+                      // top fifth of the screen — the single loudest piece of
+                      // the "vertically stretched, too much dead space" read.
+                      // 10% is enough for the wall to read as a wall, and the
+                      // framed camera below now parks the farthest tables
+                      // against it, which is what a real room looks like:
+                      // furniture in front of a wall, not furniture below a
+                      // void. Purely framing — PK_ROOM/PK_OBJ are untouched.
+
+  // camera framing — see cameraFrame() and the header note
+  FRAME_LO: 0.06,     // where the NEAREST table's depth lands in the room
+  FRAME_HI: 0.93,     // where the FARTHEST table's depth lands
+                      // Both are chosen so the tables' full drawn extent
+                      // (cast shadow below the near row, backrests above the
+                      // far row) lands inside the board with a hair to spare
+                      // at phone size — the room keeps a little floor in
+                      // front and a little behind, and nothing clips.
+                      // The residual margins are deliberately NOT equal: the
+                      // near floor is foreground and wants a little more room
+                      // than the back wall, which is a backdrop. Measured at
+                      // 390×844 this leaves ~26px above the far row and ~38px
+                      // below the near one, against the 76/41 the unframed
+                      // camera left — and against a wall band that was
+                      // formerly 109px of pure black.
+  FRAME_MIN_SPAN: 0.34, // floor on how narrow a band the camera will zoom
+                      // into, in v units. Without it, a room whose tables all
+                      // sit on one line would zoom until two tables filled
+                      // the phone; with it, a tight layout simply keeps some
+                      // honest empty floor around itself.
 
   // table sizing
   TABLE_R: 0.133,     // base top-face half-width, as a fraction of board width
@@ -67,16 +104,35 @@ export const HYBRID_TOKENS = {
   RECT_ASPECT: 1.86,  // square/rect top width as a multiple of R (round is 2.00)
 
   // chairs — see chairSlots (the templates) and chairPlacements (the geometry)
-  CHAIR: 0.40,        // seat width (× R). Smaller than the table by a wide
-                      // margin on purpose: chairs report capacity, they do
-                      // not compete with the table for attention.
-  CHAIR_TUCK: 0.17,   // distance from the table's own EDGE to the chair
+  SEATS_EXACT_MAX: 8, // the largest capacity drawn as an EXACT seat count.
+                      // Above it the chairs become a representative physical
+                      // cue and `máx N` alone carries the number — see
+                      // chairSlots for why 8 and not some larger figure.
+  CHAIR: 0.48,        // seat width (× R). ART DIRECTION RECOVERY — was 0.40,
+                      // which at phone size is a 20px mark: too small to
+                      // carry any silhouette, so eight of them read as dark
+                      // blobs on the floor rather than as seats. 0.48 gives
+                      // ~24px, enough for a seat, a back and a lit top rail
+                      // to be separately legible, while still leaving the
+                      // chair under a quarter of the tabletop's width so the
+                      // hierarchy (table first) is unchanged. 0.54 was tried
+                      // first and overshot: the chairs started competing with
+                      // the tabletop for the eye, which is the failure mode
+                      // in the opposite direction.
+  CHAIR_TUCK: 0.05,   // distance from the table's own EDGE to the chair
                       // centre (× R) — NOT a ring radius from the centre.
                       // Measuring from the edge is what makes a chair sit the
                       // same distance from a round table and from the long
                       // side of a rectangle, so one number art-directs both.
-                      // Small enough that the seat overlaps the edge slightly
-                      // and reads as tucked IN rather than parked nearby.
+                      // ART DIRECTION RECOVERY — was 0.17, which parked the
+                      // seat just outside the table. At 0.05 the seat is
+                      // genuinely UNDER the tabletop's edge and the table
+                      // overlaps it, which is the cue that says "these chairs
+                      // belong to this table" without any other mark. It also
+                      // costs nothing: pulling the seats in by 0.12·R while
+                      // growing them by 0.14·R leaves the chair ring very
+                      // slightly TIGHTER than before, so neighbouring hit
+                      // targets did not grow.
   CHAIR_DEPTH_TILT: 0.10, // near/far size spread WITHIN one table's own seats,
                       // so a ring of chairs reads as a ring in perspective
                       // instead of as equal dots scattered on the floor.
@@ -98,29 +154,87 @@ export const HYBRID_TOKENS = {
                       // not a control.
 
   // light + material (see HybridFloorScene for where each is consumed)
-  DEPTH_VEIL: 0.28,   // how much darker the farthest table sits vs the nearest
-  POOL_R: 2.7,        // floor light pool radius (× R)
-  POOL_PEAK: 0.52,    // pool alpha at its centre
+  DEPTH_VEIL: 0.17,   // how much darker the farthest table sits vs the nearest.
+                      // Was 0.28 — combined with the framed camera pushing the
+                      // far row right up against the wall, that much veil
+                      // crushed the back tables into the wall tone and cost
+                      // the room its depth instead of creating it.
+  POOL_R: 2.35,       // floor light pool radius (× R)
+  POOL_PEAK: 0.44,    // pool alpha at its centre. Lowered with POOL_R because
+                      // AMBIENT below now carries the room's base light, so
+                      // the per-table pools no longer have to be the ONLY lit
+                      // thing on an otherwise black floor.
+  AMBIENT: 0.085,     // room-wide warm floor wash. The recovered "room
+                      // presence": without it the only lit floor is directly
+                      // under a table, so tables read as objects floating in
+                      // a void rather than as furniture standing in a room.
+                      // Kept LOW on purpose — 0.13 was tried and flattened
+                      // the room into an even beige haze, which loses the
+                      // "dark room, pendants over the tables" reading the
+                      // whole concept rests on. It is a floor, not a fill
+                      // light: enough that the floor between tables is
+                      // legibly a floor, not enough to compete with a pool.
   RIM: 0.86,          // state reveal intensity
-  FACE_TINT: 0.5,     // state tint over the tabletop material
-  GRID: 0.048,        // floor grid line opacity
-  CHAIR_ALPHA: 0.82,  // chair prominence multiplier. Deliberately below 1:
-                      // the hierarchy is table > number > state > capacity >
-                      // chairs, and a chair at full strength on a lit floor
-                      // pool out-shouts the state rim it is supposed to sit
-                      // beneath.
+  FACE_TINT: 0.42,    // state tint over the tabletop material. Deliberately
+                      // modest: the brighter tabletop material makes the tint
+                      // read much more strongly than it used to, and warm
+                      // stone under a green tint at any real strength is
+                      // exactly the "khaki tables" the redesign set out to
+                      // kill. The state is carried by the RIM, which is a
+                      // pure hue on a neutral face and reads instantly.
+  GRID: 0.055,        // floor grid line opacity
+  CHAIR_ALPHA: 0.9,   // chair prominence multiplier. Was 0.82, on top of an
+                      // almost-black chair material — the two together are
+                      // what made the seats vanish. The hierarchy (table >
+                      // number > state > capacity > chairs) is now held by
+                      // SIZE and by the chair material sitting a clear step
+                      // below the tabletop's own value, which is how a real
+                      // room does it, rather than by fading the furniture
+                      // out.
 };
+
+// ── The camera frame ───────────────────────────────────────────────────────
+// Which band of the logical floor the room is actually pointed at, expressed
+// in v (0 = the front of the logical floor, 1 = the back). FULL_FRAME is the
+// whole coordinate space and is the default everywhere, so any call site that
+// does not care about framing — every existing test, every non-Hybrid path —
+// behaves as if this feature did not exist.
+export const FULL_FRAME = { vMin: 0, vMax: 1 };
+
+// Measures where the tables ACTUALLY are. Returns a v band, deliberately
+// unclamped: it names the content to frame, not a region of the floor, and
+// clamping it would reintroduce exactly the dead margin it exists to remove.
+export function cameraFrame(tables, tokens = HYBRID_TOKENS) {
+  const ys = (tables || []).map((t) => Number(t && t.y)).filter((y) => Number.isFinite(y));
+  if (ys.length === 0) return FULL_FRAME;
+  let vMin = 1 - Math.max(...ys) / 100; // the NEAREST table (largest y)
+  let vMax = 1 - Math.min(...ys) / 100; // the FARTHEST table (smallest y)
+  const span = vMax - vMin;
+  if (span < tokens.FRAME_MIN_SPAN) {
+    // Widen about the content's own centre rather than about the room's, so a
+    // cluster of tables at the back of the floor stays at the back.
+    const mid = (vMin + vMax) / 2;
+    vMin = mid - tokens.FRAME_MIN_SPAN / 2;
+    vMax = mid + tokens.FRAME_MIN_SPAN / 2;
+  }
+  return { vMin, vMax };
+}
 
 // ── Room geometry for a given board box ────────────────────────────────────
 // Everything downstream derives from this, so a board of any size produces a
 // coherent room without per-call-site arithmetic.
-export function sceneGeometry(width, height, tokens = HYBRID_TOKENS) {
+export function sceneGeometry(width, height, tokens = HYBRID_TOKENS, frame = FULL_FRAME) {
   const w = Math.max(1, width);
   const h = Math.max(1, height);
   const R = Math.min(
     tokens.TABLE_R_MAX,
     Math.max(tokens.TABLE_R_MIN, w * tokens.TABLE_R)
   );
+  const vMin = Number.isFinite(frame && frame.vMin) ? frame.vMin : 0;
+  const vMax = Number.isFinite(frame && frame.vMax) ? frame.vMax : 1;
+  // Guarded so a degenerate frame can never produce an infinite k and, through
+  // it, a NaN screen coordinate or a non-invertible drag.
+  const span = Math.max(1e-6, vMax - vMin);
   return {
     width: w,
     height: h,
@@ -130,8 +244,25 @@ export function sceneGeometry(width, height, tokens = HYBRID_TOKENS) {
     depth: h * tokens.DEPTH,
     horizon: h * tokens.Y_FRONT - h * tokens.DEPTH,
     R,
+    frame: { vMin, vMax, lo: tokens.FRAME_LO, hi: tokens.FRAME_HI,
+      k: (tokens.FRAME_HI - tokens.FRAME_LO) / span },
     tokens,
   };
+}
+
+// ── The framing map, and its exact inverse ─────────────────────────────────
+// An affine map on v, so it is monotonic (the near/far ORDER of two tables can
+// never be swapped by framing) and trivially invertible (a drag round-trips to
+// the byte). Everything downstream — perspective, table scale, the grid —
+// consumes the FRAMED v, so the room is internally consistent rather than
+// being a correct room with the tables slid around inside it.
+export function frameDepth(v, geom) {
+  const f = geom.frame || { lo: 0, k: 1, vMin: 0 };
+  return f.lo + (v - f.vMin) * f.k;
+}
+export function unframeDepth(vf, geom) {
+  const f = geom.frame || { lo: 0, k: 1, vMin: 0 };
+  return f.vMin + (vf - f.lo) / f.k;
 }
 
 // ── logical floor coordinate → normalized room coordinate ──────────────────
@@ -149,8 +280,12 @@ export function fromRoomCoord(u, v) {
 // `sy` is the table's FLOOR point — where it touches the ground, not where
 // its top face is drawn.
 export function projectFloorPoint(x, y, geom) {
-  const { u, v } = toRoomCoord(x, y);
+  const { u, v: raw } = toRoomCoord(x, y);
   const { PK_ROOM, PK_OBJ } = geom.tokens;
+  // The camera's framing is applied FIRST and everything else reads the framed
+  // depth, so a framed room is a real room seen from a real place rather than
+  // a room with its contents displaced inside it.
+  const v = frameDepth(raw, geom);
   const sRoom = 1 / (1 + v * PK_ROOM);
   const sObj = 1 / (1 + v * PK_OBJ);
   return {
@@ -177,7 +312,10 @@ export function unprojectScreenPoint(sx, sy, geom) {
   const v = denom === 0 ? 0 : t / denom;
   const sRoom = 1 / (1 + v * PK_ROOM);
   const u = (sx - geom.cx) / (geom.halfW * sRoom);
-  return fromRoomCoord(u, v);
+  // v here is the FRAMED depth — the room's own. Undo the camera framing last,
+  // in the exact reverse of projectFloorPoint, so what a drag persists is the
+  // logical coordinate and never the coordinate the camera happened to show.
+  return fromRoomCoord(u, unframeDepth(v, geom));
 }
 
 // ── Per-table derived geometry ─────────────────────────────────────────────
@@ -272,16 +410,42 @@ export function depthSorted(tables) {
 }
 
 // ── Chairs: the seat TEMPLATES ─────────────────────────────────────────────
-// Chair COUNT is the authoritative table capacity — `tables.capacity`, the
-// "Capacidad máxima" the room editor writes and validates as an integer
+// Chair count derives from the authoritative table capacity — `tables.capacity`,
+// the "Capacidad máxima" the room editor writes and validates as an integer
 // 1..99. It is deliberately NOT the session's `coversTotal` (how many people
 // are seated right now): those are two different concepts and the floor must
-// keep showing what a table SEATS even while it is empty. That is why the
-// upper bound here is the domain's own 99 and not some smaller renderer
-// convenience number — chair count equals capacity, with no clamp of our own
-// invention silently breaking the promise on a large table. Realistic tables
-// are 1..8 and those are the cases the patterns below are art-directed for;
-// above that the same deterministic rules simply keep going.
+// keep showing what a table SEATS even while it is empty.
+//
+// THE PRODUCT RULE (revised — this replaces "chair count == capacity always")
+// --------------------------------------------------------------------------
+//   capacity 1..SEATS_EXACT_MAX (8)  → EXACT. N chairs, in the art-directed
+//                                      pattern for N.
+//   capacity 9..99                   → REPRESENTATIVE. The table is drawn
+//                                      fully seated at SEATS_EXACT_MAX and
+//                                      `máx N` alone carries the number.
+//
+// Why a threshold at all: the old invariant was rigid past the point of being
+// useful. A 20-cover table drawn with twenty seats at phone size is a fringe
+// of overlapping marks — the chairs stop being furniture and become texture,
+// and the table they surround gets harder to read, not easier. Chairs are part
+// of the room's visual language; `máx N` is the capacity readout, and it is
+// right there on the tabletop.
+//
+// Why 8 specifically, and not 6 or 12 — it is the largest count that still
+// fits BOTH families cleanly at the real phone size (R≈49px):
+//   • round: 8 seats on the ring have ~45px of arc each for a ~27px seat.
+//   • rectangle: the 5+ template puts one seat on each short side and splits
+//     the rest along the two long sides. The long side is ~91px, so it holds
+//     three ~27px seats (81px) and no more — 3+3+1+1 = 8 is exactly where a
+//     rectangle runs out of edge. At 10 the long sides would need four each
+//     and the seats would visibly overlap.
+// So 8 is not a taste call, it is where the geometry stops working.
+//
+// THE INVARIANT THIS PRESERVES: the visual must never obviously contradict an
+// obvious capacity. Every capacity a human reads at a glance — a 2-top, a
+// 3-top, a 4-top, a 6-top — is still drawn exactly, so a 2-cover table can
+// never look like a 4-cover one. Only capacities past the point where nobody
+// counts chairs anyway become representative. Asserted in hybridScene.test.js.
 //
 // THESE ARE TEMPLATES, NOT A DISTRIBUTION FUNCTION.
 // The point of the correction this file is part of: running N chairs through
@@ -314,12 +478,11 @@ export function depthSorted(tables) {
 //
 // Chairs are scenery only — they never become interactive entities of their
 // own (see tableFootprint: one target covers the table and all its chairs).
-export function chairSlots(shape, capacity) {
+export function chairSlots(shape, capacity, tokens = HYBRID_TOKENS) {
   const n = Number(capacity);
   if (!Number.isFinite(n) || n <= 0) return [];
-  // Clamp at the DOMAIN's own maximum, not at an arbitrary visual limit, so
-  // "chair count == capacity" holds for every value the editor can store.
-  const count = Math.min(99, Math.round(n));
+  // Exact up to the threshold, representative above it — see the rule above.
+  const count = Math.min(tokens.SEATS_EXACT_MAX, Math.round(n));
   if (count <= 0) return [];
 
   if (shape === "round") {
@@ -385,23 +548,31 @@ export function chairSlots(shape, capacity) {
 // reason the previous chairs read as random: their backs were lifted up-screen
 // regardless of which side of the table they sat on, so every near-side chair
 // was drawn facing backwards.
-// Backrest proportions: clearly NARROWER and TALLER than the seat.
-// Matching the seat's own width — the first attempt at this — makes seat and
-// back the same rounded box at phone size, so a chair renders as a featureless
-// square with no cue as to which way it faces, and eight of them around a
-// table are back to reading as scattered blocks. A narrow post rising from a
-// wider seat is the silhouette that says "chair" at 20px: the seat shows past
-// both edges of the back on a near-side chair (seen from behind) and the back
-// stands clear above it on a far-side one (seen from the front). It also
-// carries LESS visual mass than the wide version, which is the direction the
-// hierarchy needs.
-const CHAIR_BACK_W = 0.66;
-const CHAIR_BACK_H = 1.35;
+// Backrest proportions. ART DIRECTION RECOVERY — the previous pass answered
+// "chairs look scattered" by shrinking the back to a narrow 0.66 post, and
+// overshot: a 13px dark post on a 20px dark seat is not a chair silhouette,
+// it is a smudge, which is the "tiny dark blobs / physical-table effect
+// weakened" the human inspection then reported.
+// A real chair's back spans most of its seat. 0.80 keeps a visible margin of
+// seat showing past both edges — the cue that a near-side chair is being seen
+// from BEHIND — while giving the back enough width to carry the lit top rail
+// that does the actual work of saying "chair" at this size. The height comes
+// down with it (1.35 → 1.05) because the tall version read as a bollard; a
+// back a little taller than the seat is deep, and the rail sells the rest.
+const CHAIR_BACK_W = 0.80;
+const CHAIR_BACK_H = 1.05;
+
+// How square the seat is drawn. The brief asks the chairs to reinforce the
+// table's own character, and this is the cheapest honest way to do it: the
+// bentwood-ish seats around a round table are nearly circular, the ones at a
+// rectangle are squarer. Same primitive, same code path, two silhouettes.
+const CHAIR_RADIUS_ROUND = 0.46;
+const CHAIR_RADIUS_RECT = 0.22;
 
 export function chairPlacements(table, geom) {
   const t = geom.tokens;
   const g = tableGeometry(table, geom);
-  const slots = chairSlots(table.shape, table.capacity);
+  const slots = chairSlots(table.shape, table.capacity, t);
   const tuck = g.R * t.CHAIR_TUCK;
   const seat = g.R * t.CHAIR;
 
@@ -449,6 +620,9 @@ export function chairPlacements(table, geom) {
       backW,
       backH,
       backBottom,
+      // Corner radius of the seat, in px, so the renderer draws the shape the
+      // geometry decided rather than deciding it a second time itself.
+      radius: w * (g.isRound ? CHAIR_RADIUS_ROUND : CHAIR_RADIUS_RECT),
       // The full drawn extent of this chair, seat and backrest together.
       left: Math.min(x - w / 2, backX - backW / 2),
       right: Math.max(x + w / 2, backX + backW / 2),
@@ -463,12 +637,22 @@ export function chairPlacements(table, geom) {
 }
 
 // ── Measured characteristics, for tests and for the report ─────────────────
-// Same-shape near/far scale delta across a given span of logical y. This is
-// the number the design brief constrains to roughly 10–15%; asserting it in a
-// test stops a future token tweak from quietly reintroducing far-table
-// miniaturisation.
-export function nearFarScaleDelta(geom, yNear = 87, yFar = 13) {
-  const near = projectFloorPoint(50, yNear, geom).sObj;
-  const far = projectFloorPoint(50, yFar, geom).sObj;
+// Same-shape near/far scale delta across the depth band the camera actually
+// FRAMES — the front row against the back row, which is the only near/far
+// comparison an operator ever makes. This is the number the design brief
+// constrains to roughly 10–15%; asserting it in a test stops a future token
+// tweak from quietly reintroducing far-table miniaturisation.
+//
+// It reads the frame's own endpoints rather than two hardcoded logical y
+// values, and is therefore layout-independent by construction: a room whose
+// tables sit in y 13..70 and one whose tables sit in y 15..86 are framed the
+// same way and so must report the same near/far spread. Measuring at fixed
+// logical y instead would report a different — and meaningless — number for
+// every restaurant floor plan.
+export function nearFarScaleDelta(geom) {
+  const { PK_OBJ } = geom.tokens;
+  const f = geom.frame || { lo: 0, hi: 1 };
+  const near = 1 / (1 + f.lo * PK_OBJ);
+  const far = 1 / (1 + f.hi * PK_OBJ);
   return 1 - far / near;
 }

@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { C } from "../../constants";
 import { createMesaRequestId, describeMesaError, mesaApi } from "../../mesa/mesaApi";
 import { normalizeOrderLine } from "../../menu/normalizeOrderLine";
 import OrderLineView from "../order/OrderLineView";
 import HybridFloorScene, { hybridSceneCss } from "./HybridFloorScene";
-import { sceneGeometry, tableFootprint, tableGeometry, unprojectScreenPoint } from "./hybridScene";
+import {
+  HYBRID_TOKENS, cameraFrame, sceneGeometry, tableFootprint, tableGeometry, unprojectScreenPoint,
+} from "./hybridScene";
 
 // MESA_HYBRID_3D — renderer selection only, never a domain switch. Off, this
 // file behaves byte-identically to before: same markup, same CSS, same drag
@@ -1829,14 +1831,34 @@ export default function TabMesa({
   // threshold nothing about the table changes and the click fires normally;
   // only once the pointer has genuinely traveled is it committed as a drag.
   const DRAG_THRESHOLD_PX = 6;
-  // MESA_HYBRID_3D -- one geometry per render, shared by the scene, the hit
-  // targets and the drag inverse projection, so all three can never disagree
-  // about where a table is.
-  const hybridGeom = (MESA_HYBRID_3D && boardBox && boardBox.width > 0)
-    ? sceneGeometry(boardBox.width, boardBox.height) : null;
+  // MESA_HYBRID_3D -- the camera frames where the tables ACTUALLY are (see
+  // hybridScene's cameraFrame), which is what keeps the room from spending a
+  // third of a phone screen on floor nobody put a table on.
+  //
+  // It is FROZEN for the whole of a drag. Without the freeze, dragging the
+  // front-most table forward would widen the frame on every pointermove, the
+  // camera would recompose under the finger, and every OTHER table would drift
+  // sideways-and-up while the operator is trying to place one -- the table
+  // would also lag its own finger, since the geometry that positions it keeps
+  // changing beneath it. Freezing costs one ref and makes the drag behave
+  // exactly as it did before framing existed.
+  const frameFreezeRef = useRef(null);
+  const [frameEpoch, setFrameEpoch] = useState(0);
+  const hybridGeom = useMemo(
+    () => ((MESA_HYBRID_3D && boardBox && boardBox.width > 0)
+      ? sceneGeometry(boardBox.width, boardBox.height, HYBRID_TOKENS,
+        frameFreezeRef.current || cameraFrame(tables))
+      : null),
+    // frameEpoch is the release signal from pointerUp; frameFreezeRef itself
+    // is deliberately not a dependency (a ref never can be).
+    [boardBox, tables, frameEpoch]
+  );
   const pointerDown = (event, table) => {
     if (!editing) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    // Captured BEFORE the first pointermove can move a table, so the frame
+    // held for the rest of the gesture is the one the operator is looking at.
+    frameFreezeRef.current = cameraFrame(tables);
     const drag = {
       id: table.id, pointerId: event.pointerId, moved: false, table,
       startX: event.clientX, startY: event.clientY,
@@ -1896,6 +1918,12 @@ export default function TabMesa({
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
+    // Release the camera and let it recompose around wherever the table ended
+    // up. setFrameEpoch is what actually re-runs the geometry memo: clearing a
+    // ref alone changes nothing React can see, so without it the room would
+    // stay on the frozen frame until some unrelated state happened to change.
+    frameFreezeRef.current = null;
+    setFrameEpoch((n) => n + 1);
     if (drag.moved) {
       suppressClickRef.current = drag.id;
       window.setTimeout(() => { if (suppressClickRef.current === drag.id) suppressClickRef.current = null; }, 250);
@@ -1945,7 +1973,13 @@ export default function TabMesa({
           is aria-hidden + pointer-events:none throughout. The tiles below stay
           the only controls and the only accessible nodes, which is what keeps
           a chair from ever becoming its own tap target. */}
-      {hybridGeom && <HybridFloorScene width={boardBox.width} height={boardBox.height}
+      {/* The scene is handed the SAME geometry object the hit targets and the
+          drag inverse projection use. It used to rebuild its own from
+          width/height, which was safe only while the geometry depended on
+          nothing but the box -- now that the camera also depends on where the
+          tables are, a second copy could frame the room differently from the
+          targets laid over it, and a tap would land on the wrong Mesa. */}
+      {hybridGeom && <HybridFloorScene geom={hybridGeom}
         visuals={resolveTablePositions(activeTables).map(hybridVisualOf)} />}
       {resolveTablePositions(activeTables).map((table) => {
         const todayReservations = bookedForToday(table);
