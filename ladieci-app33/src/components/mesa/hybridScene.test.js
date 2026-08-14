@@ -131,10 +131,13 @@ describe("shape construction stays genuinely different", () => {
 });
 
 describe("chairs carry the authoritative capacity", () => {
+  // Exact below the cap, capped above it. The capped rows are the point of the
+  // rule: a 6- and an 8-top are DECORATED, not counted.
   test.each([
-    ["round", 2, 2], ["round", 4, 4], ["round", 6, 6], ["round", 8, 8],
-    ["square", 2, 2], ["square", 4, 4], ["square", 6, 6],
-    ["rectangle", 6, 6], ["rectangle", 8, 8],
+    ["round", 1, 1], ["round", 2, 2], ["round", 3, 3], ["round", 4, 4],
+    ["round", 6, 4], ["round", 8, 4], ["round", 20, 4],
+    ["square", 2, 2], ["square", 4, 4], ["square", 6, 4],
+    ["rectangle", 6, 4], ["rectangle", 8, 4], ["rectangle-long", 12, 4],
   ])("%s table with capacity %i renders exactly %i chairs", (shape, capacity, expected) => {
     expect(chairSlots(shape, capacity)).toHaveLength(expected);
   });
@@ -181,14 +184,14 @@ describe("chairs carry the authoritative capacity", () => {
   });
 
   // ── THE PRODUCT RULE ────────────────────────────────────────────────────
-  // Exact up to SEATS_EXACT_MAX, representative above it. These assert both
-  // halves and, most importantly, the invariant that survives the change: the
-  // drawing must never contradict a capacity a human reads at a glance.
+  // Exact up to SEATS_MAX (4), capped above it. These assert both halves and,
+  // most importantly, the invariant that survives the change: the drawing must
+  // never contradict a SMALL capacity, the only range a human ever counts.
   const SHAPES = ["round", "square", "rectangle", "rectangle-long"];
 
   test("every capacity a human would count is drawn EXACTLY", () => {
     SHAPES.forEach((shape) => {
-      for (let capacity = 1; capacity <= HYBRID_TOKENS.SEATS_EXACT_MAX; capacity += 1) {
+      for (let capacity = 1; capacity <= HYBRID_TOKENS.SEATS_MAX; capacity += 1) {
         expect(chairSlots(shape, capacity)).toHaveLength(capacity);
       }
     });
@@ -209,34 +212,39 @@ describe("chairs carry the authoritative capacity", () => {
 
   test("a large capacity becomes representative rather than a fringe of marks", () => {
     SHAPES.forEach((shape) => {
-      for (let capacity = HYBRID_TOKENS.SEATS_EXACT_MAX + 1; capacity <= 99; capacity += 1) {
-        expect(chairSlots(shape, capacity)).toHaveLength(HYBRID_TOKENS.SEATS_EXACT_MAX);
+      for (let capacity = HYBRID_TOKENS.SEATS_MAX + 1; capacity <= 99; capacity += 1) {
+        expect(chairSlots(shape, capacity)).toHaveLength(HYBRID_TOKENS.SEATS_MAX);
       }
     });
   });
 
-  // A representative table must still read as FULLY seated: the cue it carries
-  // is "this is a big table", so it may never degrade into a sparse ring that
-  // reads as a smaller one.
-  test("a representative table is drawn fully seated, never sparsely", () => {
+  // A capped table must still read as FULLY seated: the cue it carries is
+  // "this is a table", so it may never degrade into a sparse ring that reads
+  // as a smaller one.
+  test("a capped table is drawn fully seated, never sparsely", () => {
     SHAPES.forEach((shape) => {
-      expect(chairSlots(shape, 20)).toEqual(chairSlots(shape, HYBRID_TOKENS.SEATS_EXACT_MAX));
-      expect(chairSlots(shape, 99)).toEqual(chairSlots(shape, HYBRID_TOKENS.SEATS_EXACT_MAX));
+      expect(chairSlots(shape, 20)).toEqual(chairSlots(shape, HYBRID_TOKENS.SEATS_MAX));
+      expect(chairSlots(shape, 99)).toEqual(chairSlots(shape, HYBRID_TOKENS.SEATS_MAX));
     });
   });
 
-  // The threshold is a design decision, so it is asserted as one: it has to
-  // sit where the geometry actually stops working, not wherever a later token
-  // tweak happens to leave it. Seats sharing a rectangle's long side are the
-  // binding case — they may not overlap at the real phone size.
-  test("the exact-count threshold is where seats still fit without overlapping", () => {
+  // The cap is a design decision, so it is asserted as one. This is the
+  // property it buys and the reason it is 4: at the real phone size, four
+  // seats never come near each other on ANY shape, so density can never
+  // degrade into the overlap the previous rule allowed at 8.
+  test("no two chairs ever overlap, on any shape, at any capacity", () => {
     const g = geom();
-    const table = { shape: "rectangle", capacity: HYBRID_TOKENS.SEATS_EXACT_MAX, x: 50, y: 50 };
-    const seats = chairPlacements(table, g).filter((c) => c.ny !== 0);
-    seats.forEach((a) => {
-      seats.forEach((b) => {
-        if (a === b || a.ny !== b.ny) return;
-        expect(Math.abs(a.x - b.x)).toBeGreaterThanOrEqual((a.w + b.w) / 2);
+    ["round", "square", "rectangle", "rectangle-long"].forEach((shape) => {
+      [4, 8, 20, 99].forEach((capacity) => {
+        const seats = chairPlacements({ shape, capacity, x: 50, y: 50 }, g);
+        seats.forEach((a) => {
+          seats.forEach((b) => {
+            if (a === b) return;
+            const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+            const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+            expect(overlapX <= 0 || overlapY <= 0).toBe(true);
+          });
+        });
       });
     });
   });
@@ -272,9 +280,13 @@ describe("round tables use explicit geometric seat patterns", () => {
     expect(angles(4)).toEqual([0, 90, 180, 270]);
   });
 
-  test("5 seats form a regular pentagon and 6 a regular hexagon", () => {
-    gapsBetweenSeats(5).forEach((gap) => expect(gap).toBeCloseTo(72, 6));
-    gapsBetweenSeats(6).forEach((gap) => expect(gap).toBeCloseTo(60, 6));
+  // Above the cap the ring is still the 4-up cross, not a denser polygon —
+  // this is what stops a "just raise SEATS_MAX a little" change from silently
+  // reintroducing the crowded floor the cap exists to prevent.
+  test("a large capacity keeps the four-cardinal ring, never a denser polygon", () => {
+    [5, 6, 8, 12, 40].forEach((capacity) => {
+      expect(angles(capacity)).toEqual([0, 90, 180, 270]);
+    });
   });
 
   test("every pattern is anchored with a seat at the far side of the table", () => {
@@ -326,33 +338,29 @@ describe("rectangular tables use shape-aware seat patterns, not a ring", () => {
     expect(sides.size).toBe(3);
   });
 
-  test("6 seats are 2+2 along the long sides and 1+1 on the short ones", () => {
-    const slots = chairSlots("rectangle", 6);
-    expect(slots).toHaveLength(6);
-    expect(slots.filter((s) => s.dy === -1)).toHaveLength(2); // long side (back)
-    expect(slots.filter((s) => s.dy === 1)).toHaveLength(2);  // long side (front)
-    expect(slots.filter((s) => s.dx === -1)).toHaveLength(1); // short side
-    expect(slots.filter((s) => s.dx === 1)).toHaveLength(1);  // short side
+  // THE STRUCTURAL GUARANTEE the cap buys: at most one chair per side, at any
+  // capacity. Two seats can never share an edge, so a rectangle can never
+  // crowd however large its capacity grows.
+  test("never puts two chairs on the same side, at any capacity", () => {
+    ["square", "rectangle", "rectangle-long"].forEach((shape) => {
+      [1, 2, 3, 4, 6, 8, 12, 99].forEach((capacity) => {
+        const sides = chairSlots(shape, capacity).map((s) => `${s.dx},${s.dy}`);
+        expect(new Set(sides).size).toBe(sides.length);
+      });
+    });
   });
 
-  test("both short sides always keep a seat from 4 upward", () => {
-    for (let capacity = 4; capacity <= 12; capacity += 1) {
+  test("both short sides keep a seat once the table is drawn fully seated", () => {
+    [4, 6, 8, 12].forEach((capacity) => {
       const slots = chairSlots("square", capacity);
       expect(slots.filter((s) => s.dx === -1)).toHaveLength(1);
       expect(slots.filter((s) => s.dx === 1)).toHaveLength(1);
-    }
-  });
-
-  test("seats along a long side are spread symmetrically about its centre", () => {
-    [6, 8, 10].forEach((capacity) => {
-      const top = chairSlots("rectangle", capacity).filter((s) => s.dy === -1);
-      expect(top.reduce((sum, s) => sum + s.dx, 0)).toBeCloseTo(0, 9);
     });
   });
 
   test("a rectangular table never reuses the round ring", () => {
-    const round = chairSlots("round", 6).map((s) => `${s.dx.toFixed(4)},${s.dy.toFixed(4)}`);
-    const rect = chairSlots("rectangle", 6).map((s) => `${s.dx.toFixed(4)},${s.dy.toFixed(4)}`);
+    const round = chairSlots("round", 3).map((s) => `${s.dx.toFixed(4)},${s.dy.toFixed(4)}`);
+    const rect = chairSlots("rectangle", 3).map((s) => `${s.dx.toFixed(4)},${s.dy.toFixed(4)}`);
     expect(rect).not.toEqual(round);
   });
 });

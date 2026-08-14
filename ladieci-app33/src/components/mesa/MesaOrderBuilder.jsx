@@ -233,7 +233,14 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
             cartItems={cartItems} totalCart={totalCart} totalQty={totalQty}
             onSetQty={(uid, q) => { if (extrasOpen === uid && q <= 0) setExtrasOpen(null); cartApi.setQty(uid, q); }}
             onRemoveLine={(uid) => { if (extrasOpen === uid) setExtrasOpen(null); cartApi.removeLine(uid); }}
-            onEditLine={(item) => { setExtrasOpen(item._uid); setDrawerOpen(false); }}
+            // The drawer deliberately STAYS open underneath. ItemConfigurator
+            // is z-index 40 against DraftSummary's 30 and both are siblings in
+            // this panel, so it already stacks on top -- closing it reveals the
+            // comanda summary the operator opened it from, which is where they
+            // expect to land. Closing the drawer here instead (the previous
+            // behaviour) dumped them back onto the raw product grid after every
+            // single edit, losing the review context mid-proof-read.
+            onEditLine={(item) => setExtrasOpen(item._uid)}
             onSetPlainNote={cartApi.setNota}
             generalNote={notaGeneral}
             onSetGeneralNote={setNotaGeneral}

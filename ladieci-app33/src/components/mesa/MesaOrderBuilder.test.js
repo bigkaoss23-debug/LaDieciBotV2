@@ -489,6 +489,35 @@ test("the picker step exposes a labelled dialog role", async () => {
   expect(dialog.getAttribute("aria-modal")).toBe("true");
   unmount(container, root);
 });
+// Editing a line from the comanda summary is a round trip, not a departure:
+// the operator is proof-reading the order, taps the pencil on one line, and
+// has to come back to the list they were reading. The drawer therefore stays
+// mounted UNDER the configurator (which already stacks above it), so closing
+// the configurator reveals the summary again. Previously the drawer was closed
+// on the way in, and every edit dropped the operator onto the raw product grid
+// with their review context gone.
+test("editing a line from the summary returns to the summary, not the product grid", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
+  click(productCard(container, "El Pelusa"));
+  await flush();
+  click(byTestId(container, "mesa-ver-comanda"));
+  await flush();
+  click(byTestId(container, "draft-summary-edit"));
+  await flush();
+  // the summary is still there, underneath the configurator
+  expect(byTestId(container, "item-configurator")).toBeTruthy();
+  expect(byTestId(container, "draft-summary")).toBeTruthy();
+  // ...and closing the configurator leaves the operator on it
+  click(byTestId(container, "configurator-done"));
+  await flush();
+  expect(byTestId(container, "item-configurator")).toBeFalsy();
+  expect(byTestId(container, "draft-summary")).toBeTruthy();
+  unmount(container, root);
+});
+
+// The test name always described three layers; the body only pressed Escape
+// twice because the old edit flow had already thrown the drawer away. Now the
+// body matches the name.
 test("Escape closes the extras panel first, then the drawer, then the whole builder", async () => {
   const { container, root, onClose } = await mount({ target: target({ coversTotal: 2 }) });
   click(productCard(container, "El Pelusa"));
@@ -498,10 +527,21 @@ test("Escape closes the extras panel first, then the drawer, then the whole buil
   click(byTestId(container, "draft-summary-edit"));
   await flush();
   expect(container.textContent).toContain("Ingredientes extra");
+
+  // 1st: the configurator only
   act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
   await flush();
   expect(container.textContent).not.toContain("Ingredientes extra");
+  expect(byTestId(container, "draft-summary")).toBeTruthy();
   expect(onClose).not.toHaveBeenCalled();
+
+  // 2nd: the drawer, which is genuinely still open now
+  act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+  await flush();
+  expect(byTestId(container, "draft-summary")).toBeFalsy();
+  expect(onClose).not.toHaveBeenCalled();
+
+  // 3rd: the builder itself
   act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
   await flush();
   expect(onClose).toHaveBeenCalledTimes(1);

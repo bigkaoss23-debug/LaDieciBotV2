@@ -101,6 +101,13 @@ function SceneDefs() {
       <stop offset="52%" stopColor="rgba(255,206,150,.07)" />
       <stop offset="100%" stopColor="rgba(255,206,150,0)" />
     </radialGradient>
+    {/* a single wall sconce's bloom — see HybridRoom */}
+    <radialGradient id="m3dSconce" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stopColor="rgba(255,199,133,.42)" />
+      <stop offset="34%" stopColor="rgba(255,193,128,.17)" />
+      <stop offset="70%" stopColor="rgba(255,188,124,.05)" />
+      <stop offset="100%" stopColor="rgba(255,188,124,0)" />
+    </radialGradient>
     {/* AMBIENT: the room's own base light on the floor. Without this the only
         lit floor is directly under a table and the tables read as objects
         floating in a void — the single biggest loss of "room presence". */}
@@ -191,19 +198,44 @@ const HybridRoom = memo(function HybridRoom({ geom }) {
   const { width: w, height: h, horizon } = geom;
   const floorTop = horizon + 3;
   const floorH = Math.max(0, h - floorTop);
+
+  // THE FLOOR IS TILED, not gridded. The reference concept's single biggest
+  // "this is a physical room" cue is a real tiled floor receding to the
+  // horizon — seven faint lines read as a technical grid, a proper tile field
+  // reads as a floor. Denser across, denser in depth, and each run fades with
+  // distance so the far end dissolves instead of stopping at a hard edge.
   const lines = [];
-  for (let i = -3; i <= 3; i += 1) {
-    const u = i / 2.1;
+  for (let i = -5; i <= 5; i += 1) {
+    const u = i / 3.4;
     const a = projectFloorPoint(u * 50 + 50, 100, geom);
     const b = projectFloorPoint(u * 50 + 50, 0, geom);
-    lines.push(<line key={`v${i}`} x1={a.sx} y1={a.sy} x2={b.sx} y2={b.sy} opacity={T.GRID} />);
+    // outer runs sit further into the room's shadow than the central ones
+    const fade = 1 - Math.abs(i) / 8.5;
+    lines.push(<line key={`v${i}`} x1={a.sx} y1={a.sy} x2={b.sx} y2={b.sy} opacity={T.GRID * fade} />);
   }
-  for (let v = 0.06, k = 0; v < 1.02; v += 0.132, k += 1) {
+  for (let v = 0.03, k = 0; v < 1.02; v += 0.088, k += 1) {
     const a = projectFloorPoint(50, (1 - v) * 100, geom);
-    lines.push(<line key={`h${k}`} x1={0} y1={a.sy} x2={w} y2={a.sy} opacity={T.GRID * (1 - v * 0.45)} />);
+    lines.push(<line key={`h${k}`} x1={0} y1={a.sy} x2={w} y2={a.sy} opacity={T.GRID * (1 - v * 0.62)} />);
   }
+
+  // Wall sconces. Also straight from the reference, and the cheapest possible
+  // way to make the back wall read as a WALL rather than as the top edge of
+  // the picture: a few warm sources at a believable height, each with its own
+  // bloom. They live entirely above the horizon, so they can never collide
+  // with a table wherever the operator drags one.
+  const sconces = [0.18, 0.5, 0.82].map((fx, i) => {
+    const x = w * fx;
+    const y = horizon * 0.42;
+    return <g key={`sc${i}`}>
+      <ellipse cx={x} cy={y} rx={horizon * 0.72} ry={horizon * 0.52} fill="url(#m3dSconce)" />
+      <rect x={x - w * 0.016} y={y - horizon * 0.1} width={w * 0.032} height={horizon * 0.2}
+        rx={horizon * 0.05} fill="#e8c390" opacity=".5" />
+    </g>;
+  });
+
   return <g>
     <rect x="0" y="0" width={w} height={Math.max(0, horizon + 46)} fill="url(#m3dWall)" />
+    {sconces}
     {/* light landing on the back wall, brightest where it meets the floor */}
     <rect x="0" y="0" width={w} height={Math.max(0, horizon + 6)} fill="url(#m3dWallGlow)" />
     <rect x="0" y={horizon - 8} width={w} height="18" fill="url(#m3dHorizon)" />
@@ -254,7 +286,7 @@ function Chair({ p }) {
   // answer (paint the chair almost black) is what turned them into holes. An
   // edge light is how the eye actually finds a dark object in a lit room, and
   // it costs one stroke rather than a value the hierarchy cannot afford.
-  const edge = { stroke: "#9c7f5b", strokeWidth: Math.max(0.5, w * 0.035), strokeOpacity: 0.34 };
+  const edge = { stroke: "#9c7f5b", strokeWidth: Math.max(0.45, w * 0.035), strokeOpacity: 0.26 };
   const back = <g>
     <rect x={backX - backW / 2} y={backBottom - backH} width={backW} height={backH}
       rx={backW * 0.26} ry={backW * 0.26} fill="url(#m3dChairBack)" {...edge} />
@@ -274,7 +306,7 @@ function Chair({ p }) {
     {/* the shadow stays on the FLOOR while the seat is drawn at seat height,
         which is what grounds a lifted chair instead of floating it */}
     <ellipse cx={x} cy={groundY} rx={w * 0.52} ry={h * 0.42}
-      fill="url(#m3dContact)" opacity=".38" />
+      fill="url(#m3dContact)" opacity=".3" />
     {/* far chair: back behind the seat. near chair: back between seat and
         viewer. Painting order is the whole difference between "facing the
         table" and "facing away from it". */}

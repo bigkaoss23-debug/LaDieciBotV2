@@ -104,21 +104,20 @@ export const HYBRID_TOKENS = {
   RECT_ASPECT: 1.86,  // square/rect top width as a multiple of R (round is 2.00)
 
   // chairs — see chairSlots (the templates) and chairPlacements (the geometry)
-  SEATS_EXACT_MAX: 8, // the largest capacity drawn as an EXACT seat count.
-                      // Above it the chairs become a representative physical
-                      // cue and `máx N` alone carries the number — see
-                      // chairSlots for why 8 and not some larger figure.
-  CHAIR: 0.48,        // seat width (× R). ART DIRECTION RECOVERY — was 0.40,
-                      // which at phone size is a 20px mark: too small to
-                      // carry any silhouette, so eight of them read as dark
-                      // blobs on the floor rather than as seats. 0.48 gives
-                      // ~24px, enough for a seat, a back and a lit top rail
-                      // to be separately legible, while still leaving the
-                      // chair under a quarter of the tabletop's width so the
-                      // hierarchy (table first) is unchanged. 0.54 was tried
-                      // first and overshot: the chairs started competing with
-                      // the tabletop for the eye, which is the failure mode
-                      // in the opposite direction.
+  SEATS_MAX: 4,       // the most chairs ever drawn, whatever the capacity.
+                      // Chairs are a decorative cue; `máx N` is the capacity.
+                      // See chairSlots for why 4 rather than a larger figure.
+  CHAIR: 0.38,        // seat width (× R). The count cap above is what buys
+                      // this: with at most four seats per table there is no
+                      // need for each to be large enough to survive a crowd,
+                      // so the chair can go back to being a small supporting
+                      // mark (~19px at phone size). The two previous passes
+                      // both missed on this axis — 0.40 with a near-black
+                      // fill read as blobs, 0.48 with a lit fill and eight of
+                      // them read as cinema seating. Small AND lit is the
+                      // combination that reads as furniture without
+                      // competing: the seat is under a fifth of the
+                      // tabletop's width, so the table always wins the eye.
   CHAIR_TUCK: 0.05,   // distance from the table's own EDGE to the chair
                       // centre (× R) — NOT a ring radius from the centre.
                       // Measuring from the edge is what makes a chair sit the
@@ -160,7 +159,7 @@ export const HYBRID_TOKENS = {
                       // crushed the back tables into the wall tone and cost
                       // the room its depth instead of creating it.
   POOL_R: 2.35,       // floor light pool radius (× R)
-  POOL_PEAK: 0.44,    // pool alpha at its centre. Lowered with POOL_R because
+  POOL_PEAK: 0.5,     // pool alpha at its centre. Lowered with POOL_R because
                       // AMBIENT below now carries the room's base light, so
                       // the per-table pools no longer have to be the ONLY lit
                       // thing on an otherwise black floor.
@@ -182,15 +181,17 @@ export const HYBRID_TOKENS = {
                       // exactly the "khaki tables" the redesign set out to
                       // kill. The state is carried by the RIM, which is a
                       // pure hue on a neutral face and reads instantly.
-  GRID: 0.055,        // floor grid line opacity
-  CHAIR_ALPHA: 0.9,   // chair prominence multiplier. Was 0.82, on top of an
-                      // almost-black chair material — the two together are
-                      // what made the seats vanish. The hierarchy (table >
-                      // number > state > capacity > chairs) is now held by
-                      // SIZE and by the chair material sitting a clear step
-                      // below the tabletop's own value, which is how a real
-                      // room does it, rather than by fading the furniture
-                      // out.
+  GRID: 0.078,        // floor TILE line opacity. Raised with the denser tile
+                      // field in HybridRoom: at 0.055 the lines were a hint
+                      // rather than a floor, and the reference concept's room
+                      // reads as physical largely because you can see the
+                      // tiles it is built out of receding to the horizon.
+  CHAIR_ALPHA: 0.78,  // chair prominence multiplier. The hierarchy (table >
+                      // number > state > capacity > chairs) is held by SIZE
+                      // and by the chair material sitting a clear step below
+                      // the tabletop's own value — this multiplier is the
+                      // last small step that keeps four lit seats from
+                      // reading as loudly as the table they belong to.
 };
 
 // ── The camera frame ───────────────────────────────────────────────────────
@@ -416,36 +417,28 @@ export function depthSorted(tables) {
 // are seated right now): those are two different concepts and the floor must
 // keep showing what a table SEATS even while it is empty.
 //
-// THE PRODUCT RULE (revised — this replaces "chair count == capacity always")
+// THE PRODUCT RULE — chairs are DECORATION, `máx N` is the capacity
 // --------------------------------------------------------------------------
-//   capacity 1..SEATS_EXACT_MAX (8)  → EXACT. N chairs, in the art-directed
-//                                      pattern for N.
-//   capacity 9..99                   → REPRESENTATIVE. The table is drawn
-//                                      fully seated at SEATS_EXACT_MAX and
-//                                      `máx N` alone carries the number.
+//   capacity 1..4  → EXACT. N chairs, in the art-directed pattern for N.
+//   capacity 5+    → capped at SEATS_MAX (4). `máx N` alone carries the number.
 //
-// Why a threshold at all: the old invariant was rigid past the point of being
-// useful. A 20-cover table drawn with twenty seats at phone size is a fringe
-// of overlapping marks — the chairs stop being furniture and become texture,
-// and the table they surround gets harder to read, not easier. Chairs are part
-// of the room's visual language; `máx N` is the capacity readout, and it is
-// right there on the tabletop.
+// This deliberately replaces the earlier "exact up to 8" rule. Chasing the
+// real seat count was the wrong axis entirely: a 6- or 8-top drawn with six
+// or eight seats is what turned the floor into a fringe of heavy marks and
+// cost the tables their readability, which is the whole point of the screen.
+// The label is right there on the tabletop and it is authoritative; the
+// chairs only have to say "this is a table in a room".
 //
-// Why 8 specifically, and not 6 or 12 — it is the largest count that still
-// fits BOTH families cleanly at the real phone size (R≈49px):
-//   • round: 8 seats on the ring have ~45px of arc each for a ~27px seat.
-//   • rectangle: the 5+ template puts one seat on each short side and splits
-//     the rest along the two long sides. The long side is ~91px, so it holds
-//     three ~27px seats (81px) and no more — 3+3+1+1 = 8 is exactly where a
-//     rectangle runs out of edge. At 10 the long sides would need four each
-//     and the seats would visibly overlap.
-// So 8 is not a taste call, it is where the geometry stops working.
+// Why 4 and not 6: four is the count that still reads as a deliberate
+// arrangement rather than a crowd — the cardinal cross on a round table, one
+// per side on a rectangle. It is also the largest count that needs no seat
+// ever to share an edge with another, at any table size the phone produces,
+// so density can never degrade into overlap.
 //
-// THE INVARIANT THIS PRESERVES: the visual must never obviously contradict an
-// obvious capacity. Every capacity a human reads at a glance — a 2-top, a
-// 3-top, a 4-top, a 6-top — is still drawn exactly, so a 2-cover table can
-// never look like a 4-cover one. Only capacities past the point where nobody
-// counts chairs anyway become representative. Asserted in hybridScene.test.js.
+// THE INVARIANT THIS PRESERVES: the visual must never obviously contradict a
+// SMALL capacity. A 2-top and a 3-top are still drawn exactly, so they can
+// never look like a 4-top. Above 4 nobody counts chairs, and the drawing
+// stops pretending to be a count. Asserted in hybridScene.test.js.
 //
 // THESE ARE TEMPLATES, NOT A DISTRIBUTION FUNCTION.
 // The point of the correction this file is part of: running N chairs through
@@ -454,20 +447,20 @@ export function depthSorted(tables) {
 // that mean nothing, and the eye reads scatter rather than "this table seats
 // four". Each supported count instead gets a stated geometric intent:
 //
-//   ROUND     2 → two opposing chairs, 180° apart
+//   ROUND     1 → a single seat at the far side
+//             2 → two opposing chairs, 180° apart
 //             3 → an equilateral triangle, 120° apart
 //             4 → the four cardinal positions (a square cross)
-//             5 → a regular pentagon
-//             6 → a regular hexagon
-//             n → the regular n-gon, always with a seat at the FAR side
-//                 first, so the pattern is anchored rather than free-floating
 //
 //   RECT      1 → one long side
 //   (square/  2 → the two OPPOSING long sides, never two adjacent ones
 //   rectangle 3 → three sides occupied (both long sides + one short)
-//   /-long)   4 → exactly one chair per side — a square table with four seats
-//             5+ → one chair on each SHORT side, the remainder spread evenly
-//                 along the two long sides (so 6 = 2+2 long, 1+1 short)
+//   /-long)   4 → exactly one chair per side
+//
+// There is no fifth case in either family: SEATS_MAX caps the count at 4
+// before the templates are consulted, so "one chair per side" is a structural
+// guarantee for the rectangular family rather than a property that held only
+// up to some count. Two seats can never share an edge.
 //
 // Returns unit offsets {dx, dy} in floor space, plus `angle` for the round
 // family. INVARIANT for the rectangular family: exactly one of dx/dy has
@@ -481,15 +474,14 @@ export function depthSorted(tables) {
 export function chairSlots(shape, capacity, tokens = HYBRID_TOKENS) {
   const n = Number(capacity);
   if (!Number.isFinite(n) || n <= 0) return [];
-  // Exact up to the threshold, representative above it — see the rule above.
-  const count = Math.min(tokens.SEATS_EXACT_MAX, Math.round(n));
+  // Exact up to SEATS_MAX, capped above it — see the rule above.
+  const count = Math.min(tokens.SEATS_MAX, Math.round(n));
   if (count <= 0) return [];
 
   if (shape === "round") {
     // The regular n-gon, phase-anchored with the first seat at the far side.
-    // Anchoring is what makes the pattern legible: 2 reads as an axis, 4 as a
-    // cross, 6 as a hexagon — the same n chairs at a rolling offset would
-    // read as n dots.
+    // Anchoring is what makes the pattern legible: 2 reads as an axis and 4 as
+    // a cross — the same n chairs at a rolling offset would read as n dots.
     // Math.cos(-PI/2) is 6.1e-17, not 0. Left alone that noise makes a
     // "cardinal" seat very slightly off-axis, and worse, it vanishes entirely
     // when added to a board-sized floor coordinate (float absorption) — so a
@@ -515,20 +507,7 @@ export function chairSlots(shape, capacity, tokens = HYBRID_TOKENS) {
   if (count === 1) return [TOP];
   if (count === 2) return [TOP, BOTTOM];
   if (count === 3) return [TOP, BOTTOM, RIGHT];
-  if (count === 4) return [TOP, RIGHT, BOTTOM, LEFT];
-
-  // 5+: both short sides always keep exactly one chair, so the table never
-  // reads as "seats only along the front and back"; everything else is spread
-  // evenly along the two long sides, longer side first when the count is odd.
-  const remaining = count - 2;
-  const topCount = Math.ceil(remaining / 2);
-  const bottomCount = remaining - topCount;
-  const spread = (total) =>
-    total === 1 ? [0] : Array.from({ length: total }, (_, i) => -0.62 + (i / (total - 1)) * 1.24);
-  const out = [LEFT, RIGHT];
-  spread(topCount).forEach((dx) => out.push({ dx, dy: -1 }));
-  spread(bottomCount).forEach((dx) => out.push({ dx, dy: 1 }));
-  return out;
+  return [TOP, RIGHT, BOTTOM, LEFT];
 }
 
 // ── Chairs: the drawn GEOMETRY ─────────────────────────────────────────────

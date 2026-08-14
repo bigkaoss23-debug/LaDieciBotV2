@@ -138,3 +138,56 @@ test("adding a custom pizza calls onAddCustom with the built item, without needi
   expect(added._ingredienti.length).toBe(1);
   unmount(container, root);
 });
+
+// ── the horizontally scrolling tab row ────────────────────────────────────
+// "⭐ Custom is clipped on iPhone" was not a sizing bug. A flex row that
+// scrolls horizontally does not honour its own padding-right at the scroll
+// end in WebKit/Blink, so the last tab butts flush against the edge. The fix
+// is a real, unshrinkable trailing child; these lock it in because the
+// symptom is invisible in JSDOM's layout and trivially removable by someone
+// tidying up "an empty span".
+describe("the last category tab is never clipped at the scroll end", () => {
+  test("the tab row ends with an unshrinkable spacer, not container padding", () => {
+    const { container, root } = mount({});
+    const spacer = byTestId(container, "catalog-tabs-end-spacer");
+    expect(spacer).toBeTruthy();
+    // must be the LAST child: a spacer anywhere else buys nothing
+    expect(spacer.parentElement.lastElementChild).toBe(spacer);
+    // and must not be allowed to collapse under flex pressure
+    expect(spacer.style.flex).toContain("0 0");
+    unmount(container, root);
+  });
+
+  test("the row carries no right padding for the browser to drop", () => {
+    const { container, root } = mount({});
+    const row = container.querySelector(".catalog-browser-tabs");
+    expect(row.style.paddingRight === "" || row.style.paddingRight === "0px").toBe(true);
+    unmount(container, root);
+  });
+
+  test("the Custom tab is still the last real tab and still switches", () => {
+    const { container, root } = mount({});
+    const tabs = Array.from(container.querySelectorAll(".catalog-browser-tabs button"));
+    expect(tabs[tabs.length - 1].textContent).toContain("Custom");
+    click(tabs[tabs.length - 1]);
+    expect(allByTestId(container, "catalog-product-card")).toHaveLength(0);
+    unmount(container, root);
+  });
+});
+
+// The product number is a genuine operational aid (operators and customers
+// both say "la 7"), so it has to be catchable. It used to be #888 on near
+// black inside a near-black border.
+test("the product number badge is legible, not three stacked near-blacks", () => {
+  const { container, root } = mount({});
+  const badge = byTestId(container, "catalog-pizza-number-badge");
+  expect(badge).toBeTruthy();
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  };
+  // the label itself must be clearly bright, whatever the ground behind it
+  expect(luminance("#F0D9A8")).toBeGreaterThan(0.7);
+  expect(badge.style.color.replace(/\s/g, "")).toMatch(/rgb\(240,217,168\)|#F0D9A8/i);
+  unmount(container, root);
+});

@@ -26,10 +26,47 @@
 // `classNames`/`styles` (both optional, keyed by `name`/`extras`/`removed`/
 // `note`) let each host surface keep its OWN established visual language --
 // e.g. TabMesa's muted-gray `.mesa-muted`/italic `.mesa-command-note` --
-// instead of this shared component inventing a new, unstyled default that
-// would visually regress an existing screen. Structure/interpretation is
-// shared; per-surface appearance is not.
+// on top of the shared base below. Structure/interpretation is shared;
+// per-surface appearance is layered over it.
+//
+// WHY THERE IS A BASE STYLESHEET AT ALL (added after the iPhone review)
+// --------------------------------------------------------------------
+// The original version shipped these class names with NO stylesheet, on the
+// theory that every host would dress them itself. TabMesa does. DraftSummary
+// -- the pre-confirmation comanda drawer, i.e. the one surface where an
+// operator actually proof-reads what they are about to send to the kitchen --
+// did not, and the app sets no global text colour (constants.js styles
+// `html,body,#root` with a background and no `color`). So extras, removed
+// ingredients and notes inherited the user-agent default of BLACK, on a
+// #070707 panel. Not "too dark": invisible. A shared renderer that is
+// unreadable unless every caller remembers to dress it is a trap, so the
+// readable treatment is now the default and hosts override it, rather than
+// the other way round.
 // ===============================================================
+
+// Scoped to .order-line-view so it can never leak, and every rule is a single
+// class selector -- a host's own class (applied to the same element) wins on
+// document order, keeping TabMesa's established look exactly as it was.
+export const orderLineViewCss = `
+.order-line-view{min-width:0}
+.order-line-view .order-line-name{color:#f4ead8;font-size:13.5px;font-weight:800;line-height:1.3;word-break:break-word}
+.order-line-view .order-line-extras{color:#7BD88F;font-size:12px;font-weight:700;line-height:1.35;margin-top:3px;word-break:break-word}
+.order-line-view .order-line-removed{color:#FF8A7A;font-size:12px;font-weight:700;line-height:1.35;margin-top:2px;word-break:break-word}
+.order-line-view .order-line-note{color:#E9C583;font-size:12px;font-style:italic;line-height:1.35;margin-top:2px;word-break:break-word}
+`;
+
+// Injected once, from the component itself, rather than left for each host to
+// remember -- that "remember" is exactly what failed. Idempotent and keyed by
+// id, so N lines on screen still produce exactly one <style> node.
+const STYLE_ID = "order-line-view-base-css";
+function ensureBaseStyle() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(STYLE_ID)) return;
+  const el = document.createElement("style");
+  el.id = STYLE_ID;
+  el.textContent = orderLineViewCss;
+  document.head.appendChild(el);
+}
 
 function formatExtras(extras) {
   return extras
@@ -38,6 +75,7 @@ function formatExtras(extras) {
 }
 
 export function OrderLineView({ line, showQuantityPrefix = false, testId, classNames = {}, styles = {} }) {
+  ensureBaseStyle();
   if (!line) return null;
   const prefixed = testId ? `${testId}-` : "";
   const hasSecondary = Boolean(line.secondaryName);

@@ -109,10 +109,21 @@ describe("renderer flag", () => {
 
 // ── chairs ────────────────────────────────────────────────────────────────
 describe("chairs represent authoritative capacity", () => {
-  test.each([[2, 2], [4, 4], [6, 6]])("capacity %i renders exactly %i chairs", async (capacity, expected) => {
-    const { host } = await mount([table({ capacity })]);
-    const group = host.querySelector('[data-table-id="t1"]');
-    expect(group.querySelectorAll('[data-chair]')).toHaveLength(expected);
+  // Exact below the cap, capped above it — chairs are decoration, `máx N` is
+  // the capacity. The 6 and 20 rows are the rule's whole point.
+  test.each([[2, 2], [3, 3], [4, 4], [6, 4], [20, 4]])(
+    "capacity %i renders exactly %i chairs", async (capacity, expected) => {
+      const { host } = await mount([table({ capacity })]);
+      const group = host.querySelector('[data-table-id="t1"]');
+      expect(group.querySelectorAll('[data-chair]')).toHaveLength(expected);
+    });
+
+  // The label is what the operator actually reads a capacity off, so a capped
+  // table must still state its real number.
+  test("a capped table still shows its authoritative capacity as text", async () => {
+    const { host } = await mount([table({ capacity: 20 })]);
+    expect(host.querySelectorAll('[data-chair]')).toHaveLength(4);
+    expect(host.querySelector(".mesa-table").textContent).toContain("máx 20");
   });
 
   test("a round two-seater does not get four decorative chairs", async () => {
@@ -126,13 +137,13 @@ describe("chairs represent authoritative capacity", () => {
       table({ id: "t2", number: 2, capacity: 6, x: 70, y: 70 }),
     ]);
     expect(host.querySelector('[data-table-id="t1"]').querySelectorAll('[data-chair]')).toHaveLength(2);
-    expect(host.querySelector('[data-table-id="t2"]').querySelectorAll('[data-chair]')).toHaveLength(6);
+    expect(host.querySelector('[data-table-id="t2"]').querySelectorAll('[data-chair]')).toHaveLength(4);
   });
 
   test("chairs never become independent interaction entities", async () => {
     const { host } = await mount([table({ capacity: 6 })]);
     const chairs = host.querySelectorAll('[data-chair]');
-    expect(chairs.length).toBe(6);
+    expect(chairs.length).toBe(4);
     chairs.forEach((chair) => {
       expect(chair.closest("button")).toBeNull();
       expect(chair.getAttribute("tabindex")).toBeNull();

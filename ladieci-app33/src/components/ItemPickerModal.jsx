@@ -212,7 +212,10 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
             cartItems={cartItems} totalCart={totalCart} totalQty={totalQty}
             onSetQty={(uid, q) => { if (extrasOpen === uid && q <= 0) setExtrasOpen(null); cartApi.setQty(uid, q); }}
             onRemoveLine={(uid) => { if (extrasOpen === uid) setExtrasOpen(null); cartApi.removeLine(uid); }}
-            onEditLine={(item) => { setExtrasOpen(item._uid); setDrawerOpen(false); }}
+            // Stays open underneath -- see the same call in MesaOrderBuilder.
+            // Both channels share this flow by construction, so they have to
+            // share its correction too.
+            onEditLine={(item) => setExtrasOpen(item._uid)}
             onSetPlainNote={cartApi.setNota}
             generalNote="" onSetGeneralNote={() => {}} showGeneralNote={false}
             onClose={() => setDrawerOpen(false)}

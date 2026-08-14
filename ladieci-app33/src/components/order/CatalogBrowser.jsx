@@ -41,24 +41,38 @@ function adaptCustomBuilderSetItems(onAddCustom) {
   };
 }
 
+// One constant instead of four string literals that all had to stay in sync
+// (the tab list, two style branches and the render branch) -- a rename or a
+// stray space in any one of them silently unmounted the builder.
+const CUSTOM_TAB = "⭐ Custom";
+
 export function CatalogBrowser({ MENU, CATS, qtyOf, onTapProduct, onAddCustom, initialCategory = "Pizzas" }) {
   const [cat, setCat] = useState(initialCategory);
 
   return (
     <>
-      <div className="catalog-browser-tabs" style={{ display: "flex", gap: 8, padding: "10px 14px", borderBottom: `1px solid ${C.fumo}`, overflowX: "auto", flexShrink: 0 }}>
-        {[...CATS, "⭐ Custom"].map((c) => (
+      <div className="catalog-browser-tabs" style={{ display: "flex", gap: 8, padding: "10px 0 10px 14px", borderBottom: `1px solid ${C.fumo}`, overflowX: "auto", flexShrink: 0 }}>
+        {[...CATS, CUSTOM_TAB].map((c) => (
           <button key={c} data-testid={`catalog-cat-${c}`} onClick={() => setCat(c)} style={{
-            background: cat === c ? (c === "⭐ Custom" ? "linear-gradient(135deg,#C4A87A,#A0854A)" : C.rosso) : "transparent",
-            border: `1.5px solid ${cat === c ? (c === "⭐ Custom" ? "#C4A87A" : C.rosso) : C.fumo}`,
+            background: cat === c ? (c === CUSTOM_TAB ? "linear-gradient(135deg,#C4A87A,#A0854A)" : C.rosso) : "transparent",
+            border: `1.5px solid ${cat === c ? (c === CUSTOM_TAB ? "#C4A87A" : C.rosso) : C.fumo}`,
             color: cat === c ? "#fff" : C.grigio,
-            borderRadius: 22, padding: "9px 18px", fontSize: 14, fontWeight: 700,
+            borderRadius: 22, padding: "9px 18px", fontSize: 14, fontWeight: 700, lineHeight: 1.35,
             whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer",
           }}>{c}</button>
         ))}
+        {/* THE TRAILING SPACER IS THE FIX, not decoration. A flex row that
+            scrolls horizontally does not honour its own padding-right at the
+            scroll end in WebKit/Blink -- the last item butts flush against the
+            edge and reads as cut off, which is exactly what "⭐ Custom is
+            clipped on iPhone" was. Padding-right moved off the container (see
+            the style above) and re-expressed as a real, unshrinkable child,
+            which every engine does honour. */}
+        <span aria-hidden="true" data-testid="catalog-tabs-end-spacer"
+          style={{ flex: "0 0 14px", width: 14 }} />
       </div>
 
-      {cat !== "⭐ Custom" ? (
+      {cat !== CUSTOM_TAB ? (
         <>
           <style>{catalogGridCss}</style>
           <div className="catalog-browser-grid">
@@ -90,10 +104,16 @@ export function CatalogBrowser({ MENU, CATS, qtyOf, onTapProduct, onAddCustom, i
                       proven Mesa baseline, now the one place either channel
                       renders it. */}
                   {p.num && (
+                    // Was #888 on C.carbone inside a C.fumo border -- three
+                    // near-black values stacked, which on a phone in a lit
+                    // dining room is unreadable at a glance. Now a warm brass
+                    // chip: still clearly subordinate to the product name and
+                    // the price, but actually catchable. Same size, same
+                    // corner, same data.
                     <span data-testid="catalog-pizza-number-badge" style={{
-                      position: "absolute", top: -7, left: -7, background: C.carbone, color: "#888",
-                      border: `2px solid ${C.fumo}`, borderRadius: 5, minWidth: 18, height: 18, padding: "0 4px",
-                      fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+                      position: "absolute", top: -7, left: -7, background: "#3A2E1C", color: "#F0D9A8",
+                      border: "2px solid #8A6F3F", borderRadius: 5, minWidth: 18, height: 18, padding: "0 4px",
+                      fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center",
                     }}>{p.num}</span>
                   )}
                 </div>

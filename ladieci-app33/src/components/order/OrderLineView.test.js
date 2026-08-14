@@ -155,3 +155,55 @@ test("classNames/styles let a host surface override per-row appearance without c
   expect(extras.className).toContain("order-line-extras");
   unmount(container, root);
 });
+
+// ── readability of the shared renderer ────────────────────────────────────
+// These exist because of a real iPhone defect, not for coverage. The app sets
+// no global text colour (constants.js styles html/body/#root with a background
+// only), so a class with no stylesheet renders as the user-agent default —
+// BLACK — on a #070707 panel. DraftSummary, the one surface where an operator
+// proof-reads a comanda before sending it to the kitchen, passed no classNames
+// and no styles, so extras / removed / note were invisible there. The base
+// stylesheet is therefore part of the component's contract.
+describe("the shared renderer is readable without the host dressing it", () => {
+  const styleEl = () => document.getElementById("order-line-view-base-css");
+
+  test("ships its own base stylesheet the first time it renders", () => {
+    styleEl()?.remove();
+    expect(styleEl()).toBeNull();
+    const { container, root } = mount({ line: normalizeOrderLine(emittedPizza({})) });
+    expect(styleEl()).toBeTruthy();
+    unmount(container, root);
+  });
+
+  test("gives every detail row an explicit colour, so none can inherit black", () => {
+    const { container, root } = mount({ line: normalizeOrderLine(emittedPizza({})) });
+    const css = styleEl().textContent;
+    ["order-line-name", "order-line-extras", "order-line-removed", "order-line-note"]
+      .forEach((cls) => {
+        const rule = css.split("\n").find((line) => line.includes(`.${cls}{`));
+        expect(rule).toBeTruthy();
+        expect(rule).toMatch(/color:#[0-9a-fA-F]{6}/);
+      });
+    unmount(container, root);
+  });
+
+  // The three detail rows carry different meanings (added / removed / free
+  // text) and must stay distinguishable at a glance, not merely visible.
+  test("extras, removals and notes are not all the same colour", () => {
+    const { container, root } = mount({ line: normalizeOrderLine(emittedPizza({})) });
+    const css = styleEl().textContent;
+    const colourOf = (cls) => css.split("\n").find((l) => l.includes(`.${cls}{`)).match(/color:(#[0-9a-fA-F]{6})/)[1];
+    const colours = ["order-line-extras", "order-line-removed", "order-line-note"].map(colourOf);
+    expect(new Set(colours).size).toBe(3);
+    unmount(container, root);
+  });
+
+  test("injects exactly one stylesheet however many lines render", () => {
+    styleEl()?.remove();
+    const a = mount({ line: normalizeOrderLine(emittedPizza({})) });
+    const b = mount({ line: normalizeOrderLine(emittedPizza({})) });
+    expect(document.querySelectorAll("#order-line-view-base-css")).toHaveLength(1);
+    unmount(a.container, a.root);
+    unmount(b.container, b.root);
+  });
+});
