@@ -7,6 +7,7 @@ import { assegnaZonaDaKeyword, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, BUFFER_
 // frontend Premium NON calcola disponibilità/lead-time/giri: la verità arriva dal
 // backend (previewOrderTiming oggi, previewOrderPlanner appena deployato).
 import ItemPickerModal from './ItemPickerModal';
+import { normalizeOrderLine } from '../menu/normalizeOrderLine';
 import PremiumPlannerPopup from './PremiumPlannerPopup';
 import DireccionInlinePanel from './DireccionInlinePanel';
 import { applyUiOffset } from '../utils/uiOffset';
@@ -2056,15 +2057,27 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
                     <div className="np-row-main">
                       {(() => {
                         const menuDesc = (MENU.find(m => String(m.id) === String(item.id)) || {}).sub;
-                        const { note, extras } = splitItemSub(item.sub);
+                        // CANONICAL_ORDER_LINE_SLICE_1 -- was a third independent
+                        // regex parser of item.sub (splitItemSub), redundant with
+                        // and behaviorally identical to the structured item.extras
+                        // these items already carry post-ItemPickerModal, but it
+                        // never read item.removedIngredients at all: an operator's
+                        // "sin cebolla" reached Cocina correctly while staying
+                        // invisible on this, the busiest confirmation list they
+                        // read back to the customer. normalizeOrderLine reads the
+                        // same structured truth AND surfaces the removal. Chip
+                        // interaction (add/remove an extra) is unchanged below --
+                        // only the data source moved.
+                        const line = normalizeOrderLine(item);
+                        const { note, extras, removed } = line;
                         return (
                           <>
                             {/* Riga 1: nome prodotto + chip extra IN LINEA accanto al nome. */}
                             <div className="np-row-head" title={extrasLabel(item) || undefined}>
-                              <strong className="np-pname np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">{item.n}</strong>
+                              <strong className="np-pname np-edit-zone" onClick={() => handleEditItem(item)} title="Editar producto">{line.displayName}</strong>
                               {extras.map((ex, i) => (
                                 <span key={i} className="np-extra-chip">
-                                  {ex.name}{ex.qty > 1 ? ` ×${ex.qty}` : ""}
+                                  {ex.name}{ex.quantity > 1 ? ` ×${ex.quantity}` : ""}
                                   <button
                                     type="button"
                                     className="np-extra-x"
@@ -2075,11 +2088,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
                                 </span>
                               ))}
                             </div>
-                            {/* Riga 2: descrizione reale dal MENU (MENU.sub) + SOLO la nota
-                                cucina rossa. Gli extra stanno sulla riga 1. */}
-                            {(menuDesc || note) && (
+                            {/* Riga 2: descrizione reale dal MENU (MENU.sub) + ingredientes
+                                quitados + nota cucina rossa. Gli extra stanno sulla riga 1. */}
+                            {(menuDesc || note || removed.length > 0) && (
                               <div className="np-row-desc">
                                 {menuDesc && <span className="np-pdesc">{menuDesc}</span>}
+                                {removed.length > 0 && <span className="np-note-red">Sin: {removed.join(", ")}</span>}
                                 {note && <span className="np-note-red">⚠ {note}</span>}
                               </div>
                             )}

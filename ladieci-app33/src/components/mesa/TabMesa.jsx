@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { C } from "../../constants";
 import { createMesaRequestId, describeMesaError, mesaApi } from "../../mesa/mesaApi";
+import { normalizeOrderLine } from "../../menu/normalizeOrderLine";
+import OrderLineView from "../order/OrderLineView";
 
 const euro = (value) => new Intl.NumberFormat("es-ES", {
   style: "currency", currency: "EUR", minimumFractionDigits: 2,
@@ -715,6 +717,39 @@ function CerrarMesaConfirm({ tableNumber, empty, busy, error, onCancel, onConfir
   </div>;
 }
 
+// Item detail list for the "Comanda por confirmar" draft panel -- was two
+// byte-identical copies (compactCard vs Modal branch of MesaWorkspace below),
+// each hand-rolling its own extras/removedIngredients/notes interpretation
+// straight off the emitted shape. That interpretation silently went blank
+// for a custom pizza (PizzaCustomBuilder's raw item has no .extras/.notes/
+// .removedIngredients/.classicName -- see menu/normalizeOrderLine.js), so
+// the operator saw "1x Pizza a tu gusto" with no ingredients here even
+// though the same draft's ingredients were visible inside the picker's own
+// drawer. One list, normalized once, used by both branches.
+// classNames/styles reproduce exactly what the two removed blocks rendered
+// (.mesa-muted + fontSize:12 for extras/removed, .mesa-command-note for the
+// note -- see the .mesa-muted/.mesa-command-note rules in this file's own
+// <style> block) so this migration changes NO visual output for the fields
+// that already rendered; it only adds the ones that silently didn't.
+const draftLineClassNames = { extras: "mesa-muted", removed: "mesa-muted", note: "mesa-command-note" };
+const draftLineStyles = { extras: { fontSize: 12 }, removed: { fontSize: 12 } };
+
+function DraftItemsList({ items }) {
+  return <>
+    {items.map((item, index) => (
+      <div key={item._uid || index} style={{ marginBottom: index < items.length - 1 ? 8 : 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <OrderLineView line={normalizeOrderLine(item)} showQuantityPrefix
+              classNames={draftLineClassNames} styles={draftLineStyles} />
+          </div>
+          <strong>{euro((Number(item.p) || 0) * (Number(item.q) || 0))}</strong>
+        </div>
+      </div>
+    ))}
+  </>;
+}
+
 // Shared comanda card -- the ONE place a comanda's product list ever renders
 // (MesaWorkspace; nowhere else). Collapsed by default: a table with several
 // comandas must stay scannable (number + state + time), and the full product/
@@ -1113,17 +1148,7 @@ function MesaWorkspace({
                 <span style={{ color: "#a99d89", transform: draftExpanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
               </button>
               {draftExpanded && <div className="mesa-command-card" style={{ marginTop: 8 }}>
-                {draft.items.map((item, index) => (
-                  <div key={item._uid || index} style={{ marginBottom: index < draft.items.length - 1 ? 8 : 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <span>{item.q}× {item.fantasyName || item.n}{item.classicName ? ` / ${item.classicName}` : ""}</span>
-                      <strong>{euro((Number(item.p) || 0) * (Number(item.q) || 0))}</strong>
-                    </div>
-                    {(item.extras || []).length > 0 && <div className="mesa-muted" style={{ fontSize: 12 }}>+{item.extras.map((extra) => extra.name).join(", ")}</div>}
-                    {(item.removedIngredients || []).length > 0 && <div className="mesa-muted" style={{ fontSize: 12 }}>Sin: {item.removedIngredients.join(", ")}</div>}
-                    {item.notes && <div className="mesa-command-note">Nota: {item.notes}</div>}
-                  </div>
-                ))}
+                <DraftItemsList items={draft.items} />
                 {draft.nota && <div className="mesa-command-note">Nota general: {draft.nota}</div>}
                 <div style={{ marginTop: 8, textAlign: "right", fontWeight: 900 }}>{euro(draftTotal)}</div>
               </div>}
@@ -1183,17 +1208,7 @@ function MesaWorkspace({
           <span style={{ color: "#a99d89", transform: draftExpanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
         </button>
         {draftExpanded && <div className="mesa-command-card" style={{ marginTop: 8 }}>
-          {draft.items.map((item, index) => (
-            <div key={item._uid || index} style={{ marginBottom: index < draft.items.length - 1 ? 8 : 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span>{item.q}× {item.fantasyName || item.n}{item.classicName ? ` / ${item.classicName}` : ""}</span>
-                <strong>{euro((Number(item.p) || 0) * (Number(item.q) || 0))}</strong>
-              </div>
-              {(item.extras || []).length > 0 && <div className="mesa-muted" style={{ fontSize: 12 }}>+{item.extras.map((extra) => extra.name).join(", ")}</div>}
-              {(item.removedIngredients || []).length > 0 && <div className="mesa-muted" style={{ fontSize: 12 }}>Sin: {item.removedIngredients.join(", ")}</div>}
-              {item.notes && <div className="mesa-command-note">Nota: {item.notes}</div>}
-            </div>
-          ))}
+          <DraftItemsList items={draft.items} />
           {draft.nota && <div className="mesa-command-note">Nota general: {draft.nota}</div>}
           <div style={{ marginTop: 8, textAlign: "right", fontWeight: 900 }}>{euro(draftTotal)}</div>
         </div>}

@@ -1,0 +1,157 @@
+import React, { act } from "react";
+import { createRoot } from "react-dom/client";
+
+global.IS_REACT_ACT_ENVIRONMENT = true;
+
+const OrderLineView = require("./OrderLineView").default;
+const { normalizeOrderLine } = require("../../menu/normalizeOrderLine");
+
+function mount(props) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act(() => { root.render(<OrderLineView {...props} />); });
+  return { container, root };
+}
+function unmount(container, root) { act(() => { root.unmount(); }); container.remove(); }
+function byTestId(container, id) { return container.querySelector(`[data-testid="${id}"]`); }
+
+const emittedPizza = (overrides = {}) => ({
+  id: 1, n: "El Pelusa", q: 1, cat: "Pizzas", p: 12,
+  classicName: "Margherita Classica", fantasyName: "El Pelusa", baseUnitPrice: 12,
+  extras: [], notes: "", removedIngredients: [],
+  ...overrides,
+});
+
+const realCustomPizza = () => ({
+  id: "custom_1723622400000", n: "Pizza a tu gusto",
+  sub: "Base Pelusa + Tomates confitados, Rúcula",
+  e: "⭐", p: 14, q: 1, cat: "Pizzas",
+  _ingredienti: [
+    { id: "i_tom", n: "Tomates confitados", e: "🍅", prezzo: 1, tipo: "normal", gruppo: "Verduras y hierbas" },
+    { id: "i_ruc", n: "Rúcula", e: "🌿", prezzo: 1, tipo: "normal", gruppo: "Verduras y hierbas" },
+  ],
+  ing: "Base Pelusa + Tomates confitados, Rúcula",
+});
+
+test("renders nothing when line is absent", () => {
+  const { container, root } = mount({ line: null });
+  expect(container.textContent).toBe("");
+  unmount(container, root);
+});
+
+test("plain pizza: name and classic secondary name, no extras/removed/note rows", () => {
+  const { container, root } = mount({ line: normalizeOrderLine(emittedPizza()) });
+  expect(container.textContent).toContain("El Pelusa");
+  expect(container.textContent).toContain("Margherita Classica");
+  expect(byTestId(container, "order-line-extras")).toBeNull();
+  expect(byTestId(container, "order-line-removed")).toBeNull();
+  expect(byTestId(container, "order-line-note")).toBeNull();
+  unmount(container, root);
+});
+
+// HARD ACCEPTANCE DEFECT A — custom pizza detail must not collapse to just
+// "Pizza a tu gusto" once outside the picker's own drawer.
+test("custom pizza: selected ingredients render as visible chips, not just the generic name", () => {
+  const { container, root } = mount({ line: normalizeOrderLine(realCustomPizza()) });
+  expect(container.textContent).toContain("Pizza a tu gusto");
+  const extras = byTestId(container, "order-line-extras");
+  expect(extras).toBeTruthy();
+  expect(extras.textContent).toContain("Tomates confitados");
+  expect(extras.textContent).toContain("Rúcula");
+  unmount(container, root);
+});
+
+// HARD ACCEPTANCE DEFECT B — a removal must be visible on the shared renderer.
+test("removed ingredient renders a clear 'Sin: ...' row", () => {
+  const line = normalizeOrderLine(emittedPizza({ removedIngredients: ["Cebolla"] }));
+  const { container, root } = mount({ line });
+  const removed = byTestId(container, "order-line-removed");
+  expect(removed).toBeTruthy();
+  expect(removed.textContent).toBe("Sin: Cebolla");
+  unmount(container, root);
+});
+
+test("extras and note are both visible and stay in separate, distinct rows", () => {
+  const line = normalizeOrderLine(emittedPizza({
+    extras: [{ key: "ing_jamon", name: "Jamón cocido", price: 0.5, emoji: "🍖", quantity: 2 }],
+    notes: "cortar en 4",
+  }));
+  const { container, root } = mount({ line });
+  const extras = byTestId(container, "order-line-extras");
+  const note = byTestId(container, "order-line-note");
+  expect(extras.textContent).toBe("+ Jamón cocido ×2");
+  expect(note.textContent).toBe("Nota: cortar en 4");
+  // Neither row leaks into the other.
+  expect(extras.textContent).not.toContain("cortar");
+  expect(note.textContent).not.toContain("Jamón");
+  unmount(container, root);
+});
+
+test("beverage: name plus size/variant, coherent presentation", () => {
+  const line = normalizeOrderLine({
+    id: 20, n: "Coca Cola", q: 1, cat: "Bebidas", p: 3,
+    classicName: "0,33L", fantasyName: "Coca Cola", baseUnitPrice: 3,
+    extras: [], notes: "", removedIngredients: [],
+  });
+  const { container, root } = mount({ line });
+  expect(byTestId(container, "order-line-name").textContent).toBe("Coca Cola / 0,33L");
+  unmount(container, root);
+});
+
+test("showQuantityPrefix renders '2× ' ahead of the name only when explicitly requested", () => {
+  const line = normalizeOrderLine(emittedPizza({ q: 2 }));
+  const withoutPrefix = mount({ line });
+  expect(byTestId(withoutPrefix.container, "order-line-name").textContent).not.toContain("2×");
+  unmount(withoutPrefix.container, withoutPrefix.root);
+
+  const withPrefix = mount({ line, showQuantityPrefix: true });
+  expect(byTestId(withPrefix.container, "order-line-name").textContent).toContain("2× El Pelusa");
+  unmount(withPrefix.container, withPrefix.root);
+});
+
+// Deliberate design boundary (see file header comment): price/total stay
+// owned by the host surface, each of which formats them differently today.
+test("never renders a price or total -- that stays owned by the host surface", () => {
+  const line = normalizeOrderLine(emittedPizza({ p: 12, q: 3 }));
+  const { container, root } = mount({ line });
+  expect(container.textContent).not.toMatch(/12[.,]00/);
+  expect(container.textContent).not.toMatch(/36[.,]00/);
+  unmount(container, root);
+});
+
+test("testId prop scopes child data-testids for multi-instance queries", () => {
+  const { container, root } = mount({
+    line: normalizeOrderLine(emittedPizza({ removedIngredients: ["Albahaca"] })),
+    testId: "mesa-line-0",
+  });
+  expect(byTestId(container, "mesa-line-0")).toBeTruthy();
+  expect(byTestId(container, "mesa-line-0-order-line-removed")).toBeTruthy();
+  unmount(container, root);
+});
+
+// A host surface (e.g. TabMesa's .mesa-muted/.mesa-command-note) must be
+// able to reproduce its OWN existing visual language exactly -- this is what
+// keeps the migration from silently reskinning an already-live screen.
+test("classNames/styles let a host surface override per-row appearance without changing structure", () => {
+  const line = normalizeOrderLine(emittedPizza({
+    extras: [{ key: "a", name: "Jamón cocido", price: 0.5, emoji: "🍖", quantity: 1 }],
+    removedIngredients: ["Albahaca"],
+    notes: "poco hecha",
+  }));
+  const { container, root } = mount({
+    line,
+    classNames: { extras: "mesa-muted", removed: "mesa-muted", note: "mesa-command-note" },
+    styles: { extras: { fontSize: 12 }, removed: { fontSize: 12 } },
+  });
+  const extras = byTestId(container, "order-line-extras");
+  const removed = byTestId(container, "order-line-removed");
+  const note = byTestId(container, "order-line-note");
+  expect(extras.className).toContain("mesa-muted");
+  expect(extras.style.fontSize).toBe("12px");
+  expect(removed.className).toContain("mesa-muted");
+  expect(note.className).toContain("mesa-command-note");
+  // Base structural class stays too -- caller classes are additive.
+  expect(extras.className).toContain("order-line-extras");
+  unmount(container, root);
+});

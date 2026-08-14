@@ -62,15 +62,16 @@ function click(element) {
 async function flush() {
   await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 }
+function byTestId(container, id) { return container.querySelector(`[data-testid="${id}"]`); }
 
-async function mount({ compact, table }) {
+async function mount({ compact, table, mesaDrafts = {} }) {
   mesaApi.floor.mockResolvedValue({ ok: true, tables: [table] });
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
     root.render(<TabMesa role="admin" notify={jest.fn()} onNewCommand={jest.fn()} onCountChange={jest.fn()}
-      compact={compact} mesaDrafts={{}} onClearDraft={jest.fn()} onSendToCocina={jest.fn()} />);
+      compact={compact} mesaDrafts={mesaDrafts} onClearDraft={jest.fn()} onSendToCocina={jest.fn()} />);
   });
   await flush();
   // The one occupied table on the board -- status:"open" tables go straight
@@ -382,6 +383,66 @@ describe("MesaWorkspace compactCard -- business behavior unchanged under in-plac
     expect(mesaApi.closeTable).toHaveBeenCalledWith("s1");
     expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).not.toBeNull();
     expect(container.textContent).toContain("MESA_TABLE_HAS_ACTIVE_ORDERS");
+    unmount(container, root);
+  });
+});
+
+// CANONICAL_ORDER_LINE_SLICE_1 -- the compact-card draft panel (phone shell)
+// had no test coverage of its own item-detail rendering at all (every test
+// above mounts with mesaDrafts={{}}); TabMesa.render.test.js's "Comanda por
+// confirmar" describe block covers only the non-compact Modal branch. Both
+// branches used to hand-roll the identical, independently-broken-for-custom-
+// items interpretation (see DraftItemsList in TabMesa.jsx) -- this closes
+// the gap for the compact branch specifically.
+describe("MesaWorkspace compactCard -- draft panel item detail (Comanda por confirmar)", () => {
+  const draftWithDetail = {
+    items: [{
+      id: 1, n: "El Pelusa", q: 1, cat: "Pizzas", p: 12.5,
+      classicName: "Margherita Classica", fantasyName: "El Pelusa", baseUnitPrice: 12.0,
+      extras: [{ key: "ing_jamon", name: "Jamón cocido", price: 0.5, emoji: "🍖", quantity: 1 }],
+      notes: "poco hecha", removedIngredients: ["Albahaca"],
+    }],
+    nota: "mesa junto a la ventana", coversTotal: 2, client_req_id: "draft-req-compact",
+  };
+
+  test("expanding the compact draft panel shows dual name, extras, removed ingredient and note", async () => {
+    const { container, root } = await mount({
+      compact: true, table: tableFixture({ status: "open", session: emptySession }),
+      mesaDrafts: { s1: draftWithDetail },
+    });
+    click(byTestId(container, "mesa-draft-toggle"));
+    await flush();
+    expect(container.textContent).toContain("El Pelusa");
+    expect(container.textContent).toContain("Margherita Classica");
+    expect(container.textContent).toContain("Jamón cocido");
+    expect(container.textContent).toContain("Sin: Albahaca");
+    expect(container.textContent).toContain("Nota: poco hecha");
+    unmount(container, root);
+  });
+
+  // HARD ACCEPTANCE DEFECT A, compact branch.
+  test("a custom pizza's selected ingredients remain visible in the compact draft panel", async () => {
+    const customDraft = {
+      items: [{
+        id: "custom_1723622400000", n: "Pizza a tu gusto",
+        sub: "Base Pelusa + Tomates confitados, Rúcula", e: "⭐", p: 14, q: 1, cat: "Pizzas",
+        _ingredienti: [
+          { id: "i_tom", n: "Tomates confitados", e: "🍅", prezzo: 1 },
+          { id: "i_ruc", n: "Rúcula", e: "🌿", prezzo: 1 },
+        ],
+        ing: "Base Pelusa + Tomates confitados, Rúcula",
+      }],
+      nota: "", coversTotal: 2, client_req_id: "draft-req-compact-custom",
+    };
+    const { container, root } = await mount({
+      compact: true, table: tableFixture({ status: "open", session: emptySession }),
+      mesaDrafts: { s1: customDraft },
+    });
+    click(byTestId(container, "mesa-draft-toggle"));
+    await flush();
+    expect(container.textContent).toContain("Pizza a tu gusto");
+    expect(container.textContent).toContain("Tomates confitados");
+    expect(container.textContent).toContain("Rúcula");
     unmount(container, root);
   });
 });

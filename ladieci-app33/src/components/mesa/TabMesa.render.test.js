@@ -1509,6 +1509,41 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     expect(dialog.textContent).toContain("＋ Nueva comanda");
     unmount(container, root);
   });
+
+  // CANONICAL_ORDER_LINE_SLICE_1 -- HARD ACCEPTANCE DEFECT A. Before this
+  // slice, a custom pizza's selected ingredients were visible inside
+  // MesaOrderBuilder's own "Ver comanda" drawer but vanished here (this
+  // panel read item.extras/.classicName/.fantasyName, none of which exist
+  // on PizzaCustomBuilder's raw item shape) -- same draft, two renderers,
+  // two truths. Real production shape: id "custom_<timestamp>", n "Pizza a
+  // tu gusto", _ingredienti[] holding the selected ingredient records.
+  const customDraft = {
+    items: [{
+      id: "custom_1723622400000", n: "Pizza a tu gusto",
+      sub: "Base Pelusa + Tomates confitados, Rúcula",
+      e: "⭐", p: 14, q: 1, cat: "Pizzas",
+      _ingredienti: [
+        { id: "i_tom", n: "Tomates confitados", e: "🍅", prezzo: 1 },
+        { id: "i_ruc", n: "Rúcula", e: "🌿", prezzo: 1 },
+      ],
+      ing: "Base Pelusa + Tomates confitados, Rúcula",
+    }],
+    nota: "", coversTotal: 2, client_req_id: "draft-req-custom",
+  };
+
+  test("a custom pizza's selected ingredients remain visible in the draft panel, not collapsed to just its generic name", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession() } : table);
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+    const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": customDraft } });
+    click(container.querySelector(".mesa-table"));
+    click(byTestId(container, "mesa-draft-toggle"));
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog.textContent).toContain("Pizza a tu gusto");
+    expect(dialog.textContent).toContain("Tomates confitados");
+    expect(dialog.textContent).toContain("Rúcula");
+    unmount(container, root);
+  });
 });
 
 describe("hideToolbar -- Mesa map visual cleanup", () => {
