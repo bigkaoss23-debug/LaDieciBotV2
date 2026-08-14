@@ -12,14 +12,21 @@ import path from "path";
 const read = (rel) => fs.readFileSync(path.join(__dirname, rel), "utf8");
 
 describe("badge numero ufficiale", () => {
-  const picker = read("ItemPickerModal.jsx");
   const modifica = read("ModificaOrdenModal.jsx");
+  // CANONICAL_MANUAL_PICKER_SLICE_2 -- ItemPickerModal no longer renders its
+  // own picker grid (its footer-badge numbering lived there); it composes
+  // the shared components/order/CatalogBrowser.jsx, also used by Mesa's
+  // MesaOrderBuilder.jsx, which renders the number as a corner badge
+  // (Mesa's own proven style, adopted as the one shared convention instead
+  // of Teléfono keeping a second, different footer-row style for the same
+  // catalogue -- see CANONICAL_MANUAL_PICKER_SLICE_2_MESA_TELEFONO_REPORT_
+  // 2026-08-14.md).
+  const catalogBrowser = read("order/CatalogBrowser.jsx");
 
-  test("ItemPickerModal rende il badge solo per le pizze, con slot ad altezza fissa", () => {
-    expect(picker).toMatch(/\{p\.num\s*&&\s*\(/);
-    expect(picker).toContain("Nº {p.num}");
-    expect(picker).toMatch(/height:\s*22/);
-    expect(picker).toMatch(/borderTop:/);
+  test("the canonical CatalogBrowser (shared by Mesa and Teléfono) renders the official number as a corner badge, pizzas only", () => {
+    expect(catalogBrowser).toMatch(/\{p\.num\s*&&\s*\(/);
+    expect(catalogBrowser).toContain("data-testid=\"catalog-pizza-number-badge\"");
+    expect(catalogBrowser).toContain("{p.num}");
   });
 
   test("ModificaOrdenModal rende il badge solo per le pizze", () => {

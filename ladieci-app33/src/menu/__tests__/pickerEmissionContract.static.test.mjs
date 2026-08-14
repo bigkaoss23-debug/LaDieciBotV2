@@ -20,6 +20,14 @@
 // che MesaOrderBuilder possa riusarla senza duplicarla. ItemPickerModal.jsx
 // resta responsabile solo del boundary onAdd/onUpdate. Il contratto verificato
 // qui non cambia: cambia solo in quale file vive ciascun pezzo.
+//
+// CANONICAL_MANUAL_PICKER_SLICE_2 — the extras/removed-ingredient UI itself
+// (the "Quitar ingredientes" chips) moved out of ItemPickerModal.jsx into
+// the shared components/order/ItemConfigurator.jsx (also used by Mesa's
+// MesaOrderBuilder.jsx). Included here too so this contract keeps covering
+// wherever that markup actually lives now, same as it covered useOrderCart.js
+// before this slice moved buildEmittedItem/toggleRemoved out of the picker
+// file itself.
 
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
@@ -30,8 +38,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, "..", "..");
 const picker = readFileSync(join(SRC, "components", "ItemPickerModal.jsx"), "utf8");
 const hook = readFileSync(join(SRC, "order", "useOrderCart.js"), "utf8");
+const configurator = readFileSync(join(SRC, "components", "order", "ItemConfigurator.jsx"), "utf8");
 const strip = (src) => src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
-const codeOnly = strip(picker) + "\n" + strip(hook);
+const codeOnly = strip(picker) + "\n" + strip(hook) + "\n" + strip(configurator);
 
 let pass = 0, fail = 0;
 const ck = (label, fn) => {

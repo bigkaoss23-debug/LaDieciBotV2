@@ -1,179 +1,153 @@
 import { useState, useEffect } from 'react';
-import { C, EXTRAS_DULCES, pizzaLabel, esDulce } from '../constants';
+import { C } from '../constants';
 import { useMenuData } from '../menu/useMenuData';
 import { canEditExtras } from '../menu/extrasPolicy';
-import { extrasForProduct } from '../menu/menuAdapter';
 import { DRAFT_NO_PERSIST } from '../draftGuard';
 import { useOrderCart } from '../order/useOrderCart';
-import PizzaCustomBuilder from './PizzaCustomBuilder';
+import CatalogBrowser from './order/CatalogBrowser';
+import ItemConfigurator from './order/ItemConfigurator';
+import DraftSummary from './order/DraftSummary';
 
 /**
- * ItemPickerModal — popup unico per aggiungere o modificare un item dell'ordine.
+ * ItemPickerModal — Teléfono/Banco/Recogida/Domicilio/WA-escalated's
+ * workflow shell for manual product selection, plus the single-line "edit
+ * an already-placed item" mode (opened from NuevoPedidoModal's pencil).
  *
- * Modalità aggiunta (itemEsistente = null):
- *   - Mini-carrello interno: +/− per ogni prodotto, poi "Añadir al pedido"
- *   - Per le pizze: dopo aver aggiunto al carrello interno, si può aprire
- *     il pannello extras per quella pizza
+ * CANONICAL_MANUAL_PICKER_SLICE_2 -- the interior now composes the SAME
+ * shared order/CatalogBrowser + order/ItemConfigurator + order/DraftSummary
+ * primitives as Mesa's MesaOrderBuilder.jsx (see that file's own header
+ * comment). This is the concrete result the slice exists to produce: Mesa
+ * → Nueva comanda and Teléfono → Nuevo pedido now render the same grid, the
+ * same casing, the same extras/removal/note UI, and the same "Ver
+ * comanda"-style draft review step, instead of two independently hand-
+ * rolled pickers that drifted from each other (uppercase Postres/Bebidas
+ * names in one, emoji-forward cards in the other, a footer numbering row
+ * vs. a corner badge, etc. -- see STAGING_FRONTEND_PICKER_DRIFT_AUDIT_
+ * 2026-08-13.md for the original catalogue of that drift).
  *
- * Modalità modifica (itemEsistente = item):
- *   - Pre-carica il singolo item, permette di cambiare extras/nota
- *   - Bottone "Actualizar"
+ * Kept genuinely Teléfono/WhatsApp-escalated-specific: the DIAG_ON dynamic-
+ * catalogue-source marker, the modifica-mode single-item edit shell
+ * (unified onto DraftSummary + an auto-opened ItemConfigurator, replacing
+ * the old "isModifica" branching sprinkled through one giant render), and
+ * the create/update/close handoff to the caller (NuevoPedidoModal AND
+ * WADettaglio.jsx both still call this exact same external contract
+ * unchanged -- {visible, onClose, onAdd, onUpdate, itemEsistente}).
+ *
+ * One deliberate, documented behavior change: a custom pizza added via the
+ * ⭐ Custom tab used to close the whole modal immediately (its own
+ * `setItems={updater => {...; onAdd(...); onClose();}}` special case --
+ * see the Opus challenge report §4.3, which flagged this as fragile duck-
+ * typing and a real, if minor, UX inconsistency: adding a custom pizza
+ * behaved differently from adding any other product). CatalogBrowser's
+ * `onAddCustom` is now a plain callback with no built-in closing behavior,
+ * and this shell wires it to `addRaw` alone -- a custom pizza now
+ * accumulates in the cart exactly like any other tap, reviewed via the same
+ * "Ver comanda"-style drawer as everything else, only actually committed
+ * (onAdd + onClose) when the operator taps "Añadir". This is the natural
+ * consequence of adopting the same accumulate-then-review pattern Mesa
+ * already used, not an unrelated behavior change layered on top.
  */
 const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) => {
   const isModifica = !!itemEsistente;
-
-  const [cat, setCat]               = useState("Pizzas");
-  // Quale pizza ha il pannello extras aperto (uid)
-  const [extrasOpen, setExtrasOpen] = useState(null);
 
   // S2-7D4D — catalogue SOURCE. useMenuData is a drop-in returning the same
   // { MENU, CATS, INGREDIENTI } shape this component already used: with
   // REACT_APP_DYNAMIC_MENU_FRONTEND_ENABLED absent/false it returns the static
   // constants unchanged, so existing behaviour is preserved exactly.
-  // Declared here, above every consumer, so no helper below closes over a
-  // still-uninitialised binding.
   const { MENU, CATS, INGREDIENTI, source: menuSource, emergency: menuEmergency } = useMenuData();
 
-  // Mesa-builder slice — cart logic (working shape, extras, notes, emission
-  // boundary) extracted into useOrderCart so a persistent-cart consumer
-  // (MesaOrderBuilder) can reuse it verbatim instead of re-deriving it. This
-  // component's own behaviour is unchanged: same working cart shape, same
-  // reset-on-open effect below, same emitted item shape.
-  const {
-    cart, cartItems, totalCart, totalQty,
-    increment, decrement, qtyOf,
-    addExtra, removeExtra, toggleRemoved, isRemoved, baseIngredientsOf,
-    setNota, setNotaLibera, splitSub,
-    descrizioneDi, resolveExtra,
-    buildEmittedItem, loadItem, clear,
-  } = useOrderCart({ MENU, INGREDIENTI });
+  const cartApi = useOrderCart({ MENU, INGREDIENTI });
+  const { cart, cartItems, totalCart, totalQty, qtyOf, increment, addRaw, buildEmittedItem, loadItem, clear } = cartApi;
 
   // Phase 3 diagnostic marker. Rendered ONLY when the dynamic flag is explicitly on,
   // i.e. in the draft build — a normal published (flag-absent) build never shows it.
-  // States: dynamic | static | fallback (dynamic requested, catalogue load failed and
-  // the emergency static fallback was allowed).
   const DIAG_ON = process.env.REACT_APP_DYNAMIC_MENU_FRONTEND_ENABLED === "true";
   const menuMode = menuEmergency ? "fallback" : menuSource;
-  // S2-7D4D-FIX1 — when the draft write lock is on, the marker must say so. The
-  // operator has to be able to tell, without asking, that nothing they do here
-  // will be saved. Both halves are build-time flags, so neither reaches a normal
-  // published build.
   const draftLabel = String(menuMode).toUpperCase() + (DRAFT_NO_PERSIST ? " · SIN GUARDAR" : "");
+
+  // uid of the cart line currently open in ItemConfigurator, or null.
+  const [extrasOpen, setExtrasOpen] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Reset quando si apre/chiude
   useEffect(() => {
     if (!visible) return;
     if (isModifica) {
-      // Modalità modifica: carica l'item nel carrello.
-      // Per le pizze apriamo SUBITO il popup ingredienti: la matita in Nuevo Pedido
-      // porta diretto agli extra, senza passare per l'editor intermedio.
+      // Modalità modifica: carica l'item nel carrello. Per le pizze/dulce
+      // (canEditExtras) saltiamo subito al configuratore -- la matita in
+      // Nuevo Pedido porta diretto agli extra, senza passare per un editor
+      // intermedio, esattamente come prima.
       const uid = loadItem(itemEsistente);
-      setCat(itemEsistente.cat || "Pizzas");
-      // S2-7D4D — same predicate as the pencil and the extras panel. Using the old
-      // inline `cat === "Pizzas" || esDulce(...)` here would re-open the exact
-      // divergence extrasPolicy was written to close: a dynamic product that legitimately
-      // accepts extras (extrasPermitidos) but sits in another category would never
-      // auto-open its panel in edit mode.
       setExtrasOpen(canEditExtras(itemEsistente) ? uid : null);
     } else {
       clear();
-      setCat("Pizzas");
       setExtrasOpen(null);
+      setDrawerOpen(false);
     }
   }, [visible]); // eslint-disable-line
 
-  const handleCat = (c) => { setCat(c); setExtrasOpen(null); };
-
-  // decrement chiude il pannello extras se la riga sparisce a quantità 0 —
-  // unico comportamento in più rispetto al decrement del hook, resta qui.
-  const decrementAndMaybeCloseExtras = (uid) => {
-    if (extrasOpen === uid && cart[uid]?.q <= 1) setExtrasOpen(null);
-    decrement(uid);
-  };
-
-  // Item su cui è aperto il popup ingredienti extra (matita)
-  const extrasTarget = extrasOpen ? cart[extrasOpen] : null;
-  // Extras offered for the open item.
-  //  - dynamic: exactly the catalogue allowlist for that product (product-extra
-  //    associations are enforced here, so a disallowed extra is never selectable);
-  //  - static : the accepted Auth V2 split (dessert pizza -> EXTRAS_DULCES).
-  const extrasEsDulce = esDulce(extrasTarget);
-  const dynamicAllowed = extrasTarget && Array.isArray(extrasTarget.extrasPermitidos)
-    && extrasTarget.extrasPermitidos.length > 0;
-  const extrasList = dynamicAllowed
-    ? extrasForProduct(extrasTarget, INGREDIENTI)
-    : (extrasEsDulce ? EXTRAS_DULCES : INGREDIENTI);
-
-  // Conferma
   const handleConfirm = () => {
     if (cartItems.length === 0) return;
     if (isModifica) {
       onUpdate(buildEmittedItem(cartItems[0]));
     } else {
-      cartItems.forEach(item => onAdd(buildEmittedItem(item)));
+      cartItems.forEach((item) => onAdd(buildEmittedItem(item)));
     }
     onClose();
   };
 
-  // Chiusura del popup ingredienti.
-  // In modifica il popup È la schermata: "Listo"/✕/backdrop salvano e chiudono tutto.
-  // In aggiunta torna semplicemente al carrello interno.
-  const closeExtras = () => {
-    if (isModifica) handleConfirm();
-    else setExtrasOpen(null);
-  };
-
   if (!visible) return null;
 
+  // ── Modifica mode: edit ONE already-placed line. No catalogue browsing --
+  // configuring an existing selection, not making a new one. ──────────────
+  if (isModifica) {
+    const item = cartItems[0];
+    if (!item) return null;
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 600 }}>
+        <DraftSummary
+          title="✏️ Modificar item"
+          cartItems={[item]} totalCart={totalCart} totalQty={totalQty}
+          onSetQty={() => {}} onRemoveLine={() => {}}
+          onEditLine={(it) => setExtrasOpen(it._uid)}
+          onSetPlainNote={cartApi.setNota}
+          showGeneralNote={false} showLineControls={false}
+          onClose={onClose}
+          primaryAction={{ label: "✏️ Actualizar", onClick: handleConfirm, disabled: false }}
+        />
+        {/* En modifica, cualquier forma de cerrar el configurador (✕/Listo/
+            backdrop) guarda y cierra todo -- el popup ES la pantalla, como
+            antes ("closeExtras" original). */}
+        {extrasOpen && cart[extrasOpen] && (
+          <ItemConfigurator item={cart[extrasOpen]} INGREDIENTI={INGREDIENTI} cartApi={cartApi} onClose={handleConfirm} />
+        )}
+      </div>
+    );
+  }
+
+  // ── Create mode ──────────────────────────────────────────────────────────
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, zIndex: 600,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)"
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: C.carbone,
-          borderRadius: 20,
-          width: "min(700px, 96vw)",
-          maxHeight: "90vh",
-          // In modifica di una pizza il popup ingredienti è la schermata: il modal
-          // dev'essere alto come in aggiunta, così l'overlay mostra la tabella completa.
-          ...(isModifica && (itemEsistente?.cat === "Pizzas" || esDulce(itemEsistente)) ? { height: "90vh" } : {}),
-          display: "flex",
-          flexDirection: "column",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.7)",
-          overflow: "hidden", position: "relative"
-        }}
-      >
-        {/* ── Header ─────────────────────────────── */}
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, zIndex: 600,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)",
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: C.carbone, borderRadius: 20, width: "min(700px, 96vw)", height: "90vh", maxHeight: "90vh",
+        display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.7)", overflow: "hidden", position: "relative",
+      }}>
         <div style={{
-          padding: "14px 18px 10px",
-          borderBottom: `1px solid ${C.fumo}`,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          flexShrink: 0
+          padding: "14px 18px 10px", borderBottom: `1px solid ${C.fumo}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0,
         }}>
-          <div style={{ color: C.bianco, fontWeight: 800, fontSize: 17 }}>
-            {isModifica ? "✏️ Modificar item" : "➕ Añadir al pedido"}
-          </div>
+          <div style={{ color: C.bianco, fontWeight: 800, fontSize: 17 }}>➕ Añadir al pedido</div>
           <button onClick={onClose} style={{
-            background: C.fumo, color: C.grigio, border: "none",
-            borderRadius: "50%", width: 32, height: 32, fontSize: 16,
-            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer"
+            background: C.fumo, color: C.grigio, border: "none", borderRadius: "50%", width: 32, height: 32,
+            fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
           }}>✕</button>
         </div>
 
-        {/* ── Tab categorie (nascoste in modifica: la matita apre l'editor ingredienti) ── */}
-        {!isModifica && (
-        <div style={{
-          display: "flex", gap: 8, padding: "10px 14px",
-          borderBottom: `1px solid ${C.fumo}`,
-          overflowX: "auto", flexShrink: 0
-        }}>
+        <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", position: "relative" }}>
           {DIAG_ON && (
             <span
               data-testid="menu-source-marker"
@@ -182,8 +156,6 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                 position: "absolute", top: 6, left: 8, zIndex: 5,
                 fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
                 padding: "2px 7px", borderRadius: 7,
-                // The write lock dominates the colour: "we are not saving" matters
-                // more to the operator than which catalogue is in use.
                 background: DRAFT_NO_PERSIST ? "rgba(220,38,38,0.18)"
                   : menuMode === "dynamic" ? "rgba(34,197,94,0.18)" : "rgba(251,191,36,0.18)",
                 color: DRAFT_NO_PERSIST ? "#F87171"
@@ -194,434 +166,58 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
               {draftLabel}
             </span>
           )}
-          {[...CATS, "⭐ Custom"].map(c => (
-            <button key={c} onClick={() => handleCat(c)} style={{
-              background: cat === c
-                ? c === "⭐ Custom" ? "linear-gradient(135deg,#C4A87A,#A0854A)" : C.rosso
-                : "transparent",
-              border: `1.5px solid ${cat === c ? (c === "⭐ Custom" ? "#C4A87A" : C.rosso) : C.fumo}`,
-              color: cat === c ? "#fff" : C.grigio,
-              borderRadius: 22, padding: "9px 18px",
-              fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer"
-            }}>{c}</button>
-          ))}
-        </div>
-        )}
-
-        {/* ── Corpo scrollabile ────────────────────── */}
-        <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 14 }}>
-
-          {cat !== "⭐ Custom" ? (
-            <>
-              {/* ── Griglia prodotti (nascosta in modifica) ── */}
-              {!isModifica && (
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
-                gap: 12
-              }}>
-                {MENU.filter(m => m.cat === cat
-                  && m.disponible !== false && m.visiblePicker !== false).map(p => {
-                  const qty = qtyOf(p.id);
-                  const lbl = pizzaLabel(p);
-                  return (
-                    <div key={p.id}
-                      onClick={() => increment(p)}
-                      style={{
-                      background: qty > 0 ? C.rosso + "22" : C.carbone2,
-                      border: `2px solid ${qty > 0 ? C.rosso : C.fumo}`,
-                      borderRadius: 16, padding: "16px 10px", minHeight: 116,
-                      display: "flex", flexDirection: "column",
-                      alignItems: "center", justifyContent: "center", gap: 7, position: "relative",
-                      boxShadow: qty > 0 ? `0 4px 16px ${C.rosso}33` : "none",
-                      cursor: "pointer"
-                    }}>
-                      {/* Badge quantità */}
-                      {qty > 0 && (
-                        <span style={{
-                          position: "absolute", top: -8, right: -8,
-                          background: C.rosso, color: "#fff",
-                          border: `2px solid ${C.carbone}`,
-                          borderRadius: "50%", width: 24, height: 24,
-                          fontSize: 12, fontWeight: 900,
-                          display: "flex", alignItems: "center", justifyContent: "center"
-                        }}>{qty}</span>
-                      )}
-                      <span style={{ fontSize: 30, pointerEvents: "none" }}>{p.e}</span>
-                      <span style={{ color: C.bianco, fontSize: p.num ? 15 : 14, fontWeight: 800, textAlign: "center", lineHeight: 1.2 }}>{lbl.primary}</span>
-                      {lbl.secondary && <span style={{ color: "#a99f8b", fontSize: 12, fontStyle: p.num ? "italic" : "normal", textAlign: "center", lineHeight: 1.2 }}>{lbl.secondary}</span>}
-                      <span style={{ color: qty > 0 ? C.avana : C.rosso, fontSize: 14, fontWeight: 800, marginTop: 2 }}>
-                        {p.p.toFixed(2)}€
-                      </span>
-                      {/* Footer numero ufficiale — solo pizze (p.num). Necessario perché
-                          pizzaLabel non mette più il numero nel titolo: senza questo slot
-                          il numero sparirebbe del tutto dalla card. Altezza fissa per non
-                          disallineare le card pizza rispetto ai non-pizza. */}
-                      {p.num && (
-                        <div style={{
-                          marginTop: 4, paddingTop: 5, width: "100%", height: 22,
-                          borderTop: `1px solid ${C.fumo}`,
-                          display: "flex", alignItems: "center", justifyContent: "center"
-                        }}>
-                          <span style={{ color: "#888", fontSize: 11, fontWeight: 800, letterSpacing: 0.5 }}>
-                            Nº {p.num}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              )}
-
-              {/* ── Riepilogo carrello interno con extras pizza ── */}
-              {cartItems.length > 0 && (
-                <div style={{ marginTop: isModifica ? 0 : 14 }}>
-                  {!isModifica && (
-                  <div style={{ color: C.grigio, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>
-                    En el pedido
-                  </div>
-                  )}
-                  {cartItems.map(item => {
-                    const extrasAttuali = (() => {
-                      if (!item.sub) return [];
-                      const matches = item.sub.match(/\+[^,]+/g) || [];
-                      const counts = {};
-                      matches.forEach(m => {
-                        const name = m.replace(/^\+/, "").trim();
-                        counts[name] = (counts[name] || 0) + 1;
-                      });
-                      return Object.entries(counts).map(([name, qty]) => {
-                        const ing = resolveExtra(name);
-                        return { name, qty, prezzo: ing ? Math.round(ing.prezzo * qty * 100) / 100 : 0, e: ing?.e || "➕" };
-                      });
-                    })();
-                    const isOpen = extrasOpen === item._uid;
-
-                    return (
-                      <div key={item._uid} style={{
-                        marginBottom: 10, padding: "10px 12px",
-                        background: C.carbone2, borderRadius: 12,
-                        border: `1px solid ${C.fumo}`
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          {/* Colonna: riga1 = nome + chip extra (centrati col nome), riga2 = descrizione sotto */}
-                          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
-                            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-                              <span style={{ color: C.bianco, fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>{item.n}</span>
-                              {extrasAttuali.map((ex, i) => (
-                                <span key={i} style={{
-                                  background: "rgba(255,255,255,0.05)",
-                                  border: `1px solid ${C.fumo}`,
-                                  borderRadius: 8, padding: "3px 4px 3px 9px",
-                                  fontSize: 12, color: "#fff5e4", fontWeight: 700,
-                                  display: "inline-flex", alignItems: "center", gap: 4
-                                }}>
-                                  {ex.name}{ex.qty > 1 ? ` ×${ex.qty}` : ""}
-                                  <button onClick={() => removeExtra(item._uid, ex.name)} style={{
-                                    background: "none", border: "none", color: "#E8341C",
-                                    fontSize: 13, fontWeight: 900, cursor: "pointer",
-                                    width: 24, height: 24, lineHeight: 1, borderRadius: "50%",
-                                    display: "flex", alignItems: "center", justifyContent: "center"
-                                  }}>✕</button>
-                                </span>
-                              ))}
-                            </div>
-                            {descrizioneDi(item) && (
-                              <span style={{ color: "#a99f8b", fontSize: 13, fontWeight: 500, lineHeight: 1.2 }}>{descrizioneDi(item)}</span>
-                            )}
-                          </div>
-                          {/* Azioni a destra: matita (quadratino grigio) + quantità — come la riga Nuevo Pedido */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginLeft: 12 }}>
-                            {(item.cat === "Pizzas" || esDulce(item)) && (
-                              <button
-                                onClick={() => { if (isOpen) setExtrasOpen(null); else setExtrasOpen(item._uid); }}
-                                title={isOpen ? "Cerrar extras" : (esDulce(item) ? "Añadir extra dulce" : "Añadir ingrediente extra")}
-                                style={{
-                                  background: isOpen ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.035)",
-                                  border: `1px solid ${isOpen ? "rgba(255,255,255,0.4)" : "rgba(208,184,145,0.20)"}`,
-                                  borderRadius: 8, width: 34, height: 34, fontSize: 16, fontWeight: 700,
-                                  color: "#fff5e4", cursor: "pointer", marginRight: 6,
-                                  display: "flex", alignItems: "center", justifyContent: "center"
-                                }}>{isOpen ? "✕" : "✎"}</button>
-                            )}
-                            {!isModifica && (
-                            <button onClick={() => decrementAndMaybeCloseExtras(item._uid)} style={{
-                              background: C.fumo, color: C.bianco, border: "none",
-                              borderRadius: 8, width: 34, height: 34, fontSize: 18, fontWeight: 700,
-                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
-                            }}>−</button>
-                            )}
-                            <span style={{ color: C.bianco, fontWeight: 800, fontSize: 15, minWidth: 20, textAlign: "center", fontFamily: "'DM Mono',monospace" }}>{isModifica ? `× ${item.q}` : item.q}</span>
-                            {!isModifica && (
-                            <button onClick={() => increment(item)} style={{
-                              background: C.fumo, color: C.bianco, border: "none",
-                              borderRadius: 8, width: 34, height: 34, fontSize: 18, fontWeight: 700,
-                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
-                            }}>+</button>
-                            )}
-                          </div>
-                          <span style={{ color: C.grigio, fontSize: 12, fontWeight: 700, minWidth: 42, textAlign: "right", fontFamily: "'DM Mono',monospace" }}>
-                            {(item.p * item.q).toFixed(2)}€
-                          </span>
-                        </div>
-
-                        {/* Nota cucina rossa — SOLO la nota libera, NON gli extra (che restano chip) */}
-                        {(item.cat === "Pizzas" || esDulce(item)) && (() => {
-                          const notaLibera = splitSub(item.sub).note;
-                          return (
-                          <input
-                            value={notaLibera}
-                            onChange={e => setNotaLibera(item._uid, e.target.value)}
-                            placeholder="Nota cocina (cortar en 4, poco hecha...)"
-                            style={{
-                              width: "100%", marginTop: 6,
-                              background: "rgba(232,52,28,0.08)",
-                              border: `1px solid ${notaLibera ? "#E8341C88" : C.fumo}`,
-                              borderRadius: 7,
-                              color: notaLibera ? "#E8341C" : C.grigio,
-                              padding: "5px 9px", fontSize: 12,
-                              fontWeight: notaLibera ? 700 : 400,
-                              boxSizing: "border-box"
-                            }}
-                          />
-                          );
-                        })()}
-
-                        {/* Nota libera (non pizza e non dolce con extras) */}
-                        {item.cat !== "Pizzas" && !esDulce(item) && (
-                          <input
-                            value={item.sub || ""}
-                            onChange={e => setNota(item._uid, e.target.value)}
-                            placeholder="Nota (opcional)"
-                            style={{
-                              width: "100%", marginTop: 6, background: "rgba(255,255,255,0.05)",
-                              border: `1px solid ${C.fumo}`, borderRadius: 7,
-                              color: C.grigio, padding: "5px 8px", fontSize: 11,
-                              boxSizing: "border-box"
-                            }}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          ) : (
-            /* ── Custom builder ── */
-            <PizzaCustomBuilder setItems={(updater) => {
-              const fakeArr = [];
-              const result = typeof updater === "function" ? updater(fakeArr) : updater;
-              if (result && result.length > 0) {
-                onAdd(result[result.length - 1]);
-                onClose();
-              }
-            }} />
-          )}
+          <CatalogBrowser
+            MENU={MENU} CATS={CATS} qtyOf={qtyOf}
+            onTapProduct={(p) => increment(p)}
+            onAddCustom={(item) => addRaw(item)}
+          />
         </div>
 
-        {/* ── Footer: bottone Aggiungi/Aggiorna ──── */}
-        {cat !== "⭐ Custom" && (
-          <div style={{
-            padding: "12px 16px",
-            borderTop: `1px solid ${C.fumo}`,
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            gap: 12, flexShrink: 0, background: C.carbone2
-          }}>
-            <div style={{ minWidth: 0 }}>
-              {totalQty > 0 ? (
-                <>
-                  <div style={{ color: C.grigio, fontSize: 11 }}>
-                    {totalQty} item{totalQty !== 1 ? "s" : ""} seleccionados
-                  </div>
-                  <div style={{ color: C.verde, fontWeight: 900, fontSize: 20, fontFamily: "'DM Mono',monospace" }}>
-                    {totalCart.toFixed(2)}€
-                  </div>
-                </>
-              ) : (
-                <div style={{ color: C.grigio, fontSize: 13 }}>Selecciona productos</div>
-              )}
-            </div>
-            <button
-              onClick={handleConfirm}
-              disabled={totalQty === 0}
-              style={{
-                background: totalQty > 0 ? C.rosso : C.fumo,
-                color: totalQty > 0 ? "#fff" : C.grigio,
-                border: "none", borderRadius: 12,
-                padding: "14px 24px", fontWeight: 800, fontSize: 16,
-                whiteSpace: "nowrap", flexShrink: 0,
-                boxShadow: totalQty > 0 ? `0 4px 16px ${C.rosso}55` : "none",
-                cursor: totalQty > 0 ? "pointer" : "default"
-              }}>
-              {isModifica ? "✏️ Actualizar" : `✅ Añadir${totalQty > 0 ? ` (${totalQty})` : ""}`}
-            </button>
+        <div style={{
+          padding: "12px 16px", borderTop: `1px solid ${C.fumo}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 12, flexShrink: 0, background: C.carbone2,
+        }}>
+          <div style={{ minWidth: 0 }}>
+            {totalQty > 0 ? (
+              <>
+                <div style={{ color: C.grigio, fontSize: 11 }}>{totalQty} item{totalQty !== 1 ? "s" : ""} seleccionados</div>
+                <div style={{ color: C.verde, fontWeight: 900, fontSize: 20, fontFamily: "'DM Mono',monospace" }}>{totalCart.toFixed(2)}€</div>
+              </>
+            ) : (
+              <div style={{ color: C.grigio, fontSize: 13 }}>Selecciona productos</div>
+            )}
           </div>
-        )}
-
-        {/* ── Popup extra (stile picker pizze) — aperto dalla matita. Salato (INGREDIENTI) o dolce (EXTRAS_DULCES) ── */}
-        {extrasTarget && canEditExtras(extrasTarget) && (
-          <div
-            onClick={closeExtras}
+          <button
+            data-testid="ip-ver-pedido"
+            onClick={() => setDrawerOpen(true)}
+            disabled={totalQty === 0}
             style={{
-              position: "absolute", inset: 0, zIndex: 20,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              background: "rgba(0,0,0,0.6)", backdropFilter: "blur(3px)", padding: 16
-            }}
-          >
-            <div
-              onClick={e => e.stopPropagation()}
-              style={{
-                background: C.carbone, borderRadius: 16,
-                width: "min(560px, 100%)", maxHeight: "92%",
-                display: "flex", flexDirection: "column",
-                border: `1px solid ${C.fumo}`, boxShadow: "0 16px 50px rgba(0,0,0,0.7)", overflow: "hidden"
-              }}
-            >
-              {/* Header */}
-              <div style={{
-                padding: "12px 16px", borderBottom: `1px solid ${C.fumo}`,
-                display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0
-              }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ color: C.bianco, fontWeight: 800, fontSize: 18 }}>{extrasEsDulce ? "🍫 Extras dulces" : "🧀 Ingredientes extra"}</span>
-                    <span style={{ color: "#ffd439", fontWeight: 800, fontSize: 13 }}>(+0,50€ c/u)</span>
-                  </div>
-                </div>
-                <button onClick={closeExtras} style={{
-                  background: C.fumo, color: C.bianco, border: "none", borderRadius: "50%",
-                  width: 32, height: 32, fontSize: 15, cursor: "pointer", flexShrink: 0,
-                  display: "flex", alignItems: "center", justifyContent: "center"
-                }}>✕</button>
-              </div>
+              background: totalQty > 0 ? C.rosso : C.fumo, color: totalQty > 0 ? "#fff" : C.grigio,
+              border: "none", borderRadius: 12, padding: "14px 24px", fontWeight: 800, fontSize: 15,
+              whiteSpace: "nowrap", cursor: totalQty > 0 ? "pointer" : "default",
+            }}>Ver pedido</button>
+        </div>
 
-              {/* Griglia ingredienti — card come le pizze */}
-              <div style={{
-                flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 12,
-                display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(116px, 1fr))", gap: 8
-              }}>
-                {extrasList.filter(ing => ing.prezzo > 0).map(ing => {
-                  const veces = splitSub(extrasTarget.sub).extras.filter(t => t === `+${ing.n}`).length;
-                  return (
-                    <button key={ing.id} onClick={() => addExtra(extrasTarget._uid, ing)} style={{
-                      background: veces > 0 ? C.rosso + "22" : C.carbone2,
-                      border: `2px solid ${veces > 0 ? C.rosso : C.fumo}`,
-                      borderRadius: 12, padding: "10px 4px", minHeight: 76,
-                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                      gap: 4, position: "relative", cursor: "pointer"
-                    }}>
-                      {veces > 0 && (
-                        <span style={{
-                          position: "absolute", top: -8, right: -8,
-                          background: C.rosso, color: "#fff", border: `2px solid ${C.carbone}`,
-                          borderRadius: "50%", width: 22, height: 22, fontSize: 11, fontWeight: 900,
-                          display: "flex", alignItems: "center", justifyContent: "center"
-                        }}>{veces}</span>
-                      )}
-                      {/* Controllo rimozione: toglie 1 unità dell'extra (removeExtra: -1 occorrenza
-                          + -prezzo). stopPropagation così NON scatta l'addExtra della card. qty=1 → sparisce. */}
-                      {veces > 0 && (
-                        <span
-                          role="button"
-                          aria-label={`Quitar ${ing.n}`}
-                          title={`Quitar ${ing.n}`}
-                          onClick={(e) => { e.stopPropagation(); removeExtra(extrasTarget._uid, ing.n); }}
-                          style={{
-                            position: "absolute", top: -8, left: -8,
-                            background: C.carbone, color: "#fff", border: `2px solid ${C.rosso}`,
-                            borderRadius: "50%", width: 22, height: 22, fontSize: 16, fontWeight: 900, lineHeight: 1,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            cursor: "pointer", zIndex: 2
-                          }}
-                        >−</span>
-                      )}
-                      <span style={{ fontSize: 20, pointerEvents: "none" }}>{ing.e}</span>
-                      <span style={{ color: C.bianco, fontSize: 13, fontWeight: 700, textAlign: "center", lineHeight: 1.2 }}>{ing.n}</span>
-                    </button>
-                  );
-                })}
-              </div>
+        {extrasOpen && cart[extrasOpen] && (
+          <ItemConfigurator
+            item={cart[extrasOpen]} INGREDIENTI={INGREDIENTI} cartApi={cartApi}
+            onClose={() => setExtrasOpen(null)}
+          />
+        )}
 
-              {/* ── QUITAR INGREDIENTES — S2-7D4D-FIX1 ──────────────────────
-                  Sezione distinta dagli extra (che AGGIUNGONO e costano) e dalla
-                  nota (testo libero). Stile volutamente diverso: barrato + grigio,
-                  nessun prezzo, così a colpo d'occhio non si confonde con un extra. */}
-              {(() => {
-                const base = baseIngredientsOf(extrasTarget);
-                if (!base.length) return null;
-                return (
-                  <div style={{
-                    padding: "9px 14px", borderTop: `1px solid ${C.fumo}`, flexShrink: 0,
-                    background: "rgba(255,255,255,0.02)", maxHeight: 132, overflowY: "auto"
-                  }}>
-                    <div style={{
-                      fontSize: 10, fontWeight: 900, letterSpacing: 1, color: C.grigio,
-                      textTransform: "uppercase", marginBottom: 7
-                    }}>
-                      Quitar ingredientes
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {base.map(ingName => {
-                        const off = isRemoved(extrasTarget, ingName);
-                        return (
-                          <button
-                            key={ingName}
-                            data-testid="remove-ingredient-chip"
-                            aria-pressed={off}
-                            onClick={() => toggleRemoved(extrasTarget._uid, ingName)}
-                            style={{
-                              background: off ? "rgba(220,38,38,0.16)" : C.carbone2,
-                              border: `1.5px solid ${off ? "#DC2626" : C.fumo}`,
-                              borderRadius: 999, padding: "5px 11px", cursor: "pointer",
-                              color: off ? "#F87171" : C.bianco,
-                              fontSize: 12, fontWeight: 700,
-                              textDecoration: off ? "line-through" : "none",
-                              opacity: off ? 0.95 : 0.8,
-                            }}
-                          >
-                            {off ? "✕ " : ""}{ingName}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Footer: nota cucina (stesso campo/dato di item.sub, stesso salvataggio) + Listo */}
-              <div style={{
-                padding: "10px 16px", borderTop: `1px solid ${C.fumo}`, flexShrink: 0,
-                background: C.carbone2, display: "flex", alignItems: "center", gap: 10
-              }}>
-                {(() => {
-                  const notaLibera = splitSub(extrasTarget.sub).note;
-                  return (
-                    <input
-                      value={notaLibera}
-                      onChange={e => setNotaLibera(extrasTarget._uid, e.target.value)}
-                      placeholder="Nota cocina (cortar en 4, poco hecha...)"
-                      style={{
-                        flex: 1, minWidth: 0,
-                        background: "rgba(232,52,28,0.08)",
-                        border: `1px solid ${notaLibera ? "#E8341C88" : C.fumo}`,
-                        borderRadius: 8,
-                        color: notaLibera ? "#E8341C" : C.grigio,
-                        padding: "9px 11px", fontSize: 13,
-                        fontWeight: notaLibera ? 700 : 400,
-                        boxSizing: "border-box"
-                      }}
-                    />
-                  );
-                })()}
-                <button onClick={closeExtras} style={{
-                  background: C.rosso, color: "#fff", border: "none", borderRadius: 10,
-                  padding: "10px 22px", fontWeight: 800, fontSize: 14, cursor: "pointer", flexShrink: 0
-                }}>Listo</button>
-              </div>
-            </div>
-          </div>
+        {drawerOpen && (
+          <DraftSummary
+            title="Tu pedido"
+            cartItems={cartItems} totalCart={totalCart} totalQty={totalQty}
+            onSetQty={(uid, q) => { if (extrasOpen === uid && q <= 0) setExtrasOpen(null); cartApi.setQty(uid, q); }}
+            onRemoveLine={(uid) => { if (extrasOpen === uid) setExtrasOpen(null); cartApi.removeLine(uid); }}
+            onEditLine={(item) => { setExtrasOpen(item._uid); setDrawerOpen(false); }}
+            onSetPlainNote={cartApi.setNota}
+            generalNote="" onSetGeneralNote={() => {}} showGeneralNote={false}
+            onClose={() => setDrawerOpen(false)}
+            primaryAction={{ label: `✅ Añadir (${totalQty})`, onClick: handleConfirm, disabled: totalQty === 0 }}
+          />
         )}
       </div>
     </div>

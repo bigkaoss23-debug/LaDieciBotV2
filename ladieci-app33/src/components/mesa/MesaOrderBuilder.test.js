@@ -35,7 +35,7 @@ function allByTestId(container, id) { return Array.from(container.querySelectorA
 // UPPERCASE (Fase 9 -- presentation only), so a lookup by the menu's own
 // mixed-case name must not depend on DOM casing.
 function productCard(container, name) {
-  return allByTestId(container, "mesa-product-card").find((el) => el.textContent.toLowerCase().includes(name.toLowerCase()));
+  return allByTestId(container, "catalog-product-card").find((el) => el.textContent.toLowerCase().includes(name.toLowerCase()));
 }
 function buttonByText(container, text) {
   return Array.from(container.querySelectorAll("button")).find((button) => button.textContent.trim().startsWith(text));
@@ -150,7 +150,7 @@ test("Confirmar comanda bundles the freshly chosen coversTotal atomically with i
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-confirmar-comanda"));
+  click(byTestId(container, "draft-summary-primary-action"));
   await flush();
   expect(onConfirm).toHaveBeenCalledTimes(1);
   expect(onConfirm.mock.calls[0][0].coversTotal).toBe(4);
@@ -173,7 +173,7 @@ test("cart survives opening/closing the extras sub-panel and switching categorie
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-line-edit"));
+  click(byTestId(container, "draft-summary-edit"));
   await flush();
   expect(container.textContent).toContain("Ingredientes extra");
   click(buttonByText(container, "Listo"));
@@ -198,7 +198,7 @@ test("items from multiple categories accumulate in the same persistent cart", as
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  expect(allByTestId(container, "mesa-line").length).toBe(2);
+  expect(allByTestId(container, "draft-summary-line").length).toBe(2);
   unmount(container, root);
 });
 
@@ -210,8 +210,8 @@ test("tapping a product again increments its quantity badge; drawer +/- also wor
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  expect(allByTestId(container, "mesa-line").length).toBe(2);
-  click(byTestId(container, "mesa-line-plus"));
+  expect(allByTestId(container, "draft-summary-line").length).toBe(2);
+  click(byTestId(container, "draft-summary-plus"));
   await flush();
   expect(container.textContent).toContain("3 artículos");
   unmount(container, root);
@@ -225,9 +225,9 @@ test("extras and removed-ingredient toggles reach the confirmed draft", async ()
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-line-edit"));
+  click(byTestId(container, "draft-summary-edit"));
   await flush();
-  click(allByTestId(container, "mesa-extra-chip")[0]);
+  click(allByTestId(container, "configurator-extra-chip")[0]);
   await flush();
   click(allByTestId(container, "remove-ingredient-chip")[0]);
   await flush();
@@ -235,7 +235,7 @@ test("extras and removed-ingredient toggles reach the confirmed draft", async ()
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-confirmar-comanda"));
+  click(byTestId(container, "draft-summary-primary-action"));
   await flush();
   const submitted = onConfirm.mock.calls[0][0].items[0];
   expect(submitted.extras.length).toBe(1);
@@ -253,8 +253,8 @@ test("a per-line note on a non-pizza item reaches the confirmed item", async () 
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  typeInto(byTestId(container, "mesa-line-note"), "bien fría");
-  click(byTestId(container, "mesa-confirmar-comanda"));
+  typeInto(byTestId(container, "draft-summary-plain-note"), "bien fría");
+  click(byTestId(container, "draft-summary-primary-action"));
   await flush();
   expect(onConfirm.mock.calls[0][0].items[0].notes).toBe("bien fría");
   unmount(container, root);
@@ -268,8 +268,8 @@ test("the general note reaches onConfirm as `nota`", async () => {
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  typeInto(byTestId(container, "mesa-nota-general"), "mesa junto a la ventana");
-  click(byTestId(container, "mesa-confirmar-comanda"));
+  typeInto(byTestId(container, "draft-summary-general-note"), "mesa junto a la ventana");
+  click(byTestId(container, "draft-summary-primary-action"));
   await flush();
   expect(onConfirm.mock.calls[0][0].nota).toBe("mesa junto a la ventana");
   unmount(container, root);
@@ -283,7 +283,7 @@ test("confirmed item preserves product id, classic name and fantasy name -- no s
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-confirmar-comanda"));
+  click(byTestId(container, "draft-summary-primary-action"));
   await flush();
   const item = onConfirm.mock.calls[0][0].items[0];
   expect(item.id).toBe(1);
@@ -301,16 +301,16 @@ test("editing a line via the pencil updates that same line, not a duplicate", as
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-line-edit"));
+  click(byTestId(container, "draft-summary-edit"));
   await flush();
-  click(allByTestId(container, "mesa-extra-chip")[0]);
+  click(allByTestId(container, "configurator-extra-chip")[0]);
   await flush();
   click(buttonByText(container, "Listo"));
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  expect(allByTestId(container, "mesa-line").length).toBe(1);
-  click(byTestId(container, "mesa-confirmar-comanda"));
+  expect(allByTestId(container, "draft-summary-line").length).toBe(1);
+  click(byTestId(container, "draft-summary-primary-action"));
   await flush();
   expect(onConfirm.mock.calls[0][0].items.length).toBe(1);
   expect(onConfirm.mock.calls[0][0].items[0].extras.length).toBe(1);
@@ -328,11 +328,11 @@ test("removing a line via the trash button drops it from the cart and the confir
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  expect(allByTestId(container, "mesa-line").length).toBe(2);
-  click(byTestId(container, "mesa-line-remove"));
+  expect(allByTestId(container, "draft-summary-line").length).toBe(2);
+  click(byTestId(container, "draft-summary-remove"));
   await flush();
-  expect(allByTestId(container, "mesa-line").length).toBe(1);
-  click(byTestId(container, "mesa-confirmar-comanda"));
+  expect(allByTestId(container, "draft-summary-line").length).toBe(1);
+  click(byTestId(container, "draft-summary-primary-action"));
   await flush();
   expect(onConfirm.mock.calls[0][0].items.length).toBe(1);
   unmount(container, root);
@@ -370,7 +370,7 @@ test("Confirmar comanda calls onConfirm exactly once", async () => {
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-confirmar-comanda"));
+  click(byTestId(container, "draft-summary-primary-action"));
   await flush();
   expect(onConfirm).toHaveBeenCalledTimes(1);
   unmount(container, root);
@@ -404,9 +404,9 @@ test("reopening with an existing draft (Modificar) reseeds cart, covers, general
   expect(container.textContent).toContain("4 comensales");
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  expect(allByTestId(container, "mesa-line").length).toBe(1);
-  expect(byTestId(container, "mesa-nota-general").value).toBe("mesa junto a la ventana");
-  click(byTestId(container, "mesa-confirmar-comanda"));
+  expect(allByTestId(container, "draft-summary-line").length).toBe(1);
+  expect(byTestId(container, "draft-summary-general-note").value).toBe("mesa junto a la ventana");
+  click(byTestId(container, "draft-summary-primary-action"));
   await flush();
   const resubmitted = onConfirm.mock.calls[0][0];
   expect(resubmitted.client_req_id).toBe("existing-draft-id");
@@ -430,11 +430,11 @@ test("Modificar preserves quantity and lets the operator change it before re-con
   const { container, root } = await mount({ target: target({ coversTotal: 2 }), draft, onConfirm });
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  const line = byTestId(container, "mesa-line");
+  const line = byTestId(container, "draft-summary-line");
   expect(line.textContent).toContain("2");
-  click(byTestId(container, "mesa-line-plus"));
+  click(byTestId(container, "draft-summary-plus"));
   await flush();
-  click(byTestId(container, "mesa-confirmar-comanda"));
+  click(byTestId(container, "draft-summary-primary-action"));
   await flush();
   expect(onConfirm.mock.calls[0][0].items[0].q).toBe(3);
   unmount(container, root);
@@ -462,10 +462,10 @@ test("on a tablet/desktop-width viewport the picker panel keeps its rounded floa
 test("the product grid uses real CSS breakpoints for 2/3/4 columns -- no user-agent sniffing, no JS width branching for layout", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   const css = Array.from(container.querySelectorAll("style")).map((el) => el.textContent).join("\n");
-  expect(css).toMatch(/\.mesa-picker-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*1fr\)/);
-  expect(css).toMatch(/@media \(max-width:\s*359px\)[^{]*\{[^}]*\.mesa-picker-grid[^}]*grid-template-columns:\s*1fr/);
-  expect(css).toMatch(/@media \(min-width:\s*768px\)[^{]*\{[^}]*\.mesa-picker-grid[^}]*grid-template-columns:\s*repeat\(3,\s*1fr\)/);
-  expect(css).toMatch(/@media \(min-width:\s*1024px\)[^{]*\{[^}]*\.mesa-picker-grid[^}]*grid-template-columns:\s*repeat\(4,\s*1fr\)/);
+  expect(css).toMatch(/\.catalog-browser-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*1fr\)/);
+  expect(css).toMatch(/@media \(max-width:\s*359px\)[^{]*\{[^}]*\.catalog-browser-grid[^}]*grid-template-columns:\s*1fr/);
+  expect(css).toMatch(/@media \(min-width:\s*768px\)[^{]*\{[^}]*\.catalog-browser-grid[^}]*grid-template-columns:\s*repeat\(3,\s*1fr\)/);
+  expect(css).toMatch(/@media \(min-width:\s*1024px\)[^{]*\{[^}]*\.catalog-browser-grid[^}]*grid-template-columns:\s*repeat\(4,\s*1fr\)/);
   unmount(container, root);
 });
 
@@ -495,7 +495,7 @@ test("Escape closes the extras panel first, then the drawer, then the whole buil
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-line-edit"));
+  click(byTestId(container, "draft-summary-edit"));
   await flush();
   expect(container.textContent).toContain("Ingredientes extra");
   act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
@@ -519,13 +519,13 @@ test("Ver comanda drawer shows dual name, extras, removed ingredients and note f
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  click(byTestId(container, "mesa-line-edit"));
+  click(byTestId(container, "draft-summary-edit"));
   await flush();
   // First salted extra chip (prezzo > 0, filtered before the base/free
   // ingredients) is "Albahaca fresca"; first "Quitar ingredientes" chip
   // (El Pelusa's own base) is "Tomate San Marzano" -- both from the real
   // static menu/ingredient list, not invented.
-  click(allByTestId(container, "mesa-extra-chip")[0]);
+  click(allByTestId(container, "configurator-extra-chip")[0]);
   await flush();
   click(allByTestId(container, "remove-ingredient-chip")[0]);
   await flush();
@@ -535,10 +535,10 @@ test("Ver comanda drawer shows dual name, extras, removed ingredients and note f
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  const line = byTestId(container, "mesa-line");
+  const line = byTestId(container, "draft-summary-line");
   expect(line.textContent).toContain("El Pelusa / Margherita Classica");
   expect(line.textContent).toContain("+ Albahaca fresca");
-  const removedLine = byTestId(container, "mesa-line-removed");
+  const removedLine = byTestId(container, "order-line-removed");
   expect(removedLine).toBeTruthy();
   expect(removedLine.textContent).toBe("Sin: Tomate San Marzano");
   expect(line.textContent).toContain("Nota: poco hecha");
@@ -560,7 +560,7 @@ test("Ver comanda drawer shows removed ingredients for a line reseeded from an e
   const { container, root } = await mount({ target: target({ coversTotal: 2 }), draft });
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  const removedLine = byTestId(container, "mesa-line-removed");
+  const removedLine = byTestId(container, "order-line-removed");
   expect(removedLine).toBeTruthy();
   expect(removedLine.textContent).toBe("Sin: Albahaca, Fior di latte");
   unmount(container, root);
@@ -571,13 +571,13 @@ test("Ver comanda drawer shows removed ingredients for a line reseeded from an e
 test("pizza cards show a small badge with the authoritative pizza number; non-pizza cards show none", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   const pizzaCard = productCard(container, "El Pelusa");
-  const badge = pizzaCard.querySelector('[data-testid="mesa-pizza-number-badge"]');
+  const badge = pizzaCard.querySelector('[data-testid="catalog-pizza-number-badge"]');
   expect(badge).toBeTruthy();
   expect(badge.textContent).toBe("1");
   click(buttonByText(container, "Bebidas"));
   await flush();
   const drinkCard = productCard(container, "Estrella Galicia");
-  expect(drinkCard.querySelector('[data-testid="mesa-pizza-number-badge"]')).toBeNull();
+  expect(drinkCard.querySelector('[data-testid="catalog-pizza-number-badge"]')).toBeNull();
   unmount(container, root);
 });
 
