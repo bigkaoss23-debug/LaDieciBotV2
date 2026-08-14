@@ -3,10 +3,12 @@ import { C } from '../constants';
 import { useMenuData } from '../menu/useMenuData';
 import { canEditExtras } from '../menu/extrasPolicy';
 import { DRAFT_NO_PERSIST } from '../draftGuard';
-import { useOrderCart } from '../order/useOrderCart';
+import { useOrderCart, isCustomRawItem } from '../order/useOrderCart';
 import CatalogBrowser from './order/CatalogBrowser';
 import ItemConfigurator from './order/ItemConfigurator';
 import DraftSummary from './order/DraftSummary';
+import CartBar from './order/CartBar';
+import ConfirmDiscardDialog from './order/ConfirmDiscardDialog';
 
 /**
  * ItemPickerModal — Teléfono/Banco/Recogida/Domicilio/WA-escalated's
@@ -57,7 +59,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
   const { MENU, CATS, INGREDIENTI, source: menuSource, emergency: menuEmergency } = useMenuData();
 
   const cartApi = useOrderCart({ MENU, INGREDIENTI });
-  const { cart, cartItems, totalCart, totalQty, qtyOf, increment, addRaw, buildEmittedItem, loadItem, clear } = cartApi;
+  const { cart, cartItems, totalCart, totalQty, qtyOf, increment, decrementBare, addRaw, buildEmittedItem, loadItem, clear, splitForEdit, consolidate } = cartApi;
 
   // Phase 3 diagnostic marker. Rendered ONLY when the dynamic flag is explicitly on,
   // i.e. in the draft build — a normal published (flag-absent) build never shows it.
@@ -68,6 +70,12 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
   // uid of the cart line currently open in ItemConfigurator, or null.
   const [extrasOpen, setExtrasOpen] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // GOAL 10 -- same non-empty-draft confirmation gate as Mesa's picker (see
+  // MesaOrderBuilder.jsx's own requestClose). Only meaningful in create
+  // mode: modifica mode edits a single already-placed line, not an
+  // accumulating multi-item draft, so its own ✕ is unchanged.
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  const requestClose = () => { if (totalQty > 0) setConfirmDiscardOpen(true); else onClose(); };
 
   // Reset quando si apre/chiude
   useEffect(() => {
@@ -83,15 +91,27 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
       clear();
       setExtrasOpen(null);
       setDrawerOpen(false);
+      setConfirmDiscardOpen(false);
     }
   }, [visible]); // eslint-disable-line
 
+  // CANONICAL_MANUAL_PICKER_FINAL_CORRECTION -- Goal 16 root fix. A custom
+  // pizza is a raw item, never a working "+Extra, nota" shape -- running it
+  // through buildEmittedItem here unconditionally used to re-derive
+  // extras/notes by mis-parsing its own legacy `sub` description text
+  // ("Base Pelusa + Albahaca fresca, Orégano") as if it were "+Extra, note"
+  // tokens, silently overwriting the item's real extras[]/notes with
+  // garbage (the exact "⚠ Base Pelusa..." line human UAT found in the outer
+  // Teléfono summary). MesaOrderBuilder's handleConfirm already skips
+  // buildEmittedItem for custom raw items; this brings Teléfono's own
+  // confirm path to the same rule, in both its create and modifica forms.
   const handleConfirm = () => {
     if (cartItems.length === 0) return;
     if (isModifica) {
-      onUpdate(buildEmittedItem(cartItems[0]));
+      const item = cartItems[0];
+      onUpdate(isCustomRawItem(item) ? item : buildEmittedItem(item));
     } else {
-      cartItems.forEach((item) => onAdd(buildEmittedItem(item)));
+      cartItems.forEach((item) => onAdd(isCustomRawItem(item) ? item : buildEmittedItem(item)));
     }
     onClose();
   };
@@ -127,7 +147,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
 
   // ── Create mode ──────────────────────────────────────────────────────────
   return (
-    <div onClick={onClose} style={{
+    <div onClick={requestClose} style={{
       position: "fixed", inset: 0, zIndex: 600,
       display: "flex", alignItems: "center", justifyContent: "center",
       background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)",
@@ -141,13 +161,17 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
           display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0,
         }}>
           <div style={{ color: C.bianco, fontWeight: 800, fontSize: 17 }}>➕ Añadir al pedido</div>
-          <button onClick={onClose} style={{
+          <button data-testid="ip-picker-close" onClick={requestClose} style={{
             background: C.fumo, color: C.grigio, border: "none", borderRadius: "50%", width: 32, height: 32,
             fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
           }}>✕</button>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", position: "relative" }}>
+        {/* CANONICAL_MANUAL_PICKER_FINAL_CORRECTION (Goal 13) -- CatalogBrowser
+            now owns its own internal scroll + sticky Custom CTA, mirroring
+            MesaOrderBuilder's own wrapper (see that file for the full note on
+            why position:sticky alone doesn't achieve this). */}
+        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}>
           {DIAG_ON && (
             <span
               data-testid="menu-source-marker"
@@ -167,42 +191,23 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
             </span>
           )}
           <CatalogBrowser
-            MENU={MENU} CATS={CATS} qtyOf={qtyOf}
+            MENU={MENU} CATS={CATS} INGREDIENTI={INGREDIENTI} qtyOf={qtyOf}
             onTapProduct={(p) => increment(p)}
-            onAddCustom={(item) => addRaw(item)}
+            onDecrementProduct={(p) => decrementBare(p)}
+            onAddCustom={(item) => { addRaw(item); setDrawerOpen(true); }}
           />
         </div>
 
-        <div style={{
-          padding: "12px 16px", borderTop: `1px solid ${C.fumo}`,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          gap: 12, flexShrink: 0, background: C.carbone2,
-        }}>
-          <div style={{ minWidth: 0 }}>
-            {totalQty > 0 ? (
-              <>
-                <div style={{ color: C.grigio, fontSize: 11 }}>{totalQty} item{totalQty !== 1 ? "s" : ""} seleccionados</div>
-                <div style={{ color: C.verde, fontWeight: 900, fontSize: 20, fontFamily: "'DM Mono',monospace" }}>{totalCart.toFixed(2)}€</div>
-              </>
-            ) : (
-              <div style={{ color: C.grigio, fontSize: 13 }}>Selecciona productos</div>
-            )}
-          </div>
-          <button
-            data-testid="ip-ver-pedido"
-            onClick={() => setDrawerOpen(true)}
-            disabled={totalQty === 0}
-            style={{
-              background: totalQty > 0 ? C.rosso : C.fumo, color: totalQty > 0 ? "#fff" : C.grigio,
-              border: "none", borderRadius: 12, padding: "14px 24px", fontWeight: 800, fontSize: 15,
-              whiteSpace: "nowrap", cursor: totalQty > 0 ? "pointer" : "default",
-            }}>Ver pedido</button>
-        </div>
+        <CartBar
+          totalQty={totalQty} totalCart={totalCart} actionLabel="Ver pedido"
+          onOpen={() => setDrawerOpen(true)} testId="ip-ver-pedido"
+          emptyHint="Selecciona productos"
+        />
 
         {extrasOpen && cart[extrasOpen] && (
           <ItemConfigurator
             item={cart[extrasOpen]} INGREDIENTI={INGREDIENTI} cartApi={cartApi}
-            onClose={() => setExtrasOpen(null)}
+            onClose={() => { consolidate(); setExtrasOpen(null); }}
           />
         )}
 
@@ -215,11 +220,20 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
             // Stays open underneath -- see the same call in MesaOrderBuilder.
             // Both channels share this flow by construction, so they have to
             // share its correction too.
-            onEditLine={(item) => setExtrasOpen(item._uid)}
+            // GOAL 5 -- splitForEdit peels one unit off a qty>1 line before
+            // opening the configurator (see useOrderCart.js).
+            onEditLine={(item) => setExtrasOpen(splitForEdit(item._uid))}
             onSetPlainNote={cartApi.setNota}
             generalNote="" onSetGeneralNote={() => {}} showGeneralNote={false}
             onClose={() => setDrawerOpen(false)}
             primaryAction={{ label: `✅ Añadir (${totalQty})`, onClick: handleConfirm, disabled: totalQty === 0 }}
+          />
+        )}
+
+        {confirmDiscardOpen && (
+          <ConfirmDiscardDialog
+            onCancel={() => setConfirmDiscardOpen(false)}
+            onDiscard={onClose}
           />
         )}
       </div>

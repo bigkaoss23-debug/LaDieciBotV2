@@ -50,6 +50,22 @@ test("plain pizza: name and classic secondary name, no extras/removed/note rows"
   unmount(container, root);
 });
 
+// GOAL 18 -- display name hierarchy: the canonical/classic name gets its own
+// element so it can be styled distinctly (uppercase, per orderLineViewCss)
+// from the nickname, without changing what the line's text actually says.
+test("the canonical/secondary name is its own element (styleable independently of the nickname)", () => {
+  const { container, root } = mount({ line: normalizeOrderLine(emittedPizza()) });
+  const nameRow = byTestId(container, "order-line-name");
+  const secondary = nameRow.querySelector(".order-line-name-secondary");
+  expect(secondary).toBeTruthy();
+  expect(secondary.textContent).toContain("Margherita Classica");
+  // textContent (what every existing consumer/test reads) is unaffected by
+  // the CSS text-transform:uppercase applied via the class -- same string,
+  // same "nickname / Canonical Name" order as before.
+  expect(nameRow.textContent.replace(/\s+/g, " ").trim()).toBe("El Pelusa / Margherita Classica");
+  unmount(container, root);
+});
+
 // HARD ACCEPTANCE DEFECT A — custom pizza detail must not collapse to just
 // "Pizza a tu gusto" once outside the picker's own drawer.
 test("custom pizza: selected ingredients render as visible chips, not just the generic name", () => {

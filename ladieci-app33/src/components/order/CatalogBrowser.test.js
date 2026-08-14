@@ -127,10 +127,9 @@ test("adding a custom pizza calls onAddCustom with the built item, without needi
   const onAddCustom = jest.fn();
   const { container, root } = mount({ onAddCustom });
   click(byTestId(container, "catalog-cat-⭐ Custom"));
-  // First real ingredient in the static custom-builder's default group.
-  const ingredientButtons = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.includes("+0.50"));
-  click(ingredientButtons[0]);
-  const addBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Añadir esta pizza"));
+  // First real ingredient in the shared IngredientGrid's default group.
+  click(allByTestId(container, "custom-ingredient-chip")[0]);
+  const addBtn = byTestId(container, "custom-add-cta");
   click(addBtn);
   expect(onAddCustom).toHaveBeenCalledTimes(1);
   const added = onAddCustom.mock.calls[0][0];
@@ -139,38 +138,115 @@ test("adding a custom pizza calls onAddCustom with the built item, without needi
   unmount(container, root);
 });
 
-// ── the horizontally scrolling tab row ────────────────────────────────────
-// "⭐ Custom is clipped on iPhone" was not a sizing bug. A flex row that
-// scrolls horizontally does not honour its own padding-right at the scroll
-// end in WebKit/Blink, so the last tab butts flush against the edge. The fix
-// is a real, unshrinkable trailing child; these lock it in because the
-// symptom is invisible in JSDOM's layout and trivially removable by someone
-// tidying up "an empty span".
-describe("the last category tab is never clipped at the scroll end", () => {
-  test("the tab row ends with an unshrinkable spacer, not container padding", () => {
+// ── the 4 main tabs (Pizzas/Postres/Bebidas/Custom fixture-equivalent) ────
+// CANONICAL_MANUAL_PICKER_FINAL_CORRECTION (Goal 2) -- "⭐ Custom is clipped
+// on iPhone" was originally fixed as a horizontal-scroll clipping bug (a
+// trailing spacer so the scroll end wasn't flush against the edge). Human
+// phone UAT found that fix insufficient: with only 4 top-level categories,
+// there should be NO scroll at all -- all 4 always visible together. The
+// fixture here has exactly 2 CATS + Custom = 3 tabs, still <=4, so it
+// exercises the same no-scroll grid path the real 3-CATS-+-Custom catalogue
+// uses. JSDOM never runs real layout (no way to assert on-screen pixels at
+// 375/390/393 here -- see MOBILE VISUAL QA in the final report for the real
+// on-device proof), so these are structural: a CSS grid of N equal columns
+// has no overflow to scroll, by construction, regardless of viewport width.
+describe("the main tab row fits without horizontal scroll (<=4 categories)", () => {
+  test("uses a CSS grid of one column per tab, not a scrolling flex row", () => {
     const { container, root } = mount({});
-    const spacer = byTestId(container, "catalog-tabs-end-spacer");
-    expect(spacer).toBeTruthy();
-    // must be the LAST child: a spacer anywhere else buys nothing
-    expect(spacer.parentElement.lastElementChild).toBe(spacer);
-    // and must not be allowed to collapse under flex pressure
-    expect(spacer.style.flex).toContain("0 0");
+    const row = byTestId(container, "catalog-browser-tabs");
+    expect(row.style.display).toBe("grid");
+    expect(row.style.gridTemplateColumns).toBe("repeat(3, 1fr)"); // 2 CATS + Custom
+    expect(row.style.overflowX).not.toBe("auto");
     unmount(container, root);
   });
 
-  test("the row carries no right padding for the browser to drop", () => {
+  test("no trailing scroll-end spacer when the grid layout is used -- there is no scroll end to protect", () => {
     const { container, root } = mount({});
-    const row = container.querySelector(".catalog-browser-tabs");
-    expect(row.style.paddingRight === "" || row.style.paddingRight === "0px").toBe(true);
+    expect(byTestId(container, "catalog-tabs-end-spacer")).toBeNull();
+    unmount(container, root);
+  });
+
+  test("every tab, including Custom, renders as a direct grid child with no width override forcing overflow", () => {
+    const { container, root } = mount({});
+    const tabs = Array.from(container.querySelectorAll('[data-testid="catalog-browser-tabs"] button'));
+    expect(tabs).toHaveLength(3);
+    tabs.forEach((btn) => { expect(btn.style.flexShrink).toBe(""); });
     unmount(container, root);
   });
 
   test("the Custom tab is still the last real tab and still switches", () => {
     const { container, root } = mount({});
-    const tabs = Array.from(container.querySelectorAll(".catalog-browser-tabs button"));
+    const tabs = Array.from(container.querySelectorAll('[data-testid="catalog-browser-tabs"] button'));
     expect(tabs[tabs.length - 1].textContent).toContain("Custom");
     click(tabs[tabs.length - 1]);
     expect(allByTestId(container, "catalog-product-card")).toHaveLength(0);
+    unmount(container, root);
+  });
+
+  test("a catalogue with MORE than 4 top-level categories falls back to the proven scrollable row + end-spacer, instead of a too-narrow grid", () => {
+    const { container, root } = mount({ CATS: ["A", "B", "C", "D", "E"] }); // 5 + Custom = 6
+    const row = byTestId(container, "catalog-browser-tabs");
+    expect(row.style.display).toBe("flex");
+    expect(row.style.overflowX).toBe("auto");
+    expect(byTestId(container, "catalog-tabs-end-spacer")).toBeTruthy();
+    unmount(container, root);
+  });
+});
+
+// ── GOAL 3 — card number/quantity/price no longer compete for one corner ──
+describe("catalogue card badge positions (Goal 3)", () => {
+  test("selected quantity badge sits top-left", () => {
+    const { container, root } = mount({ qtyOf: (id) => (id === "fx-1" ? 2 : 0) });
+    const card = allByTestId(container, "catalog-product-card").find((el) => el.textContent.includes("ZANZIBAR"));
+    const badge = card.querySelector('[data-testid="catalog-qty-badge"]');
+    expect(badge).toBeTruthy();
+    expect(badge.textContent).toBe("2");
+    expect(badge.style.top).toBe("-8px");
+    expect(badge.style.left).toBe("-8px");
+    unmount(container, root);
+  });
+
+  test("catalogue number badge sits bottom-right (no positioning of its own -- laid out in the bottom row)", () => {
+    const { container, root } = mount({});
+    const card = allByTestId(container, "catalog-product-card").find((el) => el.textContent.includes("ZANZIBAR"));
+    const badge = card.querySelector('[data-testid="catalog-pizza-number-badge"]');
+    expect(badge).toBeTruthy();
+    expect(badge.style.position).not.toBe("absolute");
+    const priceEl = card.querySelector('[data-testid="catalog-product-price"]');
+    const bottomRow = badge.parentElement;
+    expect(bottomRow).toBe(priceEl.parentElement);
+    expect(Array.from(bottomRow.children).indexOf(badge)).toBeGreaterThan(Array.from(bottomRow.children).indexOf(priceEl));
+    unmount(container, root);
+  });
+
+  test("price sits bottom-left, in the same row as the number badge", () => {
+    const { container, root } = mount({});
+    const card = allByTestId(container, "catalog-product-card").find((el) => el.textContent.includes("ZANZIBAR"));
+    const priceEl = card.querySelector('[data-testid="catalog-product-price"]');
+    expect(priceEl.textContent).toBe("11.25€");
+    unmount(container, root);
+  });
+});
+
+// ── GOAL 4 — quick decrement straight from the catalogue card ─────────────
+describe("catalogue card quick decrement (Goal 4)", () => {
+  test("no minus control when quantity is 0", () => {
+    const { container, root } = mount({ qtyOf: () => 0, onDecrementProduct: jest.fn() });
+    const card = allByTestId(container, "catalog-product-card")[0];
+    expect(card.querySelector('[data-testid="catalog-decrement"]')).toBeNull();
+    unmount(container, root);
+  });
+
+  test("minus control appears once quantity > 0 and calls onDecrementProduct with the product, without also triggering onTapProduct", () => {
+    const onTapProduct = jest.fn();
+    const onDecrementProduct = jest.fn();
+    const { container, root } = mount({ qtyOf: (id) => (id === "fx-1" ? 1 : 0), onTapProduct, onDecrementProduct });
+    const card = allByTestId(container, "catalog-product-card").find((el) => el.textContent.includes("ZANZIBAR"));
+    const minus = card.querySelector('[data-testid="catalog-decrement"]');
+    expect(minus).toBeTruthy();
+    click(minus);
+    expect(onDecrementProduct).toHaveBeenCalledWith(expect.objectContaining({ id: "fx-1" }));
+    expect(onTapProduct).not.toHaveBeenCalled();
     unmount(container, root);
   });
 });

@@ -143,28 +143,28 @@ test("same beverage reads identically on Mesa and Teléfono -- no casing drift b
   expect(mesaLine).toBe(telLine);
 });
 
+// GOAL 14 -- adding a configured Custom pizza opens the cart automatically
+// on BOTH channels, so `addCustom` here deliberately does NOT click
+// "Ver comanda"/"Ver pedido" afterwards; the drawer is asserted open already.
 test("same custom pizza (same ingredients) reads identically on Mesa and Teléfono", async () => {
   const addCustom = async (container) => {
     click(buttonByText(container, "⭐ Custom"));
     await flush();
-    const ingredientButtons = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.includes("+0.50"));
-    click(ingredientButtons[0]);
+    click(allByTestId(container, "custom-ingredient-chip")[0]);
     await flush();
-    click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Añadir esta pizza")));
+    click(byTestId(container, "custom-add-cta"));
     await flush();
   };
 
   const mesa = await mountMesa();
   await addCustom(mesa.container);
-  click(byTestId(mesa.container, "mesa-ver-comanda"));
-  await flush();
+  expect(byTestId(mesa.container, "draft-summary-line")).toBeTruthy();
   const mesaLine = normalizedLineText(mesa.container);
   unmount(mesa.container, mesa.root);
 
   const tel = await mountTelefono();
   await addCustom(tel.container);
-  click(byTestId(tel.container, "ip-ver-pedido"));
-  await flush();
+  expect(byTestId(tel.container, "draft-summary-line")).toBeTruthy();
   const telLine = normalizedLineText(tel.container);
   unmount(tel.container, tel.root);
 

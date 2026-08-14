@@ -1,15 +1,9 @@
 import { useState } from 'react';
 import { C, EXTRAS_DULCES, esDulce } from '../../constants';
 import { extrasForProduct } from '../../menu/menuAdapter';
-import { ingredientGroupOf, groupsPresent } from '../../menu/ingredientGroups';
+import IngredientGrid from './IngredientGrid';
 
 const ALL_GROUPS = "Todos";
-
-// Only ever consulted when an ingredient carries no emoji of its own.
-const GROUP_FALLBACK_EMOJI = {
-  Base: "🍕", Verduras: "🥬", Quesos: "🧀", Carnes: "🥓",
-  Pescados: "🐟", Especias: "🌿", Dulces: "🍫", Otros: "✨",
-};
 
 // ===============================================================
 // ItemConfigurator.jsx — canonical single-item configuration popup.
@@ -49,15 +43,6 @@ export function ItemConfigurator({ item, INGREDIENTI, cartApi, onClose }) {
   const notaLibera = splitSub(item.sub).note;
   const base = baseIngredientsOf(item);
 
-  // Only the purchasable extras are ever browsable, exactly as before —
-  // grouping is applied to that same list, never to a different one.
-  const buyable = extrasList.filter((ing) => ing.prezzo > 0);
-  const groups = groupsPresent(buyable);
-  const activeGroup = groups.includes(group) ? group : ALL_GROUPS;
-  const visible = activeGroup === ALL_GROUPS
-    ? buyable
-    : buyable.filter((ing) => ingredientGroupOf(ing) === activeGroup);
-
   return (
     <div onClick={onClose} data-testid="item-configurator" style={{
       position: "absolute", inset: 0, zIndex: 40, display: "flex", alignItems: "center",
@@ -74,68 +59,24 @@ export function ItemConfigurator({ item, INGREDIENTI, cartApi, onClose }) {
             fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
           }}>✕</button>
         </div>
-        {/* ── GROUP FILTER ──────────────────────────────────────────────────
-            Rendered only when the data actually supports more than one family
-            (groupsPresent returns [] below two), so a short allowlist — a
-            product with four permitted extras — never grows a chip row that
-            filters nothing. Same trailing-spacer fix as the category tabs:
-            padding-right is not honoured at a horizontal scroll end. */}
-        {groups.length > 0 && (
-          <div data-testid="configurator-group-filter" style={{
-            display: "flex", gap: 6, padding: "9px 0 9px 12px", overflowX: "auto",
-            flexShrink: 0, borderBottom: `1px solid ${C.fumo}`, background: "rgba(255,255,255,0.018)",
-          }}>
-            {[ALL_GROUPS, ...groups].map((g) => (
-              <button key={g} data-testid={`configurator-group-${g}`} onClick={() => setGroup(g)} style={{
-                background: activeGroup === g ? "rgba(196,168,122,0.20)" : "transparent",
-                border: `1.5px solid ${activeGroup === g ? "#C4A87A" : C.fumo}`,
-                color: activeGroup === g ? "#F0D9A8" : C.grigio,
-                borderRadius: 999, padding: "6px 13px", fontSize: 12.5, fontWeight: 800,
-                whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer",
-              }}>{g}</button>
-            ))}
-            <span aria-hidden="true" style={{ flex: "0 0 12px", width: 12 }} />
-          </div>
-        )}
-
-        <div data-testid="configurator-extras-grid" style={{ flex: 1, overflowY: "auto", padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(116px, 1fr))", gap: 8, alignContent: "start" }}>
-          {visible.map((ing) => {
-            const veces = splitSub(item.sub).extras.filter((t) => t === `+${ing.n}`).length;
-            return (
-              <button key={ing.id} data-testid="configurator-extra-chip" onClick={() => addExtra(item._uid, ing)} style={{
-                background: veces > 0 ? C.rosso + "22" : C.carbone2, border: `2px solid ${veces > 0 ? C.rosso : C.fumo}`,
-                borderRadius: 12, padding: "10px 4px", minHeight: 76, display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center", gap: 4, position: "relative", cursor: "pointer",
-              }}>
-                {veces > 0 && <span style={{
-                  position: "absolute", top: -8, right: -8, background: C.rosso, color: "#fff",
-                  border: `2px solid ${C.carbone}`, borderRadius: "50%", width: 22, height: 22,
-                  fontSize: 11, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center",
-                }}>{veces}</span>}
-                {veces > 0 && (
-                  <span role="button" aria-label={`Quitar ${ing.n}`}
-                    onClick={(e) => { e.stopPropagation(); removeExtra(item._uid, ing.n); }}
-                    style={{
-                      position: "absolute", top: -8, left: -8, background: C.carbone, color: "#fff",
-                      border: `2px solid ${C.rosso}`, borderRadius: "50%", width: 22, height: 22,
-                      fontSize: 16, fontWeight: 900, lineHeight: 1, display: "flex", alignItems: "center",
-                      justifyContent: "center", cursor: "pointer", zIndex: 2,
-                    }}>−</span>
-                )}
-                {/* La Dieci's extras are recognised by their emoji as much as
-                    by their name, so the emoji stays — explicitly kept, not
-                    incidental. The per-family fallback covers dynamic-catalogue
-                    rows that carry no emoji of their own: without it that span
-                    renders empty and the card's height collapses, which is
-                    what makes a grid of otherwise-identical chips hard to scan. */}
-                <span style={{ fontSize: 20, lineHeight: 1.1, pointerEvents: "none" }}>
-                  {ing.e || GROUP_FALLBACK_EMOJI[ingredientGroupOf(ing)] || "•"}
-                </span>
-                <span style={{ color: C.bianco, fontSize: 13, fontWeight: 700, textAlign: "center", lineHeight: 1.2 }}>{ing.n}</span>
-              </button>
-            );
-          })}
-        </div>
+        {/* CANONICAL_MANUAL_PICKER_FINAL_CORRECTION -- extras browsing is now
+            the shared IngredientGrid (also used by PizzaCustomBuilder's
+            Custom ingredient picker), same grouping rule, same card/
+            quantity/minus grammar. `quantityOf` still reads the extras count
+            straight off item.sub, exactly as before -- only where that
+            counting logic lives moved, not what it does. */}
+        <IngredientGrid
+          items={extrasList}
+          quantityOf={(ing) => splitSub(item.sub).extras.filter((t) => t === `+${ing.n}`).length}
+          onIncrement={(ing) => addExtra(item._uid, ing)}
+          onDecrement={(ing) => removeExtra(item._uid, ing.n)}
+          group={group}
+          onGroupChange={setGroup}
+          chipTestId="configurator-extra-chip"
+          groupFilterTestId="configurator-group-filter"
+          groupTestId={(g) => `configurator-group-${g}`}
+          gridTestId="configurator-extras-grid"
+        />
         {/* ── AJUSTES ZONE ──────────────────────────────────────────────────
             Everything below this point is a DIFFERENT job from the grid above:
             up there you browse and add, down here you take things off, write a

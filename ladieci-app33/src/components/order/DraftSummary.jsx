@@ -1,34 +1,35 @@
+import { useRef, useState } from 'react';
 import { C } from '../../constants';
 import { canEditExtras } from '../../menu/extrasPolicy';
 import { normalizeOrderLine } from '../../menu/normalizeOrderLine';
 import OrderLineView from './OrderLineView';
 
 // ===============================================================
-// DraftSummary.jsx — canonical "Ver comanda" drawer.
+// DraftSummary.jsx — canonical "Ver comanda" drawer / bottom sheet.
 //
-// Slice 2 of the canonical order-picker migration (see
-// CANONICAL_MANUAL_PICKER_SLICE_2_MESA_TELEFONO_REPORT_2026-08-14.md).
+// CANONICAL_MANUAL_PICKER_FINAL_CORRECTION (2026-08-14) rebuilt the sheet
+// itself on top of Slice 2's original (normalizeOrderLine()/OrderLineView
+// reading contract untouched -- see that file's own header) after human
+// phone UAT:
 //
-// Renders the picker's own in-progress cart (working-shape items, before
-// they're handed to the workflow shell) through Slice 1's canonical
-// normalizeOrderLine()/OrderLineView -- the same reading contract already
-// proven for the post-confirm draft panel and the create-order list, now
-// also covering the picker's own internal review step. A custom pizza's
-// ingredients and a removed base ingredient show here exactly as they do
-// everywhere else Slice 1 already migrated -- one truth, one renderer,
-// wherever an order line is displayed.
+//   Goal 8 -- the sheet read as "functional but flat". Kept every human-
+//     approved colour (green extras / red removed / gold note) and control,
+//     added real depth (shadow, taller max-height so it uses more of the
+//     dimmed space above), a drag handle, and stronger row/price contrast.
+//   Goal 9 -- swipe-down-to-dismiss, with a correct bottom-sheet gesture
+//     contract: dragging from the handle/header always starts a drag;
+//     dragging from within the scrollable line list only starts one when
+//     that list is already scrolled to its own top (so an ordinary scroll
+//     through a long comanda never gets mistaken for a dismiss gesture).
+//     Closes ONLY the sheet -- never the draft (same as the ✕ always did).
+//   Goal 7 -- explicit safe-area-inset-bottom + a small deliberate margin,
+//     so the sheet's own footer doesn't read as glued to the device edge.
 //
-// Self-contained overlay (own backdrop, slides from the bottom), matching
-// the proven Mesa drawer this replaces. Whether a line's pencil opens
-// ItemConfigurator is decided by `canEditExtras()` -- the same predicate
-// ItemConfigurator itself is gated by (menu/extrasPolicy.js) -- never a
-// local `cat === "Pizzas"` re-check that could drift from it again. A line
-// that doesn't qualify (no extras policy for it) gets a plain note field
-// instead, matching what both predecessors already did for those items.
-//
-// Owns no cart-mutation logic itself -- purely callbacks out to whatever
-// the shell's useOrderCart() instance already is.
+// Owns no cart-mutation logic itself -- purely callbacks out to whatever the
+// shell's useOrderCart() instance already is.
 // ===============================================================
+const DRAG_DISMISS_PX = 70;
+
 export function DraftSummary({
   title, cartItems, totalCart, totalQty,
   onSetQty, onRemoveLine, onEditLine, onSetPlainNote,
@@ -36,28 +37,73 @@ export function DraftSummary({
   showLineControls = true,
   onClose, primaryAction,
 }) {
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const draggingRef = useRef(false);
+  const startYRef = useRef(0);
+  const scrollRef = useRef(null);
+
+  const beginDrag = (e) => {
+    draggingRef.current = true;
+    startYRef.current = e.clientY;
+    setDragging(true);
+  };
+  const onHandlePointerDown = (e) => beginDrag(e);
+  const onContentPointerDown = (e) => {
+    // Only a candidate dismiss gesture when the line list has nothing left
+    // to scroll upward through -- otherwise this is an ordinary scroll.
+    if (!scrollRef.current || scrollRef.current.scrollTop <= 0) beginDrag(e);
+  };
+  const onPanelPointerMove = (e) => {
+    if (!draggingRef.current) return;
+    const delta = e.clientY - startYRef.current;
+    if (delta > 0) setDragY(delta);
+  };
+  const endDrag = () => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    setDragging(false);
+    if (dragY > DRAG_DISMISS_PX) {
+      onClose();
+    }
+    setDragY(0);
+  };
+
   return (
     <div role="dialog" aria-modal="true" aria-label={title} onClick={onClose} data-testid="draft-summary" style={{
       position: "absolute", inset: 0, zIndex: 30, display: "flex", alignItems: "flex-end",
-      justifyContent: "center", background: "rgba(0,0,0,0.6)",
+      justifyContent: "center", background: "rgba(0,0,0,0.62)",
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        background: C.carbone, width: "100%", maxHeight: "82%", borderRadius: "18px 18px 0 0",
-        display: "flex", flexDirection: "column", border: `1px solid ${C.fumo}`, overflow: "hidden",
-      }}>
-        <div style={{ padding: "14px 18px 10px", borderBottom: `1px solid ${C.fumo}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+      <div
+        data-testid="draft-summary-panel"
+        onClick={(e) => e.stopPropagation()}
+        onPointerMove={onPanelPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        style={{
+          background: C.carbone, width: "100%", maxHeight: "88%", borderRadius: "20px 20px 0 0",
+          display: "flex", flexDirection: "column", border: `1px solid ${C.fumo}`, overflow: "hidden",
+          boxShadow: "0 -18px 48px rgba(0,0,0,0.6)",
+          transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
+          transition: dragging ? "none" : "transform 0.22s ease",
+        }}
+      >
+        <div data-testid="draft-summary-drag-zone" onPointerDown={onHandlePointerDown} style={{ flexShrink: 0, paddingTop: 8, display: "flex", justifyContent: "center", cursor: "grab" }}>
+          <span data-testid="draft-summary-handle" aria-hidden="true" style={{ width: 40, height: 4.5, borderRadius: 3, background: "rgba(208,184,145,0.35)" }} />
+        </div>
+        <div onPointerDown={onHandlePointerDown} style={{ padding: "8px 18px 10px", borderBottom: `1px solid ${C.fumo}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div style={{ color: C.bianco, fontWeight: 800, fontSize: 16 }}>{title}</div>
-          <button onClick={onClose} style={{
-            background: C.fumo, color: C.grigio, border: "none", borderRadius: "50%", width: 32, height: 32,
+          <button data-testid="draft-summary-close" onClick={onClose} style={{
+            background: "rgba(255,255,255,0.07)", color: C.bianco, border: `1px solid ${C.fumo}`, borderRadius: "50%", width: 34, height: 34,
             fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
           }}>✕</button>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+        <div ref={scrollRef} data-testid="draft-summary-content" onPointerDown={onContentPointerDown} style={{ flex: 1, overflowY: "auto", padding: 14 }}>
           {cartItems.map((item) => {
             const configurable = canEditExtras(item);
             return (
               <div key={item._uid} data-testid="draft-summary-line" style={{
-                marginBottom: 10, padding: "10px 12px", background: C.carbone2,
+                marginBottom: 10, padding: "11px 13px", background: C.carbone2,
                 borderRadius: 12, border: `1px solid ${C.fumo}`,
               }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
@@ -93,7 +139,7 @@ export function DraftSummary({
                     }}
                   />
                 )}
-                <div style={{ marginTop: 4, textAlign: "right", color: C.grigio, fontSize: 12, fontFamily: "'DM Mono',monospace" }}>
+                <div style={{ marginTop: 5, textAlign: "right", color: "#CFC3AE", fontSize: 12.5, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>
                   {(item.p * item.q).toFixed(2)}€
                 </div>
               </div>
@@ -118,7 +164,8 @@ export function DraftSummary({
           )}
         </div>
         <div style={{
-          padding: "12px 16px calc(12px + env(safe-area-inset-bottom, 0px))",
+          paddingTop: 12, paddingLeft: 16, paddingRight: 16,
+          paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
           borderTop: `1px solid ${C.fumo}`, display: "flex", alignItems: "center",
           justifyContent: "space-between", gap: 12, background: C.carbone2, flexShrink: 0,
         }}>
@@ -142,7 +189,7 @@ export function DraftSummary({
 }
 
 const qtyBtnStyle = {
-  background: C.fumo, color: C.bianco, border: "none", borderRadius: 8, width: 30, height: 30,
+  background: "rgba(255,255,255,0.09)", color: C.bianco, border: `1px solid ${C.fumo}`, borderRadius: 8, width: 30, height: 30,
   fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
 };
 const pencilBtnStyle = {

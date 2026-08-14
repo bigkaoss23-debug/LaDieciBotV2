@@ -60,10 +60,24 @@ ck("esiste un unico boundary di emissione", () => {
   assert.ok(/const buildEmittedItem = \(item\) => \{/.test(codeOnly), "buildEmittedItem definito");
 });
 
-ck("ENTRAMBE le uscite (add e update) passano dal boundary", () => {
-  assert.ok(/onAdd\(buildEmittedItem\(item\)\)/.test(codeOnly), "onAdd");
-  assert.ok(/onUpdate\(buildEmittedItem\(cartItems\[0\]\)\)/.test(codeOnly), "onUpdate");
-  assert.ok(!/onAdd\(item\)\s*\)/.test(codeOnly), "nessuna emissione grezza residua");
+// CANONICAL_MANUAL_PICKER_FINAL_CORRECTION (Goal 16) -- a raw Custom pizza
+// (PizzaCustomBuilder.jsx) is a THIRD, already-structured item shape, never
+// the lossy working "+Extra, nota" shape buildEmittedItem exists to fix.
+// Running it through buildEmittedItem anyway used to re-derive extras/notes
+// by mis-parsing its own legacy `sub` description text as "+Extra, note"
+// tokens -- the exact "⚠ Base Pelusa + ..." bogus-note bug human phone UAT
+// found on the outer Nuevo Pedido summary. The boundary is still the ONLY
+// path for every NORMAL item (isCustomRawItem is the one, shared, already-
+// tested predicate -- see useOrderCart.js's own isCustomRawItem and
+// MesaOrderBuilder.jsx's handleConfirm, which used this exact exemption
+// before ItemPickerModal.jsx did); this assertion now accepts that one
+// narrow, explicit, predicate-gated exception instead of a truly
+// unconditional call, while still failing on any OTHER raw emission.
+ck("ENTRAMBE le uscite (add e update) passano dal boundary (salvo l'eccezione esplicita Custom)", () => {
+  assert.ok(/onAdd\(isCustomRawItem\(item\) \? item : buildEmittedItem\(item\)\)/.test(codeOnly), "onAdd");
+  assert.ok(/onUpdate\(isCustomRawItem\(item\) \? item : buildEmittedItem\(item\)\)/.test(codeOnly), "onUpdate");
+  assert.ok(/isCustomRawItem/.test(codeOnly), "usa lo stesso predicato condiviso di useOrderCart.js/MesaOrderBuilder.jsx");
+  assert.ok(!/onAdd\(item\)\s*\)/.test(codeOnly), "nessuna emissione grezza incondizionata residua");
 });
 
 ck("gli extra emessi sono STRUTTURATI (key, name, price, emoji, quantity)", () => {

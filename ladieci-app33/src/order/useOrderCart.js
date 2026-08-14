@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { genId, findExtra } from '../constants';
+import { itemSignature, consolidateCart } from '../menu/itemSignature';
 
 // Custom pizzas (PizzaCustomBuilder) are inserted raw and never pass through
 // buildEmittedItem -- shared here so any consumer that needs to tell a custom
@@ -30,18 +31,43 @@ export function useOrderCart({ MENU, INGREDIENTI }) {
 
   const descrizioneDi = (item) => (MENU.find(m => String(m.id) === String(item.id)) || {}).sub || "";
 
-  // Ogni tap crea sempre una riga separata — mai merge
+  // The unconfigured (no extras/removals/note) working-shape item a bare
+  // catalogue tap produces -- shared by increment/decrementBare so both sides
+  // of the catalogue card's +/- always target the exact same line via its
+  // itemSignature, never a hand-rolled "no sub" heuristic that could drift
+  // from the one true signature rule (menu/itemSignature.js).
+  const bareItemOf = (p) => ({
+    ...p, q: 1, sub: "",
+    classicName: p.sub || "",
+    fantasyName: p.n || "",
+    baseUnitPrice: Number(p.p) || 0,
+  });
+
+  // CANONICAL_MANUAL_PICKER_FINAL_CORRECTION — Goal 5: a tap merges into the
+  // existing line with the SAME complete signature (same product, same
+  // config) instead of always minting a new line. A configured line (extras/
+  // removed/note/custom) never matches a bare tap's signature, so it stays
+  // untouched -- only two truly equivalent lines ever combine.
   const increment = (p) => {
+    // Which line this tap targets is decided synchronously against the
+    // current `cart` snapshot (same convention qtyOf already relies on)
+    // rather than inside the setCart updater -- React does not guarantee an
+    // updater's own side effects are observable the instant setCart()
+    // returns, and increment's uid return value is a real part of its
+    // contract (MesaOrderBuilder/ItemPickerModal both use it).
+    const candidate = bareItemOf(p);
+    const sig = itemSignature(candidate);
+    const existing = Object.values(cart).find((i) => itemSignature(i) === sig);
+    if (existing) {
+      const existingUid = existing._uid;
+      setCart(prev => {
+        const cur = prev[existingUid];
+        return cur ? { ...prev, [existingUid]: { ...cur, q: cur.q + 1 } } : prev;
+      });
+      return existingUid;
+    }
     const uid = genId();
-    setCart(prev => ({
-      ...prev,
-      [uid]: {
-        ...p, q: 1, sub: "", _uid: uid,
-        classicName: p.sub || "",
-        fantasyName: p.n || "",
-        baseUnitPrice: Number(p.p) || 0,
-      },
-    }));
+    setCart(prev => ({ ...prev, [uid]: { ...candidate, _uid: uid } }));
     return uid;
   };
 
@@ -55,6 +81,69 @@ export function useOrderCart({ MENU, INGREDIENTI }) {
         return next;
       }
       return { ...prev, [uid]: { ...item, q: item.q - 1 } };
+    });
+  };
+
+  // The catalogue card's own quick "−" (Goal 4): mirrors increment's target
+  // selection exactly (same bare signature) so tap +1 / tap −1 always act on
+  // the same line. A product whose only cart presence is a CONFIGURED line
+  // (extras/removed/custom) has no bare line to decrement -- the card's own
+  // qty badge still reflects the true total, but the quick "−" only ever
+  // removes unconfigured units, matching what the quick "+" itself can add.
+  const decrementBare = (p) => {
+    setCart(prev => {
+      const sig = itemSignature(bareItemOf(p));
+      const existing = Object.values(prev).find((i) => itemSignature(i) === sig);
+      if (!existing) return prev;
+      if (existing.q <= 1) {
+        const next = { ...prev };
+        delete next[existing._uid];
+        return next;
+      }
+      return { ...prev, [existing._uid]: { ...existing, q: existing.q - 1 } };
+    });
+  };
+
+  // IMPORTANT — EDITING A QUANTITY > 1 LINE (Goal 5 split-on-edit): opening
+  // the configurator on a line with q>1 must never silently apply the edit to
+  // every unit. Called once, at the moment ItemConfigurator is about to open
+  // for a line: peels ONE unit off into its own new line (same config, q=1)
+  // and returns that new uid to configure -- the original keeps the other
+  // q-1 units untouched. A q===1 line has nothing to split; returns its own
+  // uid unchanged. If the operator closes without changing anything, the two
+  // lines are byte-identical again and `consolidate()` (called on configurator
+  // close) merges them straight back into one q line -- the split is only
+  // ever visible if the edit actually diverges the configuration.
+  const splitForEdit = (uid) => {
+    const item = cart[uid];
+    if (!item || item.q <= 1) return uid;
+    const newUid = genId();
+    setCart(prev => {
+      const cur = prev[uid];
+      if (!cur) return prev;
+      return {
+        ...prev,
+        [uid]: { ...cur, q: cur.q - 1 },
+        [newUid]: { ...cur, q: 1, _uid: newUid },
+      };
+    });
+    return newUid;
+  };
+
+  // Signature-based aggregation commit point (Goal 5): merges any lines that
+  // are now byte-identical by menu/itemSignature.js's own rule, summing their
+  // quantities via the same canonical consolidateCart already proven for the
+  // post-confirm draft. Deliberately NOT run on every keystroke (e.g. inside
+  // addExtra/setNotaLibera) -- merging the line an operator is actively
+  // typing into out from under the open ItemConfigurator would orphan its
+  // uid mid-edit. Callers run it at discrete commit points instead: a
+  // configurator close, a custom-pizza add, a draft reseed.
+  const consolidate = () => {
+    setCart(prev => {
+      const merged = consolidateCart(Object.values(prev));
+      const next = {};
+      merged.forEach((it) => { next[it._uid] = it; });
+      return next;
     });
   };
 
@@ -253,11 +342,12 @@ export function useOrderCart({ MENU, INGREDIENTI }) {
 
   return {
     cart, setCart, cartItems, totalCart, totalQty,
-    increment, decrement, removeLine, setQty, qtyOf,
+    increment, decrement, decrementBare, removeLine, setQty, qtyOf,
     addExtra, removeExtra, toggleRemoved, isRemoved, baseIngredientsOf,
     setNota, setNotaLibera, splitSub,
     descrizioneDi, resolveExtra,
     buildEmittedItem,
+    splitForEdit, consolidate,
     loadItem, addRaw, clear, replaceCart, replaceCartFromEmitted,
   };
 }

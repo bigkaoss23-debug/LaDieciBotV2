@@ -70,7 +70,10 @@ function customIngredientsToken(item) {
   if (!isCustomItem(item)) return "";
   if (Array.isArray(item._ingredienti) && item._ingredienti.length) {
     return item._ingredienti
-      .map((i) => `${String(i.id ?? i.n ?? "").toLowerCase()}@${priceTok(i.prezzo ?? i.price)}`)
+      .map((i) => {
+        const qty = num(i.quantity ?? i.qty) > 0 ? Math.trunc(num(i.quantity ?? i.qty)) : 1;
+        return `${String(i.id ?? i.n ?? "").toLowerCase()}@${priceTok(i.prezzo ?? i.price)}:${qty}`;
+      })
       .sort()
       .join("|");
   }

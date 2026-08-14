@@ -50,6 +50,15 @@
 export const orderLineViewCss = `
 .order-line-view{min-width:0}
 .order-line-view .order-line-name{color:#f4ead8;font-size:13.5px;font-weight:800;line-height:1.3;word-break:break-word}
+/* GOAL 18 -- display name hierarchy. displayName (the operational nickname,
+   e.g. "El Pelusa") keeps the base treatment above; secondaryName (the
+   canonical/classic product name, e.g. "Margherita Classica") gets its own
+   span so it can be visually distinct -- uppercase + slightly warmer/bolder
+   -- without the nickname reading as an afterthought. Text-transform is a
+   paint-time effect only: the underlying textContent (what every existing
+   consumer/test reads) is unchanged, so this never alters what a line
+   "says", only how the canonical name renders. */
+.order-line-view .order-line-name-secondary{text-transform:uppercase;font-weight:900;color:#EFE2C4}
 .order-line-view .order-line-extras{color:#7BD88F;font-size:12px;font-weight:700;line-height:1.35;margin-top:3px;word-break:break-word}
 .order-line-view .order-line-removed{color:#FF8A7A;font-size:12px;font-weight:700;line-height:1.35;margin-top:2px;word-break:break-word}
 .order-line-view .order-line-note{color:#E9C583;font-size:12px;font-style:italic;line-height:1.35;margin-top:2px;word-break:break-word}
@@ -89,7 +98,7 @@ export function OrderLineView({ line, showQuantityPrefix = false, testId, classN
       <div className={cls("name", "order-line-name")} style={styles.name} data-testid={`${prefixed}order-line-name`}>
         {showQuantityPrefix && line.quantity ? `${line.quantity}× ` : ""}
         {line.displayName}
-        {hasSecondary ? ` / ${line.secondaryName}` : ""}
+        {hasSecondary && <span className="order-line-name-secondary"> / {line.secondaryName}</span>}
       </div>
       {hasExtras && (
         <div className={cls("extras", "order-line-extras")} style={styles.extras} data-testid={`${prefixed}order-line-extras`}>

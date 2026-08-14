@@ -6,6 +6,8 @@ import { createMesaRequestId } from '../../mesa/mesaApi';
 import CatalogBrowser from '../order/CatalogBrowser';
 import ItemConfigurator from '../order/ItemConfigurator';
 import DraftSummary from '../order/DraftSummary';
+import CartBar from '../order/CartBar';
+import ConfirmDiscardDialog from '../order/ConfirmDiscardDialog';
 
 const COVER_QUICK_OPTIONS_FALLBACK = [1, 2, 3, 4, 5, 6, 7, 8];
 // MESA_PHONE_POLISH_01 -- the table already implies a likely covers range
@@ -52,12 +54,17 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
 
   const { MENU, CATS, INGREDIENTI } = useMenuData();
   const cartApi = useOrderCart({ MENU, INGREDIENTI });
-  const { cart, cartItems, totalCart, totalQty, increment, addRaw, qtyOf, buildEmittedItem, replaceCartFromEmitted } = cartApi;
+  const { cart, cartItems, totalCart, totalQty, increment, decrementBare, addRaw, qtyOf, buildEmittedItem, replaceCartFromEmitted, splitForEdit, consolidate } = cartApi;
 
   // uid of the cart line currently open in ItemConfigurator, or null.
   const [extrasOpen, setExtrasOpen] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notaGeneral, setNotaGeneral] = useState(() => draft?.nota || "");
+  // GOAL 10 -- the main picker ✕ (and backdrop tap, and top-level Escape)
+  // must not silently discard a non-empty draft. Cart-sheet ✕ and
+  // configurator ✕ are untouched -- they already only ever close themselves.
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  const requestClose = () => { if (totalQty > 0) setConfirmDiscardOpen(true); else onClose(); };
 
   // Stable per not-yet-sent draft: reused verbatim across every "Modificar"
   // round-trip so Enviar a cocina's own idempotency (in MesaWorkspace) never
@@ -78,17 +85,20 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
   const isPhone = width < 640;
 
   // Escape chiude il layer più in alto: configurator > drawer > builder
-  // intero. Coerente con CerrarMesaDialog (stesso pattern in questo file).
+  // intero (gated by the same non-empty-draft confirmation as the ✕/backdrop
+  // -- see requestClose). Coerente con CerrarMesaDialog (stesso pattern in
+  // questo file).
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return;
+      if (confirmDiscardOpen) { setConfirmDiscardOpen(false); return; }
       if (extrasOpen) { setExtrasOpen(null); return; }
       if (drawerOpen) { setDrawerOpen(false); return; }
-      onClose();
+      requestClose();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [extrasOpen, drawerOpen, onClose]);
+  }, [confirmDiscardOpen, extrasOpen, drawerOpen, totalQty]); // eslint-disable-line
 
   const confirmCovers = (rawValue) => {
     const count = Number(rawValue);
@@ -175,55 +185,46 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
 
   // ── Step 2: picker workspace (carrello persistente) ─────────────────────
   return (
-    <div onClick={onClose} style={overlayStyle}>
+    <div onClick={requestClose} style={overlayStyle}>
       <div role="dialog" aria-modal="true" aria-label={`Nueva comanda Mesa ${target.tableNumber}`} onClick={e => e.stopPropagation()} style={{ ...panelStyle, width: "min(760px, 97vw)", height: isPhone ? "100dvh" : "92vh", maxHeight: isPhone ? "100dvh" : "92vh", borderRadius: isPhone ? 0 : 20 }}>
+        {/* GOAL 1 -- "Mesa N" is now the dominant line; "Nueva comanda" is a
+            small subordinate eyebrow above it rather than the loudest text
+            in the header, and "N comensales" moved off C.grigio (#666 on
+            #0E0E0E was the "too dim" human UAT flagged) onto a lighter warm
+            tone -- same header height as before, just reordered weight. */}
         <div style={headerStyle}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ color: C.bianco, fontWeight: 900, fontSize: 17 }}>Nueva comanda — Mesa {target.tableNumber}</div>
-            <div style={{ color: C.grigio, fontSize: 12 }}>{coversValue} comensal{coversValue !== 1 ? "es" : ""}</div>
+            <div style={{ color: "#9C8F76", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", lineHeight: 1 }}>Nueva comanda</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginTop: 3 }}>
+              <div style={{ color: C.bianco, fontWeight: 900, fontSize: 19 }}>Mesa {target.tableNumber}</div>
+              <div style={{ color: "#D8CBB0", fontSize: 13.5, fontWeight: 700 }}>{coversValue} comensal{coversValue !== 1 ? "es" : ""}</div>
+            </div>
           </div>
-          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+          <button data-testid="mesa-picker-close" onClick={requestClose} style={closeBtnStyle}>✕</button>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+        {/* CANONICAL_MANUAL_PICKER_FINAL_CORRECTION (Goal 13) -- CatalogBrowser
+            now owns its own internal scroll + sticky Custom CTA, so this
+            wrapper only constrains height (flex:1 inside the panel's own flex
+            column) and no longer scrolls itself. */}
+        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <CatalogBrowser
-            MENU={MENU} CATS={CATS} qtyOf={qtyOf}
+            MENU={MENU} CATS={CATS} INGREDIENTI={INGREDIENTI} qtyOf={qtyOf}
             onTapProduct={(p) => increment(p)}
-            onAddCustom={(item) => addRaw(item)}
+            onDecrementProduct={(p) => decrementBare(p)}
+            onAddCustom={(item) => { addRaw(item); setDrawerOpen(true); }}
           />
         </div>
 
-        {/* ── Barra sticky: conteggio/totale + Ver comanda ── */}
-        <div style={{
-          padding: "12px 16px calc(12px + env(safe-area-inset-bottom, 0px))",
-          borderTop: `1px solid ${C.fumo}`, display: "flex", alignItems: "center",
-          justifyContent: "space-between", gap: 12, flexShrink: 0, background: C.carbone2,
-        }}>
-          <div style={{ minWidth: 0 }}>
-            {totalQty > 0 ? (
-              <>
-                <div style={{ color: C.grigio, fontSize: 11 }}>{totalQty} artículo{totalQty !== 1 ? "s" : ""}</div>
-                <div style={{ color: C.verde, fontWeight: 900, fontSize: 20, fontFamily: "'DM Mono',monospace" }}>{totalCart.toFixed(2)}€</div>
-              </>
-            ) : (
-              <div style={{ color: C.grigio, fontSize: 13 }}>Selecciona productos</div>
-            )}
-          </div>
-          <button
-            data-testid="mesa-ver-comanda"
-            onClick={() => setDrawerOpen(true)}
-            disabled={totalQty === 0}
-            style={{
-              background: totalQty > 0 ? C.rosso : C.fumo, color: totalQty > 0 ? "#fff" : C.grigio,
-              border: "none", borderRadius: 12, padding: "14px 24px", fontWeight: 800, fontSize: 15,
-              whiteSpace: "nowrap", cursor: totalQty > 0 ? "pointer" : "default",
-            }}>Ver comanda</button>
-        </div>
+        <CartBar
+          totalQty={totalQty} totalCart={totalCart} actionLabel="Ver comanda"
+          onOpen={() => setDrawerOpen(true)} testId="mesa-ver-comanda"
+        />
 
         {extrasTarget && (
           <ItemConfigurator
             item={extrasTarget} INGREDIENTI={INGREDIENTI} cartApi={cartApi}
-            onClose={() => setExtrasOpen(null)}
+            onClose={() => { consolidate(); setExtrasOpen(null); }}
           />
         )}
 
@@ -240,12 +241,22 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
             // expect to land. Closing the drawer here instead (the previous
             // behaviour) dumped them back onto the raw product grid after every
             // single edit, losing the review context mid-proof-read.
-            onEditLine={(item) => setExtrasOpen(item._uid)}
+            // GOAL 5 -- splitForEdit peels one unit off a qty>1 line before
+            // opening the configurator, so an edit never silently applies to
+            // every unit in the line (see useOrderCart.js's own header note).
+            onEditLine={(item) => setExtrasOpen(splitForEdit(item._uid))}
             onSetPlainNote={cartApi.setNota}
             generalNote={notaGeneral}
             onSetGeneralNote={setNotaGeneral}
             onClose={() => setDrawerOpen(false)}
             primaryAction={{ label: "✅ Confirmar comanda", onClick: handleConfirm, disabled: totalQty === 0 }}
+          />
+        )}
+
+        {confirmDiscardOpen && (
+          <ConfirmDiscardDialog
+            onCancel={() => setConfirmDiscardOpen(false)}
+            onDiscard={onClose}
           />
         )}
       </div>

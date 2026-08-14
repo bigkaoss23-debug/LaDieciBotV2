@@ -108,7 +108,10 @@ test("a party larger than the table's capacity is still a valid custom entry, no
   click(byTestId(container, "covers-custom-confirm"));
   await flush();
   expect(container.textContent).not.toContain("¿Cuántos comensales?");
-  expect(container.textContent).toContain("Nueva comanda — Mesa 3");
+  // GOAL 1 -- header hierarchy split "Nueva comanda" (small eyebrow) from
+  // "Mesa N" (dominant), no longer one literal em-dash string.
+  expect(container.textContent).toContain("Nueva comanda");
+  expect(container.textContent).toContain("Mesa 3");
   unmount(container, root);
 });
 
@@ -118,7 +121,10 @@ test("picking covers opens the picker workspace immediately, no intermediate scr
   click(byTestId(container, "covers-quick-4"));
   await flush();
   expect(container.textContent).not.toContain("¿Cuántos comensales?");
-  expect(container.textContent).toContain("Nueva comanda — Mesa 3");
+  // GOAL 1 -- header hierarchy split "Nueva comanda" (small eyebrow) from
+  // "Mesa N" (dominant), no longer one literal em-dash string.
+  expect(container.textContent).toContain("Nueva comanda");
+  expect(container.textContent).toContain("Mesa 3");
   expect(container.textContent).toContain("Pizzas");
   unmount(container, root);
 });
@@ -162,7 +168,10 @@ test("Confirmar comanda bundles the freshly chosen coversTotal atomically with i
 test("when covers are already known, the builder opens straight to the picker", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 4 }) });
   expect(container.textContent).not.toContain("¿Cuántos comensales?");
-  expect(container.textContent).toContain("Nueva comanda — Mesa 3");
+  // GOAL 1 -- header hierarchy split "Nueva comanda" (small eyebrow) from
+  // "Mesa N" (dominant), no longer one literal em-dash string.
+  expect(container.textContent).toContain("Nueva comanda");
+  expect(container.textContent).toContain("Mesa 3");
   unmount(container, root);
 });
 
@@ -203,14 +212,19 @@ test("items from multiple categories accumulate in the same persistent cart", as
 });
 
 // 9. quantity
-test("tapping a product again increments its quantity badge; drawer +/- also works", async () => {
+// CANONICAL_MANUAL_PICKER_FINAL_CORRECTION -- Goal 5 reverses the old "every
+// tap is its own line" rule: two bare taps on the same product now merge by
+// signature into ONE line at qty 2 (was 2 separate qty-1 lines -- exactly
+// the "Marinara ×2 shows as two identical rows" defect human UAT flagged).
+test("tapping a product again merges into the same line (qty 2, not two lines); drawer +/- also works", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
   click(productCard(container, "El Pelusa"));
   click(productCard(container, "El Pelusa"));
   await flush();
   click(byTestId(container, "mesa-ver-comanda"));
   await flush();
-  expect(allByTestId(container, "draft-summary-line").length).toBe(2);
+  expect(allByTestId(container, "draft-summary-line").length).toBe(1);
+  expect(container.textContent).toContain("2 artículos");
   click(byTestId(container, "draft-summary-plus"));
   await flush();
   expect(container.textContent).toContain("3 artículos");
@@ -541,9 +555,24 @@ test("Escape closes the extras panel first, then the drawer, then the whole buil
   expect(byTestId(container, "draft-summary")).toBeFalsy();
   expect(onClose).not.toHaveBeenCalled();
 
-  // 3rd: the builder itself
+  // 3rd: the builder itself -- GOAL 10, the draft is non-empty (El Pelusa is
+  // still in the cart), so this must show the destructive confirmation
+  // instead of discarding straight away.
   act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
   await flush();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(byTestId(container, "confirm-discard-dialog")).toBeTruthy();
+
+  // Escape again dismisses just the confirmation (draft still untouched).
+  act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+  await flush();
+  expect(byTestId(container, "confirm-discard-dialog")).toBeFalsy();
+  expect(onClose).not.toHaveBeenCalled();
+
+  // Eliminar is the one explicit path that actually discards.
+  click(byTestId(container, "mesa-picker-close"));
+  await flush();
+  click(byTestId(container, "confirm-discard-eliminar"));
   expect(onClose).toHaveBeenCalledTimes(1);
   unmount(container, root);
 });
@@ -630,5 +659,105 @@ test("non-pizza cards render the main name in uppercase, secondary value unchang
   const card = productCard(container, "Misu Clásico");
   expect(card.textContent).toContain("MISU CLÁSICO");
   expect(card.textContent).toContain("Tiramisú");
+  unmount(container, root);
+});
+
+// ── GOAL 10 -- main picker ✕ destructive confirmation (direct coverage,
+// independent of the Escape-key scenario above) ────────────────────────────
+test("main picker ✕ with an EMPTY draft closes directly -- no confirmation", async () => {
+  const { container, root, onClose } = await mount({ target: target({ coversTotal: 2 }) });
+  click(byTestId(container, "mesa-picker-close"));
+  await flush();
+  expect(byTestId(container, "confirm-discard-dialog")).toBeFalsy();
+  expect(onClose).toHaveBeenCalledTimes(1);
+  unmount(container, root);
+});
+
+test("main picker ✕ with a NON-EMPTY draft shows the confirmation; Cancelar leaves the draft untouched", async () => {
+  const { container, root, onClose } = await mount({ target: target({ coversTotal: 2 }) });
+  click(productCard(container, "El Pelusa"));
+  await flush();
+  click(byTestId(container, "mesa-picker-close"));
+  await flush();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(byTestId(container, "confirm-discard-dialog")).toBeTruthy();
+  click(byTestId(container, "confirm-discard-cancel"));
+  await flush();
+  expect(byTestId(container, "confirm-discard-dialog")).toBeFalsy();
+  expect(onClose).not.toHaveBeenCalled();
+  // The operator is exactly where they were -- the cart is still there.
+  click(byTestId(container, "mesa-ver-comanda"));
+  await flush();
+  expect(byTestId(container, "draft-summary-line")).toBeTruthy();
+  unmount(container, root);
+});
+
+test("tapping the backdrop with a non-empty draft is gated the same way as the ✕", async () => {
+  const { container, root, onClose } = await mount({ target: target({ coversTotal: 2 }) });
+  click(productCard(container, "El Pelusa"));
+  await flush();
+  click(container.firstElementChild); // the fixed backdrop overlay div
+  await flush();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(byTestId(container, "confirm-discard-dialog")).toBeTruthy();
+  unmount(container, root);
+});
+
+// ── NESTED CLOSE -- cart-sheet ✕ and configurator ✕ never discard, even
+// with a non-empty draft (their own ownership, unaffected by Goal 10) ──────
+test("cart-sheet ✕ only closes the sheet, never the draft, even when non-empty", async () => {
+  const { container, root, onClose } = await mount({ target: target({ coversTotal: 2 }) });
+  click(productCard(container, "El Pelusa"));
+  await flush();
+  click(byTestId(container, "mesa-ver-comanda"));
+  await flush();
+  click(byTestId(container, "draft-summary-close"));
+  await flush();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(byTestId(container, "confirm-discard-dialog")).toBeFalsy();
+  expect(byTestId(container, "draft-summary")).toBeFalsy();
+  click(byTestId(container, "mesa-ver-comanda"));
+  await flush();
+  expect(byTestId(container, "draft-summary-line")).toBeTruthy();
+  unmount(container, root);
+});
+
+// ── GOAL 4 -- quick decrement straight from the catalogue card, end-to-end
+// through the real shell (not just the cartApi unit test) ─────────────────
+test("catalogue card quick decrement: 0->1->2 via tap, then 2->1->0 via the card's own minus, no cart trip needed", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
+  const card = productCard(container, "El Pelusa");
+  click(card);
+  await flush();
+  click(card);
+  await flush();
+  expect(byTestId(card, "catalog-qty-badge").textContent).toBe("2");
+  expect(container.textContent).toContain("2 artículos");
+
+  const minus = byTestId(card, "catalog-decrement");
+  click(minus);
+  await flush();
+  expect(byTestId(card, "catalog-qty-badge").textContent).toBe("1");
+  expect(container.textContent).toContain("1 artículo");
+
+  click(minus);
+  await flush();
+  expect(byTestId(card, "catalog-qty-badge")).toBeNull();
+  expect(byTestId(card, "catalog-decrement")).toBeNull();
+  expect(container.textContent).toContain("Selecciona productos");
+  unmount(container, root);
+});
+
+// ── GOAL 14 -- adding a configured Custom pizza opens the cart automatically ──
+test("adding a Custom pizza opens the cart automatically, with the configured pizza already in it", async () => {
+  const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
+  click(buttonByText(container, "⭐ Custom"));
+  await flush();
+  click(allByTestId(container, "custom-ingredient-chip")[0]);
+  await flush();
+  click(byTestId(container, "custom-add-cta"));
+  await flush();
+  expect(byTestId(container, "draft-summary")).toBeTruthy();
+  expect(byTestId(container, "draft-summary-line").textContent).toContain("Pizza a tu gusto");
   unmount(container, root);
 });

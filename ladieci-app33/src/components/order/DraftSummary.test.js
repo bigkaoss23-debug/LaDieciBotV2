@@ -153,3 +153,61 @@ test("isCustomRawItem still correctly identifies custom lines seeded here -- san
   const custom = { id: "custom_2", n: "x" };
   expect(isCustomRawItem(custom)).toBe(true);
 });
+
+// ── GOAL 9 -- swipe-down-to-dismiss ────────────────────────────────────────
+function pointer(el, type, x, y, pointerId = 1) {
+  const event = new Event(type, { bubbles: true });
+  Object.assign(event, { clientX: x, clientY: y, pointerId });
+  act(() => { el.dispatchEvent(event); });
+}
+
+test("dragging down from the handle past the threshold closes the sheet only, draft untouched", () => {
+  const onClose = jest.fn();
+  const { container, root } = mount({ seed: (cart) => cart.increment(PIZZA), onClose });
+  const handle = byTestId(container, "draft-summary-drag-zone");
+  const panel = byTestId(container, "draft-summary-panel");
+  pointer(handle, "pointerdown", 100, 300);
+  pointer(panel, "pointermove", 100, 400); // +100px, past the 70px threshold
+  pointer(panel, "pointerup", 100, 400);
+  expect(onClose).toHaveBeenCalledTimes(1);
+  unmount(container, root);
+});
+
+test("dragging down from the handle but short of the threshold snaps back -- no close", () => {
+  const onClose = jest.fn();
+  const { container, root } = mount({ seed: (cart) => cart.increment(PIZZA), onClose });
+  const handle = byTestId(container, "draft-summary-drag-zone");
+  const panel = byTestId(container, "draft-summary-panel");
+  pointer(handle, "pointerdown", 100, 300);
+  pointer(panel, "pointermove", 100, 330); // only +30px
+  pointer(panel, "pointerup", 100, 330);
+  expect(onClose).not.toHaveBeenCalled();
+  unmount(container, root);
+});
+
+test("dragging down from within the scrolled-down line list does NOT dismiss -- ordinary scroll is preserved", () => {
+  const onClose = jest.fn();
+  const { container, root } = mount({ seed: (cart) => cart.increment(PIZZA), onClose });
+  const content = byTestId(container, "draft-summary-content");
+  const panel = byTestId(container, "draft-summary-panel");
+  // Simulate the list already scrolled down (not at its own top).
+  Object.defineProperty(content, "scrollTop", { value: 40, configurable: true });
+  pointer(content, "pointerdown", 100, 300);
+  pointer(panel, "pointermove", 100, 400);
+  pointer(panel, "pointerup", 100, 400);
+  expect(onClose).not.toHaveBeenCalled();
+  unmount(container, root);
+});
+
+test("dragging down from within the line list DOES dismiss when the list is already at its own scroll top", () => {
+  const onClose = jest.fn();
+  const { container, root } = mount({ seed: (cart) => cart.increment(PIZZA), onClose });
+  const content = byTestId(container, "draft-summary-content");
+  const panel = byTestId(container, "draft-summary-panel");
+  Object.defineProperty(content, "scrollTop", { value: 0, configurable: true });
+  pointer(content, "pointerdown", 100, 300);
+  pointer(panel, "pointermove", 100, 400);
+  pointer(panel, "pointerup", 100, 400);
+  expect(onClose).toHaveBeenCalledTimes(1);
+  unmount(container, root);
+});

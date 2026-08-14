@@ -63,7 +63,10 @@ test("tapping a product accumulates in the cart; Ver pedido opens the same Draft
   const { container, root } = await mount();
   click(productCard(container, "El Pelusa"));
   await flush();
-  expect(container.textContent).toContain("1 item seleccionados");
+  // CANONICAL_MANUAL_PICKER_FINAL_CORRECTION (Goal 6) -- the footer is now
+  // the shared CartBar; "N item(s) seleccionados" was replaced by its own
+  // "N artículo(s)" wording.
+  expect(container.textContent).toContain("1 artículo");
   click(byTestId(container, "ip-ver-pedido"));
   await flush();
   expect(byTestId(container, "draft-summary-line")).toBeTruthy();
@@ -125,16 +128,16 @@ test("custom pizza accumulates in the cart instead of auto-closing the modal", a
   const { container, root } = await mount({ onAdd, onClose });
   click(buttonByText(container, "⭐ Custom"));
   await flush();
-  const ingredientButtons = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.includes("+0.50"));
-  click(ingredientButtons[0]);
+  click(allByTestId(container, "custom-ingredient-chip")[0]);
   await flush();
-  click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Añadir esta pizza")));
+  click(byTestId(container, "custom-add-cta"));
   await flush();
   // Modal stays open -- onAdd/onClose not yet called.
   expect(onAdd).not.toHaveBeenCalled();
   expect(onClose).not.toHaveBeenCalled();
-  click(byTestId(container, "ip-ver-pedido"));
-  await flush();
+  // GOAL 14 -- adding a configured Custom pizza opens the cart automatically,
+  // no extra manual "Ver pedido" tap needed.
+  expect(byTestId(container, "draft-summary-line")).toBeTruthy();
   expect(container.textContent).toContain("Pizza a tu gusto");
   click(byTestId(container, "draft-summary-primary-action"));
   await flush();
@@ -203,5 +206,74 @@ test("modifica mode: Actualizar on a non-configurable item calls onUpdate with t
   await flush();
   expect(onUpdate).toHaveBeenCalledTimes(1);
   expect(onUpdate.mock.calls[0][0].notes).toBe("bien fría");
+  unmount(container, root);
+});
+
+// ── GOAL 10 -- main picker ✕ destructive confirmation (Teléfono) ──────────
+test("main picker ✕ with an EMPTY draft closes directly -- no confirmation", async () => {
+  const { container, root, onClose } = await mount();
+  click(byTestId(container, "ip-picker-close"));
+  await flush();
+  expect(byTestId(container, "confirm-discard-dialog")).toBeFalsy();
+  expect(onClose).toHaveBeenCalledTimes(1);
+  unmount(container, root);
+});
+
+test("main picker ✕ with a NON-EMPTY draft shows the confirmation; Cancelar preserves the draft", async () => {
+  const { container, root, onClose } = await mount();
+  click(productCard(container, "El Pelusa"));
+  await flush();
+  click(byTestId(container, "ip-picker-close"));
+  await flush();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(byTestId(container, "confirm-discard-dialog")).toBeTruthy();
+  click(byTestId(container, "confirm-discard-cancel"));
+  await flush();
+  expect(onClose).not.toHaveBeenCalled();
+  click(byTestId(container, "ip-ver-pedido"));
+  await flush();
+  expect(byTestId(container, "draft-summary-line")).toBeTruthy();
+  unmount(container, root);
+});
+
+test("Eliminar on the confirmation actually discards and closes", async () => {
+  const { container, root, onClose } = await mount();
+  click(productCard(container, "El Pelusa"));
+  await flush();
+  click(byTestId(container, "ip-picker-close"));
+  await flush();
+  click(byTestId(container, "confirm-discard-eliminar"));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  unmount(container, root);
+});
+
+// ── GOAL 16 -- the "Base Pelusa" bug, fixed at its actual root cause ───────
+// The defect: ItemPickerModal.handleConfirm used to run EVERY cart item
+// (customs included) through buildEmittedItem, which unconditionally
+// re-derives extras/notes by parsing `sub` as "+Extra, note" tokens. A
+// custom pizza's `sub` is generated description text ("Base Pelusa +
+// Albahaca fresca, Orégano"), not that shape, so it landed entirely in
+// `notes` -- surfacing as "⚠ Base Pelusa + Albahaca fresca, Orégano" on the
+// outer Nuevo Pedido summary (which reads normalizeOrderLine(item).note).
+// This proves the item actually handed to onAdd carries the real
+// structured truth instead.
+test("a custom pizza's emitted item carries NO bogus note -- the 'Base Pelusa' misparse is fixed", async () => {
+  const onAdd = jest.fn();
+  const { container, root } = await mount({ onAdd });
+  click(buttonByText(container, "⭐ Custom"));
+  await flush();
+  click(allByTestId(container, "custom-ingredient-chip")[0]);
+  await flush();
+  click(byTestId(container, "custom-add-cta"));
+  await flush();
+  click(byTestId(container, "ip-ver-pedido"));
+  await flush();
+  click(byTestId(container, "draft-summary-primary-action"));
+  await flush();
+  const item = onAdd.mock.calls[0][0];
+  expect(item.notes).toBe("");
+  expect(item.custom).toBe(true);
+  expect(item.extras.length).toBe(1);
+  expect(item.customBase).toBeTruthy();
   unmount(container, root);
 });
