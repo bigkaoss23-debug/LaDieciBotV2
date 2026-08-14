@@ -144,15 +144,11 @@ test("floor cards show only the bare number and a capacity badge, nothing more",
 test("Personalizar sala opens table settings and persists a table maximum capacity", async () => {
   const { container, root } = await mount();
   click(buttonByText(container, "🛠 Personalizar sala"));
+  // ONE tap in Personalizar sala goes straight to the room editor.
   click(container.querySelector(".mesa-table"));
-  expect(container.querySelector('[role="dialog"]').textContent).toContain("Nueva reserva");
-  click(buttonByText(container, "Ajustes de mesa"));
-  expect(container.querySelector('[role="dialog"]').textContent).toContain("Ajustes de mesa");
-  const fields = container.querySelectorAll('.mesa-modal input[type="number"]');
-  expect(fields).toHaveLength(2);
-  expect(fields[1].value).toBe("4");
-  typeInto(fields[1], 6);
-  click(buttonByText(container, "Guardar ajustes"));
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("Editar Mesa 1");
+  click(container.querySelector('[data-testid="capacity-quick-6"]'));
+  click(container.querySelector('[data-testid="table-editor-save"]'));
   await flush();
   expect(mesaApi.saveTable).toHaveBeenCalledWith("table-1", expect.objectContaining({
     tableNumber: 1,
@@ -660,8 +656,12 @@ test("in Personalizar sala, an occupied table's popup offers only layout actions
   const { container, root } = await mount();
   click(buttonByText(container, "🛠 Personalizar sala"));
   click(container.querySelector(".mesa-table"));
+  // A tap in Personalizar sala now lands on the room editor directly. The
+  // guarantee this test exists for is unchanged and in fact stronger: while
+  // customizing, an occupied table exposes ONLY room configuration, never an
+  // operational action that could disturb a live service.
   const dialog = container.querySelector('[role="dialog"]');
-  expect(dialog.textContent).toContain("Ajustes de mesa");
+  expect(dialog.textContent).toContain("Editar Mesa");
   expect(dialog.textContent).toContain("Eliminar mesa");
   expect(dialog.textContent).not.toContain("Crear pedido");
   expect(dialog.textContent).not.toContain("Nueva comanda");
@@ -670,12 +670,12 @@ test("in Personalizar sala, an occupied table's popup offers only layout actions
   expect(dialog.textContent).not.toContain("Comandas");
   // Leaving Personalizar sala restores MesaWorkspace (direct, no popup hop)
   // and hides the layout-only actions, with no reload needed.
-  click(buttonByText(container, "✓ Salir de Personalizar sala"));
+  click(buttonByText(container, "✓ Listo"));
   click(container.querySelector(".mesa-table"));
   const dialog2 = container.querySelector('[role="dialog"]');
   expect(dialog2.textContent).toContain("＋ Nueva comanda");
   expect(dialog2.textContent).toContain("Ver cuenta");
-  expect(dialog2.textContent).not.toContain("Ajustes de mesa");
+  expect(dialog2.textContent).not.toContain("Editar Mesa");
   expect(dialog2.textContent).not.toContain("Eliminar mesa");
   unmount(container, root);
 });
@@ -1048,7 +1048,7 @@ test("entering Personalizar sala suspends the ready-pulse glow; leaving it resto
   expect(readyCard().className).not.toContain("ready-pulse");
   expect(readyCard().className).toContain("is-editing");
 
-  click(buttonByText(container, "✓ Salir de Personalizar sala"));
+  click(buttonByText(container, "✓ Listo"));
   expect(readyCard().className).toContain("ready-pulse");
   expect(readyCard().className).not.toContain("is-editing");
   // Restored from the SAME already-fetched table state -- no extra floor()
@@ -1092,9 +1092,9 @@ test("the dock below the map swaps Reservas·Beta/Personalizar sala for Añadir 
   click(buttonByText(container, "🛠 Personalizar sala"));
   expect(dock().textContent).not.toContain("Reservas · Beta");
   expect(dock().textContent).toContain("Añadir mesa");
-  expect(dock().textContent).toContain("Salir de Personalizar sala");
+  expect(dock().textContent).toContain("Listo");
 
-  click(buttonByText(container, "✓ Salir de Personalizar sala"));
+  click(buttonByText(container, "✓ Listo"));
   expect(dock().textContent).toContain("Reservas · Beta");
   expect(dock().textContent).not.toContain("Añadir mesa");
   unmount(container, root);
@@ -1231,12 +1231,11 @@ test("Ajustes de mesa preselects the table's current shape and persists a change
   const { container, root } = await mount();
   click(buttonByText(container, "🛠 Personalizar sala"));
   click(container.querySelector(".mesa-table"));
-  click(buttonByText(container, "Ajustes de mesa"));
   const modal = container.querySelector(".mesa-modal");
   expect(modal.querySelector(".mesa-shape-btn.active").textContent).toBe("Cuadrada");
   click(Array.from(modal.querySelectorAll(".mesa-shape-btn")).find((button) => button.textContent === "Rectangular"));
   click(Array.from(modal.querySelectorAll(".mesa-btn.small")).find((button) => button.textContent === "8 plazas"));
-  click(buttonByText(container, "Guardar ajustes"));
+  click(container.querySelector('[data-testid="table-editor-save"]'));
   await flush();
   expect(mesaApi.saveTable).toHaveBeenCalledWith("table-1", expect.objectContaining({
     shape: "rectangle",
@@ -1254,16 +1253,15 @@ test("reopening a rectangular table saved with a manual, off-preset capacity (10
   const { container, root } = await mount();
   click(buttonByText(container, "🛠 Personalizar sala"));
   click(container.querySelector(".mesa-table"));
-  click(buttonByText(container, "Ajustes de mesa"));
   const modal = container.querySelector(".mesa-modal");
   expect(modal.querySelector(".mesa-shape-btn.active").textContent).toBe("Rectangular");
-  const capacityInput = modal.querySelectorAll('input[type="number"]')[1];
+  const capacityInput = modal.querySelector('[data-testid="capacity-custom-input"]');
   expect(capacityInput.value).toBe("10");
   // Re-picking the SAME shape/preset the table already has (a no-op edit,
   // e.g. the operator just glancing at the form) must not reset capacity.
   click(Array.from(modal.querySelectorAll(".mesa-shape-btn")).find((button) => button.textContent === "Rectangular"));
   expect(capacityInput.value).toBe("10");
-  click(buttonByText(container, "Guardar ajustes"));
+  click(container.querySelector('[data-testid="table-editor-save"]'));
   await flush();
   expect(mesaApi.saveTable).toHaveBeenCalledWith("table-1", expect.objectContaining({
     shape: "rectangle",

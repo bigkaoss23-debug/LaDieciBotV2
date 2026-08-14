@@ -21,18 +21,15 @@ jest.mock("../../mesa/mesaApi", () => ({
 
 const TabMesa = require("./TabMesa").default;
 const { mesaApi } = require("../../mesa/mesaApi");
-const {
-  HYBRID_TOKENS, cameraFrame, sceneGeometry, tableGeometry, tableFootprint,
-} = require("./hybridScene");
+const { sceneGeometry, tableGeometry, tableFootprint } = require("./hybridScene");
 
 const BOARD = { left: 0, top: 0, width: 370, height: 663, right: 370, bottom: 663 };
 
-// The geometry the COMPONENT builds, camera framing included. Rebuilding it
-// the same way here is the whole point of these assertions: the hit target has
-// to land on the table as actually drawn, under whatever camera is in effect.
-// Checking against an unframed room would pass while the operator taps floor.
-const geomFor = (tables) =>
-  sceneGeometry(BOARD.width, BOARD.height, HYBRID_TOKENS, cameraFrame(tables));
+// The geometry the COMPONENT builds. The room's frame is a constant, so this
+// depends on the board box alone -- and the fact that it takes no table set is
+// itself the guarantee that the hit targets can never be laid over a room
+// framed differently from the one the scene drew.
+const geomFor = () => sceneGeometry(BOARD.width, BOARD.height);
 
 function table(overrides) {
   return {
@@ -226,7 +223,7 @@ describe("hit target tracks the projected table", () => {
   test("the control is positioned in px on the projected table, not at a raw percentage", async () => {
     const rows = [table({ x: 30, y: 62 })];
     const { host } = await mount(rows);
-    const geom = geomFor(rows);
+    const geom = geomFor();
     const expected = tableFootprint(rows[0], geom);
     const tile = host.querySelector(".mesa-table");
     expect(tile.style.left).toBe(`${expected.left}px`);
@@ -238,7 +235,7 @@ describe("hit target tracks the projected table", () => {
   test("the control's centre sits on the drawn table's centre — no target shift", async () => {
     const rows = [table({ x: 30, y: 62 })];
     const { host } = await mount(rows);
-    const geom = geomFor(rows);
+    const geom = geomFor();
     const drawn = tableGeometry(rows[0], geom);
     const tile = host.querySelector(".mesa-table");
     const centerX = parseFloat(tile.style.left) + parseFloat(tile.style.width) / 2;

@@ -62,7 +62,13 @@ describe("Mesa floor card stays minimal", () => {
 describe("Mesa floor editor instructions", () => {
   test("names Personalizar sala and explains the table settings interaction", () => {
     expect(source).toContain("🛠 Personalizar sala");
-    expect(source).toContain("✓ Salir de Personalizar sala");
+    // The finish CTA is "Listo", not a save: every room change is already
+    // persisted when it happens (drag -> savePosition, editor -> its own
+    // save), so a "Guardar sala" button would claim credit for durability it
+    // did not provide. See TabMesa.roomCustomization.test.js.
+    expect(source).toContain('editing ? "✓ Listo"');
+    expect(source).not.toContain("✓ Salir de Personalizar sala");
+    expect(source).not.toMatch(/editing \? "✓ Guardar sala"/);
     expect(source).toContain("Arrastra para mover · Toca para editar");
     expect(source).not.toContain("⚙ Ajustes de sala");
     expect(source).not.toContain("Editar plano");
@@ -71,7 +77,10 @@ describe("Mesa floor editor instructions", () => {
   test("table create/move/reshape/remove are reachable only while editing is active", () => {
     expect(source).toContain('{canEdit && editing && <button className="mesa-btn mesa-menu-action gold" onClick={onSettings}>');
     expect(source).toContain('{canEdit && editing && <button className="mesa-btn mesa-menu-action red" disabled={busy} onClick={remove}>');
-    expect(source).toContain("{canEdit && editing && <button className=\"mesa-btn gold\" onClick={() => setShowAdd(true)}>");
+    expect(source).toContain('{canEdit && editing && <button className="mesa-btn gold" data-testid="mesa-add-table"');
+    // And the tap that reaches the editor is itself gated on editing: outside
+    // Personalizar sala the same tap must go to the operational surfaces.
+    expect(source).toContain("if (editing && canEdit) { setSettingsId(table.id); return; }");
   });
 
   test("Personalizar sala's own toggle and Reservas · Beta are never styled with the destructive-red button class", () => {
@@ -90,9 +99,11 @@ describe("Mesa free-table capacity label", () => {
 
 describe("Mesa capacity settings", () => {
   test("edits maximum capacity in a dedicated table-settings modal and keeps exact Mesa numbering", () => {
-    expect(source).toContain('title="Ajustes de mesa"');
+    expect(source).toContain("title={`Editar Mesa ${table.number}`}");
     expect(source).toContain('>Capacidad máxima</label>');
     expect(source).toContain('displayName: `Mesa ${tableNumber}`');
+    // Reachable in one tap from the map, and still from the popup's own entry.
+    expect(source).toContain("if (editing && canEdit) { setSettingsId(table.id); return; }");
     expect(source).toContain('setSettingsId(menuTable.id)');
   });
 
@@ -164,7 +175,11 @@ describe("Mesa table shapes", () => {
 
   test("shape choice is a visual icon picker (ShapePicker), shared by Añadir mesa and the settings modal, not a text dropdown", () => {
     expect(source).toContain("function ShapePicker({ shape, shapePreset, onShape, onCapacityPreset })");
-    expect((source.match(/<ShapePicker shape=\{form\.shape\} shapePreset=\{form\.shapePreset\}/g) || []).length).toBe(2);
+    // ONE ShapePicker mount now, inside the shared TableConfigFields that both
+    // Añadir mesa and the editor render -- the duplication this used to count
+    // is exactly what the shared primitive removed.
+    expect((source.match(/<ShapePicker shape=\{form\.shape\} shapePreset=\{form\.shapePreset\}/g) || []).length).toBe(1);
+    expect((source.match(/<TableConfigFields form=\{form\} setForm=\{setForm\} \/>/g) || []).length).toBe(2);
     expect(source).toContain("variantIdOf(table.shape, table.shapePreset)");
   });
 
@@ -172,8 +187,11 @@ describe("Mesa table shapes", () => {
     expect(source).toContain('onClick={() => onShape(option.shape, "standard")}');
     expect(source).not.toMatch(/onShape\(option\.shape,[\s\S]{0,40}onCapacityPreset/);
     expect(source).toContain('onClick={() => { onShape("rectangle", option.shapePreset); onCapacityPreset(option.capacity); }}');
-    // The capacity <input> itself stays a freely editable number field, independent of shape.
-    expect(source).toMatch(/Capacidad máxima<\/label><input className="mesa-input" type="number" min="1" max="99" value=\{form\.capacity\}/);
+    // Capacity stays freely choosable and independent of shape: quick chips
+    // for the common sizes plus a free field for everything else.
+    expect(source).toContain("const CAPACITY_QUICK = [2, 3, 4, 6, 8];");
+    expect(source).toContain('data-testid="capacity-custom-input"');
+    expect(source).toContain("function CapacityPicker({ value, onChange })");
   });
 
   test("moving or removing a table preserves its shapePreset instead of resetting it", () => {
@@ -187,7 +205,33 @@ describe("Mesa table shapes", () => {
     expect(source).toContain("const halfWidthPct = Math.max(7, (cardWidthOf(drag.table.shape, drag.table.shapePreset) / 2 / rect.width) * 100);");
     expect(source).toContain("const x = Math.max(halfWidthPct, Math.min(100 - halfWidthPct,");
     // Vertical clamp is unaffected -- height is fixed regardless of shape.
-    expect(source).toContain('const y = Math.max(11, Math.min(89,');
+    expect(source).toContain("const y = Math.max(ROOM_Y_MIN, Math.min(ROOM_Y_MAX,");
+  });
+
+  // The band a finger can drag to and the band the room projects MUST be the
+  // same band. Importing the two constants instead of repeating 11/89 here is
+  // what makes that true by construction rather than by coincidence: a literal
+  // could be changed in one place and silently diverge from the other, letting
+  // a table be dragged to a coordinate the camera does not frame.
+  test("the drag clamp reads the room's own band, never its own copy of it", () => {
+    const { ROOM_Y_MIN, ROOM_Y_MAX } = require("./hybridScene");
+    expect(ROOM_Y_MIN).toBe(11);
+    expect(ROOM_Y_MAX).toBe(89);
+    expect(source).toContain("ROOM_Y_MIN, ROOM_Y_MAX");
+    expect(source).toContain('} from "./hybridScene"');
+    expect(source).not.toContain("Math.max(11, Math.min(89");
+  });
+
+  // THE P0 GUARD, at the component level. The geometry memo must not depend on
+  // the table set -- that dependency is what let one drag reframe the room.
+  test("the hybrid geometry depends on the board box alone, never on the tables", () => {
+    expect(source).toContain("sceneGeometry(boardBox.width, boardBox.height)");
+    expect(source).toContain("[boardBox]");
+    // the freeze machinery that existed only to work around content-derived
+    // framing must be gone with it
+    expect(source).not.toContain("frameFreezeRef");
+    expect(source).not.toContain("cameraFrame");
+    expect(source).not.toContain("frameEpoch");
   });
 });
 

@@ -1,5 +1,5 @@
 import {
-  HYBRID_TOKENS, FULL_FRAME, cameraFrame, sceneGeometry, projectFloorPoint, unprojectScreenPoint,
+  HYBRID_TOKENS, ROOM_FRAME, ROOM_Y_MIN, ROOM_Y_MAX, sceneGeometry, projectFloorPoint, unprojectScreenPoint,
   tableGeometry, tableFootprint, depthSorted, chairSlots, chairPlacements,
   nearFarScaleDelta, toRoomCoord, fromRoomCoord,
 } from "./hybridScene";
@@ -577,170 +577,176 @@ describe("scene geometry", () => {
   });
 });
 
-// ── the camera ─────────────────────────────────────────────────────────────
-// These test the framing as a CAMERA: it may change what the room looks like
-// and may not change what the room IS. Nothing here pins a decorative pixel;
-// every case is either a domain guarantee (a coordinate survives a round trip)
-// or a composition guarantee the human sign-off is actually about (the board
-// is used, nothing is clipped).
-describe("camera framing", () => {
-  // Full drawn extent of a table: tabletop, its lift, and every chair.
-  const drawnExtent = (tables, g) => {
-    let top = Infinity;
-    let bottom = -Infinity;
-    tables.forEach((table) => {
-      const t = tableGeometry(table, g);
-      top = Math.min(top, t.topY - t.halfH);
-      bottom = Math.max(bottom, t.floorY + t.halfH);
-      chairPlacements(table, g).forEach((c) => {
-        top = Math.min(top, c.top);
-        bottom = Math.max(bottom, c.bottom);
-      });
-    });
-    return { top, bottom };
+// ═══════════════════════════════════════════════════════════════════════════
+// THE ROOM IS A FIXED FRAME
+//
+// This block exists because of a specific P0 found in human phone UAT, and it
+// is written to fail loudly if that defect ever returns. A previous version
+// derived the projection basis from the current table set's own min/max y, to
+// avoid rendering floor no table stood on. Consequence: every table's depth was
+// normalized against the extrema, so moving the table that DEFINED an extremum
+// renormalized the whole room and tables the operator never touched slid across
+// the screen underneath their finger.
+//
+// The invariant: the room is the coordinate frame. Tables move inside it. No
+// table may move because another table changed.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("dragging uppermost table does not reframe untouched tables", () => {
+  // The exact composition the operator reported it with: a five-dot/dice
+  // arrangement, Mesa 5 alone at the top.
+  const DICE_ROOM = [
+    { id: "t1", number: 1, shape: "round", capacity: 4, x: 22, y: 62 },
+    { id: "t2", number: 2, shape: "round", capacity: 4, x: 78, y: 62 },
+    { id: "t3", number: 3, shape: "square", capacity: 4, x: 22, y: 38 },
+    { id: "t4", number: 4, shape: "square", capacity: 4, x: 78, y: 38 },
+    { id: "t5", number: 5, shape: "square", capacity: 4, x: 50, y: 16 }, // uppermost
+    { id: "t6", number: 6, shape: "round", capacity: 4, x: 50, y: 80 },
+  ];
+  const project = (tables) => {
+    const g = sceneGeometry(BOARD.width, BOARD.height);
+    return Object.fromEntries(tables.map((t) => [t.id, {
+      table: tableGeometry(t, g),
+      chairs: chairPlacements(t, g).map((c) => ({ x: c.x, y: c.y })),
+      box: tableFootprint(t, g),
+    }]));
   };
-  const framed = (tables, w = BOARD.width, h = BOARD.height) =>
-    sceneGeometry(w, h, HYBRID_TOKENS, cameraFrame(tables));
+  const dragMesa5To = (y) => DICE_ROOM.map((t) => (t.id === "t5" ? { ...t, y } : t));
+  // Subpixel: these are pure arithmetic, so "unchanged" means bit-identical,
+  // not "close enough to look alright".
+  const EXACT = 10;
 
-  test("an empty floor falls back to the whole coordinate space", () => {
-    expect(cameraFrame([])).toEqual(FULL_FRAME);
-    expect(cameraFrame(null)).toEqual(FULL_FRAME);
-    expect(cameraFrame([{ id: "x" }])).toEqual(FULL_FRAME); // no usable y
-  });
-
-  test("frames where the tables actually are", () => {
-    const frame = cameraFrame(STAGING_TABLES);
-    // nearest table has the largest y, and lands at the frame's near end
-    expect(frame.vMin).toBeCloseTo(1 - 70.31 / 100, 10);
-    expect(frame.vMax).toBeCloseTo(1 - 13.11 / 100, 10);
-  });
-
-  test("stops zooming in on a floor whose tables all sit on one line", () => {
-    const clustered = [
-      { id: "a", number: 1, shape: "round", capacity: 4, x: 30, y: 50 },
-      { id: "b", number: 2, shape: "round", capacity: 4, x: 70, y: 51 },
-    ];
-    const frame = cameraFrame(clustered);
-    expect(frame.vMax - frame.vMin).toBeCloseTo(HYBRID_TOKENS.FRAME_MIN_SPAN, 10);
-    // and it widens about the CONTENT, so a cluster at the back stays at the back
-    expect((frame.vMin + frame.vMax) / 2).toBeCloseTo(1 - 50.5 / 100, 10);
-  });
-
-  // The domain guarantee. A camera that could not be inverted exactly would
-  // make every drag lose or gain a fraction of a percent on each gesture.
-  test("a framed room still round-trips every logical coordinate exactly", () => {
-    const g = framed(STAGING_TABLES);
-    for (let x = 5; x <= 95; x += 7.5) {
-      for (let y = 5; y <= 95; y += 7.5) {
-        const p = projectFloorPoint(x, y, g);
-        const back = unprojectScreenPoint(p.sx, p.sy, g);
-        expect(back.x).toBeCloseTo(x, 9);
-        expect(back.y).toBeCloseTo(y, 9);
-      }
-    }
-  });
-
-  test("framing never reorders the room — near stays near, far stays far", () => {
-    const g = framed(STAGING_TABLES);
-    const sorted = [...STAGING_TABLES].sort((a, b) => a.y - b.y);
-    for (let i = 1; i < sorted.length; i += 1) {
-      const prev = projectFloorPoint(50, sorted[i - 1].y, g).sy;
-      const here = projectFloorPoint(50, sorted[i].y, g).sy;
-      expect(here).toBeGreaterThan(prev); // smaller y ⇒ further back ⇒ higher
-    }
-  });
-
-  // THE COMPOSITION GUARANTEE — this is the failure the recovery exists to
-  // fix, stated as a measurement rather than as a screenshot. Two different
-  // real floor plans must land in the same place on the phone.
-  test("the room is framed identically whatever band the tables occupy", () => {
-    const spread = STAGING_TABLES;                                    // y 13..70
-    const shifted = STAGING_TABLES.map((t) => ({ ...t, y: 20 + (t.y / 100) * 70 })); // y 29..69
-    expect(cameraFrame(shifted).vMax - cameraFrame(shifted).vMin)
-      .toBeGreaterThan(HYBRID_TOKENS.FRAME_MIN_SPAN); // i.e. not clamp-limited
-    const a = drawnExtent(spread, framed(spread));
-    const b = drawnExtent(shifted, framed(shifted));
-    expect(b.top).toBeCloseTo(a.top, 0);
-    expect(b.bottom).toBeCloseTo(a.bottom, 0);
-  });
-
-  // The other side of that rule: once a floor is tighter than FRAME_MIN_SPAN
-  // the camera deliberately STOPS matching the frame, because the alternative
-  // is zooming until two tables fill a phone. The tables then sit inside the
-  // window with honest empty floor around them, and still nothing clips.
-  test("a floor tighter than the minimum span keeps floor around itself", () => {
-    const tight = STAGING_TABLES.map((t) => ({ ...t, y: 40 + (t.y / 100) * 20 }));
-    const g = framed(tight);
-    const spreadExtent = drawnExtent(STAGING_TABLES, framed(STAGING_TABLES));
-    const tightExtent = drawnExtent(tight, g);
-    expect(tightExtent.top).toBeGreaterThan(spreadExtent.top);
-    expect(tightExtent.bottom).toBeLessThan(spreadExtent.bottom);
-    expect(tightExtent.top).toBeGreaterThanOrEqual(0);
-    expect(tightExtent.bottom).toBeLessThanOrEqual(BOARD.height);
-  });
-
-  test("uses the board instead of leaving dead bands at top and bottom", () => {
-    [[355, 630], [370, 662], [373, 670]].forEach(([w, h]) => {
-      const g = framed(STAGING_TABLES, w, h);
-      const { top, bottom } = drawnExtent(STAGING_TABLES, g);
-      // nothing clipped
-      expect(top).toBeGreaterThanOrEqual(0);
-      expect(bottom).toBeLessThanOrEqual(h);
-      // and the room is genuinely used, not sparsely occupied
-      expect((bottom - top) / h).toBeGreaterThan(0.86);
+  test("moving Mesa 5 down leaves Mesas 1,2,3,4,6 in exactly the same place", () => {
+    const before = project(DICE_ROOM);
+    const after = project(dragMesa5To(45));
+    ["t1", "t2", "t3", "t4", "t6"].forEach((id) => {
+      expect(after[id].table.topX).toBeCloseTo(before[id].table.topX, EXACT);
+      expect(after[id].table.topY).toBeCloseTo(before[id].table.topY, EXACT);
+      expect(after[id].table.R).toBeCloseTo(before[id].table.R, EXACT);
     });
   });
 
-  test("keeps a back wall — the room never becomes an edge-to-edge floor", () => {
-    const g = framed(STAGING_TABLES);
-    expect(g.horizon).toBeGreaterThan(BOARD.height * 0.06);
-    expect(g.horizon).toBeLessThan(BOARD.height * 0.16);
+  test("Mesa 5 itself does move, and downward on screen", () => {
+    const before = project(DICE_ROOM);
+    const after = project(dragMesa5To(45));
+    expect(after.t5.table.topY).toBeGreaterThan(before.t5.table.topY);
+    expect(after.t5.table.topX).toBeCloseTo(before.t5.table.topX, EXACT); // x untouched
   });
 
-  test("a framed room keeps every table comfortably tappable", () => {
-    const g = framed(STAGING_TABLES);
-    STAGING_TABLES.forEach((table) => {
-      const box = tableFootprint(table, g);
-      expect(box.width).toBeGreaterThanOrEqual(52);
-      expect(box.height).toBeGreaterThanOrEqual(52);
+  test("the dragged Mesa's chair group travels with it, rigidly attached", () => {
+    const before = project(DICE_ROOM);
+    const after = project(dragMesa5To(45));
+    expect(after.t5.chairs).toHaveLength(before.t5.chairs.length);
+    // Rigid attachment is measured RELATIVE TO THE TABLE, in units of the
+    // table's own radius: a table dragged nearer is legitimately drawn a little
+    // larger (PK_OBJ) and its seats scale with it. Asserting a raw pixel shift
+    // instead would be asserting that perspective is broken.
+    const offsets = (state) => state.chairs.map((c) => ({
+      dx: (c.x - state.table.floorX) / state.table.R,
+      dy: (c.y - state.table.floorY) / state.table.R,
+    }));
+    const beforeOffsets = offsets(before.t5);
+    offsets(after.t5).forEach((offset, i) => {
+      expect(offset.dx).toBeCloseTo(beforeOffsets[i].dx, 9);
+      expect(offset.dy).toBeCloseTo(beforeOffsets[i].dy, 9);
+    });
+    // ...and the whole group genuinely travelled down-screen with the table
+    expect(after.t5.table.topY).toBeGreaterThan(before.t5.table.topY);
+    after.t5.chairs.forEach((chair, i) => {
+      expect(chair.y).toBeGreaterThan(before.t5.chairs[i].y);
     });
   });
 
-  test("framing does not push hit targets into each other", () => {
-    const g = framed(STAGING_TABLES);
-    const boxes = STAGING_TABLES.map((t) => tableFootprint(t, g));
-    for (let i = 0; i < boxes.length; i += 1) {
-      for (let j = i + 1; j < boxes.length; j += 1) {
-        const a = boxes[i];
-        const b = boxes[j];
-        const ox = Math.max(0, Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left));
-        const oy = Math.max(0, Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top));
-        const smaller = Math.min(a.width * a.height, b.width * b.height);
-        expect((ox * oy) / smaller).toBeLessThan(0.25);
-      }
-    }
-  });
-
-  test("every chair still resolves to its own Mesa under a framed camera", () => {
-    const g = framed(STAGING_TABLES);
-    STAGING_TABLES.forEach((table) => {
-      const box = tableFootprint(table, g);
-      chairPlacements(table, g).forEach((chair) => {
-        expect(chair.left).toBeGreaterThanOrEqual(box.left - 0.001);
-        expect(chair.right).toBeLessThanOrEqual(box.left + box.width + 0.001);
-        expect(chair.top).toBeGreaterThanOrEqual(box.top - 0.001);
-        expect(chair.bottom).toBeLessThanOrEqual(box.top + box.height + 0.001);
+  test("no untouched Mesa's chairs move, not by a subpixel", () => {
+    const before = project(DICE_ROOM);
+    const after = project(dragMesa5To(45));
+    ["t1", "t2", "t3", "t4", "t6"].forEach((id) => {
+      after[id].chairs.forEach((chair, i) => {
+        expect(chair.x).toBeCloseTo(before[id].chairs[i].x, EXACT);
+        expect(chair.y).toBeCloseTo(before[id].chairs[i].y, EXACT);
       });
     });
   });
 
-  test("the near/far spread is a property of the camera, not of the floor plan", () => {
-    const spread = nearFarScaleDelta(framed(STAGING_TABLES));
-    const shallow = nearFarScaleDelta(
-      framed(STAGING_TABLES.map((t) => ({ ...t, y: 30 + (t.y / 100) * 25 })))
-    );
-    expect(spread).toBeCloseTo(shallow, 10);
-    expect(spread).toBeGreaterThan(0.10);
-    expect(spread).toBeLessThan(0.15);
+  test("no untouched Mesa's hit target moves either", () => {
+    const before = project(DICE_ROOM);
+    const after = project(dragMesa5To(45));
+    ["t1", "t2", "t3", "t4", "t6"].forEach((id) => {
+      expect(after[id].box.left).toBeCloseTo(before[id].box.left, EXACT);
+      expect(after[id].box.top).toBeCloseTo(before[id].box.top, EXACT);
+      expect(after[id].box.width).toBeCloseTo(before[id].box.width, EXACT);
+      expect(after[id].box.height).toBeCloseTo(before[id].box.height, EXACT);
+    });
+  });
+
+  // The original defect moved untouched tables by up to 140px, so a coarse
+  // assertion would have caught it -- but it is the *continuity* that matters:
+  // an operator drags through many intermediate positions, and the room must
+  // be rock-still at every one of them, including the extremes of the band.
+  test("holds across the whole drag path, including the band's own edges", () => {
+    const before = project(DICE_ROOM);
+    [16, 20, 30, 45, 60, 75, ROOM_Y_MAX, ROOM_Y_MIN].forEach((y) => {
+      const after = project(dragMesa5To(y));
+      ["t1", "t2", "t3", "t4", "t6"].forEach((id) => {
+        expect(after[id].table.topY).toBeCloseTo(before[id].table.topY, EXACT);
+      });
+    });
+  });
+
+  // Same invariant from the other direction: adding or removing a table is
+  // also a change to the table set, and must not reframe the survivors.
+  test("adding or removing a Mesa does not move the others", () => {
+    const before = project(DICE_ROOM);
+    const added = project([...DICE_ROOM, { id: "t7", number: 7, shape: "round", capacity: 2, x: 12, y: 12 }]);
+    const removed = project(DICE_ROOM.filter((t) => t.id !== "t5"));
+    ["t1", "t2", "t3", "t4", "t6"].forEach((id) => {
+      expect(added[id].table.topY).toBeCloseTo(before[id].table.topY, EXACT);
+      expect(removed[id].table.topY).toBeCloseTo(before[id].table.topY, EXACT);
+    });
+  });
+});
+
+describe("the projection basis is the room, not its contents", () => {
+  test("sceneGeometry takes a board box and nothing else", () => {
+    // Structural: the P0 entered through a `frame` parameter, so the absence of
+    // one is the actual fix and is asserted as such.
+    expect(sceneGeometry.length).toBe(2);
+  });
+
+  test("the frame is a constant, identical for every geometry", () => {
+    const a = sceneGeometry(370, 662);
+    const b = sceneGeometry(370, 662);
+    expect(a.frame).toEqual(b.frame);
+    expect(a.frame.vMin).toBe(ROOM_FRAME.vMin);
+    expect(a.frame.vMax).toBe(ROOM_FRAME.vMax);
+  });
+
+  test("the framed band is the room's own reachable band, not any table's", () => {
+    expect(ROOM_FRAME.vMin).toBeCloseTo(1 - ROOM_Y_MAX / 100, 12);
+    expect(ROOM_FRAME.vMax).toBeCloseTo(1 - ROOM_Y_MIN / 100, 12);
+  });
+
+  test("the frame cannot be mutated at runtime", () => {
+    expect(Object.isFrozen(ROOM_FRAME)).toBe(true);
+  });
+
+  // A table outside the reachable band (legacy data, a hand-edited row) must
+  // still render inside the room. The frame is a MAPPING, never a clamp.
+  test("a table outside the reachable band still projects into the room", () => {
+    const g = sceneGeometry(370, 662);
+    [0, 5, 95, 100].forEach((y) => {
+      const p = projectFloorPoint(50, y, g);
+      expect(Number.isFinite(p.sy)).toBe(true);
+      expect(p.sy).toBeGreaterThan(g.horizon - g.height);
+      expect(p.sy).toBeLessThan(g.height * 2);
+      // and still round-trips, so a drag from there stays honest
+      expect(unprojectScreenPoint(p.sx, p.sy, g).y).toBeCloseTo(y, 8);
+    });
+  });
+
+  test("depth order is preserved across the whole logical domain", () => {
+    const g = sceneGeometry(370, 662);
+    for (let y = 0; y < 100; y += 5) {
+      expect(projectFloorPoint(50, y, g).sy).toBeLessThan(projectFloorPoint(50, y + 5, g).sy);
+    }
   });
 });

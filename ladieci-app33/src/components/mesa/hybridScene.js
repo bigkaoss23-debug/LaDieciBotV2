@@ -28,20 +28,31 @@
 // (see DEPTH_VEIL): distant tables sit deeper in shadow, which is simply what
 // happens in a room lit only by its own pendants.
 //
-// THE SECOND IDEA — THE CAMERA FRAMES THE TABLES, NOT THE COORDINATE SPACE
-// -----------------------------------------------------------------------
-// The logical floor is 0..100 in both axes, but no real room ever uses all of
-// it: the live staging floor occupies y 13..70, so a camera that dutifully
-// showed 0..100 spent ~30% of the phone's height rendering floor nobody ever
-// put a table on, split into two dead bands the eye reads as wasted screen.
-// `cameraFrame` therefore measures where the tables ACTUALLY are and maps that
-// band onto a fixed, art-directed window of the room (FRAME_LO..FRAME_HI), so
-// the composition lands identically whether the tables span 13..70 or 15..86.
-// This is a camera, never a data migration: x/y stay exactly the logical
-// coordinates the backend persists, `unprojectScreenPoint` inverts the framing
-// exactly, and a drag therefore still saves the same number it always did.
-// The frame is FROZEN for the duration of a drag (see TabMesa) so the camera
-// cannot chase the table under the operator's finger.
+// THE SECOND IDEA — THE ROOM IS THE FIXED FRAME
+// ---------------------------------------------
+// The camera frames the ROOM, and only the room. Its projection basis is
+// ROOM_FRAME below: two constants describing the floor's own reachable
+// coordinate band, identical on every render, for every floor plan, forever.
+// Tables move inside that frame; the frame never moves because of them.
+//
+// This is a HARD INVARIANT, not a preference, and it is stated here because
+// violating it produced a real P0 in phone UAT (see
+// MESA_ROOM_CUSTOMIZATION_FINAL_PASS_2026-08-14.md). A previous version of
+// this file derived the frame from the current table set's own min/max y, to
+// avoid rendering floor no table stood on. The arithmetic was correct and the
+// composition was better, but the semantics were wrong: because every table's
+// projected depth was normalized against the extrema, dragging the UPPERMOST
+// table downward changed the normalization for the whole room, and five tables
+// the operator never touched slid up the screen underneath their finger —
+// measured at up to 140px. A projection whose basis is its own content is not
+// a camera, it is a feedback loop.
+//
+// So: no function in this file may take the table set as an input to the
+// projection. `sceneGeometry` deliberately exposes no frame parameter at all,
+// so a future caller cannot reintroduce content-derived framing by passing one.
+// x/y stay exactly the logical coordinates the backend persists, and
+// `unprojectScreenPoint` inverts the fixed framing exactly, so a drag saves the
+// same number it always did.
 // ===============================================================
 
 // ── Centralized visual tokens ──────────────────────────────────────────────
@@ -73,9 +84,9 @@ export const HYBRID_TOKENS = {
                       // furniture in front of a wall, not furniture below a
                       // void. Purely framing — PK_ROOM/PK_OBJ are untouched.
 
-  // camera framing — see cameraFrame() and the header note
-  FRAME_LO: 0.06,     // where the NEAREST table's depth lands in the room
-  FRAME_HI: 0.93,     // where the FARTHEST table's depth lands
+  // camera framing — see ROOM_FRAME and the header note
+  FRAME_LO: 0.06,     // where the room's NEAR edge of the reachable band lands
+  FRAME_HI: 0.93,     // where its FAR edge lands
                       // Both are chosen so the tables' full drawn extent
                       // (cast shadow below the near row, backrests above the
                       // far row) lands inside the board with a hair to spare
@@ -83,16 +94,9 @@ export const HYBRID_TOKENS = {
                       // front and a little behind, and nothing clips.
                       // The residual margins are deliberately NOT equal: the
                       // near floor is foreground and wants a little more room
-                      // than the back wall, which is a backdrop. Measured at
-                      // 390×844 this leaves ~26px above the far row and ~38px
-                      // below the near one, against the 76/41 the unframed
-                      // camera left — and against a wall band that was
-                      // formerly 109px of pure black.
-  FRAME_MIN_SPAN: 0.34, // floor on how narrow a band the camera will zoom
-                      // into, in v units. Without it, a room whose tables all
-                      // sit on one line would zoom until two tables filled
-                      // the phone; with it, a tight layout simply keeps some
-                      // honest empty floor around itself.
+                      // than the back wall, which is a backdrop.
+                      // These map the ROOM's reachable band (ROOM_Y_MIN..MAX),
+                      // never the tables' own extent — see the header note.
 
   // table sizing
   TABLE_R: 0.133,     // base top-face half-width, as a fraction of board width
@@ -194,47 +198,44 @@ export const HYBRID_TOKENS = {
                       // reading as loudly as the table they belong to.
 };
 
-// ── The camera frame ───────────────────────────────────────────────────────
-// Which band of the logical floor the room is actually pointed at, expressed
-// in v (0 = the front of the logical floor, 1 = the back). FULL_FRAME is the
-// whole coordinate space and is the default everywhere, so any call site that
-// does not care about framing — every existing test, every non-Hybrid path —
-// behaves as if this feature did not exist.
-export const FULL_FRAME = { vMin: 0, vMax: 1 };
+// ── The room's own coordinate domain ───────────────────────────────────────
+// The logical floor is 0..100, but a table can only ever be placed inside this
+// band: the drag clamp in TabMesa keeps y here, and the fallback grid used for
+// tables that have never been positioned lands inside it too. It is a property
+// of the ROOM — of where furniture is allowed to stand — and it is completely
+// independent of where any table currently is.
+//
+// TabMesa imports these for its drag clamp rather than repeating the numbers,
+// so the band the camera frames and the band a finger can reach are the same
+// band BY CONSTRUCTION. If they ever drifted apart, a table could be dragged
+// to a coordinate the room does not frame.
+export const ROOM_Y_MIN = 11;
+export const ROOM_Y_MAX = 89;
 
-// Measures where the tables ACTUALLY are. Returns a v band, deliberately
-// unclamped: it names the content to frame, not a region of the floor, and
-// clamping it would reintroduce exactly the dead margin it exists to remove.
-export function cameraFrame(tables, tokens = HYBRID_TOKENS) {
-  const ys = (tables || []).map((t) => Number(t && t.y)).filter((y) => Number.isFinite(y));
-  if (ys.length === 0) return FULL_FRAME;
-  let vMin = 1 - Math.max(...ys) / 100; // the NEAREST table (largest y)
-  let vMax = 1 - Math.min(...ys) / 100; // the FARTHEST table (smallest y)
-  const span = vMax - vMin;
-  if (span < tokens.FRAME_MIN_SPAN) {
-    // Widen about the content's own centre rather than about the room's, so a
-    // cluster of tables at the back of the floor stays at the back.
-    const mid = (vMin + vMax) / 2;
-    vMin = mid - tokens.FRAME_MIN_SPAN / 2;
-    vMax = mid + tokens.FRAME_MIN_SPAN / 2;
-  }
-  return { vMin, vMax };
-}
+// The fixed projection basis. A constant — not a function of anything, least
+// of all of the tables. See the header note for what happened when it was.
+export const ROOM_FRAME = Object.freeze({
+  vMin: 1 - ROOM_Y_MAX / 100, // the near edge of the reachable floor
+  vMax: 1 - ROOM_Y_MIN / 100, // the far edge
+});
 
 // ── Room geometry for a given board box ────────────────────────────────────
 // Everything downstream derives from this, so a board of any size produces a
 // coherent room without per-call-site arithmetic.
-export function sceneGeometry(width, height, tokens = HYBRID_TOKENS, frame = FULL_FRAME) {
+//
+// There is deliberately NO frame parameter. The room's frame is a constant, and
+// leaving a seam here through which a caller could inject a content-derived one
+// is exactly how the P0 got in. A board box in, a fixed room out.
+export function sceneGeometry(width, height, tokens = HYBRID_TOKENS) {
   const w = Math.max(1, width);
   const h = Math.max(1, height);
   const R = Math.min(
     tokens.TABLE_R_MAX,
     Math.max(tokens.TABLE_R_MIN, w * tokens.TABLE_R)
   );
-  const vMin = Number.isFinite(frame && frame.vMin) ? frame.vMin : 0;
-  const vMax = Number.isFinite(frame && frame.vMax) ? frame.vMax : 1;
-  // Guarded so a degenerate frame can never produce an infinite k and, through
-  // it, a NaN screen coordinate or a non-invertible drag.
+  const { vMin, vMax } = ROOM_FRAME;
+  // Guarded so a degenerate token edit can never produce an infinite k and,
+  // through it, a NaN screen coordinate or a non-invertible drag.
   const span = Math.max(1e-6, vMax - vMin);
   return {
     width: w,

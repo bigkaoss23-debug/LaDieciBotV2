@@ -5,7 +5,7 @@ import { normalizeOrderLine } from "../../menu/normalizeOrderLine";
 import OrderLineView from "../order/OrderLineView";
 import HybridFloorScene, { hybridSceneCss } from "./HybridFloorScene";
 import {
-  HYBRID_TOKENS, cameraFrame, sceneGeometry, tableFootprint, tableGeometry, unprojectScreenPoint,
+  ROOM_Y_MIN, ROOM_Y_MAX, sceneGeometry, tableFootprint, tableGeometry, unprojectScreenPoint,
 } from "./hybridScene";
 
 // MESA_HYBRID_3D — renderer selection only, never a domain switch. Off, this
@@ -500,6 +500,17 @@ const css = `
 }
 .mesa-btn{border:1px solid rgba(208,184,145,.25);border-radius:12px;background:rgba(255,255,255,.05);color:#f9f2e5;padding:10px 14px;font-weight:850;cursor:pointer}.mesa-btn:hover{background:rgba(255,255,255,.09)}.mesa-btn:disabled{opacity:.4;cursor:wait}
 .mesa-btn.primary{background:#2563EB;border-color:#2563EB;color:#fff}.mesa-btn.gold{background:#d7a84b;border-color:#d7a84b;color:#211707}.mesa-btn.green{background:#178447;border-color:#20a85d}.mesa-btn.danger{color:#ff8f80;border-color:rgba(232,52,28,.55)}
+/* Capacity picker. Chips sized for a thumb (44px minimum touch target) and
+   laid out on a fluid grid so five options fit a 375px phone without wrapping
+   awkwardly, while the "Otra" field keeps every value 1..99 reachable. */
+.mesa-capacity-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.mesa-capacity-btn{min-height:46px;border:1.5px solid rgba(208,184,145,.25);border-radius:12px;
+  background:rgba(255,255,255,.04);color:#e7dcc7;font-size:17px;font-weight:900;cursor:pointer;
+  display:flex;align-items:center;justify-content:center}
+.mesa-capacity-btn.active{border-color:#C4A87A;background:rgba(196,168,122,.18);color:#F0D9A8}
+.mesa-capacity-custom{display:flex;align-items:center;gap:10px;margin-top:9px}
+.mesa-capacity-custom .mesa-label{margin:0;flex-shrink:0}
+.mesa-capacity-custom .mesa-input{flex:1;min-width:0}
 .mesa-shape-grid{display:flex;gap:8px;flex-wrap:wrap}
 .mesa-shape-btn{border:1px solid rgba(208,184,145,.25);border-radius:12px;background:rgba(255,255,255,.04);color:#e7dcc7;padding:10px 12px;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11px;font-weight:800;cursor:pointer;flex:1;min-width:76px}
 .mesa-shape-btn.active{border-color:#d7a84b;background:rgba(215,168,75,.14);color:#f8ecd2}
@@ -1537,6 +1548,62 @@ function ShapePicker({ shape, shapePreset, onShape, onCapacityPreset }) {
   </div>;
 }
 
+// ── Shared room-configuration primitives ───────────────────────────────────
+// "Añadir mesa" and "Editar mesa" configure the SAME two domain fields, so
+// they render the same controls and validate against the same rule. Before
+// this they each hand-rolled a bare <input type="number">, which is both a
+// duplicated business rule and, on a phone, a keyboard summoned to type "6".
+//
+// Capacity is the table's PHYSICAL configuration ("Capacidad máxima" /
+// `máx N`), never the current session's covers. Nothing here reads or writes
+// coversTotal, and the payloads below carry no covers field at all.
+const CAPACITY_QUICK = [2, 3, 4, 6, 8];
+const CAPACITY_MIN = 1;
+const CAPACITY_MAX = 99;
+
+export function isValidCapacity(value) {
+  const capacity = Number(value);
+  return Number.isInteger(capacity) && capacity >= CAPACITY_MIN && capacity <= CAPACITY_MAX;
+}
+
+// One chip per common table size plus a free field for everything else, so the
+// usual case is a single tap and the unusual one is still reachable. The
+// current value is always shown as selected even when it is not a quick option.
+function CapacityPicker({ value, onChange }) {
+  const current = Number(value);
+  return <div>
+    <div className="mesa-capacity-grid">
+      {CAPACITY_QUICK.map((option) => <button key={option} type="button"
+        data-testid={`capacity-quick-${option}`}
+        className={`mesa-capacity-btn ${current === option ? "active" : ""}`}
+        aria-pressed={current === option}
+        onClick={() => onChange(option)}>{option}</button>)}
+    </div>
+    <div className="mesa-capacity-custom">
+      <label className="mesa-label" htmlFor="mesa-capacity-custom-input">Otra</label>
+      <input id="mesa-capacity-custom-input" data-testid="capacity-custom-input"
+        className="mesa-input" type="number" inputMode="numeric"
+        min={CAPACITY_MIN} max={CAPACITY_MAX} value={value}
+        onChange={(event) => onChange(event.target.value)} />
+    </div>
+  </div>;
+}
+
+// Capacity + shape, the whole physical configuration of a table, in the one
+// place both flows read it from.
+function TableConfigFields({ form, setForm }) {
+  return <>
+    <label className="mesa-label">Capacidad máxima</label>
+    <CapacityPicker value={form.capacity} onChange={(capacity) => setForm((current) => ({ ...current, capacity }))} />
+    <div style={{ marginTop: 14 }}>
+      <label className="mesa-label">Forma</label>
+      <ShapePicker shape={form.shape} shapePreset={form.shapePreset}
+        onShape={(shape, shapePreset) => setForm((current) => ({ ...current, shape, shapePreset }))}
+        onCapacityPreset={(capacity) => setForm((current) => ({ ...current, capacity }))} />
+    </div>
+  </>;
+}
+
 function AddTableModal({ tables, onClose, onSaved }) {
   const nextNumber = Math.max(0, ...tables.map((table) => Number(table.number) || 0)) + 1;
   const [form, setForm] = useState({ tableNumber: nextNumber, displayName: `Mesa ${nextNumber}`, capacity: 4, shape: "square", shapePreset: "standard" });
@@ -1546,7 +1613,7 @@ function AddTableModal({ tables, onClose, onSaved }) {
     const tableNumber = Number(form.tableNumber);
     const capacity = Number(form.capacity);
     if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > 999) { setError("Indica un número de mesa válido."); return; }
-    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 99) { setError("Indica una capacidad máxima válida."); return; }
+    if (!isValidCapacity(capacity)) { setError("Indica una capacidad máxima válida."); return; }
     setBusy(true); setError("");
     try {
       // NOT a fixed (50,50) -- that put every newly added table on the exact
@@ -1563,8 +1630,8 @@ function AddTableModal({ tables, onClose, onSaved }) {
     } catch (err) { setError(describeMesaError(err)); setBusy(false); }
   };
   return <Modal title="Añadir mesa" subtitle="Después podrás moverla en Personalizar sala" onClose={busy ? undefined : onClose} width={520}>
-    <div className="mesa-form-grid"><div><label className="mesa-label">Número de mesa</label><input className="mesa-input" type="number" min="1" max="999" value={form.tableNumber} onChange={(event) => setForm({ ...form, tableNumber: event.target.value, displayName: `Mesa ${event.target.value}` })} /></div><div><label className="mesa-label">Capacidad máxima</label><input className="mesa-input" type="number" min="1" max="99" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} /></div></div>
-    <div style={{ marginTop: 12 }}><label className="mesa-label">Forma</label><ShapePicker shape={form.shape} shapePreset={form.shapePreset} onShape={(shape, shapePreset) => setForm((current) => ({ ...current, shape, shapePreset }))} onCapacityPreset={(capacity) => setForm((current) => ({ ...current, capacity }))} /></div>
+    <div><label className="mesa-label">Número de mesa</label><input className="mesa-input" type="number" inputMode="numeric" min="1" max="999" value={form.tableNumber} onChange={(event) => setForm({ ...form, tableNumber: event.target.value, displayName: `Mesa ${event.target.value}` })} /></div>
+    <div style={{ marginTop: 14 }}><TableConfigFields form={form} setForm={setForm} /></div>
     <div className="mesa-actions" style={{ justifyContent: "flex-end" }}><button className="mesa-btn" onClick={onClose}>Cancelar</button><button className="mesa-btn gold" disabled={busy} onClick={save}>{busy ? "Guardando…" : "Añadir"}</button></div>{error && <div className="mesa-banner mesa-error">{error}</div>}
   </Modal>;
 }
@@ -1577,7 +1644,14 @@ function TableSettingsModal({ table, onClose, onSaved }) {
     const tableNumber = Number(form.tableNumber);
     const capacity = Number(form.capacity);
     if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > 999) throw new Error("table_number");
-    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 99) throw new Error("capacity");
+    if (!isValidCapacity(capacity)) throw new Error("capacity");
+    // Saved against this table's OWN id (see save() below), so changing the
+    // physical configuration updates Mesa 5 rather than retiring it and
+    // minting a replacement. Position is carried through untouched -- editing
+    // capacity or shape must not teleport a table the operator has placed.
+    // No covers/coversTotal field appears here by design: the live session's
+    // comensales is a different concept and is owned by the session, not by
+    // the room's physical configuration.
     return { tableNumber, displayName: `Mesa ${tableNumber}`, capacity, positionX: table.x, positionY: table.y, shape: form.shape, shapePreset: form.shapePreset, active: true };
   };
   const save = async () => {
@@ -1597,14 +1671,33 @@ function TableSettingsModal({ table, onClose, onSaved }) {
       await onSaved(); onClose();
     } catch (err) { setError(describeMesaError(err)); setBusy(false); }
   };
-  return <Modal title="Ajustes de mesa" subtitle={`Mesa ${table.number} · Personalizar sala`} onClose={busy ? undefined : onClose} width={520}>
-    <div className="mesa-form-grid"><div><label className="mesa-label">Número de mesa</label><input className="mesa-input" type="number" min="1" max="999" value={form.tableNumber} onChange={(event) => setForm({ ...form, tableNumber: event.target.value })} /></div><div><label className="mesa-label">Capacidad máxima</label><input className="mesa-input" type="number" min="1" max="99" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} /></div></div>
-    <div style={{ marginTop: 12 }}><label className="mesa-label">Forma</label><ShapePicker shape={form.shape} shapePreset={form.shapePreset} onShape={(shape, shapePreset) => setForm((current) => ({ ...current, shape, shapePreset }))} onCapacityPreset={(capacity) => setForm((current) => ({ ...current, capacity }))} /></div>
-    <div className="mesa-actions" style={{ justifyContent: "space-between", marginTop: 20 }}>
-      <button className="mesa-btn red" disabled={busy} onClick={remove}>Eliminar mesa</button>
-      <div style={{ display: "flex", gap: 8 }}><button className="mesa-btn" disabled={busy} onClick={onClose}>Cancelar</button><button className="mesa-btn gold" disabled={busy} onClick={save}>{busy ? "Guardando…" : "Guardar ajustes"}</button></div>
+  // Live covers, shown only so the operator can SEE that the two numbers are
+  // different things. Read-only here on purpose: this panel configures the
+  // physical table, and a session's comensales is not part of that.
+  const liveCovers = table.status === "open" ? (table.session?.coversTotal ?? null) : null;
+
+  return <Modal title={`Editar Mesa ${table.number}`} subtitle="Configuración física de la mesa" onClose={busy ? undefined : onClose} width={520}>
+    <div data-testid="table-editor">
+      {liveCovers != null && <div className="mesa-banner" data-testid="table-editor-covers-note" style={{ marginBottom: 14 }}>
+        Ahora mismo sentados: <strong>{liveCovers} comensal{liveCovers !== 1 ? "es" : ""}</strong>. La capacidad máxima
+        describe la mesa, no esta sesión — cambiarla no toca los comensales actuales.
+      </div>}
+      <TableConfigFields form={form} setForm={setForm} />
+      <details style={{ marginTop: 16 }}>
+        <summary className="mesa-label" style={{ cursor: "pointer" }}>Número de mesa</summary>
+        <input className="mesa-input" style={{ marginTop: 8 }} type="number" inputMode="numeric" min="1" max="999"
+          data-testid="table-editor-number"
+          value={form.tableNumber} onChange={(event) => setForm({ ...form, tableNumber: event.target.value })} />
+      </details>
+      <div className="mesa-actions" style={{ justifyContent: "space-between", marginTop: 20 }}>
+        <button className="mesa-btn red" disabled={busy} onClick={remove}>Eliminar mesa</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="mesa-btn" disabled={busy} onClick={onClose}>Cancelar</button>
+          <button className="mesa-btn gold" data-testid="table-editor-save" disabled={busy} onClick={save}>{busy ? "Guardando…" : "Guardar mesa"}</button>
+        </div>
+      </div>
+      {error && <div className="mesa-banner mesa-error" style={{ marginTop: 10 }}>{error}</div>}
     </div>
-    {error && <div className="mesa-banner mesa-error" style={{ marginTop: 10 }}>{error}</div>}
   </Modal>;
 }
 
@@ -1831,34 +1924,23 @@ export default function TabMesa({
   // threshold nothing about the table changes and the click fires normally;
   // only once the pointer has genuinely traveled is it committed as a drag.
   const DRAG_THRESHOLD_PX = 6;
-  // MESA_HYBRID_3D -- the camera frames where the tables ACTUALLY are (see
-  // hybridScene's cameraFrame), which is what keeps the room from spending a
-  // third of a phone screen on floor nobody put a table on.
+  // MESA_HYBRID_3D -- the room is a FIXED frame (hybridScene's ROOM_FRAME), so
+  // this depends on the board box and nothing else. It deliberately does NOT
+  // depend on `tables`: a geometry that changed when a table moved is precisely
+  // the P0 that made untouched Mesas slide across the screen during a drag.
   //
-  // It is FROZEN for the whole of a drag. Without the freeze, dragging the
-  // front-most table forward would widen the frame on every pointermove, the
-  // camera would recompose under the finger, and every OTHER table would drift
-  // sideways-and-up while the operator is trying to place one -- the table
-  // would also lag its own finger, since the geometry that positions it keeps
-  // changing beneath it. Freezing costs one ref and makes the drag behave
-  // exactly as it did before framing existed.
-  const frameFreezeRef = useRef(null);
-  const [frameEpoch, setFrameEpoch] = useState(0);
+  // The freeze-during-drag machinery this replaced (a ref plus an epoch
+  // counter, to stop the camera chasing the finger) is gone with it. There is
+  // nothing left to freeze.
   const hybridGeom = useMemo(
     () => ((MESA_HYBRID_3D && boardBox && boardBox.width > 0)
-      ? sceneGeometry(boardBox.width, boardBox.height, HYBRID_TOKENS,
-        frameFreezeRef.current || cameraFrame(tables))
+      ? sceneGeometry(boardBox.width, boardBox.height)
       : null),
-    // frameEpoch is the release signal from pointerUp; frameFreezeRef itself
-    // is deliberately not a dependency (a ref never can be).
-    [boardBox, tables, frameEpoch]
+    [boardBox]
   );
   const pointerDown = (event, table) => {
     if (!editing) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    // Captured BEFORE the first pointermove can move a table, so the frame
-    // held for the rest of the gesture is the one the operator is looking at.
-    frameFreezeRef.current = cameraFrame(tables);
     const drag = {
       id: table.id, pointerId: event.pointerId, moved: false, table,
       startX: event.clientX, startY: event.clientY,
@@ -1910,7 +1992,9 @@ export default function TabMesa({
       rawY = ((event.clientY - rect.top) / rect.height) * 100;
     }
     const x = Math.max(halfWidthPct, Math.min(100 - halfWidthPct, rawX));
-    const y = Math.max(11, Math.min(89, rawY));
+    // The same band the room frames -- imported, never repeated, so a finger
+    // can never reach a coordinate the camera does not show.
+    const y = Math.max(ROOM_Y_MIN, Math.min(ROOM_Y_MAX, rawY));
     dragRef.current = { ...drag, moved: true, table: { ...drag.table, x, y } };
     setTables((current) => current.map((table) => table.id === drag.id ? { ...table, x, y } : table));
   };
@@ -1918,12 +2002,6 @@ export default function TabMesa({
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
-    // Release the camera and let it recompose around wherever the table ended
-    // up. setFrameEpoch is what actually re-runs the geometry memo: clearing a
-    // ref alone changes nothing React can see, so without it the room would
-    // stay on the frozen frame until some unrelated state happened to change.
-    frameFreezeRef.current = null;
-    setFrameEpoch((n) => n + 1);
     if (drag.moved) {
       suppressClickRef.current = drag.id;
       window.setTimeout(() => { if (suppressClickRef.current === drag.id) suppressClickRef.current = null; }, 250);
@@ -2045,6 +2123,12 @@ export default function TabMesa({
           // intermediate quick-menu hop. Free-with-reservation and editing
           // still go through the popup (see TableContextPopup).
           if (!editing && table.status === "open") { setSelectedId(table.id); return; }
+          // In Personalizar sala the dock already promises "Arrastra para
+          // mover · Toca para editar", so a tap goes STRAIGHT to the room
+          // editor. It used to open the generic quick-menu, from which
+          // "Ajustes de mesa" was a second tap -- and on a phone that popup is
+          // mostly operational actions that do not apply while customizing.
+          if (editing && canEdit) { setSettingsId(table.id); return; }
           setMenuId(table.id);
         }}>
           {reservationBadge && <span className={`mesa-badge mesa-badge-reserved${reservationBadge.conflict ? " conflict" : ""}`}
@@ -2082,8 +2166,22 @@ export default function TabMesa({
         position:fixed phone treatment (see the .mesa-dock media query). */}
     {!(hideDock && !editing) && <div className="mesa-dock">
       {!editing && canManageReservations && <button className="mesa-btn primary" onClick={() => { setReservationsFilterTableId(null); setShowReservations(true); }}>📅 Reservas · Beta</button>}
-      {canEdit && editing && <button className="mesa-btn gold" onClick={() => setShowAdd(true)}>＋ Añadir mesa</button>}
-      {canEdit && <button className={`mesa-btn ${editing ? "primary" : ""}`} onClick={() => setEditing((value) => { const next = !value; if (!next) { setSettingsId(null); setShowAdd(false); setMenuId(null); } return next; })}>{editing ? "✓ Salir de Personalizar sala" : "🛠 Personalizar sala"}</button>}
+      {canEdit && editing && <button className="mesa-btn gold" data-testid="mesa-add-table" onClick={() => setShowAdd(true)}>＋ Añadir mesa</button>}
+      {/* "✓ Listo", NOT "Guardar sala". Every room change in this mode is
+          already persisted the moment it happens: a drag saves on pointerUp
+          (savePosition -> mesaApi.saveTable) and the table editor saves on its
+          own "Guardar mesa". There is no staged state and no second
+          transaction to perform, so a Save button here would be a button that
+          does nothing while claiming to be the thing that made the work
+          durable -- the worst possible lie for an operator deciding whether it
+          is safe to close the app. "Listo" is the truth: the work is saved,
+          this exits the mode. See the report's §11. */}
+      {canEdit && <button className={`mesa-btn ${editing ? "primary" : ""}`} data-testid="mesa-customize-toggle"
+        title={editing ? "Los cambios ya se guardan solos; esto sale del modo" : undefined}
+        onClick={() => setEditing((value) => { const next = !value; if (!next) { setSettingsId(null); setShowAdd(false); setMenuId(null); } return next; })}>{editing ? "✓ Listo" : "🛠 Personalizar sala"}</button>}
+      {/* Re-fetches the floor from the backend (load()). NOT an undo: it
+          discards nothing, it pulls in whatever another device saved. Kept
+          as-is; its meaning was verified, not guessed. */}
       <button className="mesa-btn icon" title="Actualizar el plano" aria-label="Actualizar el plano" onClick={() => load()}>↻</button>
     </div>}
     {menuTable && <TableContextPopup

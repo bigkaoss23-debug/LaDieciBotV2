@@ -310,7 +310,10 @@ describe("MesaPhoneShell -- Más is scoped to Mesa-operational actions only, rol
     click(byText(container, "button", "🛠 Personalizar sala"));
     await flush();
     expect(container.querySelector(".mesa-board")).not.toBeNull();
-    expect(container.textContent).toContain("Salir de Personalizar sala");
+    // The finish CTA is "✓ Listo" -- room changes autosave, so there is no
+    // second save transaction for a button to claim.
+    expect(container.textContent).toContain("Listo");
+    expect(container.textContent).not.toContain("Salir de Personalizar sala");
     unmount(container, root);
   });
 });
