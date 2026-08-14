@@ -1,7 +1,7 @@
 import {
   HYBRID_TOKENS, sceneGeometry, projectFloorPoint, unprojectScreenPoint,
-  tableGeometry, tableFootprint, depthSorted, chairSlots, nearFarScaleDelta,
-  toRoomCoord, fromRoomCoord,
+  tableGeometry, tableFootprint, depthSorted, chairSlots, chairPlacements,
+  nearFarScaleDelta, toRoomCoord, fromRoomCoord,
 } from "./hybridScene";
 
 // The real staging board box (measured live at 390x844 phone: the board is
@@ -179,6 +179,196 @@ describe("chairs carry the authoritative capacity", () => {
     expect(chairSlots("round", 6)).toEqual(chairSlots("round", 6));
     expect(chairSlots("square", 6)).toEqual(chairSlots("square", 6));
   });
+
+  // The locked product semantic, across the WHOLE range the room editor can
+  // actually store (it validates capacity as an integer 1..99), not just the
+  // handful of realistic values. No clamp of the renderer's own invention is
+  // allowed to quietly break "chair count == capacity".
+  test("chair count equals capacity for every capacity the domain accepts", () => {
+    ["round", "square", "rectangle", "rectangle-long"].forEach((shape) => {
+      for (let capacity = 1; capacity <= 99; capacity += 1) {
+        expect(chairSlots(shape, capacity)).toHaveLength(capacity);
+      }
+    });
+  });
+});
+
+// ── the art-directed patterns themselves ───────────────────────────────────
+// These assert the GEOMETRIC INTENT of each supported count, not merely that
+// some arrangement was produced. A generic radial spread passes a count test
+// and still looks like scattered chairs; what makes a table read as "seats
+// three" is that the three seats form a recognisable triangle.
+describe("round tables use explicit geometric seat patterns", () => {
+  const angles = (capacity) => chairSlots("round", capacity)
+    .map((s) => ((Math.atan2(s.dy, s.dx) * 180) / Math.PI + 360) % 360)
+    .sort((a, b) => a - b);
+
+  const gapsBetweenSeats = (capacity) => {
+    const list = angles(capacity);
+    return list.map((a, i) => {
+      const next = i === list.length - 1 ? list[0] + 360 : list[i + 1];
+      return next - a;
+    });
+  };
+
+  test("2 seats sit exactly opposite each other, 180 apart", () => {
+    gapsBetweenSeats(2).forEach((gap) => expect(gap).toBeCloseTo(180, 6));
+  });
+
+  test("3 seats form an equilateral triangle, 120 apart", () => {
+    gapsBetweenSeats(3).forEach((gap) => expect(gap).toBeCloseTo(120, 6));
+  });
+
+  test("4 seats sit on the four cardinal positions", () => {
+    expect(angles(4)).toEqual([0, 90, 180, 270]);
+  });
+
+  test("5 seats form a regular pentagon and 6 a regular hexagon", () => {
+    gapsBetweenSeats(5).forEach((gap) => expect(gap).toBeCloseTo(72, 6));
+    gapsBetweenSeats(6).forEach((gap) => expect(gap).toBeCloseTo(60, 6));
+  });
+
+  test("every pattern is anchored with a seat at the far side of the table", () => {
+    for (let capacity = 1; capacity <= 8; capacity += 1) {
+      const slots = chairSlots("round", capacity);
+      const far = slots.find((s) => Math.abs(s.dx) < 1e-9 && s.dy < 0);
+      expect(far).toBeDefined();
+    }
+  });
+
+  test("every seat sits on the ring, never inside or outside it", () => {
+    for (let capacity = 1; capacity <= 8; capacity += 1) {
+      chairSlots("round", capacity).forEach((s) => {
+        expect(Math.hypot(s.dx, s.dy)).toBeCloseTo(1, 9);
+      });
+    }
+  });
+});
+
+describe("rectangular tables use shape-aware seat patterns, not a ring", () => {
+  const SHAPES = ["square", "rectangle", "rectangle-long"];
+
+  // The invariant chairPlacements' outward-normal rule depends on: exactly
+  // one component is a full unit, and it names the side the chair is on. A
+  // chair halfway along the long side must still face straight out, not
+  // diagonally.
+  test("every seat names exactly one side via a unit component", () => {
+    SHAPES.forEach((shape) => {
+      for (let capacity = 1; capacity <= 12; capacity += 1) {
+        chairSlots(shape, capacity).forEach((s) => {
+          const units = [s.dx, s.dy].filter((v) => Math.abs(Math.abs(v) - 1) < 1e-9);
+          expect(units).toHaveLength(1);
+        });
+      }
+    });
+  });
+
+  test("4 seats put exactly one chair on each of the four sides", () => {
+    SHAPES.forEach((shape) => {
+      const slots = chairSlots(shape, 4);
+      expect(slots).toEqual([
+        { dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 },
+      ]);
+    });
+  });
+
+  test("3 seats occupy three distinct sides", () => {
+    const sides = new Set(chairSlots("square", 3).map((s) => `${s.dx},${s.dy}`));
+    expect(sides.size).toBe(3);
+  });
+
+  test("6 seats are 2+2 along the long sides and 1+1 on the short ones", () => {
+    const slots = chairSlots("rectangle", 6);
+    expect(slots).toHaveLength(6);
+    expect(slots.filter((s) => s.dy === -1)).toHaveLength(2); // long side (back)
+    expect(slots.filter((s) => s.dy === 1)).toHaveLength(2);  // long side (front)
+    expect(slots.filter((s) => s.dx === -1)).toHaveLength(1); // short side
+    expect(slots.filter((s) => s.dx === 1)).toHaveLength(1);  // short side
+  });
+
+  test("both short sides always keep a seat from 4 upward", () => {
+    for (let capacity = 4; capacity <= 12; capacity += 1) {
+      const slots = chairSlots("square", capacity);
+      expect(slots.filter((s) => s.dx === -1)).toHaveLength(1);
+      expect(slots.filter((s) => s.dx === 1)).toHaveLength(1);
+    }
+  });
+
+  test("seats along a long side are spread symmetrically about its centre", () => {
+    [6, 8, 10].forEach((capacity) => {
+      const top = chairSlots("rectangle", capacity).filter((s) => s.dy === -1);
+      expect(top.reduce((sum, s) => sum + s.dx, 0)).toBeCloseTo(0, 9);
+    });
+  });
+
+  test("a rectangular table never reuses the round ring", () => {
+    const round = chairSlots("round", 6).map((s) => `${s.dx.toFixed(4)},${s.dy.toFixed(4)}`);
+    const rect = chairSlots("rectangle", 6).map((s) => `${s.dx.toFixed(4)},${s.dy.toFixed(4)}`);
+    expect(rect).not.toEqual(round);
+  });
+});
+
+describe("drawn chair placement binds each chair to its own table", () => {
+  const g = () => geom();
+
+  test("is deterministic — same table, same geometry, same chairs", () => {
+    const table = { id: "t", number: 1, shape: "round", capacity: 6, x: 40, y: 55 };
+    expect(chairPlacements(table, g())).toEqual(chairPlacements(table, g()));
+  });
+
+  test("every chair is positioned relative to its own table's floor point", () => {
+    // Moving the table moves every chair by exactly the same delta: chairs
+    // cannot be left behind on the floor when a Mesa is dragged.
+    const at = (x, y) => chairPlacements({ shape: "round", capacity: 5, x, y }, g());
+    const a = at(50, 50);
+    const b = at(50.0001, 50);
+    const deltas = a.map((chair, i) => (b[i].x - chair.x).toFixed(9));
+    expect(new Set(deltas).size).toBe(1);
+    expect(Number(deltas[0])).toBeGreaterThan(0);
+  });
+
+  test("backrests always face away from the table, never into it", () => {
+    [["round", 6], ["square", 4], ["rectangle", 6], ["round", 3]].forEach(([shape, capacity]) => {
+      const table = { shape, capacity, x: 50, y: 50 };
+      const t = tableGeometry(table, g());
+      chairPlacements(table, g()).forEach((chair) => {
+        const outX = chair.x - t.floorX;
+        const outY = chair.y - t.floorY;
+        // the normal must point along the same side as the chair's own offset
+        if (chair.nx !== 0) expect(Math.sign(chair.nx)).toBe(Math.sign(outX));
+        if (chair.ny !== 0) expect(Math.sign(chair.ny)).toBe(Math.sign(outY));
+        expect(Math.hypot(chair.nx, chair.ny)).toBeGreaterThan(0);
+      });
+    });
+  });
+
+  test("chairs are tucked against the table edge, not parked away from it", () => {
+    const table = { shape: "round", capacity: 4, x: 50, y: 50 };
+    const t = tableGeometry(table, g());
+    const side = chairPlacements(table, g()).find((c) => Math.abs(c.ny) < 1e-9);
+    // the seat's inner edge overlaps the tabletop's own edge
+    expect(Math.abs(side.x - t.floorX) - side.w / 2).toBeLessThan(t.halfW);
+  });
+
+  test("seats at the back of a table are smaller than seats at the front", () => {
+    const table = { shape: "round", capacity: 4, x: 50, y: 50 };
+    const chairs = chairPlacements(table, g());
+    const far = chairs.find((c) => c.ny < -0.9);
+    const near = chairs.find((c) => c.ny > 0.9);
+    expect(far.w).toBeLessThan(near.w);
+    // controlled, not a second perspective system fighting the room's own
+    expect(near.w / far.w).toBeLessThan(1.3);
+  });
+
+  test("chairs behind the table are separated so the table can occlude them", () => {
+    const chairs = chairPlacements({ shape: "round", capacity: 4, x: 50, y: 50 }, g());
+    expect(chairs.filter((c) => c.behind).length).toBeGreaterThan(0);
+    expect(chairs.filter((c) => !c.behind).length).toBeGreaterThan(0);
+  });
+
+  test("an unknown capacity places no chairs rather than inventing them", () => {
+    expect(chairPlacements({ shape: "round", capacity: null, x: 50, y: 50 }, g())).toEqual([]);
+  });
 });
 
 describe("hit target", () => {
@@ -186,22 +376,71 @@ describe("hit target", () => {
   // chair's centre has to fall inside the table's single hit box. Chairs are
   // scenery — they never get their own target (see HybridFloorScene: the
   // whole svg is pointer-events:none).
-  test("every chair centre lies inside its own Mesa's hit target", () => {
+  // Measured through chairPlacements — the SAME function the renderer draws
+  // from — rather than by re-deriving the placement arithmetic here. A test
+  // that reimplements the geometry it is checking can only prove the two
+  // copies agree today, which is exactly how chairs drift away from the Mesa
+  // that owns them.
+  test("every chair the renderer draws lies inside its own Mesa's hit target", () => {
     const g = geom();
     STAGING_TABLES.forEach((table) => {
-      const t = tableGeometry(table, g);
       const box = tableFootprint(table, g);
-      const orbitX = t.isRound ? t.R * HYBRID_TOKENS.CHAIR_ORBIT_ROUND : t.halfW * 1.28;
-      const orbitY = t.isRound ? t.R * HYBRID_TOKENS.CHAIR_ORBIT_ROUND * HYBRID_TOKENS.K : t.halfH * 1.34;
-      chairSlots(table.shape, table.capacity).forEach((slot) => {
-        const cx = t.floorX + slot.dx * orbitX;
-        const cy = t.floorY + slot.dy * orbitY;
-        expect(cx).toBeGreaterThanOrEqual(box.left);
-        expect(cx).toBeLessThanOrEqual(box.left + box.width);
-        expect(cy).toBeGreaterThanOrEqual(box.top);
-        expect(cy).toBeLessThanOrEqual(box.top + box.height);
+      const chairs = chairPlacements(table, g);
+      expect(chairs).toHaveLength(table.capacity);
+      chairs.forEach((chair) => {
+        expect(chair.x).toBeGreaterThanOrEqual(box.left);
+        expect(chair.x).toBeLessThanOrEqual(box.left + box.width);
+        expect(chair.y).toBeGreaterThanOrEqual(box.top);
+        expect(chair.y).toBeLessThanOrEqual(box.top + box.height);
       });
     });
+  });
+
+  // Stronger than the centres test: the whole drawn chair — seat, backrest and
+  // ground shadow — has to stay inside the one target, or the visible chair
+  // footprint and the tappable footprint stop being the same thing. Swept
+  // across every shape and every realistic capacity, and both near and far
+  // positions in the room, because the backrest extent varies with all of
+  // them.
+  test("the full drawn extent of every chair stays inside the hit target", () => {
+    const g = geom();
+    const shapes = ["round", "square", "rectangle", "rectangle-long"];
+    shapes.forEach((shape) => {
+      for (let capacity = 1; capacity <= 10; capacity += 1) {
+        [8, 30, 50, 72, 94].forEach((y) => {
+          const table = { id: `x${capacity}`, number: capacity, shape, capacity, x: 50, y };
+          const box = tableFootprint(table, g);
+          chairPlacements(table, g).forEach((chair) => {
+            expect(chair.left).toBeGreaterThanOrEqual(box.left);
+            expect(chair.right).toBeLessThanOrEqual(box.left + box.width);
+            expect(chair.top).toBeGreaterThanOrEqual(box.top);
+            expect(chair.bottom).toBeLessThanOrEqual(box.top + box.height);
+          });
+        });
+      }
+    });
+  });
+
+  // The footprint grows to fit its chairs, but never off-centre: a seat
+  // template with nothing on one side (a 3-seat rectangle) must not drag the
+  // control away from the table it draws.
+  test("an asymmetric seat template never shifts the target off the table", () => {
+    const g = geom();
+    ["square", "rectangle"].forEach((shape) => {
+      [3, 5, 7].forEach((capacity) => {
+        const table = { shape, capacity, x: 50, y: 50 };
+        const drawn = tableGeometry(table, g);
+        const box = tableFootprint(table, g);
+        expect(box.centerX).toBeCloseTo(drawn.topX, 6);
+      });
+    });
+  });
+
+  test("a table with no chairs still keeps a comfortable target", () => {
+    const g = geom();
+    const box = tableFootprint({ shape: "round", capacity: null, x: 50, y: 50 }, g);
+    expect(box.width).toBeGreaterThanOrEqual(52);
+    expect(box.height).toBeGreaterThanOrEqual(52);
   });
 
   test("the hit target is centred on the table it draws, so taps never shift", () => {

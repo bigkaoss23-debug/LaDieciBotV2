@@ -29,6 +29,34 @@ const G = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;600&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   html,body,#root{background:#070707 !important;min-height:100vh;font-family:'Satoshi',-apple-system,sans-serif}
+  /* MESA_HYBRID_VIEWPORT_01 — the dvh pass.
+     100vh on iOS Safari is the LARGE viewport: the height the page would have
+     if the URL bar and toolbar were retracted. With the toolbars actually on
+     screen (the normal state) the visible area is ~100px shorter, so a
+     "min-height:100vh" document is taller than what can be seen and the page
+     scrolls vertically before any content has overflowed. That is what pushed
+     the Mesa bottom navigation below the fold on a real iPhone. 100dvh is the
+     CURRENT viewport and tracks the toolbars as they move, so the document
+     ends exactly where the visible area does.
+     Written as two declarations on purpose, not one: a browser without dvh
+     support drops the second line and keeps today's exact 100vh behaviour, so
+     this cannot regress anything that works now. Still min-height, so any page
+     whose content is genuinely taller keeps scrolling normally. */
+  html,body,#root{min-height:100dvh}
+  /* Shared with App/ServicioPage's roots so the whole chain agrees on one
+     unit; both used inline 100vh before, where a CSS fallback is impossible. */
+  .ld-viewport-fill{min-height:100vh;min-height:100dvh}
+  .ld-viewport-shell{height:100vh;height:100dvh}
+  /* MESA_HYBRID_VIEWPORT_01 — scoped fixed-viewport lock. Applied to <html>
+     only while the Mesa phone shell is actually mounted (see MesaPhoneShell's
+     own effect, which removes it on unmount) so no other page in the app ever
+     loses its normal document scrolling. Belt-and-braces on top of the dvh
+     chain above: even if some future element grows, the operational shell
+     cannot start scrolling the DOCUMENT — the shell's own <main> keeps its
+     internal overflow:auto, so content that needs to scroll still can. */
+  html.mesa-fixed-viewport,html.mesa-fixed-viewport body,html.mesa-fixed-viewport #root{
+    height:100vh;height:100dvh;min-height:0;overflow:hidden;overscroll-behavior:none}
+  html.mesa-fixed-viewport .ld-viewport-fill{min-height:0;height:100%}
   ::-webkit-scrollbar{width:0;height:0}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
   @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}

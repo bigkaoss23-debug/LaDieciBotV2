@@ -472,7 +472,7 @@ export default function App({ skipSplash = false } = {}) {
     };
   },[pinUnlocked]);
   return (
-    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:C.nero}}>
+    <div className="ld-viewport-fill" style={{fontFamily:"'DM Sans',sans-serif",background:C.nero}}>
       <style>{G}</style>
       <DevHeartbeatSender/>
       {screen !== "splash" && !mesaPhoneShellActive && <OpsHealthBadge/>}

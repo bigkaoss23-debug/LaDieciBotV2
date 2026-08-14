@@ -110,6 +110,21 @@ export default function MesaPhoneShell({
   const now = useClock();
   const isAdmin = role === "admin";
 
+  // MESA_HYBRID_VIEWPORT_01 — the operational shell is one fixed screen: top
+  // status + Mapa + bottom nav, never a document the operator has to scroll to
+  // reach its own navigation. The dvh chain (constants.js) is what makes that
+  // true; this class is the scoped guarantee, and it exists ONLY while this
+  // shell is mounted -- every other page in the app keeps normal document
+  // scrolling, including ServicioPage's own tablet/desktop chrome. The
+  // cleanup is why this lives here rather than in a global effect: unmounting
+  // the shell (the admin back arrow, a width change past the phone
+  // breakpoint) must hand scrolling straight back.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("mesa-fixed-viewport");
+    return () => root.classList.remove("mesa-fixed-viewport");
+  }, []);
+
   const goToTable = (tableId) => {
     setMesaAction({ token: Date.now(), type: "selectTable", tableId });
     setShellTab("mapa");

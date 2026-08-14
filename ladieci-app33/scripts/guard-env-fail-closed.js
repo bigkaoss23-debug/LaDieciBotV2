@@ -44,6 +44,18 @@ if (missing.length) {
     "') senza " + missing.join(", ") +
     ". Impostare le env staging esplicite (fail-closed: niente default prod).");
 }
+// DEPLOY_GUARD_ABS_BACKEND_01 — vedi generate-functions-public-env.js per
+// l'incidente completo. Qui il controllo scatta un passo prima nella catena
+// prebuild, sullo stesso valore da cui quello script deriva il target
+// server-side, così un ".", "./api" o "/api" ereditato da .env.local blocca il
+// build subito invece di arrivare all'artefatto generato.
+const RELATIVE_BACKEND = !/^https?:\/\/[^/]+/i.test(backend);
+if (RELATIVE_BACKEND) {
+  fail("REACT_APP_BACKEND_API_URL non è assoluta: '" + backend + "'. Un target " +
+    "relativo ('.', './api', '/api') funziona solo nel browser: le Netlify " +
+    "Functions lo risolverebbero server-side e ogni proxy diventerebbe 502 " +
+    "(incidente 2026-08-14). Serve la URL http(s):// del backend STAGING.");
+}
 if (url.includes(PROD_REF)) {
   fail("build NON-production punta a Supabase PROD (" + PROD_REF +
     "). Vietato in V1/staging.");

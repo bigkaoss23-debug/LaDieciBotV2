@@ -30,6 +30,16 @@
   # V3-H Mesa UI is compiled only into this staging branch. Production builds
   # without the exact lowercase flag keep the existing Barra tab.
   REACT_APP_MESA_ENABLED = "true"
+  # MESA_HYBRID_3D — the Mapa renderer. Declared HERE, alongside the other
+  # branch-scoped flags, because the first Hybrid deploy carried it only in a
+  # local shell environment: the deployed bundle had the renderer, but nothing
+  # in the repository said so, so the very next legitimate rebuild of this
+  # branch would have compiled MESA_HYBRID_3D=false and silently reverted the
+  # floor to the fallback renderer, with nothing in the diff to explain it.
+  # Same mechanism and same scope as REACT_APP_MESA_ENABLED above: this file is
+  # only ever the active config for this staging branch; production builds from
+  # main, without it, and keeps the fallback renderer.
+  REACT_APP_MESA_HYBRID_3D_ENABLED = "true"
   BACKEND_API_URL = "https://fearless-reverence-production-80bc.up.railway.app/api"
   SUPABASE_URL = "https://tdikhfeinufaahagmpjz.supabase.co"
   SUPABASE_ANON_KEY = "sb_publishable_qMYSRpFm1TQ4S04nD8Bw3Q_7Fc92qaS"

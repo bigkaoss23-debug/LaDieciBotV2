@@ -1,6 +1,6 @@
 import { memo } from "react";
 import {
-  HYBRID_TOKENS, sceneGeometry, projectFloorPoint, tableGeometry, depthSorted, chairSlots,
+  HYBRID_TOKENS, sceneGeometry, projectFloorPoint, tableGeometry, depthSorted, chairPlacements,
 } from "./hybridScene";
 
 // ===============================================================
@@ -184,33 +184,51 @@ function Silhouette({ g, cy, scale = 1, ...rest }) {
     rx={g.R * 0.28 * scale} ry={g.R * 0.28 * T.K * scale} {...rest} />;
 }
 
-function Chair({ x, y, w, dx, dy }) {
-  const h = w * T.K;
-  const bx = x + dx * w * 0.3;
-  const by = y + dy * h * 0.3 - h * 0.52;
-  return <g opacity={T.CHAIR_ALPHA} data-chair="1">
-    <ellipse cx={x} cy={y + h * 0.34} rx={w * 0.66} ry={h * 0.62} fill="url(#m3dContact)" opacity=".55" />
-    <rect x={bx - w * 0.44} y={by - h * 0.3} width={w * 0.88} height={h * 0.8}
-      rx={w * 0.2} ry={h * 0.2} fill="#1b130c" />
-    <rect x={bx - w * 0.44} y={by - h * 0.3} width={w * 0.88} height={h * 0.32}
-      rx={w * 0.2} ry={h * 0.2} fill="#33261a" opacity=".75" />
-    <ellipse cx={x} cy={y} rx={w * 0.5} ry={h * 0.5} fill="#20180f" />
-    <ellipse cx={x} cy={y - h * 0.1} rx={w * 0.44} ry={h * 0.4} fill="#2e2315" />
+// ── one chair ──────────────────────────────────────────────────────────────
+// Three marks: a ground wash, a seat, a backrest. The previous chair used
+// five, including a hard per-chair contact shadow at .55 — on an eight-top
+// that is forty marks and eight dark blobs sitting inside the table's own warm
+// light pool, which is what the floor read as noise.
+//
+// The backrest goes on the OUTWARD side (p.nx/p.ny from chairPlacements) and
+// is painted before the seat for a far chair and after it for a near one, so
+// a chair at the front of a table is seen from behind and one at the back is
+// seen from the front. The old geometry lifted every backrest up-screen
+// regardless of side, which drew every near-side chair facing backwards — the
+// single largest contributor to the "thrown there randomly" read.
+function Chair({ p }) {
+  const { x, y, w, h, ny, groundY, backX, backW, backH, backBottom } = p;
+  const back = <g>
+    <rect x={backX - backW / 2} y={backBottom - backH} width={backW} height={backH}
+      rx={backW * 0.42} ry={backW * 0.42} fill="#150f09" />
+    {/* the top edge catches the pendant light — the one mark that keeps a
+        near-side chair, whose back necessarily covers its own seat, reading as
+        a chair seen from behind rather than a dark rounded blob */}
+    <rect x={backX - backW / 2} y={backBottom - backH} width={backW} height={Math.max(1, backH * 0.22)}
+      rx={backW * 0.42} ry={backW * 0.42} fill="#3d2d1d" opacity=".55" />
+  </g>;
+  const seat = <ellipse cx={x} cy={y} rx={w * 0.5} ry={h * 0.5} fill="#241a10" />;
+  return <g opacity={T.CHAIR_ALPHA * (0.93 + ny * 0.07)} data-chair="1">
+    {/* the shadow stays on the FLOOR while the seat is drawn at seat height,
+        which is what grounds a lifted chair instead of floating it */}
+    <ellipse cx={x} cy={groundY} rx={w * 0.5} ry={h * 0.4}
+      fill="url(#m3dContact)" opacity=".34" />
+    {/* far chair: back behind the seat. near chair: back between seat and
+        viewer. Painting order is the whole difference between "facing the
+        table" and "facing away from it". */}
+    {ny < 0 ? <>{back}{seat}</> : <>{seat}{back}</>}
   </g>;
 }
 
 function HybridTable({ visual, geom }) {
   const g = tableGeometry(visual, geom);
   const ink = STATE_INK[visual.stateKey] || STATE_INK.free;
-  const slots = chairSlots(visual.shape, visual.capacity);
-  const orbit = g.isRound ? g.R * T.CHAIR_ORBIT_ROUND : g.R * T.CHAIR_ORBIT_RECT;
-  const chairW = g.R * T.CHAIR;
-  const chairAt = (s) => ({
-    x: g.floorX + s.dx * (g.isRound ? orbit : g.halfW * 1.28),
-    y: g.floorY + s.dy * (g.isRound ? orbit : g.halfH * 1.34) * (g.isRound ? T.K : 1),
-  });
-  const behind = slots.filter((s) => s.dy < 0.15);
-  const front = slots.filter((s) => s.dy >= 0.15);
+  // All chair arithmetic lives in hybridScene.chairPlacements — the renderer
+  // no longer carries its own copy of it, which is what guarantees the chairs
+  // the tests measure are the chairs the operator taps.
+  const chairs = chairPlacements(visual, geom);
+  const behind = chairs.filter((c) => c.behind);
+  const front = chairs.filter((c) => !c.behind);
   const rimW = Math.max(1.1, g.R * 0.036);
 
   return <g opacity={visual.opening ? 0.5 : 1}
@@ -225,7 +243,7 @@ function HybridTable({ visual, geom }) {
     {visual.ready && <ellipse className="ready-halo" cx={g.floorX} cy={g.floorY}
       rx={g.R * 1.7} ry={g.R * 1.7 * T.K} fill={`url(#m3dUnder-free)`} />}
 
-    {behind.map((s, i) => { const c = chairAt(s); return <Chair key={`b${i}`} x={c.x} y={c.y} w={chairW} dx={s.dx} dy={s.dy} />; })}
+    {behind.map((c) => <Chair key={`b${c.key}`} p={c} />)}
 
     {/* offset cast shadow — the cue that the top is raised off the floor */}
     <Silhouette g={g} cy={g.floorY + g.R * 0.24} scale={1.34} fill="url(#m3dCast)" />
@@ -248,7 +266,7 @@ function HybridTable({ visual, geom }) {
       stroke={visual.rimColor} strokeWidth={rimW} opacity={T.RIM} />
     <Silhouette g={g} cy={g.topY} scale={0.93} fill="url(#m3dSpec)" />
 
-    {front.map((s, i) => { const c = chairAt(s); return <Chair key={`f${i}`} x={c.x} y={c.y} w={chairW} dx={s.dx} dy={s.dy} />; })}
+    {front.map((c) => <Chair key={`f${c.key}`} p={c} />)}
 
     {visual.selected && <Silhouette g={g} cy={g.topY} scale={1.1} fill="none"
       stroke="#f7f0df" strokeWidth={Math.max(2, g.R * 0.05)} opacity=".8" />}

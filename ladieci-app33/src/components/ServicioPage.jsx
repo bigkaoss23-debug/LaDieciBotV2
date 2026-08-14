@@ -1273,7 +1273,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   };
 
   return (
-    <div style={{background:C.nero,height:"100vh",overflow:"hidden",display:"flex",
+    <div className="ld-viewport-shell" style={{background:C.nero,overflow:"hidden",display:"flex",
       flexDirection:"column",animation:"fadeIn .3s ease"}}>
       <DevPresence/>
 

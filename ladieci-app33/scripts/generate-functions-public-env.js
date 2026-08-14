@@ -36,6 +36,27 @@ const isRealProd = siteId === PROD_SITE_ID;
 function nonEmpty(v) { return typeof v === "string" && v.trim() !== ""; }
 function fail(msg)   { console.error("\n[generate-functions-public-env] 🛑 " + msg + "\n"); process.exit(1); }
 
+// DEPLOY_GUARD_ABS_BACKEND_01 — incidente 2026-08-14 (deploy Hybrid 3D).
+// Un build locale ha ereditato REACT_APP_BACKEND_API_URL="." da .env.local
+// (override dev che instrada Mesa su un mock same-origin). deriveBackend() lo
+// accettava — era non-vuoto e non-prod, gli unici due controlli esistenti — e
+// scriveva BACKEND_API_URL:"./api" in _publicEnvGenerated.js. Quel valore è il
+// target SERVER-SIDE delle Netlify Functions, dove "same-origin" non significa
+// nulla: ogni richiesta proxy è diventata 502 finché il sito non è stato
+// ricostruito. Un URL relativo è valido nel browser e insensato nel runtime
+// delle functions, quindi il controllo giusto è l'assolutezza, non la forma.
+// Fail-closed: il build si ferma PRIMA di produrre l'artefatto.
+function assertAbsoluteUpstream(name, value) {
+  let parsed;
+  try { parsed = new URL(value); } catch (e) { parsed = null; }
+  if (!parsed || !/^https?:$/.test(parsed.protocol) || !parsed.hostname) {
+    fail(name + " non è un URL upstream assoluto: '" + value + "'. Le Netlify " +
+      "Functions girano server-side, dove un target relativo ('.', './api', " +
+      "'/api') non è risolvibile e ogni proxy diventa 502. Attesa una URL " +
+      "http(s):// completa del backend STAGING.");
+  }
+}
+
 // Backend: preferisci BACKEND_API_URL (già con suffisso /api, da netlify.toml),
 // altrimenti normalizza REACT_APP_BACKEND_API_URL aggiungendo /api se manca.
 function deriveBackend() {
@@ -67,6 +88,8 @@ if (missing.length) {
   fail("build non-production (SITE_ID='" + (siteId || "?") + "', CONTEXT='" + ctx +
     "') senza " + missing.join(", ") + ". Impossibile generare _publicEnv per le functions.");
 }
+assertAbsoluteUpstream("BACKEND_API_URL", BACKEND_API_URL);
+assertAbsoluteUpstream("SUPABASE_URL", SUPABASE_URL); // stesso runtime server-side
 if (BACKEND_API_URL.includes(PROD_BACKEND_REF)) {
   fail("BACKEND_API_URL punta al backend PROD (" + PROD_BACKEND_REF + ") in build non-production. Vietato in V1/staging.");
 }
