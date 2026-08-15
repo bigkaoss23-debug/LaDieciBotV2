@@ -6,10 +6,16 @@ global.IS_REACT_ACT_ENVIRONMENT = true;
 jest.mock("../../mesa/mesaApi", () => ({
   __esModule: true,
   createMesaRequestId: jest.fn(() => "mesa_test_request"),
+  // MESA_SEND_TO_KITCHEN_P0_FIX -- confirmCovers now calls mesaApi.setCovers
+  // server-authoritatively before advancing off the covers step. Resolves by
+  // default (matching the old local-only behavior for every existing test);
+  // individual tests override this to reject and assert the failure path.
+  mesaApi: { setCovers: jest.fn(() => Promise.resolve({ ok: true })) },
+  describeMesaError: jest.fn((err) => err?.message || "No se pudo guardar."),
 }));
 
 const MesaOrderBuilder = require("./MesaOrderBuilder").default;
-const { createMesaRequestId } = require("../../mesa/mesaApi");
+const { createMesaRequestId, mesaApi } = require("../../mesa/mesaApi");
 
 function click(element) {
   act(() => { element.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
@@ -125,6 +131,63 @@ test("picking covers opens the picker workspace immediately, no intermediate scr
   // "Mesa N" (dominant), no longer one literal em-dash string.
   expect(container.textContent).toContain("Nueva comanda");
   expect(container.textContent).toContain("Mesa 3");
+  expect(container.textContent).toContain("Pizzas");
+  unmount(container, root);
+});
+
+// ── MESA_SEND_TO_KITCHEN_P0_FIX (2026-08-14) ───────────────────────────────
+// Root cause: covers_total used to stay NULL for the entire time an operator
+// was actively building a draft (only ever set as a side effect of the FIRST
+// SUCCESSFUL comanda) -- the one signal the service-lifecycle close engine's
+// auto-release sweep had to tell a genuinely empty table apart from a real
+// order in progress. A routine service close silently destroyed a real
+// 113,50€ draft on staging because of exactly that gap. Fix: covers are now
+// persisted server-authoritatively the moment the operator selects them.
+
+// FIRST_COMMAND_COVERS_PERSIST
+test("FIRST_COMMAND_COVERS_PERSIST: choosing covers calls mesaApi.setCovers with this table's session id before advancing", async () => {
+  const { container, root } = await mount({ target: target({ sessionId: "sess-42", coversTotal: null }) });
+  click(byTestId(container, "covers-quick-2"));
+  await flush();
+  expect(mesaApi.setCovers).toHaveBeenCalledWith("sess-42", 2);
+  expect(container.textContent).toContain("2 comensal");
+  unmount(container, root);
+});
+
+test("FIRST_COMMAND_COVERS_PERSIST: the custom-number path also persists before advancing", async () => {
+  const { container, root } = await mount({ target: target({ sessionId: "sess-77", coversTotal: null }) });
+  typeInto(byTestId(container, "covers-custom-input"), "11");
+  click(byTestId(container, "covers-custom-confirm"));
+  await flush();
+  expect(mesaApi.setCovers).toHaveBeenCalledWith("sess-77", 11);
+  expect(container.textContent).toContain("11 comensales");
+  unmount(container, root);
+});
+
+// MESA_SEND_FAILURE_PRESERVES_DRAFT (covers half): a rejected setCovers must
+// NOT silently fall back to the old local-only behavior -- that would
+// reintroduce the exact vulnerability this fix closes. The operator stays on
+// the covers step with a visible error and can retry.
+test("a rejected setCovers keeps the operator on the covers step with a visible error -- never silently proceeds", async () => {
+  mesaApi.setCovers.mockRejectedValueOnce(new Error("MESA_SESSION_NOT_OPEN"));
+  const { container, root } = await mount({ target: target({ coversTotal: null }) });
+  click(byTestId(container, "covers-quick-2"));
+  await flush();
+  expect(container.textContent).toContain("¿Cuántos comensales?");
+  expect(byTestId(container, "covers-error")).toBeTruthy();
+  expect(container.textContent).not.toContain("Pizzas");
+  unmount(container, root);
+});
+
+test("after a rejected setCovers, retrying with a valid selection succeeds normally", async () => {
+  mesaApi.setCovers.mockRejectedValueOnce(new Error("boom"));
+  const { container, root } = await mount({ target: target({ coversTotal: null }) });
+  click(byTestId(container, "covers-quick-2"));
+  await flush();
+  expect(byTestId(container, "covers-error")).toBeTruthy();
+  click(byTestId(container, "covers-quick-2"));
+  await flush();
+  expect(container.textContent).not.toContain("¿Cuántos comensales?");
   expect(container.textContent).toContain("Pizzas");
   unmount(container, root);
 });

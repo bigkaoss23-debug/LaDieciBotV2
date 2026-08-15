@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { C, useWidth } from '../../constants';
 import { useMenuData } from '../../menu/useMenuData';
 import { useOrderCart, isCustomRawItem } from '../../order/useOrderCart';
-import { createMesaRequestId } from '../../mesa/mesaApi';
+import { createMesaRequestId, mesaApi, describeMesaError } from '../../mesa/mesaApi';
 import CatalogBrowser from '../order/CatalogBrowser';
 import ItemConfigurator from '../order/ItemConfigurator';
 import DraftSummary from '../order/DraftSummary';
@@ -51,6 +51,10 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
   const [step, setStep] = useState(() => (draft?.coversTotal ?? target?.coversTotal) == null ? "covers" : "picker");
   const [coversInput, setCoversInput] = useState("");
   const [coversError, setCoversError] = useState("");
+  // MESA_SEND_TO_KITCHEN_P0_FIX -- guards the covers step's own network call
+  // against a double tap while it's in flight (same discipline as
+  // sendingDraft in TabMesa.jsx's MesaWorkspace).
+  const [coversSaving, setCoversSaving] = useState(false);
 
   const { MENU, CATS, INGREDIENTI } = useMenuData();
   const cartApi = useOrderCart({ MENU, INGREDIENTI });
@@ -100,15 +104,37 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [confirmDiscardOpen, extrasOpen, drawerOpen, totalQty]); // eslint-disable-line
 
-  const confirmCovers = (rawValue) => {
+  // MESA_SEND_TO_KITCHEN_P0_FIX (2026-08-14) -- covers are now persisted
+  // server-authoritatively the MOMENT the operator selects them, not left
+  // local-only until a comanda eventually succeeds. Root cause this closes:
+  // covers_total stayed NULL for the entire time an operator was actively
+  // building a draft, which is the ONLY signal the service-lifecycle close
+  // engine's auto-release sweep had to tell "genuinely empty table" apart
+  // from "real order in progress" -- a routine service close silently
+  // destroyed a real 113,50€ draft on 2026-08-14 because of exactly that gap
+  // (see MESA_SEND_TO_KITCHEN_P0_FIX_2026-08-14.md). A failure here leaves
+  // the operator on this same step with a visible error and nothing lost --
+  // it must NOT silently fall back to the old local-only behavior, or this
+  // exact vulnerability comes right back.
+  const confirmCovers = async (rawValue) => {
+    if (coversSaving) return;
     const count = Number(rawValue);
     if (!Number.isInteger(count) || count < 1 || count > 99) {
       setCoversError("Indica un número de comensales válido.");
       return;
     }
-    setCoversValue(count);
-    setCoversError("");
-    setStep("picker");
+    setCoversSaving(true); setCoversError("");
+    try {
+      await mesaApi.setCovers(target.sessionId, count);
+      setCoversValue(count);
+      setStep("picker");
+    } catch (err) {
+      // Fallback kept deliberately non-empty: an operator must never see a
+      // blank error banner and be left guessing whether anything happened.
+      setCoversError(describeMesaError(err) || "No se pudo guardar el número de comensales. Inténtalo de nuevo.");
+    } finally {
+      setCoversSaving(false);
+    }
   };
 
   // Local-only: validates the cart, builds the same emitted-item shape the
@@ -144,9 +170,10 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
             <div style={{ color: C.grigio, fontSize: 13, marginBottom: 14 }}>¿Cuántos comensales?</div>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(quickOptions.length, 4)}, 1fr)`, gap: 10, marginBottom: 14 }}>
               {quickOptions.map(n => (
-                <button key={n} data-testid={`covers-quick-${n}`} onClick={() => confirmCovers(n)} style={{
+                <button key={n} data-testid={`covers-quick-${n}`} disabled={coversSaving} onClick={() => confirmCovers(n)} style={{
                   background: C.carbone2, border: `2px solid ${C.fumo}`, borderRadius: 12,
-                  padding: "16px 0", color: C.bianco, fontSize: 20, fontWeight: 800, cursor: "pointer",
+                  padding: "16px 0", color: C.bianco, fontSize: 20, fontWeight: 800,
+                  cursor: coversSaving ? "default" : "pointer", opacity: coversSaving ? 0.6 : 1,
                 }}>{n}</button>
               ))}
             </div>
@@ -154,6 +181,7 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
               <input
                 type="number" min="1" max="99" value={coversInput} autoFocus
                 data-testid="covers-custom-input"
+                disabled={coversSaving}
                 onChange={e => { setCoversInput(e.target.value); setCoversError(""); }}
                 onKeyDown={e => { if (e.key === "Enter" && coversInput) confirmCovers(coversInput); }}
                 placeholder={`Otro número (${quickOptions.length + 1}-99)`}
@@ -164,15 +192,15 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
               />
               <button
                 data-testid="covers-custom-confirm"
-                disabled={!coversInput}
+                disabled={!coversInput || coversSaving}
                 onClick={() => confirmCovers(coversInput)}
                 style={{
-                  background: coversInput ? C.rosso : C.fumo, color: "#fff", border: "none",
+                  background: coversInput && !coversSaving ? C.rosso : C.fumo, color: "#fff", border: "none",
                   borderRadius: 10, padding: "12px 18px", fontWeight: 800, fontSize: 14,
-                  cursor: coversInput ? "pointer" : "default",
-                }}>Continuar</button>
+                  cursor: coversInput && !coversSaving ? "pointer" : "default",
+                }}>{coversSaving ? "Guardando…" : "Continuar"}</button>
             </div>
-            {coversError && <div style={{ color: "#F87171", fontSize: 12, marginTop: 10 }}>{coversError}</div>}
+            {coversError && <div data-testid="covers-error" style={{ color: "#F87171", fontSize: 12, marginTop: 10 }}>{coversError}</div>}
             <button onClick={onClose} style={{
               marginTop: 16, width: "100%", background: "transparent", border: `1px solid ${C.fumo}`,
               borderRadius: 10, padding: "10px 0", color: C.grigio, fontWeight: 700, fontSize: 13, cursor: "pointer",

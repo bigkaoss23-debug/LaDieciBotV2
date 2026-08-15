@@ -77,6 +77,17 @@ export const mesaApi = Object.freeze({
   addCommand(sessionId, command) {
     return request("POST", `/sessions/${encodeURIComponent(sessionId)}/commands`, command);
   },
+  // MESA_SEND_TO_KITCHEN_P0_FIX (2026-08-14) -- persists covers the moment
+  // the operator selects them, server-authoritative, before the picker even
+  // opens. See the paired backend migration's own root-cause note: covers
+  // used to only ever land as a side effect of the first comanda's SUCCESS,
+  // so an actively-worked table with no comanda sent yet was indistinguishable
+  // from a genuinely empty one to the service-lifecycle close engine's
+  // auto-release sweep -- which silently destroyed a real in-progress draft
+  // on 2026-08-14.
+  setCovers(sessionId, coversTotal) {
+    return request("POST", `/sessions/${encodeURIComponent(sessionId)}/covers`, { coversTotal });
+  },
   markServed(sessionId, orderId) {
     return request("POST", `/sessions/${encodeURIComponent(sessionId)}/commands/${encodeURIComponent(orderId)}/served`, {});
   },
