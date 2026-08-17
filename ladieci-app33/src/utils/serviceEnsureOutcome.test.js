@@ -215,11 +215,15 @@ describe('exceptionShowsCloseoutLink — only where a human action there could r
 });
 
 describe('ensuredStatusLabel — sourced ONLY from the backend session, never the browser clock, never PRANZO/SERA to the operator', () => {
-  test('PRANZO renders as "Servicio de mediodía"', () => {
-    expect(ensuredStatusLabel(PRANZO_CREATED.session)).toBe('Servicio de mediodía · Abierto · 2026-07-26 · 08:05');
+  // S-E — the Operational Service identity no longer maps 1:1 to an
+  // economic window (S-D), so the lifecycle label is unconditionally
+  // neutral now regardless of serviceKind; PRANZO/SERA still surface,
+  // correctly, only inside economic/report breakdowns elsewhere.
+  test('PRANZO renders the neutral "Servicio" label, not "de mediodía"', () => {
+    expect(ensuredStatusLabel(PRANZO_CREATED.session)).toBe('Servicio · Abierto · 2026-07-26 · 08:05');
   });
-  test('SERA renders as "Servicio de noche"', () => {
-    expect(ensuredStatusLabel(SERA_REUSED.session)).toBe('Servicio de noche · Abierto · 2026-07-26 · 20:00');
+  test('SERA renders the neutral "Servicio" label, not "de noche"', () => {
+    expect(ensuredStatusLabel(SERA_REUSED.session)).toBe('Servicio · Abierto · 2026-07-26 · 20:00');
   });
   test('no session at all renders empty, never a guessed label', () => {
     expect(ensuredStatusLabel(null)).toBe('');

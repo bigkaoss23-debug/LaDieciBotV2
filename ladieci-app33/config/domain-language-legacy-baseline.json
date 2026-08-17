@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-11T13:29:32.406Z",
+  "generatedAt": "2026-08-17T09:30:29.226Z",
   "entries": [
     {
       "file": "migrations/001_delivery_system.sql",
@@ -533,18 +533,8 @@
     },
     {
       "file": "src/components/ItemPickerModal.jsx",
-      "term": "cucina",
-      "count": 2
-    },
-    {
-      "file": "src/components/ItemPickerModal.jsx",
-      "term": "ordine",
-      "count": 1
-    },
-    {
-      "file": "src/components/ItemPickerModal.jsx",
       "term": "pizze",
-      "count": 5
+      "count": 1
     },
     {
       "file": "src/components/ManualGiroSection.jsx",
@@ -634,7 +624,7 @@
     {
       "file": "src/components/officialNumberBadge.static.test.js",
       "term": "pizze",
-      "count": 2
+      "count": 1
     },
     {
       "file": "src/components/OpsHealthBadge.jsx",
@@ -779,7 +769,7 @@
     {
       "file": "src/components/serviceStateGateStillOpenOtherKind.test.js",
       "term": "pranzo",
-      "count": 9
+      "count": 10
     },
     {
       "file": "src/components/ServicioPage.jsx",
@@ -1289,12 +1279,12 @@
     {
       "file": "src/utils/serviceEnsureOutcome.js",
       "term": "pranzo",
-      "count": 3
+      "count": 4
     },
     {
       "file": "src/utils/serviceEnsureOutcome.test.js",
       "term": "pranzo",
-      "count": 24
+      "count": 25
     },
     {
       "file": "src/utils/serviceEnsureOutcome.test.js",

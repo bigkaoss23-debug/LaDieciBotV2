@@ -76,7 +76,8 @@ describe('ServiceStateGate — a session mid-close does not take the whole Servi
     expect(container.querySelector('[data-testid="service-exception-landing"]')).toBeNull();
 
     // Lifecycle truth: the pill says the service is closing, not "Abierto".
-    expect(container.textContent).toContain('Servicio de mediodía');
+    // S-E — the pill's own label is unconditionally neutral now (S-D).
+    expect(container.textContent).toContain('Servicio');
     expect(container.textContent).toContain('Cerrando');
     expect(container.textContent).not.toContain('Abierto');
     expect(container.textContent).not.toMatch(/\bPRANZO\b/);

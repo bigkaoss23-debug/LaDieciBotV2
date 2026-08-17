@@ -55,9 +55,10 @@ describe('ServiceStateGate — a still-open OTHER-kind session (the live QA scen
 
     expect(container.querySelector('[data-testid="operational-surface"]')).toBeTruthy();
     expect(container.querySelector('[data-testid="service-exception-landing"]')).toBeNull();
-    // The status pill is the one place the session is summarized — must use the
-    // Spanish label, never the raw backend token.
-    expect(container.textContent).toContain('Servicio de mediodía');
+    // S-E — the status pill's own lifecycle label is unconditionally neutral
+    // now (the Operational Service can legitimately span both economic
+    // windows post-S-D), never the raw backend token either way.
+    expect(container.textContent).toContain('Servicio');
     expect(container.textContent).not.toMatch(/\bPRANZO\b/);
     expect(container.textContent).not.toMatch(/\bSERA\b/);
   });
@@ -73,7 +74,9 @@ describe('ServiceStateGate — a still-open OTHER-kind session (the live QA scen
 
     expect(container.querySelector('[data-testid="operational-surface"]')).toBeTruthy();
     expect(container.querySelector('[data-testid="service-exception-landing"]')).toBeNull();
-    expect(container.textContent).toContain('Servicio de noche');
+    expect(container.textContent).toContain('Servicio');
+    expect(container.textContent).not.toMatch(/\bPRANZO\b/);
+    expect(container.textContent).not.toMatch(/\bSERA\b/);
   });
 
   test('LUNCH_SESSION_STILL_ACTIVE while the conflicting session is itself CLOSING -> still the exception panel (nothing to operate on), never a raw PRANZO/SERA string', async () => {

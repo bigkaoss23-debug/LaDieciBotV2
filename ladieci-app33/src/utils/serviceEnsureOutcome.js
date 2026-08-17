@@ -197,16 +197,20 @@ export function classifyEnsureAttempt(res) {
   return domainOutcome(ENSURE_OUTCOME.UNKNOWN, res);
 }
 
-// User-facing service labels. Never PRANZO/SERA/service_kind — those are
-// internal tokens; the operator only ever reads "de mediodía" / "de noche".
-const KIND_LABEL = Object.freeze({ PRANZO: 'Servicio de mediodía', SERA: 'Servicio de noche' });
-
-// "Servicio de mediodía · Abierto · 2026-07-26 · 12:05" — the kind and
-// business date come ONLY from the backend session, never from the browser
-// clock.
+// S-E — the Operational Service identity (S-D) can now legitimately span
+// both PRANZO and SERA within a single session, so its own lifecycle label
+// must not assert either one (a session opened at lunch may still be the
+// same open service at dinner). KIND_LABEL / the PRANZO|SERA branch is
+// removed entirely, not merely defaulted-around: the ongoing service is
+// always presented neutrally now, unconditionally — PRANZO/SERA still
+// appear, correctly, inside economic/report breakdowns (see
+// closeoutServiceKind.js), just never as the service's own identity label.
+//
+// "Servicio · Abierto · 2026-07-26 · 12:05" — the business date still comes
+// ONLY from the backend session, never from the browser clock.
 export function ensuredStatusLabel(session) {
   if (!session) return '';
-  const label = (session.serviceKind && KIND_LABEL[session.serviceKind]) || 'Servicio';
+  const label = 'Servicio';
   // P0-C1 — a session handed back while status:'closing' (see the
   // SERVICE_SESSION_CLOSING branch in classifyEnsureAttempt above) must never
   // claim "Abierto": that would misrepresent real lifecycle state on the one
