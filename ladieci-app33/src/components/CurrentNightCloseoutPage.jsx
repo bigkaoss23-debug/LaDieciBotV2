@@ -112,6 +112,28 @@ export default function CurrentNightCloseoutPage({ onBack, onReturnHome, role, a
               Apertura: {data.openedAt ? new Date(data.openedAt).toLocaleString() : '—'} ·
               {' '}Cierre: {data.closedAt ? new Date(data.closedAt).toLocaleString() : '—'}
             </p>
+            {/* F-9 — a CLOSED report (recent_closed_session_id) previously left no
+                reachable way back in: this branch used to render ONLY the report,
+                never the open affordance, so an operator landing here after a real
+                Finalizar had no path forward except the dead-end "Volver al menú
+                principal" above. status === 'closed' is required: never offered
+                while genuinely open/closing, which would be nonsensical here. Same
+                shared controller/confirmation as the !data.available branch below —
+                no new component, no new backend contract, same verified-by-reread
+                open flow. */}
+            {data.status === 'closed' && open.mayOpen && !open.confirming && (
+              <button data-testid="closeout-reopen-btn" onClick={open.requestOpen}
+                style={{ ...button, display: 'block', marginTop: 14 }}>
+                Abrir nuevo servicio
+              </button>
+            )}
+            {data.status === 'closed' && open.mayOpen && open.confirming && (
+              <OpenServiceConfirmation
+                actor={actor} role={role}
+                opening={open.opening} error={open.error}
+                onConfirm={open.confirm} onCancel={open.cancel}
+              />
+            )}
             <div style={grid}>
               {[
                 ['Tickets', data.counts.tickets],
