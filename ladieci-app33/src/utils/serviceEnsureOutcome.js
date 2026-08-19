@@ -29,9 +29,16 @@ export const ENSURE_OUTCOME = Object.freeze({
   SERVICE_SESSION_CLOSING: 'SERVICE_SESSION_CLOSING',
   INVALID_ACTOR: 'INVALID_ACTOR',
   STALE_SERVICE_SESSION: 'STALE_SERVICE_SESSION', // an open session belongs to an earlier businessDate
-  // F-7 (migration row 92) — the two answers ensure_service_session gives once
-  // it became READ/REUSE ONLY and can no longer create anything. Both mean the
-  // same thing to an operator: nothing is open, somebody has to open it.
+  // F-7 (migration row 92) — the two read-only answers ensure_service_session
+  // gives once it became READ/REUSE ONLY and can no longer create anything.
+  // They are NOT symmetric to an operator (see the POST F-10 UX correction
+  // below, classifyEnsureAttempt's NO_OPEN_SERVICE intercept):
+  //   REOPEN_REQUIRED — the business day this response names already had a
+  //     service, and it stays a genuine typed exception (see below).
+  //   NO_OPEN_SERVICE — nothing is open. Kept as its own code (never merged
+  //     into REOPEN_REQUIRED) purely so a caller CAN still special-case a
+  //     truly virgin day if it ever needs to; classifyEnsureAttempt below no
+  //     longer treats it as an exception at all.
   REOPEN_REQUIRED: 'REOPEN_REQUIRED',   // this Business Day already had a service, none is active now
   NO_OPEN_SERVICE: 'NO_OPEN_SERVICE',   // this Business Day has never had a service
   DENIED: 'DENIED',     // role gate / 401 / 403 — never reaches the backend decision at all
@@ -51,7 +58,8 @@ const SCHEDULE_OR_SESSION_CODES = new Set([
   ENSURE_OUTCOME.INVALID_ACTOR,
   ENSURE_OUTCOME.STALE_SERVICE_SESSION,
   ENSURE_OUTCOME.REOPEN_REQUIRED,
-  ENSURE_OUTCOME.NO_OPEN_SERVICE,
+  // NO_OPEN_SERVICE is deliberately NOT in this set — see classifyEnsureAttempt's
+  // early intercept below. It never reaches this generic fallback.
 ]);
 
 export const EXCEPTION_TITLE = Object.freeze({
@@ -70,7 +78,8 @@ export const EXCEPTION_TITLE = Object.freeze({
   [ENSURE_OUTCOME.INVALID_ACTOR]: 'Usuario no verificado',
   [ENSURE_OUTCOME.STALE_SERVICE_SESSION]: 'Servicio anterior pendiente',
   [ENSURE_OUTCOME.REOPEN_REQUIRED]: 'No hay ningún servicio abierto',
-  [ENSURE_OUTCOME.NO_OPEN_SERVICE]: 'No hay ningún servicio abierto',
+  // No NO_OPEN_SERVICE entry — classifyEnsureAttempt intercepts that code
+  // before it ever reaches EXCEPTION_TITLE (see the intercept below).
   [ENSURE_OUTCOME.DENIED]: 'Acceso no autorizado',
   [ENSURE_OUTCOME.NETWORK]: 'Sin conexión con el servidor',
   [ENSURE_OUTCOME.UNKNOWN]: 'Estado del servicio no disponible',
@@ -87,7 +96,6 @@ export const EXCEPTION_MESSAGE = Object.freeze({
   [ENSURE_OUTCOME.INVALID_ACTOR]: 'Tu usuario no se pudo verificar para abrir el servicio. Contacta con el administrador.',
   [ENSURE_OUTCOME.STALE_SERVICE_SESSION]: 'El servicio activo pertenece a otra fecha operativa. Ciérralo antes de recibir nuevos pedidos.',
   [ENSURE_OUTCOME.REOPEN_REQUIRED]: 'El servicio anterior ya se cerró. Vuelve a abrirlo desde el cierre del servicio para recibir pedidos.',
-  [ENSURE_OUTCOME.NO_OPEN_SERVICE]: 'Todavía no se ha abierto el servicio. Ábrelo desde el cierre del servicio para recibir pedidos.',
   [ENSURE_OUTCOME.DENIED]: 'No tienes permiso para acceder al servicio.',
   [ENSURE_OUTCOME.NETWORK]: 'No se pudo contactar con el servidor. Comprueba la conexión e inténtalo de nuevo.',
   [ENSURE_OUTCOME.UNKNOWN]: 'No se pudo comprobar el estado del servicio. Inténtalo de nuevo.',
@@ -109,7 +117,6 @@ export function exceptionShowsCloseoutLink(kind) {
     || kind === ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE
     || kind === ENSURE_OUTCOME.STALE_SERVICE_SESSION
     || kind === ENSURE_OUTCOME.REOPEN_REQUIRED
-    || kind === ENSURE_OUTCOME.NO_OPEN_SERVICE
     || kind === ENSURE_OUTCOME.NETWORK
     || kind === ENSURE_OUTCOME.UNKNOWN;
 }
@@ -153,6 +160,50 @@ export function classifyEnsureAttempt(res) {
   if (res.draftBlocked === true || res._status === 0) return domainOutcome(ENSURE_OUTCOME.NETWORK, res);
 
   const code = res.code;
+
+  // POST F-10 UX CORRECTION — 2026-08-19 staging incident. NO_OPEN_SERVICE is
+  // a routine lifecycle state (no session anywhere, and the current Business
+  // Day pointer has never had one), never an incident: "nobody has ordered
+  // yet" is true at open-of-day EVERY day. Before this, it fell through to
+  // SCHEDULE_OR_SESSION_CODES and rendered a full blocking exception panel —
+  // "No hay ningún servicio abierto", with a "Ver cierre del servicio" link —
+  // over what is, from the operator's chair, simply an empty app ready for
+  // its first order. The real authority that decides whether a brand-new
+  // order may lazily open a service is resolve_order_intake_context_v1 (F-7),
+  // invoked fresh, from the real clock, inside the order-creation flow's own
+  // INSERT trigger — completely independent of this classification. Nothing here
+  // creates a session or bypasses that authority; this only stops rendering
+  // an operator-facing incident over a state that was never one.
+  //
+  // REOPEN_REQUIRED is deliberately NOT given the same treatment. It is
+  // structurally ambiguous with the current read-only contract: ensure_
+  // service_session never recomputes "today" from the clock the way the
+  // order-intake resolver does — it only trusts whatever business day the
+  // stored canonical pointer currently names, and that pointer advances
+  // ONLY on a real order or an explicit open (see resolve_order_intake_
+  // context_v1 / open_business_day_v1), never on a schedule. So a pointer
+  // that is genuinely stale (nobody has ordered since a PAST business day
+  // that pointer still names) makes REOPEN_REQUIRED indistinguishable, from
+  // here, from a true same-day "this was already explicitly finalized
+  // today" state — exactly what happened live on 2026-08-19: the pointer
+  // still named 2026-08-16 sessions closed two days before this classifier
+  // ran, and the response read businessDate:"2026-08-16", not today.
+  // Silently absorbing REOPEN_REQUIRED into ALLOWED would risk bypassing a
+  // genuine intentional-reopen requirement on a real same-day close, so it
+  // stays a typed, blocking exception (unchanged) until the backend can
+  // state whether the named businessDate IS today's canonical one — a
+  // structured discriminator this response does not carry today. Never
+  // computed here in the frontend: that would be exactly the invented
+  // date logic this module's own header forbids.
+  if (code === ENSURE_OUTCOME.NO_OPEN_SERVICE) {
+    return Object.freeze({
+      kind: ENSURE_OUTCOME.ALLOWED,
+      created: false,
+      code,
+      session: null,
+      previousCloseoutIncidents: null,
+    });
+  }
 
   // S2-7D6E — a still-open OTHER-kind session is not a dead end. The backend
   // refused to open a NEW session over it (protecting the ledger split

@@ -23,9 +23,20 @@
 //
 // Four states:
 //   ensuring/retrying → a clear waiting surface, never a half-usable Servicio
-//   ready             → the real Servicio, plus one restrained status line
+//   ready             → the real Servicio; a restrained status line when an
+//                        Operational Service actually exists, none when it
+//                        doesn't (normal idle — see NO_OPEN_SERVICE below)
 //   exception         → the backend's typed reason, mapped to natural Spanish
 //                        — never a locally invented schedule/session decision
+//
+// POST F-10 UX CORRECTION — ready no longer implies an active session.
+// classifyEnsureAttempt (serviceEnsureOutcome.js) now answers ALLOWED with
+// session:null for the NO_OPEN_SERVICE code: a normal "nobody has ordered
+// yet" idle state, not an incident. The status pill and the closeout-
+// incidents banner both degrade to rendering nothing in that case; {children}
+// (the real Servicio shell) still mounts exactly as it does for a genuinely
+// open service, and the first real order remains the sole thing that lazily
+// opens one, via the authoritative order-intake resolver — never this gate.
 // ===============================================================
 
 import { useEffect, useRef } from 'react';
@@ -63,7 +74,13 @@ export default function ServiceStateGate({ role, actor, onCloseout, children, hi
             previousCloseoutIncidents keep running underneath exactly as
             before, and both reappear the instant the admin steps back out to
             the normal Servicio view (hideStatusChrome flips false again). */}
-        {!hideStatusChrome && (
+        {/* POST F-10 UX CORRECTION — normal idle (NO_OPEN_SERVICE, see
+            classifyEnsureAttempt) now reaches READY with session:null, since
+            no Operational Service exists yet to summarize. Suppress the pill
+            entirely rather than show an empty rounded badge floating over
+            the app: ensuredStatusLabel(null) already returns '', so this is
+            a presentation guard only, not a new decision. */}
+        {!hideStatusChrome && session && (
           <div
             data-testid="service-open-status"
             style={{

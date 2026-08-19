@@ -259,6 +259,15 @@ describe('ensuredStatusLabel — sourced ONLY from the backend session, never th
   // shell offline behind "Estado del servicio no disponible" — reproduced on
   // real staging with the live backend returning
   // {success:false, code:'REOPEN_REQUIRED', businessDate:'2026-08-16'}.
+  //
+  // POST F-10 UX CORRECTION — the SAME live incident then showed that even
+  // the fixed typed panel was product-wrong for NO_OPEN_SERVICE specifically:
+  // "no service has ever existed yet today" is the ordinary state of every
+  // single morning, not an incident that should interrupt the operator.
+  // REOPEN_REQUIRED stays a genuine typed exception below, unchanged — see
+  // the long comment on its intercept-skip in serviceEnsureOutcome.js for
+  // why (a stale, non-today pointer makes it structurally indistinguishable
+  // here from a true same-day explicit-reopen requirement).
   describe('F-7 read-only discriminator codes', () => {
     const REOPEN = {
       success: false, code: 'REOPEN_REQUIRED', session: null,
@@ -273,44 +282,46 @@ describe('ensuredStatusLabel — sourced ONLY from the backend session, never th
       const out = classifyEnsureAttempt(REOPEN);
       expect(out.kind).toBe(ENSURE_OUTCOME.REOPEN_REQUIRED);
       expect(out.kind).not.toBe(ENSURE_OUTCOME.UNKNOWN);
+      expect(out.kind).not.toBe(ENSURE_OUTCOME.ALLOWED);
       expect(out.title).not.toMatch(/no disponible/i);
       expect(out.message).not.toMatch(/No se pudo comprobar/i);
       expect(out.businessDate).toBe('2026-08-16');
+      expect(out.title).toMatch(/no hay ning[uú]n servicio abierto/i);
+      expect(exceptionAllowsRetry(out.kind)).toBe(true);
+      expect(exceptionShowsCloseoutLink(out.kind)).toBe(true);
     });
 
-    test('NO_OPEN_SERVICE is a typed domain outcome, never UNKNOWN', () => {
+    // NO_OPEN_SERVICE is no longer a typed EXCEPTION at all — normal idle is
+    // transparent: it classifies as ALLOWED with session:null, exactly like
+    // a genuinely active service reaches ALLOWED with session:{...}. No
+    // service is created by this classification (that stays the order-intake
+    // resolver's job, on the first real order); this only stops presenting a
+    // routine "nobody has ordered yet" state as a blocking incident.
+    test('NO_OPEN_SERVICE is ALLOWED (transparent idle), not an exception', () => {
       const out = classifyEnsureAttempt(NO_OPEN);
-      expect(out.kind).toBe(ENSURE_OUTCOME.NO_OPEN_SERVICE);
+      expect(out.kind).toBe(ENSURE_OUTCOME.ALLOWED);
       expect(out.kind).not.toBe(ENSURE_OUTCOME.UNKNOWN);
-      expect(out.title).not.toMatch(/no disponible/i);
+      expect(out.kind).not.toBe(ENSURE_OUTCOME.REOPEN_REQUIRED);
+      expect(out.session).toBeNull();
+      expect(out.created).toBe(false);
     });
 
-    test('both explain that nothing is open and stay operator-actionable', () => {
-      for (const res of [REOPEN, NO_OPEN]) {
-        const out = classifyEnsureAttempt(res);
-        expect(out.title).toMatch(/no hay ning[uú]n servicio abierto/i);
-        expect(exceptionAllowsRetry(out.kind)).toBe(true);
-        expect(exceptionShowsCloseoutLink(out.kind)).toBe(true);
-      }
+    test('REOPEN_REQUIRED never names either service_kind token to the operator', () => {
+      // The two service_kind enum tokens are assembled at runtime rather than
+      // spelled out: scripts/check-domain-language.js counts literal
+      // occurrences against a baseline, and hard-coding them here would raise
+      // that count for a test whose whole point is that they must NEVER reach
+      // an operator. Same rule, without adding the vocabulary it forbids.
+      const KIND_TOKENS = new RegExp(['PRA', 'NZO'].join('') + '|' + ['SE', 'RA'].join(''));
+      const out = classifyEnsureAttempt(REOPEN);
+      expect(`${out.title} ${out.message}`).not.toMatch(KIND_TOKENS);
     });
 
-    // The two service_kind enum tokens are assembled at runtime rather than
-    // spelled out: scripts/check-domain-language.js counts literal
-    // occurrences against a baseline, and hard-coding them here would raise
-    // that count for a test whose whole point is that they must NEVER reach
-    // an operator. Same rule, without adding the vocabulary it forbids.
-    const KIND_TOKENS = new RegExp(['PRA', 'NZO'].join('') + '|' + ['SE', 'RA'].join(''));
-    test('neither names either service_kind token to the operator', () => {
-      for (const res of [REOPEN, NO_OPEN]) {
-        const out = classifyEnsureAttempt(res);
-        expect(`${out.title} ${out.message}`).not.toMatch(KIND_TOKENS);
-      }
-    });
-
-    // Scope discipline: only the two DESIGNED answers are absorbed. A genuine
-    // integrity code must keep falling through to UNKNOWN — that is exactly
-    // what UNKNOWN is for, and hiding it behind friendly copy would mask a
-    // real state-corruption bug.
+    // Scope discipline: only the one remaining DESIGNED exception code is
+    // absorbed by SCHEDULE_OR_SESSION_CODES. A genuine integrity code must
+    // keep falling through to UNKNOWN — that is exactly what UNKNOWN is for,
+    // and hiding it behind friendly copy would mask a real state-corruption
+    // bug.
     test('integrity codes still classify as UNKNOWN', () => {
       for (const code of ['SERVICE_SESSION_STATE_CORRUPT', 'MULTIPLE_ACTIVE_SERVICE_SESSIONS', 'ENSURE_FAILED']) {
         expect(classifyEnsureAttempt({ success: false, code, _status: 200 }).kind)
