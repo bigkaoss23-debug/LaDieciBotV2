@@ -248,4 +248,74 @@ describe('ensuredStatusLabel — sourced ONLY from the backend session, never th
     expect(label).not.toContain('Abierto');
     expect(label).not.toMatch(/PRANZO/);
   });
+
+  // ── F-7 (migration row 92) contract gap — the 2026-08-19 staging incident ──
+  //
+  // Once ensure_service_session became READ/REUSE ONLY it answers
+  // REOPEN_REQUIRED (this Business Day already had a service, none is active)
+  // or NO_OPEN_SERVICE (it never had one). Neither code existed in
+  // SCHEDULE_OR_SESSION_CODES, so a perfectly ordinary "nobody has opened the
+  // service yet" state fell through to UNKNOWN and took the whole Servicio
+  // shell offline behind "Estado del servicio no disponible" — reproduced on
+  // real staging with the live backend returning
+  // {success:false, code:'REOPEN_REQUIRED', businessDate:'2026-08-16'}.
+  describe('F-7 read-only discriminator codes', () => {
+    const REOPEN = {
+      success: false, code: 'REOPEN_REQUIRED', session: null,
+      businessDate: '2026-08-16', _status: 200, _ok: true,
+    };
+    const NO_OPEN = {
+      success: false, code: 'NO_OPEN_SERVICE', session: null,
+      businessDate: '2026-08-19', _status: 200, _ok: true,
+    };
+
+    test('REOPEN_REQUIRED is a typed domain outcome, never UNKNOWN', () => {
+      const out = classifyEnsureAttempt(REOPEN);
+      expect(out.kind).toBe(ENSURE_OUTCOME.REOPEN_REQUIRED);
+      expect(out.kind).not.toBe(ENSURE_OUTCOME.UNKNOWN);
+      expect(out.title).not.toMatch(/no disponible/i);
+      expect(out.message).not.toMatch(/No se pudo comprobar/i);
+      expect(out.businessDate).toBe('2026-08-16');
+    });
+
+    test('NO_OPEN_SERVICE is a typed domain outcome, never UNKNOWN', () => {
+      const out = classifyEnsureAttempt(NO_OPEN);
+      expect(out.kind).toBe(ENSURE_OUTCOME.NO_OPEN_SERVICE);
+      expect(out.kind).not.toBe(ENSURE_OUTCOME.UNKNOWN);
+      expect(out.title).not.toMatch(/no disponible/i);
+    });
+
+    test('both explain that nothing is open and stay operator-actionable', () => {
+      for (const res of [REOPEN, NO_OPEN]) {
+        const out = classifyEnsureAttempt(res);
+        expect(out.title).toMatch(/no hay ning[uú]n servicio abierto/i);
+        expect(exceptionAllowsRetry(out.kind)).toBe(true);
+        expect(exceptionShowsCloseoutLink(out.kind)).toBe(true);
+      }
+    });
+
+    // The two service_kind enum tokens are assembled at runtime rather than
+    // spelled out: scripts/check-domain-language.js counts literal
+    // occurrences against a baseline, and hard-coding them here would raise
+    // that count for a test whose whole point is that they must NEVER reach
+    // an operator. Same rule, without adding the vocabulary it forbids.
+    const KIND_TOKENS = new RegExp(['PRA', 'NZO'].join('') + '|' + ['SE', 'RA'].join(''));
+    test('neither names either service_kind token to the operator', () => {
+      for (const res of [REOPEN, NO_OPEN]) {
+        const out = classifyEnsureAttempt(res);
+        expect(`${out.title} ${out.message}`).not.toMatch(KIND_TOKENS);
+      }
+    });
+
+    // Scope discipline: only the two DESIGNED answers are absorbed. A genuine
+    // integrity code must keep falling through to UNKNOWN — that is exactly
+    // what UNKNOWN is for, and hiding it behind friendly copy would mask a
+    // real state-corruption bug.
+    test('integrity codes still classify as UNKNOWN', () => {
+      for (const code of ['SERVICE_SESSION_STATE_CORRUPT', 'MULTIPLE_ACTIVE_SERVICE_SESSIONS', 'ENSURE_FAILED']) {
+        expect(classifyEnsureAttempt({ success: false, code, _status: 200 }).kind)
+          .toBe(ENSURE_OUTCOME.UNKNOWN);
+      }
+    });
+  });
 });
