@@ -210,12 +210,19 @@ describe('the manual open-service controller is now an exceptional recovery path
     }
   });
 
-  test('the closeout page no longer opens the service directly', () => {
+  // G-1 — the closeout page opens NOTHING any more. The Operational Service
+  // resumes by itself on the next real order or table seating, so a manual
+  // open affordance on a report page is lifecycle bureaucracy with no job.
+  test('the closeout page mounts no open flow at all', () => {
     const C = code(CLOSEOUT);
-    expect(C).toMatch(/useOpenServiceController/);
-    expect(C).toMatch(/<OpenServiceConfirmation/);
-    // the S2-7D5 unguarded handler is gone
+    expect(C).not.toMatch(/useOpenServiceController/);
+    expect(C).not.toMatch(/OpenServiceConfirmation/);
+    expect(C).not.toMatch(/Abrir nuevo servicio/);
+    expect(C).not.toMatch(/closeout-open-btn|closeout-reopen-btn/);
+    // the S2-7D5 unguarded handler is still gone, and never came back
     expect(C).not.toMatch(/classifyOpenAttempt|openingRef|const openService =/);
+    // it stays a report: it still reads the contract and nothing else
+    expect(C).toMatch(/api\.getCurrentServiceCloseout\(\)/);
   });
 
   // S2-7D6C2 — the closeout says WHICH service it reports, from the contract only.
@@ -232,16 +239,17 @@ describe('the manual open-service controller is now an exceptional recovery path
     expect(C).not.toMatch(/>SERVICIO ACTUAL</);
   });
 
-  test('the closeout page is now the ONLY mount point for the manual controller — the gate does not duplicate it', () => {
-    expect(code(CLOSEOUT)).toMatch(/useOpenServiceController\(\{/);
-    expect(code(CLOSEOUT)).toMatch(/<OpenServiceConfirmation/);
-    expect(code(CLOSEOUT)).toMatch(/open\.requestOpen/);
-    expect(code(CLOSEOUT)).toMatch(/onConfirm=\{open\.confirm\}/);
-    expect(code(CLOSEOUT)).toMatch(/onCancel=\{open\.cancel\}/);
-    expect(code(CLOSEOUT)).toMatch(/open\.mayOpen/);
-    // the gate mounts neither
-    expect(GATE_C).not.toMatch(/useOpenServiceController\(\{/);
-    expect(GATE_C).not.toMatch(/<OpenServiceConfirmation/);
+  // G-1 — there is no mount point left anywhere in the operational surface.
+  // The controller and the confirmation modal still EXIST as modules (the
+  // confirmation also exports shared styling used by Access Management), and
+  // retiring them is its own slice; what must be true now is that no screen
+  // an operator can reach offers a manual open.
+  test('no operator-reachable screen mounts the manual open controller any more', () => {
+    for (const src of [code(CLOSEOUT), GATE_C, SERVICIO_C, APP_C, EXCEPTION_PANEL_C]) {
+      expect(src).not.toMatch(/useOpenServiceController\(\{/);
+      expect(src).not.toMatch(/<OpenServiceConfirmation/);
+      expect(src).not.toMatch(/open\.requestOpen|open\.mayOpen|open\.confirm\b/);
+    }
   });
 
   test('the opening logic is not duplicated: one lock, one flow, one classifier — untouched', () => {
@@ -321,16 +329,25 @@ describe('closeout routing (Phase 6)', () => {
     expect(SERVICIO).toMatch(/Cierre del servicio/);
   });
 
-  test('the principal entry path is silent ensure, not a button-driven landing (S2-7D6C)', () => {
-    // the gate itself offers no manual "abrir servicio" affordance anymore
+  // G-1 — the entry path is silent ensure, and there is no longer a manual
+  // affordance ANYWHERE to fall back to: the Operational Service resumes on
+  // the first real order or table seating, so an operator never has to open
+  // one by hand. MANUAL_ABRIR_NUEVO_SERVICIO_REQUIRED = NO, enforced here.
+  test('no screen offers a manual "abrir servicio" affordance any more (S2-7D6C + G-1)', () => {
     expect(GATE_C).not.toMatch(/data-testid="open-service-btn"/);
     expect(GATE_C).not.toMatch(/data-testid="landing-closeout-btn"/);
-    // the manual recovery keeps its (unique) affordance, but only on the closeout page
-    expect(code(CLOSEOUT)).toMatch(/data-testid="closeout-open-btn"/);
-    // and a verified manual open from Cierre still returns the operator to Servicio,
-    // where the silent gate re-ensures on the next mount
-    expect(code(CLOSEOUT)).toMatch(/onServiceOpened/);
-    expect(APP_C).toMatch(/onServiceOpened=\{\(\)=>setScreen\("servicio"\)\}/);
+    expect(code(CLOSEOUT)).not.toMatch(/data-testid="closeout-open-btn"/);
+    expect(code(CLOSEOUT)).not.toMatch(/data-testid="closeout-reopen-btn"/);
+    // no screen renders the copy either — not as a button, not as a hint
+    for (const src of [GATE_C, code(CLOSEOUT), SERVICIO_C, EXCEPTION_PANEL_C]) {
+      expect(src).not.toMatch(/Abrir nuevo servicio/);
+    }
+    // and App no longer has to route the operator back after a manual open,
+    // because there is no manual open to come back from
+    expect(code(CLOSEOUT)).not.toMatch(/onServiceOpened/);
+    expect(APP_C).not.toMatch(/onServiceOpened=/);
+    // a finalized report says what happens next instead of asking for an action
+    expect(code(CLOSEOUT)).toMatch(/data-testid="closeout-finalized-note"/);
   });
 
   test('the exception panel offers "Ver cierre del servicio" as its own escape hatch, never a duplicate confirm flow', () => {

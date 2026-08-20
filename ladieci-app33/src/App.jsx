@@ -502,11 +502,11 @@ export default function App({ skipSplash = false } = {}) {
             onMesaPhoneShellActiveChange={setMesaPhoneShellActive}/>
         </ServiceStateGate>
       )}
+      {/* G-1 — the closeout page is a pure report now: no role/actor gate to
+          evaluate and no open flow to navigate away from, so it takes neither. */}
       {screen==="closeout" && canAccessCurrentCloseout(auth.getRole()) && (
         <CurrentNightCloseoutPage onBack={()=>setScreen("servicio")}
-            onReturnHome={()=>setScreen("home")}
-            role={auth.getRole()} actor={auth.getActor()}
-            onServiceOpened={()=>setScreen("servicio")}/>
+            onReturnHome={()=>setScreen("home")}/>
       )}
       {screen==="economia" && <EconomiaPage onBack={()=>setScreen("home")}/>}
       {screen==="accessmanagement" && canAccessAdminArea(auth.getRole()) && (

@@ -6,26 +6,29 @@
 // session; this page accepts no date, range or session id — there is no session
 // selector here and there must never be one (docs/SERVICE_SESSION_IDENTITY.md).
 //
-// It keeps the recovered "Abrir nuevo servicio" affordance for the case where an
-// admin lands here directly, but it is NOT the principal open path any more:
-// that is the closed-service landing in Servicio (ServiceStateGate).
+// G-1 — THIS PAGE IS NOW PURELY A REPORT. Every "Abrir nuevo servicio"
+// affordance is gone, along with the controller and the confirmation modal
+// that guarded it. There is nothing left for them to do: the Operational
+// Service resumes by itself on the next real order or the next table
+// seating (resolve_order_intake_context_v1 →
+// open_operational_service_v1('next_service_of_business_day')), so asking an
+// operator to open one by hand can only ever be lifecycle bureaucracy
+// exposed to someone who should never have had to see it.
 //
-// S2-7D5B — this page used to call api.openServiceSession() straight from the
-// click handler: no confirmation, no actor recap, no lock, no verification. That
-// was a second, unguarded way to open a real shift. It now mounts the SAME
-// controller and the SAME confirmation surface as the landing, and it does not
-// import `api.openServiceSession` at all.
+// The backend action and its server-side controller are deliberately NOT
+// deleted in this slice — they simply have no caller here any more, and the
+// backend now answers them with a typed refusal because ensure_service_
+// session no longer reports REOPEN_REQUIRED. Retiring that surface is its
+// own slice.
 // ===============================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import { useOpenServiceController } from './service/useOpenServiceController';
-import OpenServiceConfirmation from './service/OpenServiceConfirmation';
 import { describeCloseoutKind } from '../utils/closeoutServiceKind';
 
 const money = (value) => `${(Number(value) || 0).toFixed(2)} €`;
 
-export default function CurrentNightCloseoutPage({ onBack, onReturnHome, role, actor, onServiceOpened }) {
+export default function CurrentNightCloseoutPage({ onBack, onReturnHome }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const liveRef = useRef(true);
@@ -44,23 +47,10 @@ export default function CurrentNightCloseoutPage({ onBack, onReturnHome, role, a
     }
   }, []);
 
-  // The SHARED controller — identical gate, confirmation, lock, classifier and
-  // post-open verification as the Servicio landing. This page never calls
-  // api.openServiceSession itself.
-  const open = useOpenServiceController({
-    role,
-    onOpened: () => {
-      load();
-      // After a VERIFIED open, the operator belongs in Servicio, not on a
-      // closeout report for a service that has just started.
-      if (onServiceOpened) onServiceOpened();
-    },
-  });
-
   useEffect(() => {
     liveRef.current = true;
     load();
-    return () => { liveRef.current = false; open.dispose(); };
+    return () => { liveRef.current = false; };
   }, [load]);
 
   // Derived from the loaded contract only — never from the clock, businessDate
@@ -89,20 +79,7 @@ export default function CurrentNightCloseoutPage({ onBack, onReturnHome, role, a
         {!data && !error && <p>Cargando…</p>}
         {data && !data.available && (
           <div style={panel}>
-            No hay un servicio abierto o recién cerrado.
-            {open.mayOpen && !open.confirming && (
-              <button data-testid="closeout-open-btn" onClick={open.requestOpen}
-                style={{ ...button, display: 'block', marginTop: 14 }}>
-                Abrir nuevo servicio
-              </button>
-            )}
-            {open.mayOpen && open.confirming && (
-              <OpenServiceConfirmation
-                actor={actor} role={role}
-                opening={open.opening} error={open.error}
-                onConfirm={open.confirm} onCancel={open.cancel}
-              />
-            )}
+            Todavía no hay nada que resumir. El servicio se abrirá solo con el próximo pedido o la próxima mesa.
           </div>
         )}
         {data && data.available && (
@@ -112,27 +89,17 @@ export default function CurrentNightCloseoutPage({ onBack, onReturnHome, role, a
               Apertura: {data.openedAt ? new Date(data.openedAt).toLocaleString() : '—'} ·
               {' '}Cierre: {data.closedAt ? new Date(data.closedAt).toLocaleString() : '—'}
             </p>
-            {/* F-9 — a CLOSED report (recent_closed_session_id) previously left no
-                reachable way back in: this branch used to render ONLY the report,
-                never the open affordance, so an operator landing here after a real
-                Finalizar had no path forward except the dead-end "Volver al menú
-                principal" above. status === 'closed' is required: never offered
-                while genuinely open/closing, which would be nonsensical here. Same
-                shared controller/confirmation as the !data.available branch below —
-                no new component, no new backend contract, same verified-by-reread
-                open flow. */}
-            {data.status === 'closed' && open.mayOpen && !open.confirming && (
-              <button data-testid="closeout-reopen-btn" onClick={open.requestOpen}
-                style={{ ...button, display: 'block', marginTop: 14 }}>
-                Abrir nuevo servicio
-              </button>
-            )}
-            {data.status === 'closed' && open.mayOpen && open.confirming && (
-              <OpenServiceConfirmation
-                actor={actor} role={role}
-                opening={open.opening} error={open.error}
-                onConfirm={open.confirm} onCancel={open.cancel}
-              />
+            {/* G-1 — F-9 used to put an "Abrir nuevo servicio" button here so an
+                operator reading a finalized report had a path forward. There is
+                nothing to be forward TO any more: the next real order or the
+                next table seating opens the next Operational Service on its
+                own. A finalized report is now just a finalized report, and
+                "Volver al menú principal" above is a real exit, not a dead
+                end. */}
+            {data.status === 'closed' && (
+              <p data-testid="closeout-finalized-note" style={{ color: '#8a8a8a', fontSize: 13, marginTop: 6 }}>
+                Servicio finalizado. El próximo pedido o la próxima mesa abrirán el siguiente servicio automáticamente.
+              </p>
             )}
             <div style={grid}>
               {[
