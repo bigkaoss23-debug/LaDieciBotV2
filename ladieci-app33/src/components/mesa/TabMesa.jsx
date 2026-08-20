@@ -257,13 +257,24 @@ function tableState(table, todayReservations) {
 
 // Border is a second, independent signal layered on top of the fill:
 // free/reserved -> border matches the fill color (unchanged from before).
-// occupied -> border is red with NO comanda sent yet, green once at least one
-// comanda has been confirmed and sent to Cocina. The fill stays occupied-red
-// either way (checked by callers), so an order's existence is legible without
-// ever letting a table read as "free".
+// occupied -> red with NO comanda sent yet, amber once at least one comanda has
+// been confirmed and sent to Cocina. Both stay inside the occupied colour
+// family and are thick, so an order's existence is legible without the table
+// ever reading as free.
+//
+// UAT-P2-A -- "comanda sent" used to be drawn in #22C55E, which is byte-for-byte
+// STATUS.free.color. On the Hybrid 3D floor the occupied fill is only .22 alpha,
+// so the border is what the eye actually reads: a busy table with food in the
+// kitchen was rendered with the free-table green and was indistinguishable from
+// an empty one at a glance (proven live 2026-08-20, Mesa 3 and Mesa 6 both with
+// comandas En cocina looked identical to the free Mesa 2/4/5). Amber is already
+// this app's "active work" accent (Cocina badge), keeps FREE / OCCUPIED /
+// RESERVED mutually distinct, and needs no layout or density change.
+const OCCUPIED_BORDER_IDLE = "#EF4444";   // seated, nothing ordered yet
+const OCCUPIED_BORDER_ACTIVE = "#F97316"; // seated, comanda(s) in the kitchen
 function tableBorder(state, hasOrders) {
   if (state !== STATUS.occupied) return { color: state.color, thick: false };
-  return { color: hasOrders ? "#22C55E" : "#EF4444", thick: true };
+  return { color: hasOrders ? OCCUPIED_BORDER_ACTIVE : OCCUPIED_BORDER_IDLE, thick: true };
 }
 
 function hasReadyOrder(table) {
@@ -954,7 +965,12 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
         { label: "Queda por pagar", value: euro(outstandingAfter) },
       ],
       totalLabel: "PAGADO", total: result.amount,
-      note: outstandingAfter === 0 ? "Cuenta cerrada." : "Pago parcial registrado.",
+      // UAT-P3 -- "Cuenta cerrada." claimed the table was closed when only the
+      // bill had been settled: paying does NOT close the table session (the UAT
+      // confirmed Mesa 3 stayed open with settled_at NULL until the operator
+      // explicitly pressed Cerrar mesa, which is the correct behaviour). The
+      // copy now states what was actually done and what is still pending.
+      note: outstandingAfter === 0 ? "Cuenta pagada. Cierra la mesa para liberarla." : "Pago parcial registrado.",
     });
     await onRefresh();
   };

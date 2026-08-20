@@ -567,7 +567,7 @@ test("a second click on Cerrar mesa (confirm) while the request is in flight nev
   unmount(container, root);
 });
 
-test("an occupied Mesa with an order shows a green (not red) thick border, comanda summary, and offers Nueva comanda / Ver cuenta, never asking for covers again", async () => {
+test("an occupied Mesa with an order shows an active (never free-green) thick border, comanda summary, and offers Nueva comanda / Ver cuenta, never asking for covers again", async () => {
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }], time: "21:00" }] }) }
     : table);
@@ -576,7 +576,8 @@ test("an occupied Mesa with an order shows a green (not red) thick border, coman
   const { container, root } = await mount("waiter", { onNewCommand });
   const card = container.querySelector(".mesa-table");
   expect(card.className).toContain("thick");
-  expect(card.getAttribute("style")).toContain("--tc: #22C55E");
+  expect(card.getAttribute("style")).toContain("--tc: #F97316");
+  expect(card.getAttribute("style")).not.toContain("--tc: #22C55E");
   // Fill stays occupied-red regardless of order state -- only the border changed.
   expect(card.getAttribute("style")).toContain("--tb: rgba(239,68,68,.22)");
   click(card);
@@ -754,7 +755,7 @@ test("Ver cuenta -> Cobrar todo charges the full outstanding balance, prints a r
   dialogs = container.querySelectorAll('[role="dialog"]');
   expect(dialogs).toHaveLength(1);
   expect(dialogs[0].textContent).toContain("RECIBO DE PAGO");
-  expect(dialogs[0].textContent).toContain("Cuenta cerrada.");
+  expect(dialogs[0].textContent).toContain("Cuenta pagada. Cierra la mesa para liberarla.");
   expect(container.textContent).not.toContain("Mesa 1 · aún sin comensales");
   unmount(container, root);
 });

@@ -528,8 +528,21 @@ const caricoTotale = (ordenes) => {
     .reduce((s,o) => s + countItems(o.items), 0);
 };
 
+// UAT-P2-B -- a dine-in comanda has no pickup or delivery promise. Its `hora`
+// is simply the moment the comanda was sent, NOT a deadline, so feeding it to
+// the countdown below made every table order read "al retiro" and flip to
+// "⚠ TARDE" within seconds of reaching Cocina (proven live 2026-08-20: #004
+// sent 11:10 showed -03:48 TARDE at 11:13, #007 sent 11:20 showed -01:24 TARDE
+// at 11:21). Takeaway/delivery, which do carry a real promised time, were
+// correct and must stay correct -- so the deadline branch is skipped for
+// dine-in only, and dine-in never reaches the "tarde" phase at all. Whether
+// Mesa should have a kitchen SLA of its own is a separate product decision and
+// is deliberately NOT invented here.
+const isDineIn = (o) => Boolean(o && o.table_session_id);
+
 const calcTimer = (o, now) => {
-  if(o.hora) {
+  const dineIn = isDineIn(o);
+  if(o.hora && !dineIn) {
     const ritiroMs = orarioToMs(o.hora, now);
     if(ritiroMs) {
       const diffMs  = ritiroMs - now;
@@ -566,12 +579,17 @@ const calcTimer = (o, now) => {
   // Branch senza orario: usa fasi nuove ma temporizzate "all'incontrario"
   // (qui mm cresce dall'inizio ordine, non decresce verso uscita)
   let fase;
-  if(mm >= 15)      fase = "tarde";
+  // UAT-P2-B -- elapsed time since the order is a useful kitchen signal for a
+  // table, but "tarde" here is still pickup-lateness vocabulary (it renders
+  // "⚠ TARDE"/"RETRASO"). Dine-in therefore tops out at al_horno and is never
+  // marked late or imminent; takeaway without a promised time is unchanged.
+  if(mm >= 15 && !dineIn) fase = "tarde";
   else if(mm >= 10) fase = "al_horno";
   else if(mm >= 5)  fase = "preparando";
   else              fase = "espera";
-  return { mm, ss, scaduto: mm>=15, fase, showCountdown:true,
-    imminente: mm>=15, attenzione: mm>=5, conOrario:false };
+  const scaduto = mm>=15 && !dineIn;
+  return { mm, ss, scaduto, fase, showCountdown:true,
+    imminente: scaduto, attenzione: mm>=5, conOrario:false };
 };
 
 // Consolida duplicati in sub: "+Ajo, +Ajo, sin cebolla" → "+Ajo ×2, sin cebolla"

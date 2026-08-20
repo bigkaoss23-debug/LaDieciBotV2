@@ -184,7 +184,7 @@ describe("state comes from the domain, never from the renderer", () => {
     expect(group.getAttribute("data-rim")).toBe("#EF4444");
   });
 
-  test("an occupied table whose comanda is sent keeps the occupied face but a green rim", async () => {
+  test("an occupied table whose comanda is sent keeps the occupied face and an active rim that is never free-green", async () => {
     const { host } = await mount([table({
       status: "open",
       session: { id: "s1", commands: [{ id: "c1", state: "EN_COCINA", items: [] }] },
@@ -192,7 +192,10 @@ describe("state comes from the domain, never from the renderer", () => {
     const group = host.querySelector('[data-table-id="t1"]');
     // the two independent signals the default renderer already carries
     expect(group.getAttribute("data-state")).toBe("occupied");
-    expect(group.getAttribute("data-rim")).toBe("#22C55E");
+    // UAT-P2-A -- was "#22C55E", byte-identical to the free rim above, so a
+    // table with food in the kitchen was indistinguishable from an empty one.
+    expect(group.getAttribute("data-rim")).toBe("#F97316");
+    expect(group.getAttribute("data-rim")).not.toBe("#22C55E");
   });
 
   test("a reserved table reads reserved with the amber family", async () => {

@@ -526,7 +526,15 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           setPrefillCliente(null);
           setShowNuevo(false);
         } else if (snapshot.canal==="BANCO") {
-          setTab("banco");
+          // UAT-P2-C -- this branch used to leave the Nuevo Pedido modal open.
+          // The modal resets itself after a successful confirm, so the operator
+          // was left staring at a blank form with no acknowledgement, unable to
+          // tell whether the order had saved: one more tap re-entered the same
+          // order. Exit exactly like the MANUAL branch above, and land on the
+          // Barra surface (UAT-P1-A) rather than on Mesa.
+          setTab(MESA_UI_ENABLED ? "barra" : "banco");
+          setPrefillCliente(null);
+          setShowNuevo(false);
           notify("✅ " + canalLabel + " (guardando…)");
         }
         return true;
@@ -1034,6 +1042,17 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     {id:"wa",       icon:"💬", label:"WhatsApp", badge:{n:waTotBadge, c:C.wa}},
     {id:"manual",   icon:"📞", label:"Tel",      badge:{n:manualN,    c:C.blu}},
     {id:"banco",    icon:MESA_UI_ENABLED?"🍽":"🏪", label:MESA_UI_ENABLED?"Mesa":"Barra", badge:{n:MESA_UI_ENABLED?mesaN:bancoN, c:C.avana}},
+    // UAT-P1-A -- Mesa and Barra are two different operator surfaces and must
+    // never share one navigation slot. Before this, enabling Mesa REPLACED the
+    // Barra tab (both used id "banco"), so a BANCO order created through Nuevo
+    // Pedido's "Barra" channel was persisted and correctly attributed but had
+    // nowhere to live: it could not be sent to Cocina, completed or cancelled
+    // from any tab (proven live 2026-08-20 by order #999008, which only ever
+    // surfaced in the Finalizar pre-flight). Mesa keeps the historic "banco"
+    // id -- MesaPhoneShell and the Nuevo Pedido affordance both key on it --
+    // and Barra gets its own id, added ONLY when Mesa is enabled so a
+    // Mesa-disabled build still renders exactly one Barra tab, unchanged.
+    ...(MESA_UI_ENABLED ? [{id:"barra", icon:"🏪", label:"Barra", badge:{n:bancoN, c:C.avana}}] : []),
     {id:"listos",   icon:"✅", label:"Listos",   badge:{n:listosBadgeN, c:C.verde}},
     {id:"cocina",   icon:"🍕", label:"Cocina",   badge:{n:cocinaNC,   c:C.orange}},
     {id:"entregas", icon:"🛵", label:"Entregas", meta: pizzeConsegnateStasera > 0 ? `${pizzeConsegnateStasera} pz ✓` : null, badge:{n:entregasN,  c:"#F97316"}},
@@ -1260,6 +1279,10 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           onSendToCocina={sendMesaCommandToCocina}
         />
       : <TabBanco ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
+    // UAT-P1-A -- the Barra surface, reachable alongside Mesa. Same TabBanco
+    // component and same props as the Mesa-disabled branch above: nothing about
+    // BANCO order semantics changes, it simply stops being unreachable.
+    if(tab==="barra") return <TabBanco ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>; // language-guard: allow-legacy eliminaOrdine/confirmaOrdine are the existing handler names, forwarded verbatim to the same TabBanco as the branch above, not new vocabulary
     // Mounted only while this tab is open, same as every other tab here
     // (TabMesa/TabListos/TabCocina are all conditionally mounted the same
     // way) -- so the Sala poll inside ListosUnificado, and therefore
@@ -1635,7 +1658,12 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           <span style={{position:"relative",fontSize:18}}>＋</span>
           <span style={{position:"relative"}}>NUEVO PEDIDO</span>
         </button>}
-        <button onClick={handleChiudiServizio} style={{
+        {/* UAT-P3 -- this is the primary end-of-service action and was a bare
+            unlabelled moon, sitting right next to a labelled "Cierre" button
+            that only opens the read-only report. Naming it (and giving it an
+            accessible name) removes the confusion without changing layout. */}
+        <button onClick={handleChiudiServizio}
+          title="Finalizar servicio" aria-label="Finalizar servicio" style={{
           flexShrink:0,
           background: "rgba(255,255,255,0.07)",
           border: "1px solid rgba(255,255,255,0.12)",
@@ -1736,7 +1764,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
                     {chiudiModal.blocking?.tables > 0
                       ? "Hay mesas con cuenta abierta: cóbralas antes de cerrar el servicio."
                       : chiudiModal.blocking?.orders > 0
-                        ? "Completa los pedidos o ciérralos expresamente como anulados."
+                        ? "Se quedarán sin resolver y se registrarán como incidencias del cierre, con su importe pendiente."
                         : "Los mensajes sin pedido pueden quedarse para el siguiente servicio."}
                   </div>
                 </div>
@@ -1763,7 +1791,15 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
                     background:"rgba(192,57,43,0.85)",border:"1.5px solid rgba(192,57,43,0.8)",
                     borderRadius:12,padding:"13px 16px",color:"#fff",fontWeight:800,
                     fontSize:13,cursor:"pointer",width:"100%"}}>
-                    🗑️ Cerrar y anular pedidos activos
+                    {/* UAT-P2-D -- this used to read "Cerrar y anular pedidos
+                        activos", which the backend deliberately does NOT do:
+                        the V3 close never invents a cancellation, it closes the
+                        service and records each unresolved order as an incident
+                        with its real economic exposure (proven live 2026-08-20:
+                        #999008 stayed POR_CONFIRMAR and produced
+                        ORDER_UNCONFIRMED_AT_CLOSE + UNPAID_BALANCE_AT_CLOSE).
+                        The copy now describes what actually happens. */}
+                    ⚠️ Finalizar servicio con pendientes
                   </button>
                 )}
                 {chiudiModal.blocking?.tables === 0 && chiudiModal.blocking?.orders === 0 && <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma(false)} style={{
@@ -1778,7 +1814,8 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
                   background:"transparent",border:"1px solid rgba(255,255,255,0.12)",
                   borderRadius:12,padding:"11px 16px",color:"rgba(255,255,255,0.4)",
                   fontWeight:600,fontSize:13,cursor:"pointer",width:"100%"}}>
-                  {chiudiModal.error ? "Cerrar aviso" : "Annulla"}
+                  {/* UAT-P3 -- "Annulla" was leftover Italian on a Spanish surface. */}
+                  {chiudiModal.error ? "Cerrar aviso" : "Cancelar"}
                 </button>
               </div>
             </>)}

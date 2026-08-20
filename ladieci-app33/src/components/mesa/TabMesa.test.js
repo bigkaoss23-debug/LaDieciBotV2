@@ -22,7 +22,7 @@ describe("Mesa equal split preview", () => {
 
 describe("Mesa closed-account boundary", () => {
   test("full payment closes without an intermediate occupied-table workflow", () => {
-    expect(source).toContain('outstandingAfter === 0 ? "Cuenta cerrada."');
+    expect(source).toContain('outstandingAfter === 0 ? "Cuenta pagada. Cierra la mesa para liberarla."');
     expect(source).not.toContain("paid_occupied");
     expect(source).not.toContain("Mesa libre");
     expect(source).not.toContain("Abrir cuenta nueva");
@@ -239,7 +239,11 @@ describe("Mesa order-state border and ready pulse", () => {
   test("fill color never depends on order/kitchen state -- only the border does", () => {
     expect(source).toContain("function tableBorder(state, hasOrders) {");
     expect(source).toContain('if (state !== STATUS.occupied) return { color: state.color, thick: false };');
-    expect(source).toContain('return { color: hasOrders ? "#22C55E" : "#EF4444", thick: true };');
+    expect(source).toContain('return { color: hasOrders ? OCCUPIED_BORDER_ACTIVE : OCCUPIED_BORDER_IDLE, thick: true };');
+    // UAT-P2-A -- neither occupied variant may reuse the free-table colour,
+    // which is what made a busy table read as free on the floor.
+    expect(source).toContain('const OCCUPIED_BORDER_IDLE = "#EF4444"');
+    expect(source).toContain('const OCCUPIED_BORDER_ACTIVE = "#F97316"');
     expect(source).toContain('"--tb": state.bg');
     expect(source).toContain('"--tc": border.color');
   });

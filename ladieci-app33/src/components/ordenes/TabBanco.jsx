@@ -14,7 +14,12 @@ const sortOrdenes = (list) => list.sort((a,b) => {
 const TabBanco = ({ordenes, onModifica, onElimina, onConfirm, onForzarEntrega, vipIds, loadingIds = new Set()}) => {
   const [showDone, setShowDone] = useState(false);
 
-  const all     = ordenes.filter(o=>o.canal==="BANCO");
+  // UAT-P1-A -- a Mesa comanda is ALSO persisted with canal="BANCO" (it is a
+  // counter-side sale), so a real Barra order is separated from a table one by
+  // the absence of a table session -- exactly the rule this tab's own badge
+  // already used (`bancoN` in ServicioPage). Without it, every table comanda
+  // would show up in Barra the moment that tab became reachable beside Mesa.
+  const all     = ordenes.filter(o=>o.canal==="BANCO" && !o.table_session_id);
   const activos = sortOrdenes(all.filter(o=>!isCompletedState(o.estado)));
   const done    = sortOrdenes(all.filter(o=>isCompletedState(o.estado)));
   // One shared collision pass over everything rendered in this tab -- activos

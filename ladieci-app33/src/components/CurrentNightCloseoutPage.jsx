@@ -141,6 +141,11 @@ export default function CurrentNightCloseoutPage({ onBack, onReturnHome, role, a
                 ['Cobrado', money(data.totals.collected)],
                 ['Pendiente', money(data.totals.unpaid)],
                 ['Reembolsos', money(data.totals.refunded)],
+                // UAT-P1-B -- cancelled value was only ever visible per ticket,
+                // never summarised, although the official closeout carries it
+                // (total_void_cents). Rendered only once the report actually
+                // supplies it, so an open service's tile grid is unchanged.
+                ...(data.totals.voided == null ? [] : [['Anulado', money(data.totals.voided)]]),
                 ['Diferencia', money(data.totals.difference)],
               ].map(([k, v]) => (
                 <div key={k} style={panel}>
