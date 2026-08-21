@@ -4,6 +4,7 @@ import Chip from '../ui/Chip';
 import TicketQuickAction from '../ui/TicketQuickAction';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
+import { describePaymentMethod } from '../../utils/paymentMethodDisplay';
 import {
   formatItemExtrasLabel,
   formatItemRemovedLabel,
@@ -137,16 +138,23 @@ const OrdenCard = ({o, label, onModifica, accentColor, hasAlert, onElimina, onCo
       {isSaving
         ? <span style={{background:"rgba(6,182,212,0.28)",color:"#67E8F9",border:"1.5px solid rgba(103,232,249,0.55)",borderRadius:20,padding:"3px 11px",fontSize:12,fontWeight:800}}>⏳ Guardando pedido…</span>
         : s.badge}
-      {o.ya_pagado && (
-        <span style={{
-          background: o.metodo_pago === "tarjeta" ? "rgba(37,99,235,0.30)" : "rgba(22,163,74,0.30)",
-          color: o.metodo_pago === "tarjeta" ? "#93C5FD" : "#4ADE80",
-          border: o.metodo_pago === "tarjeta" ? "1.5px solid rgba(96,165,250,0.55)" : "1.5px solid rgba(74,222,128,0.55)",
-          borderRadius:20, padding:"3px 10px", fontSize:12, fontWeight:800
-        }}>
-          {o.metodo_pago === "tarjeta" ? "💳" : "💵"} Ya pagado
-        </span>
-      )}
+      {/* TKT-02 -- this chip used to branch tarjeta-or-else, so a MIXTO order
+          (#999015: 51.00 tarjeta + 30.00 efectivo + 20.00 bizum) rendered as
+          "💵 Ya pagado" in cash green. describePaymentMethod owns the mapping
+          now, so mixed reads as mixed. */}
+      {o.ya_pagado && (() => {
+        const m = describePaymentMethod(o.metodo_pago);
+        return (
+          <span style={{
+            background: `rgba(${m.rgb},0.30)`,
+            color: m.text,
+            border: `1.5px solid rgba(${m.borderRgb},0.55)`,
+            borderRadius:20, padding:"3px 10px", fontSize:12, fontWeight:800
+          }}>
+            {m.icon} Ya pagado{m.mixed ? " · Mixto" : ""}
+          </span>
+        );
+      })()}
       {hasAlert&&<span style={{background:"#E8341C",color:"#fff",borderRadius:20,padding:"3px 10px",fontSize:13,fontWeight:900,animation:"livePulse 1s infinite",boxShadow:"0 0 12px #E8341Ccc",letterSpacing:.5}}>⚠️⚠️ AGGIUNTA!</span>}
       {!isSaving && <span style={{marginLeft:"auto",background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.28)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:600}}>✏️ Editar</span>}
     </div>

@@ -8,6 +8,7 @@ import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
 import { buildVisibleOrderLabels, resolveVisibleOrderLabel } from '../../utils/orderNumber';
 import { orarioToMs } from '../../utils/serviceClock';
+import { describePaymentMethod } from '../../utils/paymentMethodDisplay';
 import {
   formatItemExtrasLabel,
   formatItemRemovedLabel,
@@ -123,16 +124,20 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                         padding:"2px 9px",fontSize:11,fontWeight:700}}>
                         {o.canal==="WA"?"💬 WA":"📞 Tel"}
                       </span>}
-                  {o.ya_pagado && (
-                    <span style={{
-                      background: o.metodo_pago==="tarjeta" ? "rgba(37,99,235,0.35)" : "rgba(22,163,74,0.35)",
-                      color:"#fff", border: o.metodo_pago==="tarjeta"
-                        ? "1px solid rgba(96,165,250,0.6)" : "1px solid rgba(74,222,128,0.6)",
-                      borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700
-                    }}>
-                      {o.metodo_pago==="tarjeta" ? "💳" : "💵"} Ya pagado
-                    </span>
-                  )}
+                  {/* TKT-02 -- see OrdenCard: tarjeta-or-else painted every
+                      MIXTO order as cash. One shared mapping now. */}
+                  {o.ya_pagado && (() => {
+                    const m = describePaymentMethod(o.metodo_pago);
+                    return (
+                      <span style={{
+                        background: `rgba(${m.rgb},0.35)`,
+                        color:"#fff", border: `1px solid rgba(${m.borderRgb},0.6)`,
+                        borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700
+                      }}>
+                        {m.icon} Ya pagado{m.mixed ? " · Mixto" : ""}
+                      </span>
+                    );
+                  })()}
                   {/* Badge zona */}
                   {o.tipo_consegna==="DOMICILIO" && o.zona && (() => {
                     const zona = ZONE_DELIVERY.find(z => z.id === o.zona);
@@ -208,30 +213,31 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                       cancelar
                     </button>
                   </div>
-                ) : (
-                  <button
-                    onClick={e=>{e.stopPropagation();setPendingCambioPago(o.id);}}
-                    style={{
-                      background: o.metodo_pago==="tarjeta"?"rgba(37,99,235,0.35)"
-                        : o.metodo_pago==="efectivo"?"rgba(22,163,74,0.35)"
-                        : o.metodo_pago==="bizum"?"rgba(14,165,233,0.35)"
-                        : "rgba(255,255,255,0.10)",
-                      border: o.metodo_pago==="tarjeta"?"1.5px solid rgba(96,165,250,0.6)"
-                        : o.metodo_pago==="efectivo"?"1.5px solid rgba(74,222,128,0.6)"
-                        : o.metodo_pago==="bizum"?"1.5px solid rgba(56,189,248,0.6)"
-                        : "1.5px solid rgba(255,255,255,0.25)",
-                      borderRadius:10, padding:"9px 13px",
-                      color:"#fff", fontWeight:800, fontSize:13,
-                      cursor:"pointer", flexShrink:0,
-                      display:"flex",alignItems:"center",gap:5
-                    }}>
-                    {o.metodo_pago==="tarjeta"?"💳 Tarjeta"
-                      : o.metodo_pago==="efectivo"?"💵 Efectivo"
-                      : o.metodo_pago==="bizum"?"📱 Bizum"
-                      : "❓ Sin método"}
-                    <span style={{fontSize:10,opacity:.6}}>✎</span>
-                  </button>
-                )
+                ) : (() => {
+                  /* TKT-02 -- the four-way chain here had no MIXTO arm either,
+                     so a fully-paid mixed order fell through to "❓ Sin método"
+                     and read as unpaid. Same shared mapping as the chips above;
+                     the ✎ affordance is unchanged (a mixed payment can still be
+                     corrected to a single tender by the operator). */
+                  const m = describePaymentMethod(o.metodo_pago);
+                  const strength = m.key === "unknown" ? 0.10 : 0.35;
+                  const borderAlpha = m.key === "unknown" ? 0.25 : 0.6;
+                  return (
+                    <button
+                      onClick={e=>{e.stopPropagation();setPendingCambioPago(o.id);}}
+                      style={{
+                        background: `rgba(${m.rgb},${strength})`,
+                        border: `1.5px solid rgba(${m.borderRgb},${borderAlpha})`,
+                        borderRadius:10, padding:"9px 13px",
+                        color:"#fff", fontWeight:800, fontSize:13,
+                        cursor:"pointer", flexShrink:0,
+                        display:"flex",alignItems:"center",gap:5
+                      }}>
+                      {m.icon} {m.label}
+                      <span style={{fontSize:10,opacity:.6}}>✎</span>
+                    </button>
+                  );
+                })()
               )}
               {!isDone && (
                 o.tipo_consegna === "DOMICILIO" ? (
@@ -416,11 +422,22 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
         const nPizze      = retirados.reduce((s,o) =>
           s + (Array.isArray(o.items)?o.items:[]).filter(isPizzaItem).reduce((ss,it)=>ss+(parseInt(it.q)||1),0), 0);
         const totEuro     = retirados.reduce((s,o) => s + getOrdineTotal(o), 0);
-        const totEfectivo = retirados.filter(o=>o.metodo_pago==="efectivo").reduce((s,o) => s + getOrdineTotal(o), 0);
-        const totTarjeta  = retirados.filter(o=>o.metodo_pago==="tarjeta").reduce((s,o) => s + getOrdineTotal(o), 0);
-        const totBizum    = retirados.filter(o=>o.metodo_pago==="bizum").reduce((s,o) => s + getOrdineTotal(o), 0);
+        const byMethod = (key) => retirados
+          .filter(o => describePaymentMethod(o.metodo_pago).key === key)
+          .reduce((s,o) => s + getOrdineTotal(o), 0);
+        const totEfectivo = byMethod("efectivo");
+        const totTarjeta  = byMethod("tarjeta");
+        const totBizum    = byMethod("bizum");
+        // TKT-02 -- a MIXTO order used to land in NO bucket at all: it is not
+        // efectivo/tarjeta/bizum, and `!o.metodo_pago` is false because it HAS
+        // a method. So its money silently vanished from this breakdown while
+        // still counting in `totEuro` above -- the strip showed "en caja" next
+        // to per-method figures that did not add up to it, with nothing to
+        // explain the gap (#999015 alone would have hidden 101.00 €). Adding
+        // the missing bucket is presentation only: no existing figure changes.
+        const totMixto    = byMethod("mixto");
         // Ordini senza metodo_pago (es. consegne non ancora assegnate)
-        const totNoPago   = retirados.filter(o=>!o.metodo_pago).reduce((s,o) => s + getOrdineTotal(o), 0);
+        const totNoPago   = byMethod("unknown");
 
         const sep = <span style={{color:"rgba(255,255,255,0.2)",margin:"0 8px"}}>·</span>;
         const mono = {fontFamily:"'DM Mono',monospace",fontWeight:900};
@@ -455,6 +472,12 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
               {sep}
               <span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>📱</span>
               <span style={{...mono,fontSize:15,color:"#38BDF8",marginLeft:4}}>{totBizum.toFixed(2)}€</span>
+            </>)}
+            {totMixto > 0 && (<>
+              {sep}
+              <span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>🧾</span>
+              <span style={{...mono,fontSize:15,color:"#FCD34D",marginLeft:4}}>{totMixto.toFixed(2)}€</span>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginLeft:2}}>mixto</span>
             </>)}
             {totNoPago > 0 && (<>
               {sep}
