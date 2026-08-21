@@ -324,9 +324,46 @@ describe('closeout routing (Phase 6)', () => {
     expect(APP_C).toMatch(/if \(screen !== 'closeout'\) return;[\s\S]{0,160}canAccessCurrentCloseout/);
   });
 
-  test('Servicio exposes the closeout, so it is not reachable only by deep link', () => {
+  test('Servicio exposes the read-only report, so it is not reachable only by deep link', () => {
     expect(SERVICIO_C).toMatch(/data-testid="servicio-closeout-btn"/);
-    expect(SERVICIO).toMatch(/Cierre del servicio/);
+    // FIN-01/UX-01 — this button opens the READ-ONLY report, so it is now named
+    // "Resumen", never "Cierre": the old orange "Cierre" label sat next to an
+    // unlabelled 🌙 that was the real Finalizar, and the owner pressed the
+    // wrong one on 2026-08-20 (service 480eca89 was never finalized).
+    expect(SERVICIO).toMatch(/>\s*Resumen\s*</);
+    expect(SERVICIO).toMatch(/aria-label="Resumen del servicio \(solo lectura\)"/);
+    expect(SERVICIO).not.toMatch(/aria-label="Cierre del servicio"/);
+  });
+
+  // FIN-01 — the end-of-service action must be readable WITHOUT hover, title or
+  // a screen reader: the operator is on a tablet. An accessible name alone was
+  // already tried (UAT-P3, commit 09d3e0f, live before the 2026-08-20 service)
+  // and did not work, because a `title` needs a mouse the operator does not
+  // have. The visible text is the fix; the accessible name stays as well.
+  test('the true Finalizar is a VISIBLE labelled action, not a bare icon', () => {
+    expect(SERVICIO_C).toMatch(/data-testid="servicio-finalizar-btn"/);
+    expect(SERVICIO).toMatch(/<span>Finalizar servicio<\/span>/);
+    expect(SERVICIO).toMatch(/aria-label="Finalizar servicio"/);
+    // the moon survives as decoration only, explicitly hidden from the a11y tree
+    expect(SERVICIO).toMatch(/aria-hidden="true"[^>]*>🌙</);
+  });
+
+  test('Finalizar routes to the existing confirmation flow, and no second close path exists', () => {
+    // The pre-existing identifiers this test asserts the wiring of. Named once,
+    // here, so the rest of the test reads in the project's own vocabulary.
+    // language-guard: allow-legacy the existing close handler/pre-flight identifiers, quoted verbatim to prove the wiring is unchanged, not new vocabulary
+    const [CLOSE_HANDLER, CONFIRM_HANDLER, SCAN_ACTION] = ['handleChiudiServizio', 'handleChiudiConferma', 'scanServizio'];
+
+    // one handler, one wiring, unchanged
+    expect(SERVICIO_C).toMatch(new RegExp(`data-testid="servicio-finalizar-btn"\\s+onClick=\\{${CLOSE_HANDLER}\\}`));
+    expect(SERVICIO_C.match(new RegExp(`onClick=\\{${CLOSE_HANDLER}\\}`, 'g'))).toHaveLength(1);
+    // the confirmation still goes through the pre-flight scan + the existing modal
+    expect(SERVICIO_C).toMatch(new RegExp(`api\\.get\\("${SCAN_ACTION}"\\)`));
+    expect(SERVICIO_C).toMatch(new RegExp(CONFIRM_HANDLER));
+    // and the report button is NOT wired to any close handler
+    expect(SERVICIO_C).toMatch(/data-testid="servicio-closeout-btn"\s+onClick=\{onCloseout\}/);
+    expect(SERVICIO_C).not.toMatch(
+      new RegExp(`data-testid="servicio-closeout-btn"[\\s\\S]{0,200}${CLOSE_HANDLER.slice(0, 12)}`));
   });
 
   // G-1 — the entry path is silent ensure, and there is no longer a manual
@@ -350,8 +387,12 @@ describe('closeout routing (Phase 6)', () => {
     expect(code(CLOSEOUT)).toMatch(/data-testid="closeout-finalized-note"/);
   });
 
-  test('the exception panel offers "Ver cierre del servicio" as its own escape hatch, never a duplicate confirm flow', () => {
+  test('the exception panel offers "Ver resumen del servicio" as its own escape hatch, never a duplicate confirm flow', () => {
     expect(EXCEPTION_PANEL_C).toMatch(/data-testid="service-exception-closeout-btn"/);
+    // UX-01 — same read-only destination as the Servicio bar's Resumen, so it
+    // must not promise a "cierre" it cannot perform
+    expect(EXCEPTION_PANEL_C).toMatch(/Ver resumen del servicio/);
+    expect(EXCEPTION_PANEL_C).not.toMatch(/Ver cierre del servicio/);
     // it imports shared presentational pieces (Row/identityGrid/...) from that
     // file, but never renders <OpenServiceConfirmation> or mounts the hook
     expect(EXCEPTION_PANEL_C).not.toMatch(/<OpenServiceConfirmation/);

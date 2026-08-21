@@ -60,8 +60,11 @@ export default function ServiceExceptionPanel({ role, actor, exception, retrying
             </button>
           )}
           {showCloseout && (
+            /* UX-01 -- this opens the same READ-ONLY report as the Servicio
+               bar's "Resumen" button, so it must not promise a "cierre" it
+               cannot perform. Same destination, honest name. */
             <button data-testid="service-exception-closeout-btn" onClick={onCloseout} style={ghostBtn}>
-              Ver cierre del servicio
+              Ver resumen del servicio
             </button>
           )}
         </div>

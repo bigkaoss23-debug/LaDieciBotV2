@@ -82,7 +82,12 @@ describe("Mesa map cleanup: the dead 'SELECCIONA UNA MESA' bottom CTA is gone", 
   test("the generic NUEVO PEDIDO bottom button is not rendered while on the Mesa tab", () => {
     const idx = src.indexOf('>NUEVO PEDIDO<');
     expect(idx).toBeGreaterThan(-1);
-    const before = src.slice(Math.max(0, idx - 700), idx);
+    // FIN-01 widened this button's own style block (flex:1 -> flex:"1 1 190px"
+    // so the bar can wrap onto a second row on a phone), which pushed the gate
+    // a few characters past the old 700-char window. The assertion's intent is
+    // unchanged: the Mesa gate must sit immediately before this button, not
+    // merely somewhere in the file.
+    const before = src.slice(Math.max(0, idx - 800), idx);
     expect(before).toMatch(/!\(MESA_UI_ENABLED && tab === "banco"\) && <button/);
   });
 });

@@ -285,7 +285,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     // navigate away. Mark it submitting and clear any previous error so the
     // operator sees progress in place.
     setChiudiModal(m => m ? { ...m, submitting: true, error: null } : m);
-    notify("🌙 Cerrando servicio...", C.giallo);
+    notify("🌙 Finalizando servicio...", C.giallo);
     // Backend atomico: lock → calcola summary → scrivi storico completo →
     // verifica → cancella ordenes/conv/wa_msgs. Il client non deve MAI presumere il
     // successo: solo success:true chiude la vista; success:false resta un fallimento.
@@ -1634,13 +1634,13 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         {tabContent()}
       </div>
 
-      {/* Bottone NUEVO PEDIDO + Cerrar Servicio fixed bottom */}
+      {/* Bottone NUEVO PEDIDO + Finalizar servicio fixed bottom */}
       <div style={{
         position:"fixed",bottom:0,left:0,right:0,
         padding:"12px 14px 20px",
         background:`linear-gradient(to top, ${C.nero} 55%, transparent)`,
         zIndex:150,
-        display:"flex",gap:10,alignItems:"stretch"}}>
+        display:"flex",flexWrap:"wrap",gap:10,alignItems:"stretch"}}>
         {/* Mesa has its own "＋ Nueva comanda" inside the table workspace --
             this generic creator is meaningless there (it used to relabel
             itself into a dead CTA whose only behavior was a toast telling
@@ -1648,7 +1648,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         {!(MESA_UI_ENABLED && tab === "banco") && <button onClick={()=>{
           setMesaCommandTarget(null); setPrefillCliente(null); setShowNuevo(true);
         }} style={{
-          flex:1,background:C.rosso,color:"#fff",
+          flex:"1 1 190px",minWidth:0,background:C.rosso,color:"#fff",
           border:"none",borderRadius:16,
           padding:"16px 0",
           fontWeight:900,fontSize:15,letterSpacing:"1.2px",
@@ -1658,44 +1658,62 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           <span style={{position:"relative",fontSize:18}}>＋</span>
           <span style={{position:"relative"}}>NUEVO PEDIDO</span>
         </button>}
-        {/* UAT-P3 -- this is the primary end-of-service action and was a bare
-            unlabelled moon, sitting right next to a labelled "Cierre" button
-            that only opens the read-only report. Naming it (and giving it an
-            accessible name) removes the confusion without changing layout. */}
-        <button onClick={handleChiudiServizio}
-          title="Finalizar servicio" aria-label="Finalizar servicio" style={{
-          flexShrink:0,
-          background: "rgba(255,255,255,0.07)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius:16,
-          padding:"16px 14px",
-          display:"flex",alignItems:"center",justifyContent:"center",
-          color: "rgba(255,255,255,0.45)",
-          fontWeight:500,fontSize:20,
-          cursor:"pointer",whiteSpace:"nowrap",transition:"all .18s ease"}}>
-          🌙
-        </button>
-        {onCloseout && (
-          <button data-testid="servicio-closeout-btn" onClick={onCloseout}
-            title="Cierre del servicio" aria-label="Cierre del servicio" style={{
-            flexShrink:0,background:"rgba(249,115,22,.14)",border:"1px solid rgba(249,115,22,.45)",
-            borderRadius:16,padding:"16px 12px",color:"#fb923c",fontWeight:800,
-            fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>
-            Cierre
+        {/* FIN-01 (2026-08-21 forensic audit) -- the end-of-service controls.
+            Until now the TRUE Finalizar was a bare 🌙 glyph at 45% opacity and
+            the button beside it -- bright orange, bordered, labelled "Cierre" --
+            only opened the READ-ONLY report. That hierarchy is exactly inverted
+            against the semantics, and it cost a real service: on 2026-08-20 the
+            owner pressed the labelled one, read a page headed "Cierre del
+            servicio", found no confirmation and left; service 480eca89 was never
+            finalized (0 closeout attempts, proven in the durable audit rows).
+
+            The earlier UAT-P3 pass tried to fix this by adding title/aria-label
+            to the moon. That cannot work here: the operator is on a tablet, so
+            there is no hover to surface a title and no screen reader to read an
+            aria-label. The meaning has to be VISIBLE. So the moon keeps its icon
+            but gains real text, takes the accent colour, and the report button
+            is renamed to what it actually is. Both keep their accessible names.
+
+            This wires to the SAME handler as before -> pre-flight scan ->
+            existing confirmation modal -> V3 close engine. No second Finalizar
+            path is created, and no backend behaviour changes. */}
+        <div style={{display:"flex",gap:10,flex:"0 1 auto",minWidth:0,alignItems:"stretch"}}>
+          <button data-testid="servicio-finalizar-btn" onClick={handleChiudiServizio}
+            title="Finalizar servicio" aria-label="Finalizar servicio" style={{
+            flex:"1 1 auto",minWidth:0,
+            background:"rgba(249,115,22,.16)",
+            border:"1.5px solid rgba(249,115,22,.55)",
+            borderRadius:16,
+            padding:"16px 14px",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:7,
+            color:"#fb923c",
+            fontWeight:800,fontSize:13,letterSpacing:".2px",
+            cursor:"pointer",whiteSpace:"nowrap",transition:"all .18s ease"}}>
+            <span aria-hidden="true" style={{fontSize:15}}>🌙</span>
+            <span>Finalizar servicio</span>
           </button>
-        )}
-        <button onClick={()=>{ setPinChange({tipo:"operador",step:1,viejo:"",nuevo:"",confirm:"",error:"",ok:false,loading:false}); setShowCambioPin(true); }} style={{
-          flexShrink:0,
-          background:"rgba(255,255,255,0.07)",
-          border:"1px solid rgba(255,255,255,0.12)",
-          borderRadius:16,
-          padding:"16px 14px",
-          display:"flex",alignItems:"center",justifyContent:"center",
-          color:"rgba(255,255,255,0.4)",
-          fontSize:18, cursor:"pointer", transition:"all .18s ease"}}
-          title="Cambiar PIN">
-          🔑
-        </button>
+          {onCloseout && (
+            <button data-testid="servicio-closeout-btn" onClick={onCloseout}
+              title="Resumen del servicio (solo lectura)" aria-label="Resumen del servicio (solo lectura)" style={{
+              flexShrink:0,background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.14)",
+              borderRadius:16,padding:"16px 12px",color:"rgba(255,255,255,0.62)",fontWeight:700,
+              fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>
+              Resumen
+            </button>
+          )}
+          <button onClick={()=>{ setPinChange({tipo:"operador",step:1,viejo:"",nuevo:"",confirm:"",error:"",ok:false,loading:false}); setShowCambioPin(true); }} style={{
+            flexShrink:0,
+            background:"rgba(255,255,255,0.07)",
+            border:"1px solid rgba(255,255,255,0.12)",
+            borderRadius:16,
+            padding:"16px 14px",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            color:"rgba(255,255,255,0.4)",
+            fontSize:18, cursor:"pointer", transition:"all .18s ease"}}
+            title="Cambiar PIN" aria-label="Cambiar PIN">
+            🔑
+          </button>
+        </div>
       </div>
       </>}
 
@@ -1729,7 +1747,9 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       {chiudiModal && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"#1a1a2e",border:"1.5px solid rgba(255,255,255,0.13)",borderRadius:20,padding:28,maxWidth:420,width:"100%",boxShadow:"0 8px 40px rgba(0,0,0,0.7)"}}>
-            <div style={{fontSize:22,fontWeight:900,color:"#fff",marginBottom:20}}>🌙 Cerrar servicio</div>
+            {/* FIN-01 -- the confirmation names the same action as the button
+                that opened it, so the operator can see the flow through. */}
+            <div style={{fontSize:22,fontWeight:900,color:"#fff",marginBottom:20}}>🌙 Finalizar servicio</div>
 
             {chiudiModal.loading ? (
               <div style={{color:"rgba(255,255,255,0.5)",textAlign:"center",padding:"24px 0"}}>Escaneando...</div>
