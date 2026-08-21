@@ -542,7 +542,7 @@ const css = `
 .mesa-modal-body{padding:18px 20px 22px}.mesa-close{width:38px;height:38px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#fff;font-size:21px;cursor:pointer}
 .mesa-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:16px}.mesa-stat{border:1px solid rgba(208,184,145,.17);border-radius:13px;padding:11px;background:rgba(255,255,255,.025)}.mesa-stat small{display:block;color:#9f9380;font-size:10px;font-weight:800;text-transform:uppercase}.mesa-stat strong{display:block;margin-top:4px;font-size:17px}
 .mesa-actions{display:flex;gap:8px;flex-wrap:wrap;margin:15px 0}.mesa-section{margin-top:18px}.mesa-section h3{margin:0 0 9px;color:#d9c8aa;font-size:12px;text-transform:uppercase;letter-spacing:.8px}
-.mesa-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(255,255,255,.065);padding:9px 2px;font-size:13px}.mesa-row:last-child{border-bottom:0}.mesa-muted{color:#978d7c}.mesa-chip{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800;color:#ddd2bf}
+.mesa-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(255,255,255,.065);padding:9px 2px;font-size:13px}.mesa-account-history-item{width:100%;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.065);color:inherit;font:inherit;cursor:pointer;text-align:left;min-height:44px}.mesa-account-history-item:hover{background:rgba(255,255,255,.045)}.mesa-row:last-child{border-bottom:0}.mesa-muted{color:#978d7c}.mesa-chip{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800;color:#ddd2bf}
 /* P1_D_LISTA_THEME_01 -- .mesa-row above is written for plain <div> rows
    nested inside an already-dark .mesa-modal (VerCuentaModal's payment-method
    list, etc.), so it never needed its own background/color/appearance reset.
@@ -625,7 +625,7 @@ const css = `
    Same weight/size as the title it replaces so the head never visually
    jumps; a plain button, not a new visual language. */
 .mesa-card-back{display:flex;align-items:center;gap:8px;background:none;border:none;padding:0;margin:0;font:inherit;font-weight:950;font-size:20px;color:inherit;cursor:pointer;text-align:left}
-.mesa-print-layer{display:none}.mesa-print-sheet{width:58mm;margin:0 auto;color:#000;background:#fff;font:12px/1.35 'DM Mono',monospace}.mesa-print-sheet h1,.mesa-print-sheet h2,.mesa-print-sheet p{margin:0}.mesa-print-sheet .sep{border-top:1px dashed #000;margin:8px 0}.mesa-print-row{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.mesa-print-row span:first-child{min-width:0;overflow-wrap:anywhere}.mesa-print-total{font-size:18px;font-weight:900;text-align:right;margin:8px 0}.mesa-print-center{text-align:center}.mesa-print-small{font-size:10px}
+.mesa-print-layer{display:none}.mesa-print-sheet{width:58mm;margin:0 auto;color:#000;background:#fff;font:12px/1.35 'DM Mono',monospace}.mesa-print-sheet h1,.mesa-print-sheet h2,.mesa-print-sheet p{margin:0}.mesa-print-sheet .sep{border-top:1px dashed #000;margin:8px 0}.mesa-print-row{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.mesa-print-row span:first-child{min-width:0;overflow-wrap:anywhere}.mesa-print-total{font-size:18px;font-weight:900;text-align:right;margin:8px 0}.mesa-print-summary{margin:4px 0}.mesa-print-summary .mesa-print-row{font-size:11px}.mesa-print-credit strong{font-weight:700}.mesa-print-accrued strong{font-weight:700}.mesa-print-center{text-align:center}.mesa-print-small{font-size:10px}
 @media(max-width:620px){.mesa-board{min-height:440px}.mesa-summary{grid-template-columns:1fr 1fr}.mesa-form-grid,.mesa-menu-grid{grid-template-columns:1fr}.mesa-methods{grid-template-columns:1fr}.mesa-modal-body{padding:15px}.mesa-modal-head{padding:14px 15px}}
 /* Phone: every modal in this component becomes a near-full-screen bottom
    sheet instead of a small floating card with dead space on all sides --
@@ -823,38 +823,112 @@ function equalShares(total, covers) {
   return Array.from({ length: count }, (_, index) => (base + (index < extra ? 1 : 0)) / 100);
 }
 
+// TKT-01 (2026-08-21 forensic audit) -- CHARGES AND CREDITS ARE NOT THE SAME
+// KIND OF ROW, and this renderer used to draw them as if they were.
+//
+// billDocument() appended the "Ya cobrado" credit into the very same `rows`
+// array as the item charges, and every row went through one identical
+// <span>label</span><strong>value</strong>. On the real 2026-08-20 Mesa 4 case
+// -- 101.00 already settled, then a second comanda of 27.50 -- the printed bill
+// read:
+//
+//     La Pulga            13,00 €
+//     Il Tulipano Nero    14,50 €
+//     Ya cobrado         101,00 €     <-- a CREDIT, drawn exactly like a charge
+//     ------------------------------
+//     PENDIENTE           27,50 €
+//
+// The rows scan as 128,50 € of charges above a total of 27,50 €. Nothing on the
+// paper distinguishes money owed from money already taken.
+//
+// `rows` is now CHARGES ONLY. Reconciliation lines live in `summary`, are drawn
+// in their own block below a separator, and a credit carries an explicit minus
+// sign. The arithmetic is untouched -- the same session.total / session.paid /
+// session.outstanding as before, only honestly labelled.
+// TKT-01 — the customer bill, as a pure function of the session so its economic
+// meaning is directly testable without a DOM.
+//
+// `rows` is CHARGES ONLY: the lines still owed. Anything already collected is a
+// CREDIT and goes in `summary`, which PrintSheet draws in its own block with an
+// explicit minus sign. When the table has paid something, the reconciliation
+// states all three numbers, so the pending figure is arrived at rather than
+// merely asserted:
+//
+//     Total consumido    128,50 €      (session.total)
+//     Ya cobrado       − 101,00 €      (session.paid, credit)
+//     PENDIENTE          27,50 €       (session.outstanding)
+//
+// Every number is the backend's own, unchanged — buildFloor already computes
+// total/paid/outstanding from table_order_lines minus payment_allocations. This
+// function only decides how they are laid out and labelled; it performs no
+// arithmetic of its own beyond reading `paid > 0`.
+export function buildBillDocument(session, tableNumber) {
+  const lines = (session?.lines || []).filter((line) => Number(line.remaining) > 0);
+  const hasPaid = Number(session?.paid) > 0;
+  return {
+    title: "CUENTA CLIENTE",
+    tableNumber,
+    rows: lines.map((line) => ({ label: line.description, value: euro(line.remaining) })),
+    summary: hasPaid ? [
+      { label: "Total consumido", value: euro(session.total) },
+      { label: "Ya cobrado", value: euro(session.paid), credit: true },
+    ] : [],
+    totalLabel: "PENDIENTE",
+    total: session?.outstanding,
+    note: hasPaid ? "Arriba, solo lo que queda por pagar." : "Cuenta completa de la mesa.",
+  };
+}
+
+function PrintSheet({ document, rows, summary, padding, boxShadow, keyPrefix }) {
+  return (
+    <div className="mesa-print-sheet" style={{ padding, ...(boxShadow ? { boxShadow } : {}) }}>
+      <h1 className="mesa-print-center" style={{ fontSize: 20 }}>LA DIECI</h1>
+      <p className="mesa-print-center" style={{ fontWeight: 900 }}>{document.title}</p>
+      <p className="mesa-print-center">MESA {document.tableNumber}</p>
+      <div className="sep" />
+      {rows.map((row, index) => (
+        <div className="mesa-print-row" key={`${keyPrefix}row-${row.label}-${index}`}>
+          <span>{row.label}</span><strong>{row.value}</strong>
+        </div>
+      ))}
+      {summary.length > 0 && <>
+        <div className="sep" />
+        <div className="mesa-print-summary">
+          {summary.map((row, index) => (
+            <div
+              className={`mesa-print-row ${row.credit ? "mesa-print-credit" : "mesa-print-accrued"}`}
+              key={`${keyPrefix}sum-${row.label}-${index}`}>
+              <span>{row.label}</span>
+              <strong>{row.credit ? `− ${row.value}` : row.value}</strong>
+            </div>
+          ))}
+        </div>
+      </>}
+      <div className="sep" />
+      {document.totalLabel && <div className="mesa-print-total">{document.totalLabel} {euro(document.total)}</div>}
+      {document.note && <p className="mesa-print-center" style={{ marginTop: 8 }}>{document.note}</p>}
+      <div className="sep" />
+      <p className="mesa-print-center mesa-print-small">Documento no fiscal · {new Date().toLocaleString("es-ES")}</p>
+    </div>
+  );
+}
+
 function PrintPreview({ document, onClose }) {
   if (!document) return null;
   const rows = Array.isArray(document.rows) ? document.rows : [];
+  const summary = Array.isArray(document.summary) ? document.summary : [];
   return <Modal title="Vista previa" subtitle="Ticket no fiscal · 58 mm" onClose={onClose} width={500}>
     <div style={{ background: "#e8e8e8", padding: 18, borderRadius: 14 }}>
-      <div className="mesa-print-sheet" style={{ padding: "5mm", boxShadow: "0 6px 26px rgba(0,0,0,.2)" }}>
-        <h1 className="mesa-print-center" style={{ fontSize: 20 }}>LA DIECI</h1>
-        <p className="mesa-print-center" style={{ fontWeight: 900 }}>{document.title}</p>
-        <p className="mesa-print-center">MESA {document.tableNumber}</p>
-        <div className="sep" />
-        {rows.map((row, index) => <div className="mesa-print-row" key={`${row.label}-${index}`}><span>{row.label}</span><strong>{row.value}</strong></div>)}
-        <div className="sep" />
-        {document.totalLabel && <div className="mesa-print-total">{document.totalLabel} {euro(document.total)}</div>}
-        {document.note && <p className="mesa-print-center" style={{ marginTop: 8 }}>{document.note}</p>}
-        <div className="sep" />
-        <p className="mesa-print-center mesa-print-small">Documento no fiscal · {new Date().toLocaleString("es-ES")}</p>
-      </div>
+      <PrintSheet document={document} rows={rows} summary={summary}
+        padding="5mm" boxShadow="0 6px 26px rgba(0,0,0,.2)" keyPrefix="" />
     </div>
     <div className="mesa-actions" style={{ justifyContent: "flex-end" }}>
       <button className="mesa-btn" onClick={onClose}>Cerrar</button>
       <button className="mesa-btn gold" onClick={() => window.print()}>🖨 Imprimir</button>
     </div>
     <div className="mesa-print-layer">
-      <div className="mesa-print-sheet" style={{ padding: "3mm" }}>
-        <h1 className="mesa-print-center" style={{ fontSize: 20 }}>LA DIECI</h1>
-        <p className="mesa-print-center" style={{ fontWeight: 900 }}>{document.title}</p>
-        <p className="mesa-print-center">MESA {document.tableNumber}</p><div className="sep" />
-        {rows.map((row, index) => <div className="mesa-print-row" key={`print-${row.label}-${index}`}><span>{row.label}</span><strong>{row.value}</strong></div>)}
-        <div className="sep" />{document.totalLabel && <div className="mesa-print-total">{document.totalLabel} {euro(document.total)}</div>}
-        {document.note && <p className="mesa-print-center" style={{ marginTop: 8 }}>{document.note}</p>}
-        <div className="sep" /><p className="mesa-print-center mesa-print-small">Documento no fiscal · {new Date().toLocaleString("es-ES")}</p>
-      </div>
+      <PrintSheet document={document} rows={rows} summary={summary}
+        padding="3mm" keyPrefix="print-" />
     </div>
   </Modal>;
 }
@@ -937,15 +1011,7 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
   const remainingLines = (session?.lines || []).filter((line) => Number(line.remaining) > 0);
   const paymentTotals = Object.entries(session?.paymentTotals || {}).filter(([, amount]) => Number(amount) !== 0);
 
-  const billDocument = () => ({
-    title: "CUENTA CLIENTE", tableNumber: table.number,
-    rows: [
-      ...remainingLines.map((line) => ({ label: line.description, value: euro(line.remaining) })),
-      ...(paymentTotals.length ? [{ label: "Ya cobrado", value: euro(session.paid) }] : []),
-    ],
-    totalLabel: "PENDIENTE", total: session.outstanding,
-    note: session.paid > 0 ? "Incluye únicamente lo que queda por pagar." : "Cuenta completa de la mesa.",
-  });
+  const billDocument = () => buildBillDocument(session, table.number);
   const splitDocument = () => ({
     title: "DIVISIÓN POR PERSONA", tableNumber: table.number,
     rows: shares.map((share, index) => ({ label: `Persona ${index + 1}`, value: euro(share) })),
@@ -1003,6 +1069,125 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
 // Thin wrapper for the non-compact (tablet/desktop) path -- unchanged
 // behavior, unchanged markup: VerCuentaBody's content inside the same
 // shared Modal it always rendered.
+// ACC-01 (2026-08-21 forensic audit) — ÚLTIMAS CUENTAS.
+//
+// A closed table used to disappear completely: `GET /floor` returns open
+// sessions only, so buildFloor gave it back as `status:'free', session:null`
+// and its account, comandas and payment history had nowhere left to render.
+// The rows were always intact — the operator simply had no way to look.
+//
+// This is the smallest surface that fixes that: a list of the last closed
+// tables, and the account of whichever one you pick. It is deliberately NOT the
+// future Economía report — no date range, no service picker, no totals across
+// tables. It answers exactly one question: "the table was just closed; what
+// happened on it?"
+//
+// STRICTLY READ-ONLY. It calls two GETs and renders. There is no payment
+// action, no reopen, no close, no print-to-collect — a settled table is
+// finished, and this only lets you look back at it.
+function UltimasCuentasModal({ onClose }) {
+  const [sessions, setSessions] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    mesaApi.recentClosedSessions({ limit: 15 })
+      .then((res) => { if (live) setSessions(res.sessions || []); })
+      .catch((err) => { if (live) setError(describeMesaError(err)); });
+    return () => { live = false; };
+  }, []);
+
+  const openAccount = async (session) => {
+    setSelected(session); setDetail(null); setError(""); setBusy(true);
+    try {
+      setDetail(await mesaApi.sessionAccount(session.tableSessionId));
+    } catch (err) {
+      setError(describeMesaError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const title = selected
+    ? `${selected.tableRef || "Mesa"} · cuenta cerrada`
+    : "Últimas cuentas cerradas";
+
+  return <Modal title={title} subtitle="Solo lectura" onClose={onClose} width={620}>
+    {error && <div className="mesa-banner mesa-error" style={{ marginBottom: 12 }}>{error}</div>}
+
+    {!selected && <>
+      {sessions === null && !error && <div className="mesa-muted" style={{ padding: "14px 2px", fontSize: 13 }}>Cargando…</div>}
+      {sessions !== null && sessions.length === 0 && (
+        <div className="mesa-muted" style={{ padding: "14px 2px", fontSize: 13 }}>Todavía no hay ninguna mesa cerrada.</div>
+      )}
+      {(sessions || []).map((session) => (
+        <button key={session.tableSessionId} className="mesa-row mesa-account-history-item"
+          data-testid="ultimas-cuentas-item" onClick={() => openAccount(session)}>
+          <span>
+            <strong>{session.tableRef || "Mesa"}</strong>
+            {session.coversTotal ? <span className="mesa-muted"> · {session.coversTotal} pers.</span> : null}
+          </span>
+          <span className="mesa-muted">{formatClockTime(session.closedAt)}</span>
+        </button>
+      ))}
+    </>}
+
+    {selected && <>
+      <button className="mesa-btn" data-testid="ultimas-cuentas-back"
+        onClick={() => { setSelected(null); setDetail(null); setError(""); }}>← Todas</button>
+      {busy && <div className="mesa-muted" style={{ padding: "14px 2px", fontSize: 13 }}>Cargando…</div>}
+      {detail && <div style={{ marginTop: 12 }}>
+        <div className="mesa-summary">
+          <div className="mesa-stat"><small>Total</small><strong>{euro(detail.account.total)}</strong></div>
+          <div className="mesa-stat"><small>Cobrado</small><strong style={{ color: "#65d995" }}>{euro(detail.account.paid)}</strong></div>
+          <div className="mesa-stat"><small>Pendiente</small><strong style={{ color: "#ffc65c" }}>{euro(detail.account.outstanding)}</strong></div>
+          <div className="mesa-stat"><small>Personas</small><strong>{detail.account.coversTotal ?? "—"}</strong></div>
+        </div>
+        <div className="mesa-section">
+          <h3>Cerrada</h3>
+          <div className="mesa-row">
+            <span>{formatClockTime(detail.account.openedAt)} → {formatClockTime(detail.closedAt)}</span>
+            <span className="mesa-muted">{detail.closedBy || ""}</span>
+          </div>
+        </div>
+        {detail.account.commands.length > 0 && <div className="mesa-section">
+          <h3>Comandas</h3>
+          {detail.account.commands.map((command) => (
+            <div className="mesa-row" key={command.id}>
+              <span>#{command.commandNumber} · {command.id}</span>
+              <strong>{euro(command.total)}</strong>
+            </div>
+          ))}
+        </div>}
+        {detail.account.lines.length > 0 && <div className="mesa-section">
+          <h3>Productos</h3>
+          {detail.account.lines.map((line) => (
+            <div className="mesa-row" key={line.id}>
+              <span>{line.description}</span><strong>{euro(line.amount)}</strong>
+            </div>
+          ))}
+        </div>}
+        {detail.account.payments.length > 0 && <div className="mesa-section">
+          <h3>Pagos</h3>
+          {detail.account.payments.map((payment) => (
+            <div className="mesa-row" key={payment.id}>
+              <span>
+                {formatClockTime(payment.createdAt)} ·{" "}
+                {METHODS.find((item) => item.id === payment.method)?.label || payment.method}
+                {payment.kind === "refund" ? " (devolución)" : ""}
+              </span>
+              <strong>{euro(payment.amount)}</strong>
+            </div>
+          ))}
+        </div>}
+      </div>}
+    </>}
+  </Modal>;
+}
+
 function VerCuentaModal({ table, onClose, onRefresh, onPrint }) {
   return <Modal title={`Mesa ${table.number} · Cuenta`} onClose={onClose}>
     <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} />
@@ -1763,6 +1948,8 @@ export default function TabMesa({
   const [settingsId, setSettingsId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showReservations, setShowReservations] = useState(false);
+  // ACC-01 — read-only history of already-closed table accounts.
+  const [showUltimasCuentas, setShowUltimasCuentas] = useState(false);
   const [reservationsFilterTableId, setReservationsFilterTableId] = useState(null);
   const [reservationEditor, setReservationEditor] = useState(null);
   const [printDocument, setPrintDocument] = useState(null);
@@ -2195,11 +2382,20 @@ export default function TabMesa({
       {canEdit && <button className={`mesa-btn ${editing ? "primary" : ""}`} data-testid="mesa-customize-toggle"
         title={editing ? "Los cambios ya se guardan solos; esto sale del modo" : undefined}
         onClick={() => setEditing((value) => { const next = !value; if (!next) { setSettingsId(null); setShowAdd(false); setMenuId(null); } return next; })}>{editing ? "✓ Listo" : "🛠 Personalizar sala"}</button>}
+      {/* ACC-01 — the way back to a table that has already been closed. It
+          lives in the dock beside the other floor-level actions rather than on
+          a table tile, because a closed table renders as FREE and overloading a
+          free table's tap would make opening a new one ambiguous. Read-only. */}
+      {!editing && <button className="mesa-btn" data-testid="mesa-ultimas-cuentas"
+        title="Ver la cuenta de una mesa ya cerrada" onClick={() => setShowUltimasCuentas(true)}>
+        🧾 Últimas cuentas
+      </button>}
       {/* Re-fetches the floor from the backend (load()). NOT an undo: it
           discards nothing, it pulls in whatever another device saved. Kept
           as-is; its meaning was verified, not guessed. */}
       <button className="mesa-btn icon" title="Actualizar el plano" aria-label="Actualizar el plano" onClick={() => load()}>↻</button>
     </div>}
+    {showUltimasCuentas && <UltimasCuentasModal onClose={() => setShowUltimasCuentas(false)} />}
     {menuTable && <TableContextPopup
       table={menuTable} canEdit={canEdit} editing={editing} canManageReservations={canManageReservations}
       onClose={() => setMenuId(null)}

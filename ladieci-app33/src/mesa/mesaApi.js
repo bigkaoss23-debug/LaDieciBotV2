@@ -59,6 +59,18 @@ export const mesaApi = Object.freeze({
   floor({ includeInactive = false } = {}) {
     return request("GET", `/floor${includeInactive ? "?includeInactive=true" : ""}`);
   },
+  // ACC-01 (2026-08-21 forensic audit) -- the two READ-ONLY reads that let an
+  // operator look back at a table they have just closed. `floor` returns open
+  // sessions only, so before these the account, the comandas and the payment
+  // history all vanished from the UI the instant the table closed (the durable
+  // rows were never touched -- only unreachable).
+  recentClosedSessions({ limit } = {}) {
+    const query = limit ? `?limit=${encodeURIComponent(String(limit))}` : "";
+    return request("GET", `/sessions/recent-closed${query}`);
+  },
+  sessionAccount(sessionId) {
+    return request("GET", `/sessions/${encodeURIComponent(sessionId)}/account`);
+  },
   openTable(tableId) {
     return request("POST", `/tables/${encodeURIComponent(tableId)}/open`, {});
   },
