@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { C, LOGO_RED_SRC, calcTotale as calcTotaleHelper } from '../constants';
 import { api, sb } from '../api';
+import EconomiaSnapshotPanel from './economia/EconomiaSnapshotPanel';
 
 // Legge il primo campo non-null tra le chiavi fornite — compatibilità multi-formato
 const getField = (obj, ...keys) => {
@@ -1313,6 +1314,14 @@ const EconomiaPage = ({onBack}) => {
       </div>
 
       <div style={{flex:1,padding:"14px 14px 40px",overflowY:"auto"}}>
+
+        {/* I-1 — the timestamp-windowed economic snapshot and the physical cash
+            count. Mounted FIRST and kept entirely self-contained: it reads the
+            backend's own /api/economy/v1 reader rather than any figure this
+            page derives, so the number an operator counts against is the one
+            the economic ledger actually holds. Everything below this panel is
+            the pre-existing row-based reporting and is untouched. */}
+        <EconomiaSnapshotPanel />
 
         {/* Filtro periodo — pill principali */}
         <div style={{display:"flex",gap:8,marginBottom:8,overflowX:"auto"}}>
