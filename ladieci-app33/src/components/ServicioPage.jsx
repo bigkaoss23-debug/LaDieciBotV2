@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { C, useWidth, blockedTels, MAX_PIZZE_ORA, LOGO_RED_SRC, genId, tot, calcTotale } from '../constants';
+import FinalizarReconciliationPanel from './servicio/FinalizarReconciliationPanel';
+import { economyApi } from '../economy/economyApi';
 import { sb, api, auth } from '../api';
 import { BACKEND_BASE_URL } from '../utils/backendBase';
 import { parseEstadoTerminalError } from '../utils/orderModifyError';
@@ -263,9 +265,22 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     }
   };
 
+  // Preflight-only failures. Spanish, and never alarming: the service close
+  // itself does not depend on this read.
+  const describeReconError = (e) => {
+    const code = e && e.code;
+    if (code === 'RECONCILIATION_NO_ACTIVE_SERVICE') return 'No hay ningún servicio abierto ahora mismo.';
+    if (code === 'RECONCILIATION_AMBIGUOUS_ACTIVE_SERVICE') return 'Hay más de un servicio activo; revísalo antes de finalizar.';
+    if (code === 'ECONOMY_READ_FORBIDDEN') return 'Tu perfil no tiene acceso a la economía.';
+    if (code === 'ECONOMY_UNAUTHENTICATED' || code === 'ECONOMY_SESSION_STALE') return 'Tu sesión ha caducado.';
+    if (code === 'ECONOMY_NETWORK_ERROR') return 'Sin conexión con el servidor.';
+    return 'Inténtalo de nuevo.';
+  };
+
   const handleChiudiServizio = async () => {
     // Step 1: scan → mostra modale
-    setChiudiModal({ loading: true, completati: null, attivi: [], blocking: { orders: 0, tables: 0 } });
+    // language-guard: allow-legacy chiudiModal/setChiudiModal are the existing Finalizar modal state identifiers, referenced verbatim, not new vocabulary
+    setChiudiModal({ loading: true, completati: null, attivi: [], blocking: { orders: 0, tables: 0 }, reconLoading: true });
     try {
       const scan = await api.get("scanServizio");
       setChiudiModal({
@@ -273,10 +288,25 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         completati: scan.completati,
         attivi: scan.attivi || [],
         blocking: scan.blocking || { orders: 0, tables: 0 },
+        reconLoading: true,
       });
     } catch(err) {
       setChiudiModal(null);
       notify("❌ Error al escanear servicio", C.rosso);
+      return;
+    }
+    // J-1 — the economic preflight, fetched separately and NEVER able to block
+    // the close: it is information the operator reads before confirming, not a
+    // precondition. No serviceSessionId is sent, so the backend resolves THE
+    // active service — the same one Finalizar will close — rather than the
+    // frontend guessing an id that could disagree with the action.
+    try {
+      const recon = await economyApi.reconciliation({});
+      // language-guard: allow-legacy chiudiModal/setChiudiModal are the existing Finalizar modal state identifiers, referenced verbatim, not new vocabulary
+      setChiudiModal(m => m ? { ...m, reconLoading: false, recon, reconError: null } : m);
+    } catch (e) {
+      // language-guard: allow-legacy chiudiModal/setChiudiModal are the existing Finalizar modal state identifiers, referenced verbatim, not new vocabulary
+      setChiudiModal(m => m ? { ...m, reconLoading: false, recon: null, reconError: describeReconError(e) } : m);
     }
   };
 
@@ -1762,6 +1792,16 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
                   {chiudiModal.completati?.conv > 0 ? ` · ${chiudiModal.completati.conv} conversaciones cerradas` : ""}
                 </div>
               </div>
+
+              {/* J-1 — the two economic scopes, side by side, above the
+                  existing pending-items block and the unchanged buttons. */}
+              <FinalizarReconciliationPanel
+                // language-guard: allow-legacy chiudiModal/setChiudiModal are the existing Finalizar modal state identifiers, referenced verbatim, not new vocabulary
+                data={chiudiModal.recon}
+                loading={chiudiModal.reconLoading}
+                // language-guard: allow-legacy chiudiModal/setChiudiModal are the existing Finalizar modal state identifiers, referenced verbatim, not new vocabulary
+                error={chiudiModal.reconError}
+              />
 
               {/* Attivi — operatore decide */}
               {chiudiModal.attivi.length > 0 ? (

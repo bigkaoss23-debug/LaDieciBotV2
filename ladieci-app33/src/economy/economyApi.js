@@ -72,6 +72,15 @@ export const economyApi = Object.freeze({
   snapshot({ preset, from, to, businessDate, asOf, serviceSessionId } = {}) {
     return request("GET", `/snapshot${qs({ preset, from, to, businessDate, asOf, serviceSessionId })}`);
   },
+  // J-1 — the Finalizar preflight. Read-only: it returns the closing service's
+  // own economy AND its Business Day reconciliation as two separate scopes,
+  // plus the cash count only if one exists for exactly that window. Omitting
+  // serviceSessionId asks the backend to resolve THE active service — the one
+  // Finalizar would close — so the preflight can never describe a different
+  // service than the action does.
+  reconciliation({ serviceSessionId } = {}) {
+    return request("GET", `/reconciliation${qs({ serviceSessionId })}`);
+  },
   listCashCounts({ from, to, limit } = {}) {
     return request("GET", `/cash-counts${qs({ from, to, limit })}`);
   },
