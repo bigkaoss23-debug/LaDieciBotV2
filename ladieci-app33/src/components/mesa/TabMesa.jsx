@@ -239,6 +239,25 @@ function reservationTimeLabel(reservation) {
   return madridFields(reservation.reservedAt).time;
 }
 
+// formatClockTime(value) -- ACC-01's Ultimas Cuentas modal (below) needs a
+// bare "HH:MM" for a session/payment timestamp that may legitimately be
+// absent (a just-opened session has no closedAt yet). It reuses the SAME
+// Madrid-timezone convention as reservationTimeLabel just above, so a closed
+// account reads in the identical clock the rest of Mesa already uses --
+// nothing new is invented here.
+//
+// madridFields itself is NOT null-safe for this purpose: its default param
+// turns undefined into "now", and it happily converts null into the Unix
+// epoch (both would print a plausible-looking wrong time instead of an
+// honest blank), and it throws on an unparsable string. All three cases are
+// guarded here explicitly rather than trusted to fall through.
+function formatClockTime(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return madridFields(date).time;
+}
+
 // Fill is a strict 1:1 function of physical state only -- green=free (nobody
 // seated, no relevant future booking), yellow=free-now-but-booked-tonight,
 // red=occupied (clients seated). Fill never changes with kitchen/order state;
@@ -2437,4 +2456,4 @@ export default function TabMesa({
   </div>;
 }
 
-export { equalShares, hasReadyOrder, css as mesaCss, resolveTablePositions, isRelevantReservation, responsiveTableSize, previewResponsiveTablePx, BOARD_WIDTH_REFERENCE, TABLE_MIN_SCALE, STATUS, tableState, bookedForToday, canEditMesaRoom, canManageMesaReservations };
+export { equalShares, hasReadyOrder, css as mesaCss, resolveTablePositions, isRelevantReservation, responsiveTableSize, previewResponsiveTablePx, BOARD_WIDTH_REFERENCE, TABLE_MIN_SCALE, STATUS, tableState, bookedForToday, canEditMesaRoom, canManageMesaReservations, UltimasCuentasModal };
