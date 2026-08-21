@@ -1786,10 +1786,22 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
             ) : (<>
               {/* Completati — sempre archiviati */}
               <div style={{background:"rgba(46,213,115,0.1)",border:"1px solid rgba(46,213,115,0.25)",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
-                <div style={{color:"#2ed573",fontWeight:700,fontSize:13,marginBottom:4}}>✅ Se archivarán y eliminarán</div>
+                {/* J-1 — this used to read "Se archivarán y eliminarán", which
+                    the V3 close does NOT do. It closes the Operational Service;
+                    orders, financial events and cash counts all survive it
+                    untouched, and an unresolved order becomes an incident with
+                    its real exposure rather than a deletion (UAT-P2-D, proven
+                    live 2026-08-20 when #999008 stayed POR_CONFIRMAR). Promising
+                    deletion on the one screen that also shows the economy would
+                    tell an operator their records are about to disappear.
+                    language-guard: allow-legacy chiudiModal is the existing Finalizar modal state identifier, referenced verbatim, not new vocabulary */}
+                <div data-testid="close-scope-note" style={{color:"#2ed573",fontWeight:700,fontSize:13,marginBottom:4}}>✅ Se cierra el servicio operativo</div>
                 <div style={{color:"rgba(255,255,255,0.7)",fontSize:13}}>
                   {(chiudiModal.completati?.ordini || 0)} órdenes completados
                   {chiudiModal.completati?.conv > 0 ? ` · ${chiudiModal.completati.conv} conversaciones cerradas` : ""}
+                </div>
+                <div data-testid="records-preserved-note" style={{color:"rgba(255,255,255,0.45)",fontSize:11,marginTop:5,lineHeight:1.45}}>
+                  Los registros económicos y los conteos de caja se conservan.
                 </div>
               </div>
 
