@@ -176,3 +176,138 @@ test("nothing in this panel claims to reset, archive or delete anything", async 
   }
   unmount(container, root);
 });
+
+// ===============================================================
+// J-2 — the stale cash count. A count is a fact at an instant.
+//
+// Reproduced from the real staging case of 2026-08-22: counted 65,00 € at
+// 13:35 against a recorded 65,00 €, then 51,00 € more came in and the day's
+// recorded cash became 116,00 €. The panel must NEVER print «-51,00 €».
+// ===============================================================
+
+const DAY22_FROM = "2026-08-22T02:00:00.000Z";
+const DAY22_TO = "2026-08-23T02:00:00.000Z";
+
+const STALE_COUNT = Object.freeze({
+  id: "10d61ed6-2d71-4421-8d73-ac3fd984eb5b",
+  countedAt: "2026-08-22T11:35:06.567Z", actor: "owner",
+  countedCash: 65, recordedCashReceiptsAtCount: 65, recordedCashReceiptsNow: 116,
+  note: null,
+  window: { from: DAY22_FROM, to: DAY22_TO, timezone: "Europe/Madrid", preset: "hoy" },
+  windowMatchesExactly: true, isCurrent: false, staleReason: "recorded_cash_receipts_changed",
+});
+
+// What the FIXED backend sends: the count reported, but not attached.
+const STALE_DATA = Object.freeze({
+  ...DATA,
+  businessDate: "2026-08-22",
+  reconciliation: {
+    ...DATA.reconciliation,
+    businessDate: "2026-08-22",
+    window: { from: DAY22_FROM, to: DAY22_TO, timezone: "Europe/Madrid", preset: "hoy" },
+    byMethod: { efectivo: 116, tarjeta: 0, bizum: 0, other: 0 },
+    cashReceipts: 116, serviceCount: 1,
+  },
+  cashCount: null,
+  latestCashCount: STALE_COUNT,
+  cashCountStatus: "stale",
+  cashCountStaleReason: "recorded_cash_receipts_changed",
+  cashCountCandidates: 1,
+  variance: null,
+});
+
+test("J-2 · a stale count NEVER renders the fabricated -51,00 € difference", async () => {
+  const { container, root } = await mount({ data: STALE_DATA });
+  // The bug, stated as an assertion.
+  expect(container.textContent).not.toContain("-51,00");
+  expect(container.textContent).not.toContain("51,00 €");
+  expect(byTestId(container, "day-variance")).toBeNull();
+  expect(byTestId(container, "day-counted")).toBeNull();
+  // And it must not have silently degraded into "no count exists" either.
+  expect(byTestId(container, "no-cash-count")).toBeNull();
+  unmount(container, root);
+});
+
+test("J-2 · the stale count is shown as history, with the figures that explain it", async () => {
+  const { container, root } = await mount({ data: STALE_DATA });
+  const box = byTestId(container, "stale-cash-count");
+  expect(box).not.toBeNull();
+  expect(box.textContent).toMatch(/No hay un conteo de caja actual/i);
+  const detail = byTestId(container, "stale-cash-count-detail").textContent;
+  expect(detail).toMatch(/65,00\s?€/);            // what was counted
+  expect(detail).toMatch(/116,00\s?€/);           // what is recorded now
+  expect(detail).toMatch(/13:35/);                // and when it was taken
+  // The operator is told what to do, and that closing is still allowed.
+  const guidance = byTestId(container, "stale-cash-count-guidance").textContent;
+  expect(guidance).toMatch(/registra un conteo nuevo/i);
+  expect(guidance).toMatch(/finalizar el servicio sin conteo/i);
+  // The count was never wrong, and the panel says so rather than implying it.
+  expect(guidance).toMatch(/sigue siendo válido para su momento/i);
+  unmount(container, root);
+});
+
+test("J-2 · a stale count is never worded as a loss or an accusation", async () => {
+  const { container, root } = await mount({ data: STALE_DATA });
+  const text = container.textContent || "";
+  for (const forbidden of [/descuadre/i, /faltante/i, /falta[nr]/i, /robo/i, /p[ée]rdida/i, /error del conteo/i]) {
+    expect(text).not.toMatch(forbidden);
+  }
+  // The day's economy is still reported in full — nothing is hidden.
+  expect(byTestId(container, "day-cash").textContent).toMatch(/116,00\s?€/);
+  unmount(container, root);
+});
+
+test("J-2 · a current count still shows its variance — the gate did not disable comparison", async () => {
+  const current = {
+    ...STALE_DATA,
+    cashCount: { ...STALE_COUNT, countedCash: 116, recordedCashReceiptsAtCount: 116, isCurrent: true, staleReason: null },
+    latestCashCount: { ...STALE_COUNT, countedCash: 116, recordedCashReceiptsAtCount: 116, isCurrent: true, staleReason: null },
+    cashCountStatus: "current", cashCountStaleReason: null, variance: 0,
+  };
+  const { container, root } = await mount({ data: current });
+  expect(byTestId(container, "stale-cash-count")).toBeNull();
+  expect(byTestId(container, "day-counted").textContent).toMatch(/116,00\s?€/);
+  expect(byTestId(container, "day-variance").textContent).toMatch(/0,00\s?€/);
+  unmount(container, root);
+});
+
+test("J-2 · a real shortfall against a CURRENT count is still reported", async () => {
+  const short = {
+    ...STALE_DATA,
+    cashCount: { ...STALE_COUNT, countedCash: 111, recordedCashReceiptsAtCount: 116, isCurrent: true, staleReason: null },
+    latestCashCount: { ...STALE_COUNT, countedCash: 111, recordedCashReceiptsAtCount: 116, isCurrent: true, staleReason: null },
+    cashCountStatus: "current", cashCountStaleReason: null, variance: -5,
+  };
+  const { container, root } = await mount({ data: short });
+  expect(byTestId(container, "day-variance").textContent).toMatch(/-5,00\s?€/);
+  unmount(container, root);
+});
+
+test("J-2 · with no count at all the panel still says exactly that", async () => {
+  const none = { ...STALE_DATA, cashCount: null, latestCashCount: null, cashCountStatus: "none", cashCountCandidates: 0, variance: null };
+  const { container, root } = await mount({ data: none });
+  expect(byTestId(container, "no-cash-count").textContent)
+    .toMatch(/No hay conteo de caja compatible para este per[íi]odo/i);
+  expect(byTestId(container, "stale-cash-count")).toBeNull();
+  expect(byTestId(container, "day-variance")).toBeNull();
+  unmount(container, root);
+});
+
+test("J-2 · a backend that predates the field cannot make the panel print a false difference", async () => {
+  // The deploy window: an older payload still attaches the count and sends the
+  // arithmetic variance. The panel can see the count was taken against 65,00 €
+  // while the day now records 116,00 €, and refuses the comparison.
+  const legacyPayload = {
+    ...STALE_DATA,
+    cashCount: STALE_COUNT,
+    latestCashCount: undefined,
+    cashCountStatus: undefined,
+    cashCountStaleReason: undefined,
+    variance: -51,
+  };
+  const { container, root } = await mount({ data: legacyPayload });
+  expect(container.textContent).not.toContain("-51,00");
+  expect(byTestId(container, "day-variance")).toBeNull();
+  expect(byTestId(container, "stale-cash-count")).not.toBeNull();
+  unmount(container, root);
+});

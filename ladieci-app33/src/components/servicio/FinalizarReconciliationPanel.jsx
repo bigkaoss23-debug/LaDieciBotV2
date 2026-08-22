@@ -23,6 +23,17 @@ import { C } from '../../constants';
 // says so plainly rather than showing 0,00 €, which would assert an agreement
 // nobody verified.
 //
+// A count also has to be CURRENT, not merely same-window. A count taken at
+// 13:35 against a recorded 65,00 € is a true fact about 13:35; if 51,00 € in
+// cash arrives afterwards the day's recorded cash becomes 116,00 €, and
+// subtracting one from the other would print «-51,00 €» — money that never
+// went missing, shown to the operator who counted correctly. So when the
+// backend reports the count as stale this panel shows it as HISTORY (its
+// time, its amount, and the figure it was taken against) and states plainly
+// that there is no current count, instead of a difference. Recording a new
+// count is offered as what fixes it; nothing here blocks Finalizar either
+// way, because a count has never been required to close.
+//
 // NOTHING HERE CLOSES ANYTHING. This is preflight information rendered above
 // the existing confirmation buttons, which are unchanged.
 // ===============================================================
@@ -85,8 +96,21 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
 
   const s = data.service;
   const r = data.reconciliation;
-  const count = data.cashCount;
-  const variance = data.variance;
+
+  // The backend is the authority on whether a count still describes this
+  // economy. The fallback covers only the deploy window in which a newer
+  // panel meets a backend that predates the field: there the panel can still
+  // SEE that the count was taken against a different recorded figure, and
+  // declines to render a comparison it knows is not one, rather than printing
+  // a difference that has no meaning.
+  const latest = data.latestCashCount || data.cashCount || null;
+  const status = data.cashCountStatus || (
+    !latest ? 'none'
+      : Number(latest.recordedCashReceiptsAtCount) !== Number(r.cashReceipts) ? 'stale'
+        : 'current'
+  );
+  const count = status === 'current' ? (data.cashCount || latest) : null;
+  const variance = count ? data.variance : null;
   const varianceTone = variance === null || variance === undefined
     ? 'rgba(255,255,255,0.5)' : variance === 0 ? C.verde : variance > 0 ? C.blu : C.orange;
 
@@ -128,7 +152,7 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
         <Row testId="day-collected" label="Cobrado" value={eur(r.collected)} tone={C.verde} strong />
         <Row testId="day-cash" label="Efectivo registrado" value={eur(r.cashReceipts)} />
 
-        {count ? (
+        {count && (
           <>
             <Row testId="day-counted" label="Conteo físico" value={eur(count.countedCash)} />
             <Row
@@ -142,7 +166,32 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
               El sistema todavía no incluye fondo inicial ni movimientos manuales de caja.
             </div>
           </>
-        ) : (
+        )}
+
+        {/* A count exists but the cash moved after it. It is shown as the
+            historical fact it is — never subtracted from a later total. */}
+        {status === 'stale' && latest && (
+          <div data-testid="stale-cash-count" style={{
+            background: 'rgba(255,171,0,0.07)', border: '1px solid rgba(255,171,0,0.24)',
+            borderRadius: 10, padding: '9px 11px', marginTop: 9,
+          }}>
+            <div style={{ color: '#ffab00', fontSize: 11.5, fontWeight: 700 }}>
+              No hay un conteo de caja actual
+            </div>
+            <div data-testid="stale-cash-count-detail" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 4, lineHeight: 1.5 }}>
+              El último conteo fue de {eur(latest.countedCash)} a las {shortWindow(latest.countedAt)},
+              cuando el efectivo registrado era {eur(latest.recordedCashReceiptsAtCount)}. Después
+              hubo movimientos en efectivo, y ahora el registrado es {eur(r.cashReceipts)}.
+            </div>
+            <div data-testid="stale-cash-count-guidance" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10.5, marginTop: 5, lineHeight: 1.45 }}>
+              Ese conteo sigue siendo válido para su momento, por eso no se compara con el total
+              actual. Para ver una diferencia, registra un conteo nuevo. También puedes finalizar
+              el servicio sin conteo.
+            </div>
+          </div>
+        )}
+
+        {status === 'none' && (
           <div data-testid="no-cash-count" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11.5, marginTop: 7 }}>
             No hay conteo de caja compatible para este período.
           </div>
