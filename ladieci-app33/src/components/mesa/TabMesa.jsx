@@ -4,7 +4,7 @@ import { createMesaRequestId, describeMesaError, mesaApi } from "../../mesa/mesa
 import { normalizeOrderLine } from "../../menu/normalizeOrderLine";
 import OrderLineView from "../order/OrderLineView";
 import HybridFloorScene, { hybridSceneCss } from "./HybridFloorScene";
-import { groupTicketLines } from "./paymentHubTicket";
+import { groupTicketLines, selectionTotals, personShares, amountForPersons } from "./paymentHubTicket";
 import {
   ROOM_Y_MIN, ROOM_Y_MAX, sceneGeometry, tableFootprint, tableGeometry, unprojectScreenPoint,
 } from "./hybridScene";
@@ -575,6 +575,35 @@ const css = `
 .mesa-hub-desc{flex:1 1 auto;min-width:0;color:#f4ecdd;overflow-wrap:anywhere}
 .mesa-hub-amount{flex:0 0 auto;font-weight:800;color:#f4ecdd}
 .mesa-hub-empty{color:#978d7c;font-size:13px;padding:10px 0}
+/* V1.1 — the ticket doubles as the product picker while Por productos is on. */
+/* break-word, not anywhere: a product name must wrap between words, never
+   mid-word ("Margherit / a Classica" on a bill a guest is reading). */
+.mesa-hub-desc{display:flex;flex-direction:column;gap:1px;flex:1 1 auto;min-width:0;overflow-wrap:break-word}
+.mesa-hub-name{color:#f4ecdd}
+.mesa-hub-alias{color:#978d7c;font-size:11.5px}
+.mesa-hub-line.paid .mesa-hub-name,.mesa-hub-line.paid .mesa-hub-amount{color:#8d8474}
+.mesa-hub-paid-tag{flex:0 0 auto;border:1px solid rgba(101,217,149,.34);color:#65d995;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.3px}
+.mesa-hub-pickhint{color:#d7a84b;font-size:11.5px;margin:-4px 0 8px}
+.mesa-hub-ticket.picking{border-color:rgba(215,168,75,.34)}
+.mesa-hub-line.selectable{width:100%;-webkit-appearance:none;appearance:none;font:inherit;text-align:left;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.06);border-radius:10px;cursor:pointer;padding:9px 6px;min-height:46px}
+.mesa-hub-line.selectable:hover:not(:disabled){background:rgba(255,255,255,.04)}
+.mesa-hub-line.selectable:disabled{cursor:not-allowed}
+.mesa-hub-line.selectable.selected{background:rgba(215,168,75,.12);border-bottom-color:rgba(215,168,75,.3)}
+.mesa-hub-check{flex:0 0 auto;width:19px;height:19px;border:1px solid rgba(255,255,255,.22);border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#211707}
+.mesa-hub-line.selected .mesa-hub-check{background:#d7a84b;border-color:#d7a84b}
+.mesa-hub-line.paid .mesa-hub-check{opacity:.25}
+/* The three ways to pay a part of the bill. */
+.mesa-hub-modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.mesa-hub-mode{padding:10px 6px;border:1px solid rgba(255,255,255,.10);border-radius:11px;background:rgba(255,255,255,.03);color:#efe6d5;font:inherit;font-size:12.5px;font-weight:820;cursor:pointer;line-height:1.2}
+.mesa-hub-mode:hover:not(:disabled){background:rgba(255,255,255,.07)}
+.mesa-hub-mode:disabled{opacity:.35;cursor:not-allowed}
+.mesa-hub-mode.active{border-color:#d7a84b;background:rgba(215,168,75,.13);color:#f8ecd2}
+.mesa-hub-selected{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px;padding:11px 12px;border-radius:11px;background:rgba(255,255,255,.04);color:#cfc4b0;font-size:13px}
+.mesa-hub-selected strong{color:#f8ecd2;font-size:20px;font-weight:950}
+.mesa-hub-persons{display:flex;flex-wrap:wrap;gap:8px}
+.mesa-hub-person{min-width:52px;min-height:48px;flex:1 1 52px;border:1px solid rgba(255,255,255,.12);border-radius:11px;background:rgba(255,255,255,.035);color:#efe6d5;font:inherit;font-size:16px;font-weight:900;cursor:pointer}
+.mesa-hub-person:hover{background:rgba(255,255,255,.07)}
+.mesa-hub-person.active{border-color:#d7a84b;background:rgba(215,168,75,.15);color:#f8ecd2}
 .mesa-hub-totals{border-top:1px dashed rgba(255,255,255,.14);margin-top:8px;padding-top:10px}
 .mesa-hub-total-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:4px 0;font-size:14px;color:#e6dcc9}
 .mesa-hub-total-row strong{font-weight:800}
@@ -606,12 +635,13 @@ const css = `
 .mesa-hub-choice-chevron{flex:0 0 auto;color:#978d7c;font-size:19px}
 /* The shared .mesa-methods collapses to one column under 620px. The approved
    hub keeps all three side by side on the phone, icon over label. Scoped to
-   the drawer and higher-specificity, so PaymentModal's own picker keeps the
-   stacked phone layout it has always had. */
+   the drawer and higher-specificity, so any other consumer of .mesa-methods
+   keeps the stacked phone layout it has always had. */
 .mesa-hub-drawer .mesa-methods{grid-template-columns:repeat(3,1fr)}
 .mesa-hub-drawer .mesa-method{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:70px;padding:11px 5px;font-size:12.5px;line-height:1.2;text-align:center}
 .mesa-hub-drawer .mesa-method-icon{font-size:19px;line-height:1}
 .mesa-hub-confirm{width:100%;min-height:48px;font-size:15px}
+.mesa-hub-back{margin-bottom:14px}
 .mesa-hub-soon{display:flex;flex-direction:column;gap:5px}
 .mesa-hub-soon strong{color:#d7a84b;font-size:13px}
 .mesa-hub-soon span{color:#978d7c;font-size:12.5px;line-height:1.5}
@@ -1012,55 +1042,6 @@ function PrintPreview({ document, onClose }) {
   </Modal>;
 }
 
-function PaymentModal({ table, mode, onClose, onPaid, initialMethod = "efectivo" }) {
-  const session = table.session;
-  const availableLines = session.lines.filter((line) => Number(line.remaining) > 0);
-  const [method, setMethod] = useState(initialMethod);
-  const [amount, setAmount] = useState(mode === "custom_amount" ? "" : String(session.nextEqualShare || ""));
-  const [coversSettled, setCoversSettled] = useState(mode === "full" ? session.coversRemaining : 1);
-  const [lineIds, setLineIds] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  // Stable across a network retry: if the first request committed but its reply
-  // was lost, the backend replays the same transaction instead of charging twice.
-  const requestIdRef = useRef(createMesaRequestId("pay"));
-  const selectedTotal = availableLines.filter((line) => lineIds.includes(line.id)).reduce((sum, line) => sum + Number(line.remaining), 0);
-  const displayedAmount = mode === "full" ? session.outstanding : mode === "equal_split" ? session.nextEqualShare : mode === "item_selection" ? selectedTotal : Number(amount || 0);
-  const modeTitle = { full: "Cobrar cuenta completa", equal_split: "Pago a la romana", item_selection: "Cobrar productos", custom_amount: "Cobrar importe libre" }[mode];
-
-  const submit = async () => {
-    if (mode === "item_selection" && lineIds.length === 0) { setError("Selecciona al menos un producto."); return; }
-    if (!(displayedAmount > 0) || displayedAmount > Number(session.outstanding) + 0.001) { setError("El importe no es válido."); return; }
-    setBusy(true); setError("");
-    try {
-      const result = await mesaApi.pay(session.id, {
-        paymentMethod: method,
-        mode,
-        amount: mode === "custom_amount" ? Number(amount) : undefined,
-        coversSettled: mode === "full" ? session.coversRemaining : Number(coversSettled),
-        lineIds: mode === "item_selection" ? lineIds : undefined,
-        clientRequestId: requestIdRef.current,
-      });
-      await onPaid(result, method);
-    } catch (err) { setError(describeMesaError(err)); setBusy(false); }
-  };
-
-  return <Modal title={modeTitle} subtitle={`${table.name} · pendiente ${euro(session.outstanding)}`} onClose={busy ? undefined : onClose} width={610}>
-    {mode === "equal_split" && <div className="mesa-banner">Quedan <strong>{session.coversRemaining}</strong> personas. Esta cuota es de <strong>{euro(session.nextEqualShare)}</strong>; los céntimos se ajustan automáticamente en la última cuota.</div>}
-    {mode === "item_selection" && <div className="mesa-section"><h3>Productos pendientes</h3><div className="mesa-lines">
-      {availableLines.map((line) => <label className="mesa-line-check" key={line.id}>
-        <input type="checkbox" checked={lineIds.includes(line.id)} onChange={(event) => setLineIds((current) => event.target.checked ? [...current, line.id] : current.filter((id) => id !== line.id))} />
-        <span>{line.description}</span><strong>{euro(line.remaining)}</strong>
-      </label>)}
-    </div></div>}
-    {mode === "custom_amount" && <div className="mesa-section"><label className="mesa-label">Importe a cobrar</label><input className="mesa-input" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value.replace(",", "."))} placeholder="0,00" /></div>}
-    {(mode === "item_selection" || mode === "custom_amount") && <div className="mesa-section"><label className="mesa-label">Personas que quedan saldadas con este pago</label><input className="mesa-input" type="number" min="0" max={session.coversRemaining} value={coversSettled} onChange={(event) => setCoversSettled(event.target.value)} /></div>}
-    <div className="mesa-section"><h3>Método de este pago</h3><div className="mesa-methods">{METHODS.map((item) => <button key={item.id} className={`mesa-method ${method === item.id ? "active" : ""}`} style={{ "--mc": item.color }} onClick={() => setMethod(item.id)}>{item.icon} {item.label}</button>)}</div></div>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 18 }}><div><span className="mesa-muted">A cobrar</span><div style={{ fontSize: 24, fontWeight: 950 }}>{euro(displayedAmount)}</div></div><button className="mesa-btn green" disabled={busy} onClick={submit}>{busy ? "Registrando…" : "Confirmar cobro"}</button></div>
-    {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
-  </Modal>;
-}
-
 // VerCuentaModal -- the ONLY financial surface. Total/Cobrado/Pendiente,
 // payment actions, printable tickets, Pendiente de pago. It never creates or
 // lists comandas (that's MesaWorkspace, which opens this by button, not the
@@ -1074,7 +1055,7 @@ function PaymentModal({ table, mode, onClose, onPaid, initialMethod = "efectivo"
 // "Dividir por persona" print would need, so the underlying computation
 // (equalShares) and this read-only preview survive; only its printed title
 // changes from "A LA ROMANA" to the neutral "DIVISIÓN POR PERSONA". The
-// equal_split PAYMENT mode itself is untouched at the API/PaymentModal level
+// equal_split PAYMENT mode itself is untouched at the API/RPC level
 // -- no backend or ledger change, only this entry point is gone.
 //
 // MESA_NAV_CONSOLIDATION_01 -- VerCuentaBody below holds every bit of this
@@ -1098,50 +1079,63 @@ const ICON_PENCIL = <><path d="M4 20h4L20 8l-4-4L4 16z" /><path d="M14.5 5.5 18.
 const ICON_PRINTER = <><path d="M7 9V3.5h10V9" /><rect x="3.5" y="9" width="17" height="7.5" rx="2" /><rect x="7" y="15" width="10" height="5.5" rx="1" /></>;
 
 function VerCuentaBody({ table, onRefresh, onPrint }) {
-  // PAYMENT HUB MESA V1 — the approved surface. One hierarchy, top to bottom:
-  // the ticket, three actions, ONE contextual drawer, and printing as a
-  // secondary action. Nothing else belongs here: no dashboard, no KPI, no
-  // Business Day, no Cash Count, no analytics, no economic timeline.
+  // PAYMENT HUB MESA V1.1 — the approved V1 surface, with the redundant hops
+  // taken out of it. Layout, colours, typography and the three primary actions
+  // are unchanged; what changed is how few taps each one costs.
   //
-  // WHAT CHANGED IS THE SURFACE, NOT THE MONEY. Every charge still goes
-  // through the same mesaApi.pay modes with the same arguments as before
-  // ("full" / "item_selection" / "custom_amount"), the partial flows still
-  // open the same unmodified PaymentModal, and Total / Ya cobrado / Resta por
-  // pagar are read straight off session.total / session.paid /
-  // session.outstanding. No total is re-derived in this component.
+  // Pago parcial now offers EXACTLY three ways, and no more:
+  //   POR PRODUCTOS  the ticket above becomes the picker. There is no second
+  //                  dialog listing the same products again — you tap the
+  //                  lines you are charging, right where you are reading them.
+  //   POR PERSONAS   splits the OUTSTANDING balance across the table's real
+  //                  remaining covers. Nothing else: not the lifecycle, not
+  //                  the kitchen, not the close, not the ticket items.
+  //   IMPORTE LIBRE  a number and a method. It no longer asks how many people
+  //                  it settles, because a free amount does not know.
   //
-  // "Cobrar todo" is inline because the mockup asks for one step: amount,
-  // method, confirm. Its request body is byte-identical to the one
-  // PaymentModal builds for mode "full", including the stable clientRequestId
-  // that makes a retry replay instead of double-charging.
+  // THE MONEY IS THE SERVER'S. Every charge is still one mesa_post_payment_v1
+  // call in a mode Mesa already had. Por productos sends the REAL line ids and
+  // the server sums those lines' own remaining; Por personas and Importe libre
+  // send custom_amount. Nothing here computes what will be charged — it only
+  // computes what the operator is shown before they confirm.
   //
-  // "Descuento" is present and deliberately inert — the discount engine is a
-  // later slice, and a button that silently does nothing is worse than one
-  // that says so.
+  // COVERS ARE A PAYMENT DETAIL, NOT A HEADLINE. covers_settled exists only so
+  // "por personas" can mean something; it is deliberately absent from the
+  // summary (no "Personas 0/2"), and the two modes that cannot know how many
+  // people they settle send 0 rather than silently consuming a share.
   const session = table.session;
   const [action, setAction] = useState(null);
-  const [method, setMethod] = useState("efectivo");
   const [partialMode, setPartialMode] = useState(null);
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+  const [persons, setPersons] = useState(null);
+  const [freeAmount, setFreeAmount] = useState("");
+  const [method, setMethod] = useState("efectivo");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // One id per opening of the drawer, exactly as PaymentModal mints one per
-  // mount: stable across a failed retry, fresh for a genuinely new charge.
+  // One id per opened charge: stable across a failed retry so the backend
+  // replays instead of double-charging, fresh for a genuinely new payment.
   const requestIdRef = useRef(createMesaRequestId("pay"));
 
   const ticketRows = groupTicketLines(session?.lines);
-  const remainingLines = (session?.lines || []).filter((line) => Number(line.remaining) > 0);
   const outstanding = Number(session?.outstanding) || 0;
+  const coversRemaining = Number(session?.coversRemaining) || 0;
   const isOpen = table.status === "open";
   const canCharge = isOpen && outstanding > 0;
+  const picking = action === "pago_parcial" && partialMode === "productos";
+  const selection = selectionTotals(ticketRows, selectedKeys);
+  const shares = personShares(outstanding, coversRemaining);
+  const personsAmount = persons ? amountForPersons(outstanding, coversRemaining, persons) : 0;
+  const freeValue = Number(String(freeAmount).replace(",", "."));
 
   const billDocument = () => buildBillDocument(session, table.number);
+  const resetDrawer = () => {
+    setPartialMode(null); setSelectedKeys(new Set()); setPersons(null); setFreeAmount("");
+  };
   const paid = async (result, usedMethod) => {
     const outstandingAfter = result.outstandingAfter == null
       ? Math.max(0, Math.round((Number(session.outstanding) - Number(result.amount)) * 100) / 100)
       : Number(result.outstandingAfter);
-    setPartialMode(null);
-    setAction(null);
-    setBusy(false);
+    setAction(null); resetDrawer(); setBusy(false);
     onPrint({
       title: "RECIBO DE PAGO", tableNumber: table.number,
       rows: [
@@ -1150,37 +1144,61 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
         { label: "Queda por pagar", value: euro(outstandingAfter) },
       ],
       totalLabel: "PAGADO", total: result.amount,
-      // UAT-P3 -- paying does NOT close the table session; the copy says what
-      // was actually done and what is still pending.
+      // UAT-P3 -- paying does NOT close the table session.
       note: outstandingAfter === 0 ? "Cuenta pagada. Cierra la mesa para liberarla." : "Pago parcial registrado.",
     });
     await onRefresh();
   };
-
-  // Same call PaymentModal makes for mode "full" -- same session id, same
-  // method, same coversSettled, same idempotency key.
-  const submitFull = async () => {
-    if (!(outstanding > 0)) { setError("El importe no es válido."); return; }
+  const charge = async (body) => {
     setBusy(true); setError("");
     try {
-      const result = await mesaApi.pay(session.id, {
-        paymentMethod: method,
-        mode: "full",
-        coversSettled: session.coversRemaining,
-        clientRequestId: requestIdRef.current,
-      });
+      const result = await mesaApi.pay(session.id, { ...body, clientRequestId: requestIdRef.current });
       await paid(result, method);
     } catch (err) { setError(describeMesaError(err)); setBusy(false); }
   };
 
+  // Mode "full" is byte-identical to what Mesa has always sent.
+  const submitFull = () => {
+    if (!(outstanding > 0)) { setError("El importe no es válido."); return; }
+    return charge({ paymentMethod: method, mode: "full", coversSettled: session.coversRemaining });
+  };
+  // The server recomputes the amount from these very ids before charging.
+  // coversSettled 0: choosing products says nothing about how many people ate.
+  const submitProducts = () => {
+    if (selection.lineIds.length === 0) { setError("Selecciona al menos un producto."); return; }
+    return charge({ paymentMethod: method, mode: "item_selection", lineIds: selection.lineIds, coversSettled: 0 });
+  };
+  // The ONE place covers mean anything: N shares of the outstanding balance,
+  // and N covers marked settled so the next split knows what is left.
+  const submitPersons = () => {
+    if (!persons || !(personsAmount > 0)) { setError("Elige cuántas personas pagan."); return; }
+    return charge({ paymentMethod: method, mode: "custom_amount", amount: personsAmount, coversSettled: persons });
+  };
+  // coversSettled 0: a free amount cannot know whom it settles, and must not
+  // quietly consume somebody's share.
+  const submitFree = () => {
+    if (!(freeValue > 0) || freeValue > outstanding + 0.001) { setError("El importe no es válido."); return; }
+    return charge({ paymentMethod: method, mode: "custom_amount", amount: freeValue, coversSettled: 0 });
+  };
+
   const openAction = (next) => {
-    setError("");
-    if (next === "cobrar_todo" && action !== "cobrar_todo") {
-      // A new charge gets a new idempotency key; a retry inside the same open
-      // drawer keeps the old one.
-      requestIdRef.current = createMesaRequestId("pay");
-    }
+    setError(""); resetDrawer();
+    if (action !== next) requestIdRef.current = createMesaRequestId("pay");
     setAction((current) => (current === next ? null : next));
+  };
+  const openPartial = (next) => {
+    setError(""); setSelectedKeys(new Set()); setPersons(null); setFreeAmount("");
+    requestIdRef.current = createMesaRequestId("pay");
+    setPartialMode((current) => (current === next ? null : next));
+  };
+  const toggleRow = (row) => {
+    if (row.paidInFull) return;
+    setError("");
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(row.key)) next.delete(row.key); else next.add(row.key);
+      return next;
+    });
   };
 
   const methodPicker = (
@@ -1197,32 +1215,51 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
       </div>
     </div>
   );
+  const confirmButton = (onClick, label) => (
+    <button type="button" className="mesa-btn green mesa-hub-confirm" disabled={busy} onClick={onClick}>
+      {busy ? "Registrando…" : label}
+    </button>
+  );
 
   return <div className="mesa-hub" data-testid="mesa-payment-hub">
 
-    {/* ── 2. RESUMEN DEL TICKET ─────────────────────────────────────────── */}
-    <section className="mesa-hub-ticket" data-testid="mesa-hub-ticket">
+    {/* ── RESUMEN DEL TICKET — and, while Por productos is active, the picker
+        itself. One list, read and tapped in the same place. ─────────────── */}
+    <section className={`mesa-hub-ticket${picking ? " picking" : ""}`} data-testid="mesa-hub-ticket">
       <h3 className="mesa-hub-ticket-title">Resumen del ticket</h3>
-      {/* Two different empty states, because they mean different things. A
-          session can legitimately carry a total with no itemised lines yet,
-          and saying "nothing in the account" directly above "Total 24,50 €"
-          would be telling the operator something the next line contradicts. */}
+      {picking && <div className="mesa-hub-pickhint" data-testid="mesa-hub-pick-hint">Toca los productos que vas a cobrar.</div>}
       {ticketRows.length === 0
         ? <div className="mesa-hub-empty" data-testid="mesa-hub-ticket-empty">
+            {/* A session can carry a total with no itemised lines; saying
+                "nothing in the account" above "Total 24,50 €" would be a lie. */}
             {Number(session?.total) > 0
               ? "El detalle por producto todavía no está disponible."
               : "Todavía no hay nada en la cuenta."}
           </div>
         : <div className="mesa-hub-lines">
-            {ticketRows.map((row) => (
-              <div className="mesa-hub-line" key={row.key} data-testid="mesa-hub-line">
+            {ticketRows.map((row) => {
+              const selected = selectedKeys.has(row.key);
+              const inner = <>
                 <span className="mesa-hub-qty">{row.quantity}</span>
-                <span className="mesa-hub-desc">{row.description}</span>
+                <span className="mesa-hub-desc">
+                  <span className="mesa-hub-name">{row.label.primary}</span>
+                  {row.label.secondary && <small className="mesa-hub-alias">{row.label.secondary}</small>}
+                </span>
+                {row.paidInFull && <span className="mesa-hub-paid-tag" data-testid="mesa-hub-paid-tag">Pagado</span>}
                 <strong className="mesa-hub-amount">{euro(row.amount)}</strong>
-              </div>
-            ))}
+              </>;
+              if (!picking) {
+                return <div className={`mesa-hub-line${row.paidInFull ? " paid" : ""}`} key={row.key} data-testid="mesa-hub-line">{inner}</div>;
+              }
+              return <button type="button" key={row.key} data-testid="mesa-hub-line"
+                data-selected={selected ? "true" : "false"}
+                className={`mesa-hub-line selectable${selected ? " selected" : ""}${row.paidInFull ? " paid" : ""}`}
+                disabled={row.paidInFull} aria-pressed={selected} onClick={() => toggleRow(row)}>
+                <span className="mesa-hub-check" aria-hidden="true">{selected ? "✓" : ""}</span>
+                {inner}
+              </button>;
+            })}
           </div>}
-      {/* The three authoritative figures, straight from the session. */}
       <div className="mesa-hub-totals">
         <div className="mesa-hub-total-row" data-testid="mesa-hub-total">
           <span>Total</span><strong>{euro(session?.total)}</strong>
@@ -1237,7 +1274,6 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
     </section>
 
     {isOpen && <>
-      {/* ── 3. EXACTLY THREE PRIMARY ACTIONS ───────────────────────────── */}
       <div className="mesa-hub-actions" data-testid="mesa-hub-actions">
         <button type="button" className={`mesa-hub-action ${action === "cobrar_todo" ? "active" : ""}`}
           data-testid="mesa-hub-cobrar-todo" disabled={!canCharge} onClick={() => openAction("cobrar_todo")}>
@@ -1253,7 +1289,6 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
         </button>
       </div>
 
-      {/* ── 4. ONE CONTEXTUAL DRAWER, never more ───────────────────────── */}
       {action && <div className="mesa-hub-drawer" data-testid="mesa-hub-drawer">
 
         {action === "cobrar_todo" && <div data-testid="mesa-hub-drawer-cobrar-todo">
@@ -1262,41 +1297,62 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
             <div className="mesa-hub-bigamount" data-testid="mesa-hub-full-amount">{euro(outstanding)}</div>
           </div>
           {methodPicker}
-          <button type="button" className="mesa-btn green mesa-hub-confirm" disabled={busy} onClick={submitFull}>
-            {busy ? "Registrando…" : "Confirmar cobro"}
-          </button>
+          {confirmButton(submitFull, "Confirmar cobro")}
         </div>}
 
         {action === "pago_parcial" && <div data-testid="mesa-hub-drawer-pago-parcial">
-          {/* Both entries reuse the existing, unmodified PaymentModal — the
-              same line picker and the same free-amount field Mesa already
-              had, with the method chosen here carried in. */}
-          <div className="mesa-hub-choices">
-            <button type="button" className="mesa-hub-choice" data-testid="mesa-hub-elegir-productos"
-              disabled={remainingLines.length === 0} onClick={() => setPartialMode("item_selection")}>
-              <HubIcon d={ICON_BASKET} size={22} />
-              <span className="mesa-hub-choice-text">
-                <strong>Elegir productos</strong>
-                <small>Selecciona qué cobrar</small>
-              </span>
-              <span className="mesa-hub-choice-chevron" aria-hidden="true">›</span>
-            </button>
-            <button type="button" className="mesa-hub-choice" data-testid="mesa-hub-importe-libre"
-              onClick={() => setPartialMode("custom_amount")}>
-              <HubIcon d={ICON_PENCIL} size={22} />
-              <span className="mesa-hub-choice-text">
-                <strong>Importe libre</strong>
-                <small>Introduce un importe</small>
-              </span>
-              <span className="mesa-hub-choice-chevron" aria-hidden="true">›</span>
-            </button>
+          {/* Exactly three ways. No more. */}
+          <div className="mesa-hub-modes" data-testid="mesa-hub-partial-modes">
+            <button type="button" className={`mesa-hub-mode ${partialMode === "productos" ? "active" : ""}`}
+              data-testid="mesa-hub-mode-productos" onClick={() => openPartial("productos")}>Por productos</button>
+            <button type="button" className={`mesa-hub-mode ${partialMode === "personas" ? "active" : ""}`}
+              data-testid="mesa-hub-mode-personas" disabled={shares.length === 0}
+              onClick={() => openPartial("personas")}>Por personas</button>
+            <button type="button" className={`mesa-hub-mode ${partialMode === "libre" ? "active" : ""}`}
+              data-testid="mesa-hub-mode-libre" onClick={() => openPartial("libre")}>Importe libre</button>
           </div>
-          {methodPicker}
+
+          {partialMode === "productos" && <div data-testid="mesa-hub-partial-productos">
+            <div className="mesa-hub-selected" data-testid="mesa-hub-selected-total">
+              <span>A cobrar</span><strong>{euro(selection.amount)}</strong>
+            </div>
+            {methodPicker}
+            {confirmButton(submitProducts, "Confirmar cobro")}
+          </div>}
+
+          {partialMode === "personas" && <div data-testid="mesa-hub-partial-personas">
+            <div className="mesa-hub-field">
+              <div className="mesa-hub-field-label">¿Cuántas personas pagan?</div>
+              <div className="mesa-hub-persons" data-testid="mesa-hub-person-options">
+                {shares.map((_, index) => {
+                  const n = index + 1;
+                  return <button key={n} type="button" data-testid={`mesa-hub-person-${n}`}
+                    className={`mesa-hub-person ${persons === n ? "active" : ""}`}
+                    aria-pressed={persons === n} onClick={() => { setError(""); setPersons(n); }}>{n}</button>;
+                })}
+              </div>
+            </div>
+            {persons && <div className="mesa-hub-selected" data-testid="mesa-hub-persons-amount">
+              <span>{persons} persona{persons === 1 ? "" : "s"}</span><strong>{euro(personsAmount)}</strong>
+            </div>}
+            {methodPicker}
+            {confirmButton(submitPersons, "Confirmar cobro")}
+          </div>}
+
+          {partialMode === "libre" && <div data-testid="mesa-hub-partial-libre">
+            <div className="mesa-hub-field">
+              <div className="mesa-hub-field-label">Importe a cobrar</div>
+              <input className="mesa-input" data-testid="mesa-hub-free-amount" inputMode="decimal"
+                value={freeAmount} placeholder="0,00"
+                onChange={(event) => { setError(""); setFreeAmount(event.target.value); }} />
+            </div>
+            {methodPicker}
+            {confirmButton(submitFree, "Confirmar cobro")}
+          </div>}
         </div>}
 
         {action === "descuento" && <div className="mesa-hub-soon" data-testid="mesa-hub-drawer-descuento">
           <strong>Próximamente</strong>
-          <span>Los descuentos llegan en una próxima versión. De momento la cuenta se cobra por su importe completo.</span>
         </div>}
 
       </div>}
@@ -1304,14 +1360,10 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
 
     {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }} data-testid="mesa-hub-error">{error}</div>}
 
-    {/* ── 5. SECONDARY ACTION ────────────────────────────────────────────── */}
     {isOpen && outstanding > 0 && <button type="button" className="mesa-hub-print"
       data-testid="mesa-hub-imprimir" onClick={() => onPrint(billDocument())}>
       <HubIcon d={ICON_PRINTER} size={18} />Imprimir ticket
     </button>}
-
-    {partialMode && <PaymentModal table={table} mode={partialMode} initialMethod={method}
-      onClose={() => setPartialMode(null)} onPaid={paid} />}
   </div>;
 }
 
@@ -1434,19 +1486,6 @@ function UltimasCuentasModal({ onClose }) {
         </div>}
       </div>}
     </>}
-  </Modal>;
-}
-
-function VerCuentaModal({ table, onClose, onRefresh, onPrint }) {
-  // Hierarchy item 1. The covers count is context in the subtitle, which is
-  // NOT the retired "Personas 0/2" stat tile -- that showed remaining/total as
-  // if the table were being settled per head, and it is gone.
-  const covers = table.session?.coversTotal;
-  return <Modal
-    title={`Mesa ${table.number} · Ver cuenta`}
-    subtitle={covers == null ? undefined : `${covers} persona${covers === 1 ? "" : "s"}`}
-    onClose={onClose}>
-    <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} />
   </Modal>;
 }
 
@@ -1671,8 +1710,25 @@ function MesaWorkspace({
     </div>;
   }
 
+  // V1.1 §3 -- ONE SURFACE, NO INTERMEDIATE PREVIEW. "Ver cuenta" used to
+  // stack VerCuentaModal on top of this one, leaving the table's little
+  // summary sitting visible behind the Payment Hub: two overlays for one
+  // task. It now replaces this modal's body in place, with a back control --
+  // exactly what the compact/phone card has always done. Same hub, same
+  // markup, same handlers; only the number of layers changed.
+  const accountCovers = session.coversTotal;
   return <>
-    <Modal title={title} onClose={onClose} size={hasOrders || draft ? "tall" : undefined}>
+    <Modal
+      title={showAccount ? `Mesa ${table.number} · Ver cuenta` : title}
+      subtitle={showAccount && accountCovers != null
+        ? `${accountCovers} persona${accountCovers === 1 ? "" : "s"}` : undefined}
+      onClose={onClose}
+      size={showAccount || hasOrders || draft ? "tall" : undefined}>
+      {showAccount ? <>
+        <button type="button" className="mesa-btn small mesa-hub-back" data-testid="mesa-account-back"
+          onClick={() => setShowAccount(false)}>← Volver a la mesa</button>
+        <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} />
+      </> : <>
       <div className="mesa-section" style={{ marginTop: 0 }}>
         <h3>Comandas</h3>
         {!hasOrders ? <div className="mesa-muted">Todavía no hay comandas.</div> : <div className="mesa-commands-scroll">
@@ -1726,8 +1782,8 @@ function MesaWorkspace({
         {todayReservations.length > 1 && canManageReservations && <button className="mesa-btn small" style={{ marginTop: 9 }} onClick={onViewNight}>Ver reservas de la noche ({todayReservations.length})</button>}
       </div>}
       {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
+      </>}
     </Modal>
-    {showAccount && <VerCuentaModal table={table} onClose={() => setShowAccount(false)} onRefresh={onRefresh} onPrint={onPrint} />}
     {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
   </>;
 }

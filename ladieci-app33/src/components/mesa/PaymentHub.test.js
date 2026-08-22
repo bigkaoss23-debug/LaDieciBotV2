@@ -54,12 +54,20 @@ const MOCKUP_SESSION = {
   commands: [{ id: "c1", commandNumber: 1, state: "EN_COCINA", time: "14:20", items: [{ n: "El Pelusa", q: 1 }] }],
   payments: [],
   lines: [
-    { id: "l1", description: "El Pelusa", amount: 12, paid: 10, remaining: 2 },
-    { id: "l2", description: "La Joya", amount: 15, paid: 0, remaining: 15 },
-    { id: "l3", description: "Estrella Galicia", amount: 3, paid: 0, remaining: 3 },
-    { id: "l4", description: "Estrella Galicia", amount: 3, paid: 0, remaining: 3 },
-    { id: "l5", description: "Fanta Naranja", amount: 3.5, paid: 0, remaining: 3.5 },
-    { id: "l6", description: "San Miguel 0,0", amount: 3, paid: 0, remaining: 3 },
+    // Real staging shapes: pizzas carry officialNumber/classicName/fantasyName,
+    // drinks carry no number and use classicName for the format. l1 is fully
+    // paid, so the ticket must show it as Pagado and refuse to re-charge it.
+    { id: "l1", description: "El Pelusa", amount: 12, paid: 12, remaining: 0,
+      product: { officialNumber: 1, classicName: "Margherita Classica", fantasyName: "El Pelusa", category: "Pizzas" } },
+    { id: "l2", description: "La Joya", amount: 15, paid: 0, remaining: 15,
+      product: { officialNumber: 2, classicName: "Bufala", fantasyName: "La Joya", category: "Pizzas" } },
+    { id: "l3", description: "Estrella Galicia", amount: 3, paid: 0, remaining: 3,
+      product: { classicName: "33cl", fantasyName: "Estrella Galicia", category: "Bebidas" } },
+    { id: "l4", description: "Estrella Galicia", amount: 3, paid: 0, remaining: 3,
+      product: { classicName: "33cl", fantasyName: "Estrella Galicia", category: "Bebidas" } },
+    { id: "l5", description: "Fanta Naranja", amount: 3.5, paid: 0, remaining: 3.5,
+      product: { classicName: "0,33L", fantasyName: "Fanta Naranja", category: "Bebidas" } },
+    { id: "l6", description: "San Miguel 0,0", amount: 3, paid: 0, remaining: 3, product: {} },
   ],
 };
 
@@ -104,12 +112,20 @@ test("2 · the ticket lists every product with quantity and price, grouped as in
   const { container, root } = await openHub();
   const ticket = byTestId(container, "mesa-hub-ticket");
   expect(ticket.textContent).toContain("Resumen del ticket");
-  const rows = Array.from(ticket.querySelectorAll('[data-testid="mesa-hub-line"]'))
-    .map((row) => row.textContent);
+  const rows = Array.from(ticket.querySelectorAll('[data-testid="mesa-hub-line"]'));
   expect(rows).toHaveLength(5);
-  expect(rows[0]).toMatch(/^1El Pelusa12,00\s?€$/);
-  expect(rows[2]).toMatch(/^2Estrella Galicia6,00\s?€$/); // two lines, one row
-  expect(rows[4]).toMatch(/^1San Miguel 0,03,00\s?€$/);
+  const read = (row) => ({
+    qty: row.querySelector(".mesa-hub-qty").textContent,
+    name: row.querySelector(".mesa-hub-name").textContent,
+    alias: row.querySelector(".mesa-hub-alias")?.textContent ?? null,
+    // Intl currency output separates the amount from € with a NON-BREAKING
+    // space; normalise it so the assertion compares money, not whitespace.
+    amount: row.querySelector(".mesa-hub-amount").textContent.replace(/\s/g, " "),
+  });
+  expect(read(rows[0])).toEqual({ qty: "1", name: "#1 · Margherita Classica", alias: "El Pelusa", amount: "12,00 €" });
+  // Two real units, one displayed row.
+  expect(read(rows[2])).toEqual({ qty: "2", name: "Estrella Galicia", alias: "33cl", amount: "6,00 €" });
+  expect(read(rows[4])).toEqual({ qty: "1", name: "San Miguel 0,0", alias: null, amount: "3,00 €" });
   unmount(container, root);
 });
 
@@ -188,32 +204,195 @@ test("4 · Cobrar todo sends exactly the arguments Mesa already sent for a full 
   unmount(container, root);
 });
 
-test("4 · Pago parcial offers the two existing Mesa capabilities, and opens the real picker", async () => {
+test("4 · Pago parcial offers EXACTLY three ways, and no more", async () => {
   const { container, root } = await openHub();
   click(byTestId(container, "mesa-hub-pago-parcial"));
-  const drawer = byTestId(container, "mesa-hub-drawer-pago-parcial");
-  expect(drawer.textContent).toContain("Elegir productos");
-  expect(drawer.textContent).toContain("Selecciona qué cobrar");
-  expect(drawer.textContent).toContain("Importe libre");
-  expect(drawer.textContent).toContain("Introduce un importe");
-
-  click(byTestId(container, "mesa-hub-elegir-productos"));
-  // The existing, unmodified PaymentModal -- same line picker as before.
-  const dialogs = container.querySelectorAll('[role="dialog"]');
-  expect(dialogs[dialogs.length - 1].textContent).toContain("Cobrar productos");
-  expect(dialogs[dialogs.length - 1].querySelectorAll('input[type="checkbox"]').length).toBeGreaterThan(0);
+  const labels = Array.from(byTestId(container, "mesa-hub-partial-modes").querySelectorAll("button"))
+    .map((b) => b.textContent.trim());
+  expect(labels).toEqual(["Por productos", "Por personas", "Importe libre"]);
   unmount(container, root);
 });
 
-test("4 · the method chosen in the drawer is carried into the partial flow", async () => {
+// ── POR PRODUCTOS — the ticket IS the picker ───────────────────────────────
+test("5 · Por productos makes the ticket selectable in place — no second list", async () => {
+  const { container, root } = await openHub();
+  // Not selectable until the mode is chosen.
+  expect(container.querySelectorAll('[data-testid="mesa-hub-line"].selectable')).toHaveLength(0);
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  expect(container.querySelectorAll('[data-testid="mesa-hub-line"].selectable').length).toBeGreaterThan(0);
+  // and no separate dialog was opened to show the same products again
+  expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  expect(byTestId(container, "mesa-hub-pick-hint")).not.toBeNull();
+  unmount(container, root);
+});
+
+test("5 · tap selects, second tap deselects, and the total follows", async () => {
   const { container, root } = await openHub();
   click(byTestId(container, "mesa-hub-pago-parcial"));
-  const drawer = byTestId(container, "mesa-hub-drawer-pago-parcial");
-  click(Array.from(drawer.querySelectorAll(".mesa-method")).find((b) => b.textContent.includes("Bizum")));
-  click(byTestId(container, "mesa-hub-importe-libre"));
-  const dialogs = container.querySelectorAll('[role="dialog"]');
-  const active = dialogs[dialogs.length - 1].querySelector(".mesa-method.active");
-  expect(active.textContent).toContain("Bizum");
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const rows = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  const laJoya = rows.find((r) => r.textContent.includes("La Joya"));
+
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/0,00\s?€/);
+  click(laJoya);
+  expect(laJoya.getAttribute("data-selected")).toBe("true");
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/15,00\s?€/);
+  click(laJoya);
+  expect(laJoya.getAttribute("data-selected")).toBe("false");
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/0,00\s?€/);
+  unmount(container, root);
+});
+
+test("5 · several products can be selected at once and the total sums", async () => {
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const rows = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  click(rows.find((r) => r.textContent.includes("La Joya")));       // 15,00
+  click(rows.find((r) => r.textContent.includes("Fanta Naranja"))); // 3,50
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/18,50\s?€/);
+  unmount(container, root);
+});
+
+test("5 · a fully paid product is shown as Pagado and can never be re-selected", async () => {
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const rows = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  const paidRow = rows.find((r) => r.textContent.includes("Margherita Classica"));
+  expect(paidRow.textContent).toContain("Pagado");
+  expect(paidRow.disabled).toBe(true);
+  click(paidRow);
+  expect(paidRow.getAttribute("data-selected")).toBe("false");
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/0,00\s?€/);
+  unmount(container, root);
+});
+
+test("5 · the REAL economic line ids are what reach the writer, grouping and all", async () => {
+  mesaApi.pay.mockResolvedValue({ amount: 6, outstandingAfter: 23.5 });
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const rows = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  // One displayed row, TWO real units behind it.
+  const beers = rows.find((r) => r.textContent.includes("Estrella Galicia"));
+  expect(beers.textContent).toContain("2");
+  click(beers);
+  click(buttonByText(container, "Confirmar cobro"));
+  await flush();
+  expect(mesaApi.pay).toHaveBeenCalledWith("session-mockup", {
+    paymentMethod: "efectivo",
+    mode: "item_selection",
+    lineIds: ["l3", "l4"],
+    // Choosing products says nothing about how many people ate.
+    coversSettled: 0,
+    clientRequestId: "mesa_test_request",
+  });
+  unmount(container, root);
+});
+
+// ── POR PERSONAS ───────────────────────────────────────────────────────────
+test("6 · 4 covers / 80 € — 2 personas suggests 40,00 €", async () => {
+  const table = { ...TABLE, session: { ...MOCKUP_SESSION, total: 80, paid: 0, outstanding: 80, coversTotal: 4, coversRemaining: 4 } };
+  const { container, root } = await openHub({ table });
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-personas"));
+  expect(byTestId(container, "mesa-hub-person-options").querySelectorAll("button")).toHaveLength(4);
+  click(byTestId(container, "mesa-hub-person-2"));
+  expect(byTestId(container, "mesa-hub-persons-amount").textContent).toMatch(/2 personas40,00\s?€/);
+  unmount(container, root);
+});
+
+test("6 · 4 covers / 80 € — 1 persona suggests 20,00 €, and charges custom_amount + 1 cover", async () => {
+  mesaApi.pay.mockResolvedValue({ amount: 20, outstandingAfter: 60 });
+  const table = { ...TABLE, session: { ...MOCKUP_SESSION, total: 80, paid: 0, outstanding: 80, coversTotal: 4, coversRemaining: 4 } };
+  const { container, root } = await openHub({ table });
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-personas"));
+  click(byTestId(container, "mesa-hub-person-1"));
+  expect(byTestId(container, "mesa-hub-persons-amount").textContent).toMatch(/1 persona20,00\s?€/);
+  click(buttonByText(container, "Confirmar cobro"));
+  await flush();
+  expect(mesaApi.pay).toHaveBeenCalledWith("session-mockup", {
+    paymentMethod: "efectivo", mode: "custom_amount", amount: 20, coversSettled: 1,
+    clientRequestId: "mesa_test_request",
+  });
+  unmount(container, root);
+});
+
+test("6 · after two people paid, the split follows the table: 2 left, 40 € across them", async () => {
+  // The session the backend gives back afterwards.
+  const table = { ...TABLE, session: { ...MOCKUP_SESSION, total: 80, paid: 40, outstanding: 40, coversTotal: 4, coversRemaining: 2 } };
+  const { container, root } = await openHub({ table });
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-personas"));
+  expect(byTestId(container, "mesa-hub-person-options").querySelectorAll("button")).toHaveLength(2);
+  click(byTestId(container, "mesa-hub-person-1"));
+  expect(byTestId(container, "mesa-hub-persons-amount").textContent).toMatch(/20,00\s?€/);
+  unmount(container, root);
+});
+
+test("6 · with no covers on the table, Por personas is simply unavailable", async () => {
+  const table = { ...TABLE, session: { ...MOCKUP_SESSION, coversTotal: null, coversRemaining: 0 } };
+  const { container, root } = await openHub({ table });
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  expect(byTestId(container, "mesa-hub-mode-personas").disabled).toBe(true);
+  unmount(container, root);
+});
+
+// ── IMPORTE LIBRE ──────────────────────────────────────────────────────────
+test("7 · Importe libre never asks for a number of people", async () => {
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-libre"));
+  const drawer = byTestId(container, "mesa-hub-partial-libre");
+  expect(drawer.textContent).not.toMatch(/personas/i);
+  expect(container.textContent).not.toContain("Personas que quedan saldadas");
+  expect(byTestId(container, "mesa-hub-free-amount")).not.toBeNull();
+  unmount(container, root);
+});
+
+test("7 · a free amount charges custom_amount and consumes nobody's share", async () => {
+  mesaApi.pay.mockResolvedValue({ amount: 10, outstandingAfter: 19.5 });
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-libre"));
+  const input = byTestId(container, "mesa-hub-free-amount");
+  act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")
+      .set.call(input, "10");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  click(buttonByText(container, "Confirmar cobro"));
+  await flush();
+  expect(mesaApi.pay).toHaveBeenCalledWith("session-mockup", {
+    paymentMethod: "efectivo", mode: "custom_amount", amount: 10, coversSettled: 0,
+    clientRequestId: "mesa_test_request",
+  });
+  unmount(container, root);
+});
+
+// ── PRODUCT LABELS ─────────────────────────────────────────────────────────
+test("8 · a pizza shows its number and real name, with the nickname beneath", async () => {
+  const { container, root } = await openHub();
+  const row = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'))
+    .find((r) => r.textContent.includes("Bufala"));
+  expect(row.querySelector(".mesa-hub-name").textContent).toBe("#2 · Bufala");
+  expect(row.querySelector(".mesa-hub-alias").textContent).toBe("La Joya");
+  unmount(container, root);
+});
+
+test("8 · a drink shows its name and format; a line with no product data falls back cleanly", async () => {
+  const { container, root } = await openHub();
+  const rows = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  const beer = rows.find((r) => r.textContent.includes("Estrella Galicia"));
+  expect(beer.querySelector(".mesa-hub-name").textContent).toBe("Estrella Galicia");
+  expect(beer.querySelector(".mesa-hub-alias").textContent).toBe("33cl");
+  // No product data at all: the description, and nothing invented.
+  const bare = rows.find((r) => r.textContent.includes("San Miguel"));
+  expect(bare.querySelector(".mesa-hub-name").textContent).toBe("San Miguel 0,0");
+  expect(bare.querySelector(".mesa-hub-alias")).toBeNull();
   unmount(container, root);
 });
 
@@ -221,7 +400,7 @@ test("4 · Descuento is present but inert -- it never charges and says why", asy
   const { container, root } = await openHub();
   click(byTestId(container, "mesa-hub-descuento"));
   const drawer = byTestId(container, "mesa-hub-drawer-descuento");
-  expect(drawer.textContent).toContain("Próximamente");
+  expect(drawer.textContent.trim()).toBe("Próximamente");
   expect(drawer.querySelectorAll("button")).toHaveLength(0);
   expect(mesaApi.pay).not.toHaveBeenCalled();
   unmount(container, root);
@@ -290,5 +469,37 @@ test("the hub renders the same way on the phone, with no second overlay", async 
   expect(byTestId(container, "mesa-hub-actions").querySelectorAll("button")).toHaveLength(3);
   expect(container.querySelectorAll(".mesa-overlay")).toHaveLength(0);
   expect(container.textContent).toContain("Mesa 4 · Ver cuenta");
+  unmount(container, root);
+});
+
+// ── NAVIGATION ─────────────────────────────────────────────────────────────
+test("navigation · Ver cuenta opens the Payment Hub directly, on ONE surface", async () => {
+  // V1.1 §3. This used to stack a second overlay, leaving the table's little
+  // summary visible behind the hub. One tap, one surface, nothing behind it.
+  const { container, root } = await openHub();
+  expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  expect(byTestId(container, "mesa-payment-hub")).not.toBeNull();
+  expect(container.textContent).toContain("Mesa 4 · Ver cuenta");
+  // The intermediate preview's own content is gone, not merely covered.
+  expect(container.textContent).not.toContain("Pedido en curso");
+  expect(container.textContent).not.toContain("Todavía no hay comandas.");
+  unmount(container, root);
+});
+
+test("navigation · the same one-surface rule holds on the phone", async () => {
+  const { container, root } = await openHub({ compact: true });
+  expect(container.querySelectorAll(".mesa-overlay")).toHaveLength(0);
+  expect(container.querySelectorAll('[data-testid="mesa-payment-hub"]')).toHaveLength(1);
+  expect(container.textContent).not.toContain("Pedido en curso");
+  unmount(container, root);
+});
+
+test("navigation · going back returns to the table, and the hub is gone", async () => {
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-account-back"));
+  await flush();
+  expect(byTestId(container, "mesa-payment-hub")).toBeNull();
+  expect(container.textContent).toContain("Comandas");
+  expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
   unmount(container, root);
 });

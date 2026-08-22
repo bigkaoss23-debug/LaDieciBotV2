@@ -1,48 +1,144 @@
-// paymentHubTicket — the "Resumen del ticket" projection for Payment Hub V1.
+// paymentHubTicket — the "Resumen del ticket" projection for the Payment Hub.
 //
-// The Mesa backend models a bill as ONE LINE PER UNIT: two beers are two rows
-// of 3,00 €, not one row of "2 × 3,00". The approved Payment Hub mockup shows
-// "2  Estrella Galicia   6,00 €", so the quantity column is produced HERE, by
-// grouping identical descriptions for display.
+// TWO JOBS, BOTH DISPLAY-ONLY.
 //
-// THIS IS A DISPLAY PROJECTION AND NOTHING ELSE. It never feeds a payment: the
-// hub charges through the existing mesaApi.pay modes, which address lines by
-// their own `id`, so grouping cannot merge, split or re-price anything the
-// backend will act on. The authoritative money — Total, Ya cobrado, Resta por
-// pagar — is read from session.total / session.paid / session.outstanding and
-// is never re-derived from these rows; if a line arrived without an amount the
-// summed column would drift from the real total, and the real total is the one
-// the operator is shown.
+// 1. QUANTITY. The Mesa backend models a bill as ONE LINE PER UNIT: two beers
+//    are two rows of 3,00 €, not one row of "2 × 3,00". The approved mockup
+//    shows "2  Estrella Galicia   6,00 €", so the quantity column is produced
+//    here, by grouping units that display identically.
 //
-// Order is first-appearance, so the ticket reads in the sequence the kitchen
-// received it rather than alphabetically.
+// 2. IDENTITY. A line's `description` is only the fantasy name — "El Mago de
+//    Zadar" — and an operator should not have to memorise nicknames to read a
+//    bill. Every line already carries `product` (the backend's
+//    product_snapshot), which holds officialNumber / classicName /
+//    fantasyName, so the ticket can say "#9 · Vegetariana" with "El Mago de
+//    Zadar" beneath it. Nothing is invented: when a field is absent the label
+//    degrades to what is actually there.
+//
+// IT IS NOT A SOURCE OF MONEY. The authoritative figures — Total, Ya cobrado,
+// Resta por pagar — are read from session.total / session.paid /
+// session.outstanding and never re-derived from these rows. What a selection
+// actually charges is decided by the SERVER from the real line ids
+// (mesa_post_payment_v1 sums the selected lines' own remaining), so grouping
+// cannot merge, split or re-price anything: `lineIds` below carries the real
+// ids through untouched.
+
+const clean = (value) => {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+};
+
+// The two-line label. Pizzas lead with the number and the real name, because
+// that is what the menu and the kitchen call it; the nickname sits underneath
+// as the thing the guest actually said. Drinks have no number and their
+// "classicName" is usually the format ("0,33L", "33cl"), which reads correctly
+// as the secondary line for exactly the same reason.
+// A secondary line is only ever shown when it says something the primary does
+// not — "Aquarius / Aquarius" is noise, not information.
+export function productLabel(line) {
+  const product = (line && typeof line.product === "object" && line.product) || {};
+  const description = clean(line && line.description);
+  const fantasy = clean(product.fantasyName) || clean(product.n);
+  const classic = clean(product.classicName);
+  const rawNumber = product.officialNumber != null ? product.officialNumber : product.num;
+  const number = Number.isFinite(Number(rawNumber)) && String(rawNumber).trim() !== ""
+    ? Number(rawNumber) : null;
+
+  let primary;
+  let secondary;
+  if (number != null) {
+    primary = `#${number} · ${classic || fantasy || description || "—"}`;
+    secondary = fantasy || null;
+  } else {
+    primary = fantasy || description || "—";
+    secondary = classic || null;
+  }
+  // Never repeat the primary underneath itself.
+  if (secondary && primary.toLowerCase().includes(secondary.toLowerCase())) secondary = null;
+  return { primary, secondary, number, classic, fantasy, description };
+}
 
 export function groupTicketLines(lines) {
   const order = [];
   const byKey = new Map();
   for (const line of Array.isArray(lines) ? lines : []) {
-    const description = String(line?.description ?? "").trim() || "—";
-    // Case-insensitive so "Fanta naranja" and "Fanta Naranja" are one product;
-    // the first spelling seen is the one displayed.
-    const key = description.toLowerCase();
+    const label = productLabel(line);
+    // Grouped by what is DISPLAYED, so "Coca Cola · 0,33L" and
+    // "Coca Cola · 1L" stay two rows even though they share a description.
+    const key = `${label.primary}||${label.secondary || ""}`.toLowerCase();
     const amount = Number(line?.amount);
-    // A line the backend sent without an amount is still a real product. It
-    // contributes 0 to this column rather than disappearing from the ticket —
-    // an item the guest can see on the table must be visible on the bill.
+    const remaining = Number(line?.remaining);
+    // A line the backend sent without an amount is still a real product: it
+    // contributes 0 rather than vanishing from a bill the guest can see.
     const safeAmount = Number.isFinite(amount) ? amount : 0;
-    // One row = one unit, unless the backend ever starts sending its own
-    // quantity, in which case that wins over counting rows.
+    const safeRemaining = Number.isFinite(remaining) ? Math.max(0, remaining) : 0;
     const declared = Number(line?.quantity);
     const quantity = Number.isFinite(declared) && declared > 0 ? declared : 1;
     if (!byKey.has(key)) {
-      byKey.set(key, { key, description, quantity: 0, amount: 0 });
+      byKey.set(key, {
+        key, label, description: label.primary,
+        quantity: 0, amount: 0, remaining: 0,
+        lineIds: [], selectableLineIds: [],
+      });
       order.push(key);
     }
     const row = byKey.get(key);
     row.quantity += quantity;
-    // Rounded at every step: summing floats across a long ticket otherwise
-    // shows 6,000000000000001 € on a bill a guest is reading.
+    // Rounded at every step: a bill a guest reads must not show
+    // 6,000000000000001 €.
     row.amount = Math.round((row.amount + safeAmount) * 100) / 100;
+    row.remaining = Math.round((row.remaining + safeRemaining) * 100) / 100;
+    const id = line && line.id != null ? String(line.id) : null;
+    if (id) {
+      row.lineIds.push(id);
+      // Only units with something still owed may be charged again. This is
+      // the list that reaches mesa_post_payment_v1.
+      if (safeRemaining > 0) row.selectableLineIds.push(id);
+    }
   }
-  return order.map((key) => byKey.get(key));
+  return order.map((key) => {
+    const row = byKey.get(key);
+    return { ...row, paidInFull: row.selectableLineIds.length === 0 };
+  });
+}
+
+// What a selection of grouped rows is worth, and which real line ids it maps
+// to. The amount here is only what the operator is SHOWN — the server
+// recomputes it from these same ids before charging anything.
+export function selectionTotals(rows, selectedKeys) {
+  const keys = selectedKeys instanceof Set ? selectedKeys : new Set(selectedKeys || []);
+  let amount = 0;
+  const lineIds = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!keys.has(row.key) || row.paidInFull) continue;
+    amount = Math.round((amount + row.remaining) * 100) / 100;
+    lineIds.push(...row.selectableLineIds);
+  }
+  return { amount, lineIds };
+}
+
+// Por personas. The denominator is the table's REAL remaining covers, and the
+// shares come from the same equal-split arithmetic Mesa already uses, so N
+// shares can never overshoot the outstanding balance the way N × ceil(share)
+// would (10,00 € across 3 would suggest 10,02 €).
+export function personShares(outstanding, remainingCovers) {
+  const total = Math.round((Number(outstanding) || 0) * 100);
+  const covers = Number(remainingCovers);
+  if (!Number.isInteger(covers) || covers < 1 || total <= 0) return [];
+  const shares = [];
+  let left = total;
+  for (let remaining = covers; remaining > 0; remaining -= 1) {
+    const share = Math.ceil(left / remaining);
+    shares.push(share);
+    left -= share;
+  }
+  return shares.map((cents) => cents / 100);
+}
+
+export function amountForPersons(outstanding, remainingCovers, persons) {
+  const shares = personShares(outstanding, remainingCovers);
+  const n = Number(persons);
+  if (!Number.isInteger(n) || n < 1 || n > shares.length) return 0;
+  const cents = shares.slice(0, n).reduce((sum, share) => sum + Math.round(share * 100), 0);
+  return cents / 100;
 }

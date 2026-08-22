@@ -732,7 +732,7 @@ test("Ver cuenta -> Cobrar todo charges the full outstanding balance, prints a r
   const session = emptySession({
     coversTotal: 4, coversRemaining: 4, total: 40, paid: 0, outstanding: 40, nextEqualShare: 10,
     commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }], time: "21:00" }],
-    lines: [{ id: "l1", description: "Margherita", remaining: 40 }],
+    lines: [{ id: "l1", description: "Margherita", amount: 40, paid: 0, remaining: 40 }],
   });
   const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
   // Only the FIRST load is occupied; beforeEach's persisting mock (all-free
@@ -747,7 +747,9 @@ test("Ver cuenta -> Cobrar todo charges the full outstanding balance, prints a r
   // Payment Hub V1: Cobrar todo opens the ONE contextual drawer in place --
   // amount, method, confirm -- instead of stacking a second dialog.
   let dialogs = container.querySelectorAll('[role="dialog"]');
-  expect(dialogs).toHaveLength(2); // MesaWorkspace + VerCuentaModal, nothing new
+  // V1.1: ONE surface. Ver cuenta replaces the workspace body in place, so
+  // there is no second overlay and no little table preview left behind it.
+  expect(dialogs).toHaveLength(1);
   const drawer = container.querySelector('[data-testid="mesa-hub-drawer-cobrar-todo"]');
   expect(drawer).not.toBeNull();
   expect(drawer.textContent).toMatch(/40,00\s?€/);
@@ -771,7 +773,7 @@ test("Ver cuenta -> Elegir productos requires at least one selected line before 
   const session = emptySession({
     coversTotal: 2, coversRemaining: 2, total: 20, paid: 0, outstanding: 20, nextEqualShare: 10,
     commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Pizza" }], time: "21:00" }],
-    lines: [{ id: "l1", description: "Pizza", remaining: 20 }],
+    lines: [{ id: "l1", description: "Pizza", amount: 20, paid: 0, remaining: 20 }],
   });
   const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
   mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
@@ -779,10 +781,11 @@ test("Ver cuenta -> Elegir productos requires at least one selected line before 
   click(container.querySelector(".mesa-table"));
   click(buttonByText(container, "Ver cuenta"));
   click(buttonByText(container, "Pago parcial"));
-  click(buttonByText(container, "Elegir productos"));
+  click(buttonByText(container, "Por productos"));
   click(buttonByText(container, "Confirmar cobro"));
-  const dialogs = container.querySelectorAll('[role="dialog"]');
-  expect(dialogs[dialogs.length - 1].textContent).toContain("Selecciona al menos un producto.");
+  // The picker is the ticket itself now -- refused inline, in place.
+  expect(container.querySelector('[data-testid="mesa-hub-error"]').textContent)
+    .toContain("Selecciona al menos un producto.");
   expect(mesaApi.pay).not.toHaveBeenCalled();
   unmount(container, root);
 });
@@ -791,7 +794,7 @@ test("Ver cuenta -> Importe libre rejects a custom amount above the outstanding 
   const session = emptySession({
     coversTotal: 2, coversRemaining: 2, total: 20, paid: 0, outstanding: 20, nextEqualShare: 10,
     commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Pizza" }], time: "21:00" }],
-    lines: [{ id: "l1", description: "Pizza", remaining: 20 }],
+    lines: [{ id: "l1", description: "Pizza", amount: 20, paid: 0, remaining: 20 }],
   });
   const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
   mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
@@ -800,13 +803,14 @@ test("Ver cuenta -> Importe libre rejects a custom amount above the outstanding 
   click(buttonByText(container, "Ver cuenta"));
   click(buttonByText(container, "Pago parcial"));
   click(buttonByText(container, "Importe libre"));
-  const dialogs = container.querySelectorAll('[role="dialog"]');
-  const paymentDialog = dialogs[dialogs.length - 1];
-  const amountInput = paymentDialog.querySelector("input.mesa-input");
+  const amountInput = container.querySelector('[data-testid="mesa-hub-free-amount"]');
   typeInto(amountInput, "999");
-  click(buttonByText(paymentDialog, "Confirmar cobro"));
-  expect(paymentDialog.textContent).toContain("El importe no es válido.");
+  click(buttonByText(container, "Confirmar cobro"));
+  expect(container.querySelector('[data-testid="mesa-hub-error"]').textContent)
+    .toContain("El importe no es válido.");
   expect(mesaApi.pay).not.toHaveBeenCalled();
+  // V1.1 §7: a free amount never asks how many people it settles.
+  expect(container.textContent).not.toContain("Personas que quedan saldadas");
   unmount(container, root);
 });
 
@@ -814,7 +818,7 @@ test("a partial (item_selection) payment keeps the table occupied and recalculat
   const session = emptySession({
     coversTotal: 4, coversRemaining: 4, total: 40, paid: 0, outstanding: 40, nextEqualShare: 10,
     commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }, { n: "Coca-Cola" }], time: "21:00" }],
-    lines: [{ id: "l1", description: "Margherita", remaining: 25 }, { id: "l2", description: "Coca-Cola", remaining: 15 }],
+    lines: [{ id: "l1", description: "Margherita", amount: 25, paid: 0, remaining: 25 }, { id: "l2", description: "Coca-Cola", amount: 15, paid: 0, remaining: 15 }],
   });
   const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
   // Persists across the post-payment reload too -- the table must still read
@@ -825,18 +829,19 @@ test("a partial (item_selection) payment keeps the table occupied and recalculat
   click(container.querySelector(".mesa-table"));
   click(buttonByText(container, "Ver cuenta"));
   click(buttonByText(container, "Pago parcial"));
-  click(buttonByText(container, "Elegir productos"));
-  let dialogs = container.querySelectorAll('[role="dialog"]');
-  const paymentDialog = dialogs[dialogs.length - 1];
-  click(paymentDialog.querySelector('input[type="checkbox"]'));
-  click(buttonByText(paymentDialog, "Confirmar cobro"));
+  click(buttonByText(container, "Por productos"));
+  // The ticket line IS the picker -- no second dialog listing the same
+  // products again. The REAL economic line id is what travels.
+  const ticketRows = container.querySelectorAll('[data-testid="mesa-hub-line"]');
+  click(ticketRows[0]);
+  click(buttonByText(container, "Confirmar cobro"));
   await flush();
   expect(mesaApi.pay).toHaveBeenCalledWith("session-x", expect.objectContaining({
     mode: "item_selection", lineIds: ["l1"],
   }));
   await flush();
-  dialogs = container.querySelectorAll('[role="dialog"]');
-  expect(dialogs).toHaveLength(3); // MesaWorkspace + VerCuentaModal stay open beneath the printed receipt
+  const dialogs = container.querySelectorAll('[role="dialog"]');
+  expect(dialogs).toHaveLength(2); // the workspace stays open beneath the printed receipt
   expect(container.textContent).toContain("RECIBO DE PAGO");
   expect(container.textContent).toContain("Pago parcial registrado.");
   unmount(container, root);
@@ -882,7 +887,7 @@ test("a failed payment shows an inline error and keeps the table's outstanding b
   const session = emptySession({
     coversTotal: 2, coversRemaining: 2, total: 20, paid: 0, outstanding: 20, nextEqualShare: 20,
     commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Pizza" }], time: "21:00" }],
-    lines: [{ id: "l1", description: "Pizza", remaining: 20 }],
+    lines: [{ id: "l1", description: "Pizza", amount: 20, paid: 0, remaining: 20 }],
   });
   const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
   mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
@@ -896,7 +901,7 @@ test("a failed payment shows an inline error and keeps the table's outstanding b
   const dialogs = container.querySelectorAll('[role="dialog"]');
   // Cobrar todo is inline now, so the failure surfaces in the hub itself --
   // no third dialog to stack, and nothing closes underneath it.
-  expect(dialogs).toHaveLength(2); // MesaWorkspace + VerCuentaModal, both still open
+  expect(dialogs).toHaveLength(1); // the one surface stays open, error inline
   expect(container.querySelector('[data-testid="mesa-hub-error"]').textContent)
     .toContain("MESA_PAYMENT_DECLINED");
   expect(container.textContent).not.toContain("RECIBO DE PAGO");
@@ -911,7 +916,7 @@ test("a slow payment request disables Confirmar cobro until it settles, so a sec
   const session = emptySession({
     coversTotal: 2, coversRemaining: 2, total: 20, paid: 0, outstanding: 20, nextEqualShare: 20,
     commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Pizza" }], time: "21:00" }],
-    lines: [{ id: "l1", description: "Pizza", remaining: 20 }],
+    lines: [{ id: "l1", description: "Pizza", amount: 20, paid: 0, remaining: 20 }],
   });
   const openTables = floorTables.map((table, index) => index === 0 ? { ...table, status: "open", session } : table);
   mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
