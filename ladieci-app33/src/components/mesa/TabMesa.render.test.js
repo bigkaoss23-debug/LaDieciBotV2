@@ -744,10 +744,17 @@ test("Ver cuenta -> Cobrar todo charges the full outstanding balance, prints a r
   click(container.querySelector(".mesa-table"));
   click(buttonByText(container, "Ver cuenta"));
   click(buttonByText(container, "Cobrar todo"));
+  // Payment Hub V1: Cobrar todo opens the ONE contextual drawer in place --
+  // amount, method, confirm -- instead of stacking a second dialog.
   let dialogs = container.querySelectorAll('[role="dialog"]');
-  expect(dialogs[dialogs.length - 1].textContent).toContain("Cobrar cuenta completa");
+  expect(dialogs).toHaveLength(2); // MesaWorkspace + VerCuentaModal, nothing new
+  const drawer = container.querySelector('[data-testid="mesa-hub-drawer-cobrar-todo"]');
+  expect(drawer).not.toBeNull();
+  expect(drawer.textContent).toMatch(/40,00\s?€/);
   click(buttonByText(container, "Confirmar cobro"));
   await flush();
+  // THE POINT OF THIS TEST, unchanged by the refactor: the request body is
+  // byte-identical to the one the old PaymentModal sent for mode "full".
   expect(mesaApi.pay).toHaveBeenCalledWith("session-x", expect.objectContaining({
     paymentMethod: "efectivo", mode: "full", coversSettled: 4, clientRequestId: "mesa_test_request",
   }));
@@ -771,6 +778,7 @@ test("Ver cuenta -> Elegir productos requires at least one selected line before 
   const { container, root } = await mount("waiter");
   click(container.querySelector(".mesa-table"));
   click(buttonByText(container, "Ver cuenta"));
+  click(buttonByText(container, "Pago parcial"));
   click(buttonByText(container, "Elegir productos"));
   click(buttonByText(container, "Confirmar cobro"));
   const dialogs = container.querySelectorAll('[role="dialog"]');
@@ -790,6 +798,7 @@ test("Ver cuenta -> Importe libre rejects a custom amount above the outstanding 
   const { container, root } = await mount("waiter");
   click(container.querySelector(".mesa-table"));
   click(buttonByText(container, "Ver cuenta"));
+  click(buttonByText(container, "Pago parcial"));
   click(buttonByText(container, "Importe libre"));
   const dialogs = container.querySelectorAll('[role="dialog"]');
   const paymentDialog = dialogs[dialogs.length - 1];
@@ -815,6 +824,7 @@ test("a partial (item_selection) payment keeps the table occupied and recalculat
   const { container, root } = await mount("waiter");
   click(container.querySelector(".mesa-table"));
   click(buttonByText(container, "Ver cuenta"));
+  click(buttonByText(container, "Pago parcial"));
   click(buttonByText(container, "Elegir productos"));
   let dialogs = container.querySelectorAll('[role="dialog"]');
   const paymentDialog = dialogs[dialogs.length - 1];
@@ -884,10 +894,16 @@ test("a failed payment shows an inline error and keeps the table's outstanding b
   click(buttonByText(container, "Confirmar cobro"));
   await flush();
   const dialogs = container.querySelectorAll('[role="dialog"]');
-  expect(dialogs).toHaveLength(3); // payment modal stays open on top of MesaWorkspace + VerCuentaModal
-  expect(dialogs[dialogs.length - 1].textContent).toContain("MESA_PAYMENT_DECLINED");
+  // Cobrar todo is inline now, so the failure surfaces in the hub itself --
+  // no third dialog to stack, and nothing closes underneath it.
+  expect(dialogs).toHaveLength(2); // MesaWorkspace + VerCuentaModal, both still open
+  expect(container.querySelector('[data-testid="mesa-hub-error"]').textContent)
+    .toContain("MESA_PAYMENT_DECLINED");
   expect(container.textContent).not.toContain("RECIBO DE PAGO");
-  expect(container.textContent).toMatch(/Pendiente20,00\s?€/);
+  // The balance is untouched -- same figure, its Payment Hub label.
+  expect(container.textContent).toMatch(/Resta por pagar20,00\s?€/);
+  // and the drawer stays open so the operator can simply retry
+  expect(container.querySelector('[data-testid="mesa-hub-drawer-cobrar-todo"]')).not.toBeNull();
   unmount(container, root);
 });
 

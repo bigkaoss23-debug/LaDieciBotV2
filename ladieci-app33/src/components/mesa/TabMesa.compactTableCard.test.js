@@ -184,7 +184,10 @@ describe("MesaWorkspace compactCard -- table actions unchanged", () => {
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
     click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Ver cuenta"));
     await flush();
-    expect(container.textContent).toContain("Pendiente");
+    // Payment Hub V1 hierarchy: the ticket, then the three authoritative
+    // figures. "Resta por pagar" is what "Pendiente" used to be called.
+    expect(container.textContent).toContain("Resumen del ticket");
+    expect(container.textContent).toContain("Resta por pagar");
     unmount(container, root);
   });
 });
@@ -215,7 +218,11 @@ describe("MesaWorkspace compactCard -- Ver cuenta in-place (no second overlay)",
 
     const accountView = container.querySelector('[data-testid="mesa-card-view-account"]');
     expect(accountView).not.toBeNull();
-    expect(accountView.textContent).toContain("Pendiente");
+    expect(accountView.textContent).toContain("Resta por pagar");
+    // Exactly three primary actions, and the retired "Personas 0/2" stat is
+    // gone from this surface for good.
+    expect(accountView.querySelectorAll('[data-testid="mesa-hub-actions"] button')).toHaveLength(3);
+    expect(accountView.textContent).not.toMatch(/Personas\s*\d/);
     unmount(container, root);
   });
 
