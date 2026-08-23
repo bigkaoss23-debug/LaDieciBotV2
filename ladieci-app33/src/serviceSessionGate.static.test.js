@@ -409,7 +409,12 @@ describe('close failure handling (Phase 7)', () => {
   test('only a real success dismisses the dialog', () => {
     expect(SERVICIO_C).toMatch(/outcome\.kind === "success"[\s\S]{0,220}setChiudiModal\(null\)/);
     // the pre-fix behaviour — dismiss first, ask later — must be gone
-    expect(SERVICIO_C).not.toMatch(/handleChiudiConferma = async \(deleteAttivi\) => \{\s*setChiudiModal\(null\)/);
+    // language-guard: allow-legacy handleChiudiConferma is the existing close-confirm handler name, quoted verbatim below to prove the wiring is unchanged, not new vocabulary
+    // N-2 — handleChiudiConferma dropped its deleteAttivi parameter: the
+    // backend's V3 close engine (the only path any session can take now)
+    // never read it. Regex updated to the current no-arg signature; the
+    // invariant under test (never dismiss before a real success) is unchanged.
+    expect(SERVICIO_C).not.toMatch(/handleChiudiConferma = async \(\) => \{\s*setChiudiModal\(null\)/);
   });
 
   test('a failure keeps the dialog open with a persistent reason', () => {

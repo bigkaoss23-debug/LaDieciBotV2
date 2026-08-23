@@ -310,17 +310,19 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     }
   };
 
-  const handleChiudiConferma = async (deleteAttivi) => {
+  const handleChiudiConferma = async () => {
     // S2-6A3E (recovered) — do NOT dismiss the modal yet: only a real success may
     // navigate away. Mark it submitting and clear any previous error so the
     // operator sees progress in place.
     setChiudiModal(m => m ? { ...m, submitting: true, error: null } : m);
     notify("🌙 Finalizando servicio...", C.giallo);
-    // Backend atomico: lock → calcola summary → scrivi storico completo →
-    // verifica → cancella ordenes/conv/wa_msgs. Il client non deve MAI presumere il
-    // successo: solo success:true chiude la vista; success:false resta un fallimento.
+    // N-2 — deleteAttivi was never passed to this call: the backend's V3 close
+    // engine (the only path any session can take now) never read it — a
+    // residual pending order becomes a service_incidents row, not a forced
+    // delete. El cliente non deve MAI presumere el successo: solo success:true
+    // chiude la vista; success:false resta un fallimento.
     try {
-      const res = await api.get("chiudiServizio", deleteAttivi ? { deleteAttivi: "true" } : {});
+      const res = await api.get("chiudiServizio", {});
       const outcome = classifyCloseOutcome(res);
       if (outcome.kind === "success") {
         const s = res.summary || {};
@@ -377,7 +379,10 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   //   - COCINA → già confermato dall'operatore
   // Sezione Chat (Preguntas): modifiche + domande → operatore gestisce
   //   - IN_TRATTAMENTO → modifiche, domande, ambigui
-  // COMPLETATO → nascosto dal tab WA (resta nel DB fino a chiudiServizio notturno)
+  // COMPLETATO → nascosto dal tab WA (resta nel DB; N-2 — the nightly cleanup
+  // delete that used to remove these rows lived exclusively in the backend's
+  // now-deleted legacy close function, which had zero reachable callers
+  // before this purge — pre-existing gap, not fixed here, out of scope)
 
   const waMsgsPreguntas = waMsgs.filter(m => {
     if (m._botOnly) return false;
@@ -1859,7 +1864,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
               {/* Bottoni */}
               <div style={{display:"flex",flexDirection:"column",gap:8,opacity:chiudiModal.submitting?0.6:1,pointerEvents:chiudiModal.submitting?"none":"auto"}}>
                 {chiudiModal.blocking?.tables === 0 && chiudiModal.blocking?.orders > 0 && (
-                  <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma(true)} style={{
+                  <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma()} style={{
                     background:"rgba(192,57,43,0.85)",border:"1.5px solid rgba(192,57,43,0.8)",
                     borderRadius:12,padding:"13px 16px",color:"#fff",fontWeight:800,
                     fontSize:13,cursor:"pointer",width:"100%"}}>
@@ -1874,7 +1879,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
                     ⚠️ Finalizar servicio con pendientes
                   </button>
                 )}
-                {chiudiModal.blocking?.tables === 0 && chiudiModal.blocking?.orders === 0 && <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma(false)} style={{
+                {chiudiModal.blocking?.tables === 0 && chiudiModal.blocking?.orders === 0 && <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma()} style={{
                   background: chiudiModal.attivi.length > 0 ? "rgba(46,213,115,0.15)" : "rgba(192,57,43,0.85)",
                   border: chiudiModal.attivi.length > 0 ? "1.5px solid rgba(46,213,115,0.4)" : "1.5px solid rgba(192,57,43,0.8)",
                   borderRadius:12,padding:"13px 16px",
