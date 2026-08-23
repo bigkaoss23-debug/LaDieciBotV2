@@ -161,6 +161,11 @@ const ERROR_MESSAGES = Object.freeze({
   MESA_RELOGIN_REQUIRED: "Vuelve a entrar con tu PIN antes de cobrar.",
   MESA_UNAUTHENTICATED: "La sesión ha caducado.",
   MESA_SESSION_STALE: "Tu acceso ha cambiado. Vuelve a entrar.",
+  // Not MESA_-prefixed: this one comes from the order-intake schedule
+  // resolver (resolve_order_intake_context_v1 / orderIntakePolicy.js on the
+  // backend), reused as-is for addCommand's own rejection during the daily
+  // 17:30-18:00 buffer between lunch and dinner service.
+  ORDER_INTAKE_CLOSED: "Ahora no se pueden enviar nuevas comandas. El servicio vuelve a abrir a las 18:00.",
 });
 
 export function describeMesaError(error) {
