@@ -11,9 +11,11 @@
 //    Zadar" — and an operator should not have to memorise nicknames to read a
 //    bill. Every line already carries `product` (the backend's
 //    product_snapshot), which holds officialNumber / classicName /
-//    fantasyName, so the ticket can say "#9 · Vegetariana" with "El Mago de
+//    fantasyName, so the ticket can say "Vegetariana" with "El Mago de
 //    Zadar" beneath it. Nothing is invented: when a field is absent the label
-//    degrades to what is actually there.
+//    degrades to what is actually there. officialNumber is deliberately
+//    never printed here (MESA V2.1.2) -- see orderedItemLabel()'s own header
+//    comment.
 //
 // IT IS NOT A SOURCE OF MONEY. The authoritative figures — Total, Ya cobrado,
 // Resta por pagar — are read from session.total / session.paid /
@@ -28,42 +30,45 @@ const clean = (value) => {
   return text ? text : null;
 };
 
-// The two-line label. Pizzas lead with the number and the real name, because
-// that is what the menu and the kitchen call it; the nickname sits underneath
-// as the thing the guest actually said. Drinks have no number and their
-// "classicName" is usually the format ("0,33L", "33cl"), which reads correctly
-// as the secondary line for exactly the same reason.
+// The two-line label. A numbered pizza leads with its real/classic name --
+// that is what the menu and the kitchen call it -- the nickname sits
+// underneath as the thing the guest actually said. Drinks have no number and
+// their "classicName" is usually the format ("0,33L", "33cl"), which reads
+// correctly as the secondary line for exactly the same reason.
 // A secondary line is only ever shown when it says something the primary does
 // not — "Aquarius / Aquarius" is noise, not information.
 //
-// THE ONE SHARED AUTHORITY for product numbering + label, reused verbatim by
-// Mesa Workspace (Comanda actual / Resumen), the item detail sheet and
-// Payment Hub / Ver cuenta (all three call groupTicketLines(), which calls
-// this) -- a fix here fixes all three at once, never three separate patches.
+// THE ORDER/TICKET AUTHORITY for product identity, reused verbatim by Mesa
+// Workspace (Comanda actual / Resumen), the item detail sheet and Payment Hub
+// / Ver cuenta (all three call groupTicketLines(), which calls this) -- a fix
+// here fixes all three at once, never three separate patches.
 //
-// "Nº" not "#": a Mesa comanda is also identified as "Comanda N" elsewhere in
-// this same UI (see TabMesa.jsx's ComandaActualCard/ResumenComandasSection) --
-// reusing "#" for a PRODUCT's catalogue number would make "#3" ambiguous
-// between "product 3" and "comanda 3" wherever the two could appear near each
-// other (e.g. the item detail sheet, which shows both). "Nº" only ever means
-// a catalogue number.
-//
-// number is only ever a real catalogue identity: 0/null/undefined/negative/
-// non-numeric all resolve to `null`, never a printed "Nº 0" -- a test SKU or
-// an uncatalogued item has no number to show, not a fake one.
-export function productLabel(line) {
+// MESA V2.1.2 -- the menu's officialNumber is deliberately NEVER printed here
+// any more. It is only useful DURING PRODUCT SELECTION, to match a spoken
+// order against the paper menu; once a product is inside a real comanda, the
+// quantity ("1×") and the name are what matters, and a bare "Nº 3"/"#3" sitting
+// next to "Comanda 3" read as two different numbers about the same "3" with no
+// way to tell them apart. The picker keeps its own number badge (`pizzaLabel()`
+// in constants.js + CatalogBrowser's own corner badge) -- a genuinely separate
+// formatter for a genuinely separate need; this function has never been, and
+// still isn't, called from there. `number` is still returned (a numbered pizza
+// still leads with its classic name over its fantasy nickname, same as
+// before), it is simply never concatenated into the printed label.
+export function orderedItemLabel(line) {
   const product = (line && typeof line.product === "object" && line.product) || {};
   const description = clean(line && line.description);
   const fantasy = clean(product.fantasyName) || clean(product.n);
   const classic = clean(product.classicName);
   const rawNumber = product.officialNumber != null ? product.officialNumber : product.num;
   const parsedNumber = Number(rawNumber);
+  // 0/null/undefined/negative/non-numeric all resolve to `null` -- a test SKU
+  // or an uncatalogued item has no number, real or fake, to carry.
   const number = Number.isFinite(parsedNumber) && parsedNumber > 0 ? parsedNumber : null;
 
   let primary;
   let secondary;
   if (number != null) {
-    primary = `Nº ${number} · ${classic || fantasy || description || "—"}`;
+    primary = classic || fantasy || description || "—";
     secondary = fantasy || null;
   } else {
     primary = fantasy || description || "—";
@@ -78,7 +83,7 @@ export function groupTicketLines(lines) {
   const order = [];
   const byKey = new Map();
   for (const line of Array.isArray(lines) ? lines : []) {
-    const label = productLabel(line);
+    const label = orderedItemLabel(line);
     // Grouped by what is DISPLAYED, so "Coca Cola · 0,33L" and
     // "Coca Cola · 1L" stay two rows even though they share a description.
     const key = `${label.primary}||${label.secondary || ""}`.toLowerCase();

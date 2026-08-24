@@ -1033,7 +1033,7 @@ function ComandaActualCard({ session, draft, busy, onMarkServed, onAddItems, onS
               (Fase 6); this only fixes "no pencil, but still interactive". */}
           {visibleRows.map((row) => <button type="button" className="mesa-current-item" key={row.key} data-testid="mesa-current-item"
             onClick={() => onSelectLine({ command: current, row })}>
-            <span className="mesa-current-qty">{row.quantity}</span>
+            <span className="mesa-current-qty">{row.quantity}×</span>
             <span className="mesa-current-desc">
               <span className="mesa-current-name">{row.label.primary}</span>
               {row.label.secondary && <small className="mesa-current-alias">{row.label.secondary}</small>}
@@ -1481,7 +1481,7 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
             {ticketRows.map((row) => {
               const selected = selectedKeys.has(row.key);
               const inner = <>
-                <span className="mesa-hub-qty">{row.quantity}</span>
+                <span className="mesa-hub-qty">{row.quantity}×</span>
                 <span className="mesa-hub-desc">
                   <span className="mesa-hub-name">{row.label.primary}</span>
                   {row.label.secondary && <small className="mesa-hub-alias">{row.label.secondary}</small>}

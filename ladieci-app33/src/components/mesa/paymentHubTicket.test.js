@@ -1,6 +1,6 @@
 // PAYMENT HUB V1.1 — the ticket projection: quantity, identity, selection and
 // the person split. All display-only; the server decides what is charged.
-import { groupTicketLines, productLabel, selectionTotals, personShares, amountForPersons }
+import { groupTicketLines, orderedItemLabel, selectionTotals, personShares, amountForPersons }
   from "./paymentHubTicket";
 
 // Real staging shapes. Pizzas carry officialNumber + classicName + fantasyName;
@@ -14,53 +14,59 @@ const drink = (id, name, format, amount, remaining = amount) => ({
   product: { classicName: format, fantasyName: name, n: name, category: "Bebidas" },
 });
 
-// ── PRODUCT LABEL ──────────────────────────────────────────────────────────
-describe("product label", () => {
-  test("a pizza leads with its number and real name, nickname underneath", () => {
-    expect(productLabel(pizza("l", 9, "Vegetariana", "El Mago de Zadar", 14.5)))
-      .toMatchObject({ primary: "Nº 9 · Vegetariana", secondary: "El Mago de Zadar" });
+// ── ORDERED ITEM LABEL ─────────────────────────────────────────────────────
+// MESA V2.1.2 -- officialNumber is never printed here at all any more (it
+// only matters in the picker, a genuinely separate formatter -- pizzaLabel()
+// in constants.js -- that this file has never touched). `number` still
+// selects which name leads (classic for a numbered pizza, fantasy otherwise),
+// it is just never concatenated into the printed primary string.
+describe("ordered item label", () => {
+  test("a numbered pizza leads with its real/classic name, nickname underneath -- no number printed", () => {
+    expect(orderedItemLabel(pizza("l", 9, "Vegetariana", "El Mago de Zadar", 14.5)))
+      .toMatchObject({ primary: "Vegetariana", secondary: "El Mago de Zadar", number: 9 });
   });
 
   test("a drink leads with its recognisable name, format underneath", () => {
-    expect(productLabel(drink("l", "Coca Cola", "0,33L", 3)))
+    expect(orderedItemLabel(drink("l", "Coca Cola", "0,33L", 3)))
       .toMatchObject({ primary: "Coca Cola", secondary: "0,33L" });
   });
 
   test("a secondary line that only repeats the primary is not shown", () => {
     // Aquarius is stored with classicName === fantasyName.
-    expect(productLabel(drink("l", "Aquarius", "Aquarius", 3)).secondary).toBeNull();
+    expect(orderedItemLabel(drink("l", "Aquarius", "Aquarius", 3)).secondary).toBeNull();
   });
 
   test("with no product data at all it degrades to the description, never invents", () => {
-    expect(productLabel({ id: "x", description: "TEST ITEM", amount: 2 }))
+    expect(orderedItemLabel({ id: "x", description: "TEST ITEM", amount: 2 }))
       .toMatchObject({ primary: "TEST ITEM", secondary: null, number: null });
-    expect(productLabel({ id: "x", description: "TEST ITEM", product: {} }).primary).toBe("TEST ITEM");
+    expect(orderedItemLabel({ id: "x", description: "TEST ITEM", product: {} }).primary).toBe("TEST ITEM");
   });
 
-  test("a number with no classic name still leads with the number", () => {
-    expect(productLabel({ id: "x", description: "El Pelusa", product: { officialNumber: 1, fantasyName: "El Pelusa" } }))
-      .toMatchObject({ primary: "Nº 1 · El Pelusa", secondary: null });
+  test("a numbered item with no classic name still leads with the fantasy name -- number kept in the data, never printed", () => {
+    expect(orderedItemLabel({ id: "x", description: "El Pelusa", product: { officialNumber: 1, fantasyName: "El Pelusa" } }))
+      .toMatchObject({ primary: "El Pelusa", secondary: null, number: 1 });
   });
 
   test("a line with nothing at all renders a placeholder rather than crashing", () => {
-    expect(productLabel(null).primary).toBe("—");
-    expect(productLabel({}).primary).toBe("—");
+    expect(orderedItemLabel(null).primary).toBe("—");
+    expect(orderedItemLabel({}).primary).toBe("—");
   });
 
-  // MESA V2.1.1 -- "Nº 0" is not operational information (an uncatalogued
-  // test/UAT item defaults officialNumber to 0, not to a real menu slot).
-  // 0/negative/non-numeric all resolve the same way null already does: no
-  // number printed at all, never a placeholder like "N/A" or "--".
-  test("officialNumber 0 shows no number at all, never 'Nº 0'", () => {
-    const result = productLabel({ id: "x", description: "O-1 UAT Test Item", product: { officialNumber: 0, fantasyName: "O-1 UAT Test Item" } });
+  // "Nº 0"/"#0" is not operational information (an uncatalogued test/UAT item
+  // defaults officialNumber to 0, not to a real menu slot). 0/negative/non-
+  // numeric all resolve the same way null already does: no number carried at
+  // all, never a placeholder like "N/A" or "--" -- moot now that no number is
+  // ever printed here, but the underlying `number` field must still stay
+  // honest for any future caller that does read it.
+  test("officialNumber 0 carries no number at all", () => {
+    const result = orderedItemLabel({ id: "x", description: "O-1 UAT Test Item", product: { officialNumber: 0, fantasyName: "O-1 UAT Test Item" } });
     expect(result.number).toBeNull();
     expect(result.primary).toBe("O-1 UAT Test Item");
-    expect(result.primary).not.toContain("0");
   });
 
-  test("a negative or non-numeric officialNumber also shows no number", () => {
-    expect(productLabel({ id: "x", description: "X", product: { officialNumber: -1, fantasyName: "X" } }).number).toBeNull();
-    expect(productLabel({ id: "x", description: "X", product: { officialNumber: "n/a", fantasyName: "X" } }).number).toBeNull();
+  test("a negative or non-numeric officialNumber also carries no number", () => {
+    expect(orderedItemLabel({ id: "x", description: "X", product: { officialNumber: -1, fantasyName: "X" } }).number).toBeNull();
+    expect(orderedItemLabel({ id: "x", description: "X", product: { officialNumber: "n/a", fantasyName: "X" } }).number).toBeNull();
   });
 });
 
