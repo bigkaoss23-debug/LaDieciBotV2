@@ -499,7 +499,7 @@ test("navigation · going back returns to the table, and the hub is gone", async
   click(byTestId(container, "mesa-account-back"));
   await flush();
   expect(byTestId(container, "mesa-payment-hub")).toBeNull();
-  expect(container.textContent).toContain("Comandas");
+  expect(container.textContent).toContain("Comanda actual");
   expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
   unmount(container, root);
 });

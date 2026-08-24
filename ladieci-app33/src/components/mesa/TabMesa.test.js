@@ -117,8 +117,11 @@ describe("Mesa capacity settings", () => {
   });
 
   test("red is reserved for Eliminar mesa; Cerrar mesa (a genuinely empty, non-destructive release) is neutral", () => {
-    expect(source).toContain('<button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>');
-    expect(source).not.toMatch(/onClick=\{openCloseConfirm\}>[\s\S]{0,5}(danger|red)/);
+    // MESA WORKSPACE UI V2 -- the entry action now carries a decorative SVG
+    // icon (ICON_CLOSE_CIRCLE) ahead of its label, so this matches the
+    // className/handler/text triple rather than the old exact byte string.
+    expect(source).toMatch(/className="mesa-btn" disabled=\{busy\} onClick=\{openCloseConfirm\}>[\s\S]{0,80}Cerrar mesa/);
+    expect(source).not.toMatch(/onClick=\{openCloseConfirm\}[\s\S]{0,150}(danger|red)/);
     expect(source).toContain('<button className="mesa-btn red" disabled={busy} onClick={remove}>Eliminar mesa</button>');
   });
 

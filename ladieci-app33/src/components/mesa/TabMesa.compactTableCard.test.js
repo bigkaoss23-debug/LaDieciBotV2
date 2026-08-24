@@ -47,6 +47,16 @@ const emptySession = { id: "s1", coversTotal: 2, coversRemaining: 2, total: 0, p
 const withOrdersSession = {
   ...emptySession, total: 24.5, outstanding: 24.5,
   commands: [{ id: "c1", commandNumber: 101, state: "EN_COCINA", time: "20:10", items: [{ n: "Margherita", q: 2 }, { n: "Coca-Cola", q: 1 }] }],
+  // MESA WORKSPACE UI V2 -- Comanda actual's item list/count/total come from
+  // session.lines (groupTicketLines), not from commands[].items (which carry
+  // no price) -- see ComandaActualCard's own header comment. Two Margherita
+  // units group into one row (quantity 2), matching the approved mockup's
+  // own "2  Producto  precio" shape.
+  lines: [
+    { id: "l1", description: "Margherita", amount: 10, remaining: 10, quantity: 1 },
+    { id: "l2", description: "Margherita", amount: 10, remaining: 10, quantity: 1 },
+    { id: "l3", description: "Coca-Cola", amount: 4.5, remaining: 4.5, quantity: 1 },
+  ],
 };
 // Same-day, ~30 min from now -- inside isRelevantReservation's default
 // 120-minute window regardless of the exact instant the suite runs.
@@ -110,33 +120,30 @@ describe("MesaWorkspace compactCard -- presentation (phone shell only)", () => {
   });
 });
 
-describe("MesaWorkspace compactCard -- COMANDAS section", () => {
-  test("empty: muted, no aggregate dumped, just the short empty line", async () => {
+describe("MesaWorkspace compactCard -- Comanda actual card", () => {
+  test("empty: no article count chip, short empty line, no total row", async () => {
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: emptySession }) });
-    const section = container.querySelector('[data-testid="mesa-card-comandas"]');
-    expect(section.className).toContain("muted");
-    expect(section.className).not.toContain("active");
+    const section = container.querySelector('[data-testid="mesa-current-card"]');
+    expect(section.querySelector('[data-testid="mesa-current-count"]')).toBeNull();
     expect(section.textContent).toContain("Todavía no hay comandas.");
+    expect(section.textContent).not.toContain("Total actual");
     unmount(container, root);
   });
 
-  test("populated: active, compact aggregate summary (not the full per-item dump) until expanded", async () => {
+  test("populated: article count chip, items shown directly with real prices (2 Margherita group into one row), and the authoritative total", async () => {
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
-    const section = container.querySelector('[data-testid="mesa-card-comandas"]');
-    expect(section.className).toContain("active");
-    // Pedido en curso · 3 artículos (2 Margherita + 1 Coca-Cola) · 24,50 €
-    expect(section.textContent).toContain("Pedido en curso");
-    expect(section.textContent).toContain("3 artículos");
-    expect(section.textContent).not.toContain("Margherita");
-    // Tap reveals the exact existing CommandCard list -- reused, not
-    // duplicated -- rather than a second, parallel rendering of the order.
-    // CommandCard itself stays independently collapsed by default (its own
-    // existing, unmodified behavior); "Comanda #101" is its own collapsed-
-    // state label, proof this is the real component, not a re-summary.
-    expect(container.textContent).not.toContain("Comanda #101");
-    click(section);
-    await flush();
-    expect(container.textContent).toContain("Comanda #101");
+    const section = container.querySelector('[data-testid="mesa-current-card"]');
+    // 2 Margherita (grouped, quantity 2) + 1 Coca-Cola = 3 artículos.
+    expect(section.querySelector('[data-testid="mesa-current-count"]').textContent).toContain("3 artículos");
+    const items = Array.from(section.querySelectorAll('[data-testid="mesa-current-item"]')).map((el) => el.textContent);
+    expect(items.some((t) => t.includes("Margherita") && t.includes("20,00"))).toBe(true);
+    expect(items.some((t) => t.includes("Coca-Cola") && t.includes("4,50"))).toBe(true);
+    // The authoritative figure -- session.outstanding, never re-derived.
+    expect(section.textContent).toContain("Total actual");
+    expect(section.textContent).toContain("24,50");
+    // The kitchen status line -- the latest active comanda's own time/state.
+    expect(section.textContent).toContain("20:10");
+    expect(section.textContent).toContain("En cocina");
     unmount(container, root);
   });
 });
@@ -144,7 +151,7 @@ describe("MesaWorkspace compactCard -- COMANDAS section", () => {
 describe("MesaWorkspace compactCard -- RESERVAS section", () => {
   test("no reservation for this table: muted, short line, does not consume much space", async () => {
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: emptySession, reservations: [] }) });
-    const section = container.querySelector('[data-testid="mesa-card-reservas"]');
+    const section = container.querySelector('[data-testid="mesa-reservas-section"]');
     expect(section.className).toContain("muted");
     expect(section.textContent).toContain("Sin reserva para esta mesa.");
     unmount(container, root);
@@ -152,7 +159,7 @@ describe("MesaWorkspace compactCard -- RESERVAS section", () => {
 
   test("a reservation exists: active, compact summary with guest name", async () => {
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: emptySession, reservations: [futureReservation] }) });
-    const section = container.querySelector('[data-testid="mesa-card-reservas"]');
+    const section = container.querySelector('[data-testid="mesa-reservas-section"]');
     expect(section.className).toContain("active");
     expect(section.textContent).toContain("Ana Ruiz");
     unmount(container, root);
@@ -160,7 +167,7 @@ describe("MesaWorkspace compactCard -- RESERVAS section", () => {
 
   test("tapping RESERVAS opens the real agenda filtered to this table (same data source, no parallel store)", async () => {
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: emptySession, reservations: [futureReservation], number: 5 }) });
-    click(container.querySelector('[data-testid="mesa-card-reservas"]'));
+    click(container.querySelector('[data-testid="mesa-reservas-section"]'));
     await flush();
     expect(container.textContent).toContain("Reservas activas de hoy");
     // Filtered to Mesa 5: the <select> reads that table's id, not "".
@@ -201,7 +208,7 @@ describe("MesaWorkspace compactCard -- table actions unchanged", () => {
 describe("MesaWorkspace compactCard -- Ver cuenta in-place (no second overlay)", () => {
   test("Ver cuenta replaces the compact card content in-place -- one modal layer, detail not simultaneously rendered", async () => {
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
-    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="mesa-current-card"]')).not.toBeNull();
 
     click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Ver cuenta"));
     await flush();
@@ -213,8 +220,8 @@ describe("MesaWorkspace compactCard -- Ver cuenta in-place (no second overlay)",
     expect(container.querySelector(".mesa-modal")).toBeNull();
 
     // Detail content is gone, not just visually covered by a second layer.
-    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).toBeNull();
-    expect(container.querySelector('[data-testid="mesa-card-reservas"]')).toBeNull();
+    expect(container.querySelector('[data-testid="mesa-current-card"]')).toBeNull();
+    expect(container.querySelector('[data-testid="mesa-reservas-section"]')).toBeNull();
 
     const accountView = container.querySelector('[data-testid="mesa-card-view-account"]');
     expect(accountView).not.toBeNull();
@@ -238,7 +245,7 @@ describe("MesaWorkspace compactCard -- Ver cuenta in-place (no second overlay)",
     click(back);
     await flush();
     expect(container.querySelector('[data-testid="mesa-card-view-account"]')).toBeNull();
-    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="mesa-current-card"]')).not.toBeNull();
     unmount(container, root);
   });
 });
@@ -253,7 +260,7 @@ describe("MesaWorkspace compactCard -- Cerrar mesa in-place (no second overlay)"
     expect(container.querySelectorAll(".mesa-table-card-overlay").length).toBe(1);
     expect(container.querySelector(".mesa-overlay")).toBeNull();
     expect(container.querySelector(".mesa-modal")).toBeNull();
-    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).toBeNull();
+    expect(container.querySelector('[data-testid="mesa-current-card"]')).toBeNull();
 
     const confirmView = container.querySelector('[data-testid="mesa-card-view-close-confirm"]');
     expect(confirmView).not.toBeNull();
@@ -272,7 +279,7 @@ describe("MesaWorkspace compactCard -- Cerrar mesa in-place (no second overlay)"
     await flush();
 
     expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).toBeNull();
-    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="mesa-current-card"]')).not.toBeNull();
     expect(mesaApi.closeTable).not.toHaveBeenCalled();
     expect(mesaApi.releaseEmptyTable).not.toHaveBeenCalled();
     unmount(container, root);
@@ -289,7 +296,7 @@ describe("MesaWorkspace compactCard -- Cerrar mesa in-place (no second overlay)"
     await flush();
 
     expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).toBeNull();
-    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="mesa-current-card"]')).not.toBeNull();
     unmount(container, root);
   });
 });
@@ -356,7 +363,7 @@ describe("MesaWorkspace compactCard -- table-local state isolation (key={table.i
 
     expect(container.textContent).not.toContain("MESA_TABLE_HAS_ACTIVE_ORDERS");
     expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).toBeNull();
-    expect(container.querySelector('[data-testid="mesa-card-comandas"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="mesa-current-card"]')).not.toBeNull();
     expect(container.querySelector(".mesa-table-card-head").textContent).toContain("Mesa 6");
     unmount(container, root);
   });
