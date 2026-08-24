@@ -40,11 +40,21 @@ export function CartBar({ totalQty, totalCart, actionLabel, onOpen, emptyHint = 
           cursor: hasItems ? "pointer" : "default",
         }}
       >
+        {/* MESA V2.1.2 -- vector cart, replacing the decorative 🛒 emoji
+            manual smoke flagged; same stroke-based line-icon style as Mesa
+            Workspace's own HubIcon and DraftSummary's checkmark. */}
         <span data-testid="cart-bar-icon" aria-hidden="true" style={{
           width: 34, height: 34, borderRadius: 10, flexShrink: 0,
           background: hasItems ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.05)",
-          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17,
-        }}>🛒</span>
+          display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="9" cy="20" r="1.4" fill="currentColor" stroke="none" />
+            <circle cx="18" cy="20" r="1.4" fill="currentColor" stroke="none" />
+            <path d="M2.5 3h2l2.2 11.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21 7H6" />
+          </svg>
+        </span>
         <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
           {hasItems ? (
             <>

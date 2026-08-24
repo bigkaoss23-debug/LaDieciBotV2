@@ -122,10 +122,14 @@ test("2 · the ticket lists every product with quantity and price, grouped as in
     // space; normalise it so the assertion compares money, not whitespace.
     amount: row.querySelector(".mesa-hub-amount").textContent.replace(/\s/g, " "),
   });
-  expect(read(rows[0])).toEqual({ qty: "1", name: "Nº 1 · Margherita Classica", alias: "El Pelusa", amount: "12,00 €" });
+  // MESA V2.1.2 -- quantity reads "1×"/"2×" and the menu's official number is
+  // never printed once a product is inside a real ticket (Margherita Classica
+  // is officialNumber 1 in this fixture -- see the number-badge-only coverage
+  // in "8 · a pizza shows its number and real name" further down).
+  expect(read(rows[0])).toEqual({ qty: "1×", name: "Margherita Classica", alias: "El Pelusa", amount: "12,00 €" });
   // Two real units, one displayed row.
-  expect(read(rows[2])).toEqual({ qty: "2", name: "Estrella Galicia", alias: "33cl", amount: "6,00 €" });
-  expect(read(rows[4])).toEqual({ qty: "1", name: "San Miguel 0,0", alias: null, amount: "3,00 €" });
+  expect(read(rows[2])).toEqual({ qty: "2×", name: "Estrella Galicia", alias: "33cl", amount: "6,00 €" });
+  expect(read(rows[4])).toEqual({ qty: "1×", name: "San Miguel 0,0", alias: null, amount: "3,00 €" });
   unmount(container, root);
 });
 
@@ -374,11 +378,14 @@ test("7 · a free amount charges custom_amount and consumes nobody's share", asy
 });
 
 // ── PRODUCT LABELS ─────────────────────────────────────────────────────────
-test("8 · a pizza shows its number and real name, with the nickname beneath", async () => {
+// MESA V2.1.2 -- the ticket shows the real/classic name with the nickname
+// beneath, never the menu's official number (that only matters in the
+// picker, during selection -- see paymentHubTicket.js's orderedItemLabel()).
+test("8 · a pizza shows its real name, with the nickname beneath, never its menu number", async () => {
   const { container, root } = await openHub();
   const row = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'))
     .find((r) => r.textContent.includes("Bufala"));
-  expect(row.querySelector(".mesa-hub-name").textContent).toBe("Nº 2 · Bufala");
+  expect(row.querySelector(".mesa-hub-name").textContent).toBe("Bufala");
   expect(row.querySelector(".mesa-hub-alias").textContent).toBe("La Joya");
   unmount(container, root);
 });
