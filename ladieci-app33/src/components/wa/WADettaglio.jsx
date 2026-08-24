@@ -471,7 +471,11 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
               <div style={{color:C.rosso,fontWeight:700,fontSize:13}}>⚠ No es un pedido</div>
               <button onClick={()=>{
-                if(window.confirm("Eliminar este mensaje de todos los registros?")) {
+                // N-1 — this calls onElimina -> waElimina -> eliminaConversazione,
+                // which deletes the WHOLE conversation (conv + wa_msgs) and every
+                // order under this wa_id, not just this one message. Copy
+                // corrected to state the real destructive scope.
+                if(window.confirm("¿Eliminar esta conversación? Se eliminarán la conversación, sus mensajes y los pedidos asociados que puedan eliminarse de forma segura.")) {
                   onElimina(msg.id, msg.wa_id||msg.tel);
                 }
               }} style={{background:"transparent",border:"none",
@@ -900,7 +904,10 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
               </button>
             )}
             <button onClick={()=>{
-              if(window.confirm("¿Eliminar este mensaje?")) onElimina(msg.id, msg.wa_id||msg.tel);
+              // N-1 — same real scope as the other delete affordance above:
+              // onElimina -> waElimina -> eliminaConversazione deletes the whole
+              // conversation, its messages, and every order under this wa_id.
+              if(window.confirm("¿Eliminar esta conversación? Se eliminarán la conversación, sus mensajes y los pedidos asociados que puedan eliminarse de forma segura.")) onElimina(msg.id, msg.wa_id||msg.tel);
             }} style={{background:"transparent",border:"none",color:"#FF444466",
               fontSize:12,fontWeight:600,cursor:"pointer",padding:"4px 0",
               textAlign:"center",width:"100%"}}>🗑 Eliminar mensaje</button>
