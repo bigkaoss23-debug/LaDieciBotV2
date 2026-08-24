@@ -684,22 +684,23 @@ test("in Personalizar sala, an occupied table's popup offers only layout actions
   unmount(container, root);
 });
 
-test("MESA WORKSPACE UI V2 -- a served-and-paid comanda moves to Resumen while an in-kitchen comanda stays in Comanda actual, and Nueva comanda stays available for a third", async () => {
-  // Margherita (comanda #1, RETIRADO/served) is fully paid off (remaining:0)
-  // -- the real, already-server-derived signal (groupTicketLines' own
-  // paidInFull) this slice uses to decide "resolved, out of the way", not an
-  // invented one. Coca-Cola/Agua (comanda #2, EN_COCINA) are still owed.
+test("MESA WORKSPACE UI V2.1 -- Comanda actual is the single most recent REAL comanda (#2), the earlier paid-off comanda (#1) shows as its own true row in Resumen, and Nueva comanda stays available for a third", async () => {
+  // Real command boundaries (V2.1): #1 (Margherita, RETIRADO, fully paid) and
+  // #2 (Coca-Cola/Agua, EN_COCINA, unpaid) are TWO comandas, never fused.
+  // Each line carries orderId -- the real link used to filter, not an
+  // invented one -- and each command carries its own authoritative total
+  // (order.totale), never re-derived from lines client-side.
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession({
         coversTotal: 4, coversRemaining: 4, total: 12.5, paid: 8, outstanding: 4.5,
         commands: [
-          { id: "o1", commandNumber: 1, state: "RETIRADO", items: [{ n: "Margherita" }], time: "20:50", note: "sin cebolla" },
-          { id: "o2", commandNumber: 2, state: "EN_COCINA", items: [{ n: "Coca-Cola" }, { n: "Agua" }], time: "21:10", note: "" },
+          { id: "o1", commandNumber: 1, state: "RETIRADO", total: 8, items: [{ n: "Margherita" }], time: "20:50", note: "sin cebolla" },
+          { id: "o2", commandNumber: 2, state: "EN_COCINA", total: 4.5, items: [{ n: "Coca-Cola" }, { n: "Agua" }], time: "21:10", note: "" },
         ],
         lines: [
-          { id: "l1", description: "Margherita", amount: 8, remaining: 0, quantity: 1 },
-          { id: "l2", description: "Coca-Cola", amount: 3, remaining: 3, quantity: 1 },
-          { id: "l3", description: "Agua", amount: 1.5, remaining: 1.5, quantity: 1 },
+          { id: "l1", orderId: "o1", description: "Margherita", amount: 8, remaining: 0, quantity: 1 },
+          { id: "l2", orderId: "o2", description: "Coca-Cola", amount: 3, remaining: 3, quantity: 1 },
+          { id: "l3", orderId: "o2", description: "Agua", amount: 1.5, remaining: 1.5, quantity: 1 },
         ],
       }) }
     : table);
@@ -707,25 +708,32 @@ test("MESA WORKSPACE UI V2 -- a served-and-paid comanda moves to Resumen while a
   const { container, root } = await mount("waiter");
   click(container.querySelector(".mesa-table"));
   const dialog = container.querySelector('[role="dialog"]');
-  // Comanda actual: the latest ACTIVE (non-RETIRADO) command's own time/state
-  // -- #2, not #1, since #1 is already terminal.
+  // Comanda actual: the LAST real comanda by creation order -- #2, not #1,
+  // regardless of #1 already being paid off (real identity, not a financial
+  // filter).
   const current = byTestId(dialog, "mesa-current-card");
+  expect(current.textContent).toContain("#2");
   expect(current.textContent).toContain("21:10");
   expect(current.textContent).toContain("En cocina");
   expect(current.textContent).toContain("Coca-Cola");
   expect(current.textContent).toContain("Agua");
   expect(current.textContent).not.toContain("Margherita");
-  expect(current.textContent).toContain("Total actual");
+  expect(current.textContent).toContain("Total comanda");
   expect(current.textContent).toContain("4,50");
-  // Resumen de comandas: collapsed by default, only the paid amount summary
-  // visible; expanding it reveals Margherita, never the still-owed items.
+  // Resumen de comandas: collapsed by default, only a comanda-count summary
+  // visible; expanding it reveals comanda #1 as its OWN real row -- number,
+  // true state ("Pagada", because every one of ITS lines is paidInFull, not
+  // because it's merely not-current), and its own total. No product names
+  // leak into this command-level list.
   const resumen = byTestId(dialog, "mesa-resumen-section");
-  expect(resumen.textContent).toContain("Pedido anterior");
+  expect(resumen.textContent).toContain("1 comanda anterior");
   expect(resumen.textContent).toContain("8,00");
-  expect(resumen.textContent).not.toContain("Margherita");
   click(resumen);
-  expect(byTestId(dialog, "mesa-resumen-items").textContent).toContain("Margherita");
-  expect(byTestId(dialog, "mesa-resumen-items").textContent).not.toContain("Coca-Cola");
+  const resumenItems = byTestId(dialog, "mesa-resumen-items");
+  expect(resumenItems.textContent).toContain("#1");
+  expect(resumenItems.textContent).toContain("Pagada");
+  expect(resumenItems.textContent).toContain("8,00");
+  expect(resumenItems.textContent).not.toContain("Coca-Cola");
   // the sheet actively grows for a table with real comandas to show, not
   // just the default shrink-to-content popup size
   expect(dialog.querySelector(".mesa-modal").className).toContain("tall");

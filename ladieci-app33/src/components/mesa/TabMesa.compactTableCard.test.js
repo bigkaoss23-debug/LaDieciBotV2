@@ -46,16 +46,18 @@ beforeEach(() => {
 const emptySession = { id: "s1", coversTotal: 2, coversRemaining: 2, total: 0, paid: 0, outstanding: 0, nextEqualShare: 0, paymentTotals: {}, commands: [], lines: [], payments: [] };
 const withOrdersSession = {
   ...emptySession, total: 24.5, outstanding: 24.5,
-  commands: [{ id: "c1", commandNumber: 101, state: "EN_COCINA", time: "20:10", items: [{ n: "Margherita", q: 2 }, { n: "Coca-Cola", q: 1 }] }],
-  // MESA WORKSPACE UI V2 -- Comanda actual's item list/count/total come from
-  // session.lines (groupTicketLines), not from commands[].items (which carry
-  // no price) -- see ComandaActualCard's own header comment. Two Margherita
-  // units group into one row (quantity 2), matching the approved mockup's
-  // own "2  Producto  precio" shape.
+  commands: [{ id: "c1", commandNumber: 101, state: "EN_COCINA", time: "20:10", total: 24.5, items: [{ n: "Margherita", q: 2 }, { n: "Coca-Cola", q: 1 }] }],
+  // MESA WORKSPACE UI V2.1 -- Comanda actual's item list/count/total come
+  // from session.lines FILTERED BY orderId === command.id (real command
+  // boundaries, see ComandaActualCard's own header comment), not from
+  // commands[].items (which carry no price) and not from the whole
+  // session's lines fused together. Two Margherita units group into one row
+  // (quantity 2), matching the approved mockup's own "2  Producto  precio"
+  // shape.
   lines: [
-    { id: "l1", description: "Margherita", amount: 10, remaining: 10, quantity: 1 },
-    { id: "l2", description: "Margherita", amount: 10, remaining: 10, quantity: 1 },
-    { id: "l3", description: "Coca-Cola", amount: 4.5, remaining: 4.5, quantity: 1 },
+    { id: "l1", orderId: "c1", description: "Margherita", amount: 10, remaining: 10, quantity: 1 },
+    { id: "l2", orderId: "c1", description: "Margherita", amount: 10, remaining: 10, quantity: 1 },
+    { id: "l3", orderId: "c1", description: "Coca-Cola", amount: 4.5, remaining: 4.5, quantity: 1 },
   ],
 };
 // Same-day, ~30 min from now -- inside isRelevantReservation's default
@@ -130,18 +132,19 @@ describe("MesaWorkspace compactCard -- Comanda actual card", () => {
     unmount(container, root);
   });
 
-  test("populated: article count chip, items shown directly with real prices (2 Margherita group into one row), and the authoritative total", async () => {
+  test("populated: real command number chip, items shown directly with real prices (2 Margherita group into one row), and the authoritative per-comanda total", async () => {
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
     const section = container.querySelector('[data-testid="mesa-current-card"]');
-    // 2 Margherita (grouped, quantity 2) + 1 Coca-Cola = 3 artículos.
-    expect(section.querySelector('[data-testid="mesa-current-count"]').textContent).toContain("3 artículos");
+    // The chip is the REAL command number (#101), not an article count --
+    // Comanda actual represents one identifiable comanda, not a tally.
+    expect(section.querySelector('[data-testid="mesa-current-count"]').textContent).toContain("#101");
     const items = Array.from(section.querySelectorAll('[data-testid="mesa-current-item"]')).map((el) => el.textContent);
     expect(items.some((t) => t.includes("Margherita") && t.includes("20,00"))).toBe(true);
     expect(items.some((t) => t.includes("Coca-Cola") && t.includes("4,50"))).toBe(true);
-    // The authoritative figure -- session.outstanding, never re-derived.
-    expect(section.textContent).toContain("Total actual");
+    // The authoritative figure -- command.total (order.totale), never re-derived.
+    expect(section.textContent).toContain("Total comanda");
     expect(section.textContent).toContain("24,50");
-    // The kitchen status line -- the latest active comanda's own time/state.
+    // The kitchen status line -- this comanda's own time/state.
     expect(section.textContent).toContain("20:10");
     expect(section.textContent).toContain("En cocina");
     unmount(container, root);

@@ -762,27 +762,39 @@ const css = `
    comment further up in this same stylesheet. ── */
 .mesa-current-card{border:1px solid rgba(215,168,75,.4);border-radius:16px;padding:14px 15px 15px;background:rgba(215,168,75,.055)}
 .mesa-current-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mesa-current-head-toggle{width:100%;background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .mesa-current-eyebrow{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:900;letter-spacing:.6px;text-transform:uppercase;color:#e9c983}
 .mesa-current-count{border-color:rgba(215,168,75,.4);background:rgba(215,168,75,.14);color:#f3d9a4}
+.mesa-current-chevron{color:#a99d89;transition:transform .15s;flex-shrink:0}
+.mesa-current-collapsed{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;color:#c9bd9f;font-size:12.5px;font-weight:700}
 .mesa-current-status{display:flex;align-items:center;gap:7px;margin-top:8px;color:#c9bd9f;font-size:12.5px}
 .mesa-current-status .mesa-hub-icon{color:#a99d89}
 .mesa-current-items{border-top:1px dashed rgba(215,168,75,.28);margin-top:11px;padding-top:2px}
-.mesa-current-item{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:14px}
+.mesa-current-item{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:14px;width:100%;background:none;border-left:0;border-right:0;border-top:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .mesa-current-item:last-child{border-bottom:0}
+.mesa-current-item:hover{background:rgba(255,255,255,.04)}
 .mesa-current-qty{flex:0 0 auto;min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:rgba(215,168,75,.16);border:1px solid rgba(215,168,75,.4);color:#f3d9a4;font-size:12px;font-weight:900}
 .mesa-current-desc{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px;overflow-wrap:break-word}
 .mesa-current-name{color:#f4ecdd;font-weight:700}
 .mesa-current-alias{color:#978d7c;font-size:11.5px}
 .mesa-current-amount{flex:0 0 auto;font-weight:800;color:#f4ecdd}
-.mesa-current-item.paid .mesa-current-name,.mesa-current-item.paid .mesa-current-amount{color:#8d8474}
 .mesa-current-more{display:block;width:100%;text-align:center;margin-top:8px;padding:8px;background:none;border:0;border-top:1px solid rgba(255,255,255,.07);color:#d7a84b;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer}
 .mesa-current-more:hover{color:#f3d9a4}
+.mesa-current-add{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:10px;padding:9px;background:rgba(215,168,75,.09);border:1px dashed rgba(215,168,75,.4);border-radius:10px;color:#e9c983;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer}
+.mesa-current-add:hover{background:rgba(215,168,75,.16)}
 .mesa-current-total{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:11px;padding-top:11px;border-top:1px solid rgba(215,168,75,.3);font-size:12px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;color:#e9c983}
 .mesa-current-total strong{color:#f3d9a4;font-size:22px;font-weight:950;letter-spacing:0;text-transform:none}
 .mesa-current-actions{display:flex;flex-direction:column;gap:9px;margin:15px 0 0}
-.mesa-current-cta-primary{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:50px;font-size:15px}
+.mesa-current-cta-primary{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:54px;font-size:16px}
 .mesa-current-cta-row{display:flex;gap:9px}
-.mesa-current-cta-row .mesa-btn{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px}
+.mesa-current-cta-row .mesa-btn{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;font-size:14.5px}
+.mesa-resumen-list{margin-top:10px;border-top:1px dashed rgba(255,255,255,.09);padding-top:2px}
+.mesa-resumen-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:13.5px}
+.mesa-resumen-row:last-child{border-bottom:0}
+.mesa-resumen-number{flex:0 0 auto;color:#c9bd9f;font-weight:800}
+.mesa-resumen-state{flex:1 1 auto;color:#a99d89;font-weight:700}
+.mesa-resumen-state.paid{color:#65d995}
+.mesa-resumen-amount{flex:0 0 auto;color:#f4ecdd;font-weight:800}
 @media(max-width:480px){.mesa-current-card{padding:13px 13px 14px}}
 `;
 
@@ -923,130 +935,194 @@ function DraftItemsList({ items }) {
   </>;
 }
 
-// ═══ MESA WORKSPACE UI V2 — approved layout ═══
-// Replaces the old flat, undifferentiated "Comandas" list (every comanda of
-// the sitting, oldest and newest side by side, only distinguished by a
-// kitchen-state chip) with the approved mockup's three-part structure:
-//   COMANDA ACTUAL      -- what is not yet paid off, right now.
-//   RESUMEN DE COMANDAS -- what already is paid off, out of the way.
-//   RESERVAS            -- unrelated, unchanged data, restyled to match.
+// ═══ MESA WORKSPACE UI V2.1 — real command boundaries ═══
+// V2 (previous slice) split COMANDA ACTUAL / RESUMEN by a LINE-level signal
+// (paidInFull), grouping every unpaid line of the whole sitting into one
+// card regardless of which real comanda sent it -- three separate kitchen
+// tickets (#1/#2/#3) rendered fused into a single "Comanda actual" the
+// instant none of them were paid yet. That was wrong: a comanda sent to
+// Cocina is a real, identifiable unit and must stay one.
 //
-// THE SPLIT IS FINANCIAL, NOT KITCHEN-STATE, AND IT IS NOT INVENTED. Every
-// line already carries `remaining` (F-... Payment Hub V1), and
-// groupTicketLines() already reduces that to one boolean per grouped row,
-// `paidInFull` -- the exact signal VerCuentaBody itself already treats as
-// authoritative for its own "Pagado" tag/muted styling. This file used to
-// have no concept of "current vs previous comanda" at all (a served comanda
-// stayed in the flat list forever, identical to an in-progress one); rather
-// than invent a new classification, this reuses the one real, already-
-// server-derived fact that actually means "resolved, no longer part of the
-// operative balance": every unit of it has been paid. Money itself is never
-// re-derived here either -- session.outstanding/session.paid, same as the
-// Payment Hub reads, never a client-side sum of these same rows.
-//
-// A "comanda" (kitchen order) and a paid-in-full ticket LINE are different
-// units -- a line carries no back-reference to the comanda that created it
-// (confirmed: no such field exists anywhere in this payload) -- so Resumen
-// never claims a specific comanda COUNT it cannot verify; it reports the
-// real paid amount only ("Pedido anterior · 10,50 €", matching the approved
-// mockup's own secondary line, without the unverifiable "1 comanda cerrada"
-// headline above it).
-function ComandaActualCard({ session, busy, onMarkServed }) {
+// THE FIX IS PURELY A PROJECTION FIX, NOT A NEW MODEL. Every line already
+// carries `orderId` (table_order_lines.order_id, see mesaService.js's
+// normalizeLinesBySession) and every command already carries its own `id`,
+// `commandNumber`, `state`, `time` and server-authoritative `total`
+// (order.totale, see projectSessionAccount) -- session.commands arrives
+// ordered oldest-to-newest (orders queried `order=ts.asc` in mesaDao.js), so
+// the LAST entry is always the most recently sent real comanda. Grouping
+// `session.lines` by `orderId` before calling groupTicketLines() (unchanged,
+// still the Payment Hub's own function) is the entire fix.
+//   COMANDA ACTUAL      -- the single most recent real comanda.
+//   RESUMEN DE COMANDAS -- every OTHER real comanda, each with its own real
+//                          state (kitchen state, or "Pagada" only when every
+//                          one of its lines is actually paidInFull -- never
+//                          "cerrada" for a comanda that is merely not-newest).
+//   RESERVAS            -- unchanged, see ReservasSection below (Fase 7).
+// Money is still never re-derived: command.total is the same order.totale
+// the backend already computed: it is read, not summed from lines.
+function ComandaActualCard({ session, draft, busy, onMarkServed, onAddItems, onSelectLine }) {
+  const [expanded, setExpanded] = useState(true);
   const [itemsExpanded, setItemsExpanded] = useState(false);
-  const ticketRows = groupTicketLines(session?.lines);
-  const activeRows = ticketRows.filter((row) => !row.paidInFull);
-  const totalArticles = activeRows.reduce((sum, row) => sum + row.quantity, 0);
-  const activeCommands = (session?.commands || []).filter((command) => command.state !== "RETIRADO");
-  const latestActive = activeCommands[activeCommands.length - 1] || null;
-  const hasOrders = (session?.commands?.length || 0) > 0;
+  const commands = session?.commands || [];
+  const current = commands.length > 0 ? commands[commands.length - 1] : null;
+  const commandLines = current
+    ? (session?.lines || []).filter((line) => String(line.orderId) === String(current.id))
+    : [];
+  const ticketRows = groupTicketLines(commandLines);
+  const totalArticles = ticketRows.reduce((sum, row) => sum + row.quantity, 0);
+  const statusLabel = current ? commandStateLabel(current.state) : null;
 
   const VISIBLE_ROWS = 4;
-  const visibleRows = itemsExpanded ? activeRows : activeRows.slice(0, VISIBLE_ROWS);
-  const hiddenCount = activeRows.length - visibleRows.length;
+  const visibleRows = itemsExpanded ? ticketRows : ticketRows.slice(0, VISIBLE_ROWS);
+  const hiddenCount = ticketRows.length - visibleRows.length;
+
+  if (!current) {
+    return <section className="mesa-current-card" data-testid="mesa-current-card">
+      <div className="mesa-current-head">
+        <span className="mesa-current-eyebrow">
+          <i className="mesa-dot" style={{ width: 6, height: 6, background: "#d7a84b" }} />
+          Comanda actual
+        </span>
+      </div>
+      <div className="mesa-hub-empty" data-testid="mesa-current-empty">Todavía no hay comandas.</div>
+    </section>;
+  }
 
   return <section className="mesa-current-card" data-testid="mesa-current-card">
-    <div className="mesa-current-head">
+    <button type="button" className="mesa-current-head mesa-current-head-toggle" data-testid="mesa-current-toggle"
+      aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
       <span className="mesa-current-eyebrow">
         <i className="mesa-dot" style={{ width: 6, height: 6, background: "#d7a84b" }} />
         Comanda actual
       </span>
-      {totalArticles > 0 && <span className="mesa-chip mesa-current-count" data-testid="mesa-current-count">{totalArticles} artículo{totalArticles === 1 ? "" : "s"}</span>}
-    </div>
-    <div className="mesa-current-status">
-      <HubIcon d={ICON_CLOCK} size={15} />
-      {latestActive
-        ? <span>{latestActive.time || "ahora"} · {commandStateLabel(latestActive.state)}</span>
-        : <span className="mesa-muted">{hasOrders ? "Sin comandas activas" : "Todavía no hay comandas"}</span>}
-      {latestActive?.state === "LISTO" && <button type="button" className="mesa-btn green small" style={{ marginLeft: "auto" }}
-        disabled={busy} onClick={() => onMarkServed(latestActive.id)}>✓ Servida</button>}
-    </div>
+      <span className="mesa-chip mesa-current-count" data-testid="mesa-current-count">#{current.commandNumber}</span>
+      <span className="mesa-current-chevron" aria-hidden="true"
+        style={{ transform: expanded ? "rotate(180deg)" : "none" }}>⌄</span>
+    </button>
 
-    {activeRows.length > 0 ? <>
-      <div className="mesa-current-items" data-testid="mesa-current-items">
-        {visibleRows.map((row) => <div className="mesa-current-item" key={row.key} data-testid="mesa-current-item">
-          <span className="mesa-current-qty">{row.quantity}</span>
-          <span className="mesa-current-desc">
-            <span className="mesa-current-name">{row.label.primary}</span>
-            {row.label.secondary && <small className="mesa-current-alias">{row.label.secondary}</small>}
-          </span>
-          <strong className="mesa-current-amount">{euro(row.amount)}</strong>
-        </div>)}
+    {/* Accordion, collapsed: still informative -- number, real kitchen
+        state, article count and total never disappear (Fase 2 spec). */}
+    {!expanded && <div className="mesa-current-collapsed" data-testid="mesa-current-collapsed">
+      <span>{current.time || "—"} · {statusLabel}</span>
+      <span>{totalArticles} artículo{totalArticles === 1 ? "" : "s"} · {euro(current.total)}</span>
+    </div>}
+
+    {expanded && <>
+      <div className="mesa-current-status">
+        <HubIcon d={ICON_CLOCK} size={15} />
+        <span>{current.time || "ahora"} · {statusLabel}</span>
+        {current.state === "LISTO" && <button type="button" className="mesa-btn green small" style={{ marginLeft: "auto" }}
+          disabled={busy} onClick={() => onMarkServed(current.id)}>✓ Servida</button>}
       </div>
-      {hiddenCount > 0 && <button type="button" className="mesa-current-more" data-testid="mesa-current-expand"
-        onClick={() => setItemsExpanded(true)}>Ver más · {hiddenCount} artículo{hiddenCount === 1 ? "" : "s"}</button>}
-      {itemsExpanded && activeRows.length > VISIBLE_ROWS && <button type="button" className="mesa-current-more"
-        data-testid="mesa-current-collapse" onClick={() => setItemsExpanded(false)}>Mostrar menos</button>}
-    </> : <div className="mesa-hub-empty" data-testid="mesa-current-empty">
-      {ticketRows.length > 0
-        ? "Sin artículos pendientes. Consulta Resumen de comandas."
-        : Number(session?.total) > 0
-          ? "El detalle por producto todavía no está disponible."
-          : "Todavía no hay comandas."}
-    </div>}
 
-    {hasOrders && <div className="mesa-current-total" data-testid="mesa-current-total">
-      <span>Total actual</span><strong>{euro(session?.outstanding)}</strong>
-    </div>}
+      {ticketRows.length > 0 ? <>
+        <div className="mesa-current-items" data-testid="mesa-current-items">
+          {/* Tappable row, no pencil (Fase 5) -- opens a compact read-only
+              detail sheet. Edit capability is a separate, audited decision
+              (Fase 6); this only fixes "no pencil, but still interactive". */}
+          {visibleRows.map((row) => <button type="button" className="mesa-current-item" key={row.key} data-testid="mesa-current-item"
+            onClick={() => onSelectLine({ command: current, row })}>
+            <span className="mesa-current-qty">{row.quantity}</span>
+            <span className="mesa-current-desc">
+              <span className="mesa-current-name">{row.label.primary}</span>
+              {row.label.secondary && <small className="mesa-current-alias">{row.label.secondary}</small>}
+            </span>
+            <strong className="mesa-current-amount">{euro(row.amount)}</strong>
+          </button>)}
+        </div>
+        {hiddenCount > 0 && <button type="button" className="mesa-current-more" data-testid="mesa-current-expand"
+          onClick={() => setItemsExpanded(true)}>Mostrar otros {hiddenCount} artículo{hiddenCount === 1 ? "" : "s"}</button>}
+        {itemsExpanded && ticketRows.length > VISIBLE_ROWS && <button type="button" className="mesa-current-more"
+          data-testid="mesa-current-collapse" onClick={() => setItemsExpanded(false)}>Mostrar menos</button>}
+      </> : <div className="mesa-hub-empty" data-testid="mesa-current-empty">
+        El detalle por producto todavía no está disponible.
+      </div>}
+
+      {/* Fase 3 -- same callback as the bottom "Nueva comanda", never a
+          second implementation. Hidden while a draft exists: the draft
+          panel below already offers its own "Modificar" entry point into
+          the exact same picker. */}
+      {!draft && <button type="button" className="mesa-current-add" data-testid="mesa-current-add" onClick={onAddItems}>
+        <HubIcon d={ICON_PLUS_CIRCLE} size={15} />Añadir artículos
+      </button>}
+
+      <div className="mesa-current-total" data-testid="mesa-current-total">
+        <span>Total comanda</span><strong>{euro(current.total)}</strong>
+      </div>
+    </>}
   </section>;
 }
 
-// Collapsed by default (only the amount summary shows), same "muted when
-// nothing to report, highlighted when there is" language as the Reservas
-// section below -- see .mesa-card-section's own comment. Discrete/inactive
-// when this sitting has nothing paid off yet, exactly per the approved
-// brief ("se non ci sono comandas precedenti: sezione discreta/inattiva").
+// Command-aware, not line-aware (Fase 4). Lists every OTHER real comanda of
+// this sitting, most recent first, each with its own true state -- a
+// comanda still EN_COCINA never reads as "cerrada" just because it isn't
+// the newest one; "Pagada" is shown only when every one of ITS OWN lines is
+// paidInFull (the same authoritative signal Payment Hub already treats as
+// settled), never assumed from being non-current. Muted/collapsed when
+// there is nothing else to show, same section language as Reservas below.
 function ResumenComandasSection({ session }) {
   const [expanded, setExpanded] = useState(false);
-  const ticketRows = groupTicketLines(session?.lines);
-  const paidRows = ticketRows.filter((row) => row.paidInFull);
-  const hasPaid = paidRows.length > 0;
-  const paidAmount = Number(session?.paid) || 0;
+  const commands = session?.commands || [];
+  const others = commands.length > 1 ? commands.slice(0, -1) : [];
+  const hasOthers = others.length > 0;
 
-  return <div className={`mesa-card-section ${hasPaid ? "active" : "muted"}`} data-testid="mesa-resumen-section"
-    onClick={hasPaid ? () => setExpanded((value) => !value) : undefined} style={{ cursor: hasPaid ? "pointer" : "default" }}>
+  const linesByOrder = new Map();
+  for (const line of session?.lines || []) {
+    const key = String(line.orderId);
+    if (!linesByOrder.has(key)) linesByOrder.set(key, []);
+    linesByOrder.get(key).push(line);
+  }
+  const rows = [...others].reverse().map((command) => {
+    const lines = linesByOrder.get(String(command.id)) || [];
+    const rowsForCommand = groupTicketLines(lines);
+    const paidInFull = lines.length > 0 && rowsForCommand.every((row) => row.paidInFull);
+    return { command, paidInFull };
+  });
+  const othersTotal = others.reduce((sum, command) => sum + (Number(command.total) || 0), 0);
+
+  return <div className={`mesa-card-section ${hasOthers ? "active" : "muted"}`} data-testid="mesa-resumen-section"
+    onClick={hasOthers ? () => setExpanded((value) => !value) : undefined} style={{ cursor: hasOthers ? "pointer" : "default" }}>
     <div className="mesa-card-section-label">
       <HubIcon d={ICON_RECEIPT} size={15} />
       Resumen de comandas
-      {hasPaid && <span data-testid="mesa-resumen-chevron" style={{ marginLeft: "auto", color: "#a99d89", transform: expanded ? "rotate(180deg)" : "none", transition: "transform .15s" }}>⌄</span>}
+      {hasOthers && <span data-testid="mesa-resumen-chevron" style={{ marginLeft: "auto", color: "#a99d89", transform: expanded ? "rotate(180deg)" : "none", transition: "transform .15s" }}>⌄</span>}
     </div>
-    {hasPaid
-      ? <div className="mesa-card-section-summary" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-          <span>Pedido anterior · {euro(paidAmount)}</span>
-          <span style={{ color: "#65d995", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>Cerrada</span>
+    {hasOthers
+      ? <div className="mesa-card-section-summary" data-testid="mesa-resumen-summary">
+          {others.length} comanda{others.length === 1 ? "" : "s"} anterior{others.length === 1 ? "" : "es"} · {euro(othersTotal)}
         </div>
-      : <div className="mesa-card-section-summary" data-testid="mesa-resumen-empty">Sin comandas anteriores en esta mesa.</div>}
-    {hasPaid && expanded && <div className="mesa-current-items" style={{ marginTop: 10 }}
-      onClick={(event) => event.stopPropagation()} data-testid="mesa-resumen-items">
-      {paidRows.map((row) => <div className="mesa-current-item paid" key={row.key}>
-        <span className="mesa-current-qty">{row.quantity}</span>
-        <span className="mesa-current-desc">
-          <span className="mesa-current-name">{row.label.primary}</span>
-          {row.label.secondary && <small className="mesa-current-alias">{row.label.secondary}</small>}
+      : <div className="mesa-card-section-summary" data-testid="mesa-resumen-empty">Sin otras comandas en esta mesa.</div>}
+    {hasOthers && expanded && <div className="mesa-resumen-list" data-testid="mesa-resumen-items"
+      onClick={(event) => event.stopPropagation()}>
+      {rows.map(({ command, paidInFull }) => <div className="mesa-resumen-row" key={command.id} data-testid="mesa-resumen-row">
+        <span className="mesa-resumen-number">#{command.commandNumber}</span>
+        <span className={`mesa-resumen-state${paidInFull ? " paid" : ""}`} data-testid="mesa-resumen-state">
+          {paidInFull ? "Pagada" : commandStateLabel(command.state)}
         </span>
-        <strong className="mesa-current-amount">{euro(row.amount)}</strong>
+        <strong className="mesa-resumen-amount">{euro(command.total)}</strong>
       </div>)}
     </div>}
   </div>;
+}
+
+// Fase 5 -- compact, read-only tap target for a product row (no pencil).
+// Deliberately shows detail only, no edit actions: whether an already-sent
+// comanda can be safely edited post-send is a separate, audited question
+// (Fase 6) with its own STOP clause; this sheet exists independently of
+// that answer so a row is never a dead tap.
+function LineDetailSheet({ payload, onClose }) {
+  const { command, row } = payload;
+  return <Modal title={row.label.primary} subtitle={row.label.secondary || undefined} onClose={onClose} width={420}>
+    <div data-testid="mesa-line-detail">
+      <div className="mesa-row"><span>Comanda</span><strong>#{command.commandNumber}</strong></div>
+      <div className="mesa-row"><span>Estado Cocina</span><strong>{commandStateLabel(command.state)}</strong></div>
+      <div className="mesa-row"><span>Cantidad</span><strong>{row.quantity}</strong></div>
+      <div className="mesa-row"><span>Importe</span><strong>{euro(row.amount)}</strong></div>
+      <div className="mesa-row"><span>Pago</span>
+        <strong style={{ color: row.paidInFull ? "#65d995" : "#ffc65c" }}>{row.paidInFull ? "Pagado" : "Pendiente"}</strong>
+      </div>
+    </div>
+  </Modal>;
 }
 
 // Same muted/active card language, same underlying data (bookedForToday) the
@@ -1675,6 +1751,8 @@ function MesaWorkspace({
   // Collapsed by default -- the draft must read as a compact one-line summary
   // inline in the workspace, not a second full-page view (see Fase 5 spec).
   const [draftExpanded, setDraftExpanded] = useState(false);
+  // V2.1 Fase 5 -- which product row's read-only detail sheet is open, if any.
+  const [selectedLine, setSelectedLine] = useState(null);
   const session = table.session;
   const hasOrders = (session?.commands?.length || 0) > 0;
   const todayReservations = bookedForToday(table);
@@ -1739,7 +1817,9 @@ function MesaWorkspace({
   // Modal body); a closure, not a separate component, so it needs no prop
   // threading for the state and handlers already in scope above.
   const renderDetail = () => <>
-    <ComandaActualCard session={session} busy={busy} onMarkServed={markServed} />
+    <ComandaActualCard session={session} draft={draft} busy={busy} onMarkServed={markServed}
+      onAddItems={() => onNewCommand(table)} onSelectLine={setSelectedLine} />
+    {selectedLine && <LineDetailSheet payload={selectedLine} onClose={() => setSelectedLine(null)} />}
 
     {/* Comanda por confirmar -- the local draft MesaOrderBuilder handed back
         via "Confirmar comanda". Open by default (unlike sent comandas): this
