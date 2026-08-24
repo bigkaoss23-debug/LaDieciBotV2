@@ -737,8 +737,8 @@ const css = `
    safe-area-aware so the home-indicator area on notched iPhones never
    covers the last row of actions. */
 @media(max-width:480px){
-  .mesa-overlay{align-items:flex-end;padding:0}
-  .mesa-modal{width:100%;max-width:100%;max-height:94vh;border-radius:20px 20px 0 0;border-left:none;border-right:none;border-bottom:none}
+  .mesa-overlay:not(.compact){align-items:flex-end;padding:0}
+  .mesa-modal:not(.compact){width:100%;max-width:100%;max-height:94vh;border-radius:20px 20px 0 0;border-left:none;border-right:none;border-bottom:none}
   /* The only sheets that force real height: ones with actual comanda
      content to show (size="tall" on Modal, see MesaWorkspace). Free/
      reserved/no-order sheets stay their natural shrink-to-content height --
@@ -746,6 +746,10 @@ const css = `
      80vh split the difference. */
   .mesa-modal.tall{min-height:min(80vh,94vh)}
   .mesa-modal-body{padding-bottom:calc(22px + env(safe-area-inset-bottom,0px))}
+  /* compact (e.g. LineDetailSheet): stays a small centered card, own tighter
+     padding so it doesn't inherit the big-drawer safe-area bottom padding
+     meant for a sheet actually anchored to the device edge. */
+  .mesa-modal.compact .mesa-modal-body{padding-bottom:15px}
 }
 @media print{body *{visibility:hidden!important}.mesa-print-layer,.mesa-print-layer *{visibility:visible!important}.mesa-print-layer{display:block!important;position:absolute;left:0;top:0;width:100%;background:#fff}.mesa-print-sheet{display:block!important} @page{size:58mm auto;margin:3mm}}
 /* ── MESA WORKSPACE UI V2 — the approved table-workspace layout (current
@@ -808,9 +812,16 @@ const css = `
 // already naturally medium-sized because the Reserva card is collapsed by
 // default (see TableContextPopup), not because of anything sizing-related
 // here.
-function Modal({ title, subtitle, onClose, children, width = 760, size }) {
-  return <div className="mesa-overlay" role="dialog" aria-modal="true">
-    <div className={`mesa-modal${size === "tall" ? " tall" : ""}`} style={{ width: `min(${width}px, 100%)` }}>
+// MESA V2.1.1 -- `compact` opts a modal OUT of the phone bottom-sheet
+// treatment below (@media(max-width:480px) .mesa-overlay/.mesa-modal), so a
+// small popup (e.g. LineDetailSheet) stays a genuinely centered card at every
+// viewport instead of stretching into a near-full-screen sheet anchored to
+// the bottom edge -- the right presentation for "big drawer with real
+// content" (Ver cuenta, Cerrar mesa) is the wrong one for "a few read-only
+// facts about one product".
+function Modal({ title, subtitle, onClose, children, width = 760, size, compact = false }) {
+  return <div className={`mesa-overlay${compact ? " compact" : ""}`} role="dialog" aria-modal="true">
+    <div className={`mesa-modal${size === "tall" ? " tall" : ""}${compact ? " compact" : ""}`} style={{ width: `min(${width}px, 100%)` }}>
       <div className="mesa-modal-head">
         <div><div style={{ fontWeight: 950, fontSize: 19 }}>{title}</div>{subtitle && <div className="mesa-muted" style={{ fontSize: 12, marginTop: 2 }}>{subtitle}</div>}</div>
         <button className="mesa-close" onClick={onClose} aria-label="Cerrar">×</button>
@@ -995,7 +1006,7 @@ function ComandaActualCard({ session, draft, busy, onMarkServed, onAddItems, onS
         <i className="mesa-dot" style={{ width: 6, height: 6, background: "#d7a84b" }} />
         Comanda actual
       </span>
-      <span className="mesa-chip mesa-current-count" data-testid="mesa-current-count">#{current.commandNumber}</span>
+      <span className="mesa-chip mesa-current-count" data-testid="mesa-current-count">Comanda {current.commandNumber}</span>
       <span className="mesa-current-chevron" aria-hidden="true"
         style={{ transform: expanded ? "rotate(180deg)" : "none" }}>⌄</span>
     </button>
@@ -1095,7 +1106,7 @@ function ResumenComandasSection({ session }) {
     {hasOthers && expanded && <div className="mesa-resumen-list" data-testid="mesa-resumen-items"
       onClick={(event) => event.stopPropagation()}>
       {rows.map(({ command, paidInFull }) => <div className="mesa-resumen-row" key={command.id} data-testid="mesa-resumen-row">
-        <span className="mesa-resumen-number">#{command.commandNumber}</span>
+        <span className="mesa-resumen-number">Comanda {command.commandNumber}</span>
         <span className={`mesa-resumen-state${paidInFull ? " paid" : ""}`} data-testid="mesa-resumen-state">
           {paidInFull ? "Pagada" : commandStateLabel(command.state)}
         </span>
@@ -1112,9 +1123,9 @@ function ResumenComandasSection({ session }) {
 // that answer so a row is never a dead tap.
 function LineDetailSheet({ payload, onClose }) {
   const { command, row } = payload;
-  return <Modal title={row.label.primary} subtitle={row.label.secondary || undefined} onClose={onClose} width={420}>
+  return <Modal title={row.label.primary} subtitle={row.label.secondary || undefined} onClose={onClose} width={420} compact>
     <div data-testid="mesa-line-detail">
-      <div className="mesa-row"><span>Comanda</span><strong>#{command.commandNumber}</strong></div>
+      <div className="mesa-row"><span>Comanda</span><strong>{command.commandNumber}</strong></div>
       <div className="mesa-row"><span>Estado Cocina</span><strong>{commandStateLabel(command.state)}</strong></div>
       <div className="mesa-row"><span>Cantidad</span><strong>{row.quantity}</strong></div>
       <div className="mesa-row"><span>Importe</span><strong>{euro(row.amount)}</strong></div>

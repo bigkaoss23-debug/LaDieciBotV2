@@ -814,7 +814,7 @@ test("catalogue card quick decrement: 0->1->2 via tap, then 2->1->0 via the card
 // ── GOAL 14 -- adding a configured Custom pizza opens the cart automatically ──
 test("adding a Custom pizza opens the cart automatically, with the configured pizza already in it", async () => {
   const { container, root } = await mount({ target: target({ coversTotal: 2 }) });
-  click(buttonByText(container, "⭐ Custom"));
+  click(buttonByText(container, "Custom"));
   await flush();
   click(allByTestId(container, "custom-ingredient-chip")[0]);
   await flush();

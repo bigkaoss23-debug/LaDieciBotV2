@@ -181,7 +181,18 @@ export function DraftSummary({
               background: !primaryAction.disabled ? C.rosso : C.fumo, color: "#fff", border: "none",
               borderRadius: 12, padding: "14px 26px", fontWeight: 800, fontSize: 15,
               cursor: !primaryAction.disabled ? "pointer" : "default",
-            }}>{primaryAction.label}</button>
+              display: "flex", alignItems: "center", gap: 7,
+            }}>
+            {/* MESA V2.1.1 -- vector checkmark replacing the decorative ✅
+                callers used to bake into primaryAction.label; one fix here
+                covers both callers (Mesa's Confirmar comanda, Teléfono's
+                Añadir), same "coherent with Mesa/Payment Hub" line-icon style. */}
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+            {primaryAction.label}
+          </button>
         </div>
       </div>
     </div>

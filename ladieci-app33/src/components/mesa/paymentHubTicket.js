@@ -35,19 +35,35 @@ const clean = (value) => {
 // as the secondary line for exactly the same reason.
 // A secondary line is only ever shown when it says something the primary does
 // not — "Aquarius / Aquarius" is noise, not information.
+//
+// THE ONE SHARED AUTHORITY for product numbering + label, reused verbatim by
+// Mesa Workspace (Comanda actual / Resumen), the item detail sheet and
+// Payment Hub / Ver cuenta (all three call groupTicketLines(), which calls
+// this) -- a fix here fixes all three at once, never three separate patches.
+//
+// "Nº" not "#": a Mesa comanda is also identified as "Comanda N" elsewhere in
+// this same UI (see TabMesa.jsx's ComandaActualCard/ResumenComandasSection) --
+// reusing "#" for a PRODUCT's catalogue number would make "#3" ambiguous
+// between "product 3" and "comanda 3" wherever the two could appear near each
+// other (e.g. the item detail sheet, which shows both). "Nº" only ever means
+// a catalogue number.
+//
+// number is only ever a real catalogue identity: 0/null/undefined/negative/
+// non-numeric all resolve to `null`, never a printed "Nº 0" -- a test SKU or
+// an uncatalogued item has no number to show, not a fake one.
 export function productLabel(line) {
   const product = (line && typeof line.product === "object" && line.product) || {};
   const description = clean(line && line.description);
   const fantasy = clean(product.fantasyName) || clean(product.n);
   const classic = clean(product.classicName);
   const rawNumber = product.officialNumber != null ? product.officialNumber : product.num;
-  const number = Number.isFinite(Number(rawNumber)) && String(rawNumber).trim() !== ""
-    ? Number(rawNumber) : null;
+  const parsedNumber = Number(rawNumber);
+  const number = Number.isFinite(parsedNumber) && parsedNumber > 0 ? parsedNumber : null;
 
   let primary;
   let secondary;
   if (number != null) {
-    primary = `#${number} · ${classic || fantasy || description || "—"}`;
+    primary = `Nº ${number} · ${classic || fantasy || description || "—"}`;
     secondary = fantasy || null;
   } else {
     primary = fantasy || description || "—";

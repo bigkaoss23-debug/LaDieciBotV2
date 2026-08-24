@@ -116,9 +116,9 @@ test("the grid uses real CSS breakpoints for 2/3/4 columns, not JS width branchi
   unmount(container, root);
 });
 
-test("⭐ Custom tab mounts the custom pizza builder", () => {
+test("Custom tab mounts the custom pizza builder", () => {
   const { container, root } = mount();
-  click(byTestId(container, "catalog-cat-⭐ Custom"));
+  click(byTestId(container, "catalog-cat-Custom"));
   expect(container.textContent).toContain("Pizza a tu gusto");
   unmount(container, root);
 });
@@ -126,7 +126,7 @@ test("⭐ Custom tab mounts the custom pizza builder", () => {
 test("adding a custom pizza calls onAddCustom with the built item, without needing PizzaCustomBuilder.jsx changed", () => {
   const onAddCustom = jest.fn();
   const { container, root } = mount({ onAddCustom });
-  click(byTestId(container, "catalog-cat-⭐ Custom"));
+  click(byTestId(container, "catalog-cat-Custom"));
   // First real ingredient in the shared IngredientGrid's default group.
   click(allByTestId(container, "custom-ingredient-chip")[0]);
   const addBtn = byTestId(container, "custom-add-cta");

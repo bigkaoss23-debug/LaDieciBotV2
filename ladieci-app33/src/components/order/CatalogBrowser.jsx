@@ -51,7 +51,10 @@ function adaptCustomBuilderSetItems(onAddCustom) {
 // One constant instead of four string literals that all had to stay in sync
 // (the tab list, two style branches and the render branch) -- a rename or a
 // stray space in any one of them silently unmounted the builder.
-const CUSTOM_TAB = "⭐ Custom";
+// MESA V2.1.1 -- plain text, matching the other three tabs (Pizzas/Postres/
+// Bebidas carry no icon either); a decorative star made this the only tab
+// with emoji-style iconography in an otherwise plain tab bar.
+const CUSTOM_TAB = "Custom";
 
 export function CatalogBrowser({ MENU, CATS, INGREDIENTI, qtyOf, onTapProduct, onDecrementProduct, onAddCustom, initialCategory = "Pizzas" }) {
   const [cat, setCat] = useState(initialCategory);

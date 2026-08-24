@@ -53,7 +53,7 @@ export function ItemConfigurator({ item, INGREDIENTI, cartApi, onClose }) {
         display: "flex", flexDirection: "column", border: `1px solid ${C.fumo}`, overflow: "hidden",
       }}>
         <div style={{ padding: "14px 18px 10px", borderBottom: `1px solid ${C.fumo}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <div style={{ color: C.bianco, fontWeight: 800, fontSize: 18 }}>{dulce ? "🍫 Extras dulces" : "🧀 Ingredientes extra"}</div>
+          <div style={{ color: C.bianco, fontWeight: 800, fontSize: 18 }}>{dulce ? "Extras dulces" : "Ingredientes extra"}</div>
           <button onClick={onClose} style={{
             background: C.fumo, color: C.grigio, border: "none", borderRadius: "50%", width: 32, height: 32,
             fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",

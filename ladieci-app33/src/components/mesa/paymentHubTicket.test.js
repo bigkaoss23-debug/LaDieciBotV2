@@ -18,7 +18,7 @@ const drink = (id, name, format, amount, remaining = amount) => ({
 describe("product label", () => {
   test("a pizza leads with its number and real name, nickname underneath", () => {
     expect(productLabel(pizza("l", 9, "Vegetariana", "El Mago de Zadar", 14.5)))
-      .toMatchObject({ primary: "#9 · Vegetariana", secondary: "El Mago de Zadar" });
+      .toMatchObject({ primary: "Nº 9 · Vegetariana", secondary: "El Mago de Zadar" });
   });
 
   test("a drink leads with its recognisable name, format underneath", () => {
@@ -39,12 +39,28 @@ describe("product label", () => {
 
   test("a number with no classic name still leads with the number", () => {
     expect(productLabel({ id: "x", description: "El Pelusa", product: { officialNumber: 1, fantasyName: "El Pelusa" } }))
-      .toMatchObject({ primary: "#1 · El Pelusa", secondary: null });
+      .toMatchObject({ primary: "Nº 1 · El Pelusa", secondary: null });
   });
 
   test("a line with nothing at all renders a placeholder rather than crashing", () => {
     expect(productLabel(null).primary).toBe("—");
     expect(productLabel({}).primary).toBe("—");
+  });
+
+  // MESA V2.1.1 -- "Nº 0" is not operational information (an uncatalogued
+  // test/UAT item defaults officialNumber to 0, not to a real menu slot).
+  // 0/negative/non-numeric all resolve the same way null already does: no
+  // number printed at all, never a placeholder like "N/A" or "--".
+  test("officialNumber 0 shows no number at all, never 'Nº 0'", () => {
+    const result = productLabel({ id: "x", description: "O-1 UAT Test Item", product: { officialNumber: 0, fantasyName: "O-1 UAT Test Item" } });
+    expect(result.number).toBeNull();
+    expect(result.primary).toBe("O-1 UAT Test Item");
+    expect(result.primary).not.toContain("0");
+  });
+
+  test("a negative or non-numeric officialNumber also shows no number", () => {
+    expect(productLabel({ id: "x", description: "X", product: { officialNumber: -1, fantasyName: "X" } }).number).toBeNull();
+    expect(productLabel({ id: "x", description: "X", product: { officialNumber: "n/a", fantasyName: "X" } }).number).toBeNull();
   });
 });
 

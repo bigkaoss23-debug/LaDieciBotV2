@@ -135,9 +135,11 @@ describe("MesaWorkspace compactCard -- Comanda actual card", () => {
   test("populated: real command number chip, items shown directly with real prices (2 Margherita group into one row), and the authoritative per-comanda total", async () => {
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
     const section = container.querySelector('[data-testid="mesa-current-card"]');
-    // The chip is the REAL command number (#101), not an article count --
-    // Comanda actual represents one identifiable comanda, not a tally.
-    expect(section.querySelector('[data-testid="mesa-current-count"]').textContent).toContain("#101");
+    // The chip is the REAL command number ("Comanda 101"), not an article
+    // count -- Comanda actual represents one identifiable comanda, not a
+    // tally. MESA V2.1.1 -- spelled out, never "#101" (a bare "#" is reserved
+    // for PRODUCT catalogue numbers, see paymentHubTicket.js's productLabel).
+    expect(section.querySelector('[data-testid="mesa-current-count"]').textContent).toContain("Comanda 101");
     const items = Array.from(section.querySelectorAll('[data-testid="mesa-current-item"]')).map((el) => el.textContent);
     expect(items.some((t) => t.includes("Margherita") && t.includes("20,00"))).toBe(true);
     expect(items.some((t) => t.includes("Coca-Cola") && t.includes("4,50"))).toBe(true);
