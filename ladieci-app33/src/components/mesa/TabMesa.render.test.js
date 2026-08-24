@@ -462,10 +462,10 @@ test("an occupied Mesa with no comanda yet opens MesaWorkspace directly, offerin
   const dialog = container.querySelector('[role="dialog"]');
   // No "Ocupada" subtitle and no second line -- just the compact title.
   expect(dialog.textContent).not.toContain("Ocupada");
-  expect(dialog.textContent).toContain("＋ Nueva comanda");
+  expect(dialog.textContent).toContain("Nueva comanda");
   expect(dialog.textContent).toContain("Ver cuenta");
   expect(dialog.textContent).toContain("Cerrar mesa");
-  click(buttonByText(container, "＋ Nueva comanda"));
+  click(buttonByText(container, "Nueva comanda"));
   // TabMesa no longer gates on coversTotal itself -- it just forwards the
   // table; the caller (MesaOrderBuilder, mounted by ServicioPage) decides
   // whether to show its own covers step from table.session.coversTotal.
@@ -582,10 +582,13 @@ test("an occupied Mesa with an order shows an active (never free-green) thick bo
   expect(card.getAttribute("style")).toContain("--tb: rgba(239,68,68,.22)");
   click(card);
   const dialog = container.querySelector('[role="dialog"]');
-  expect(dialog.textContent).toContain("＋ Nueva comanda");
+  expect(dialog.textContent).toContain("Nueva comanda");
   expect(dialog.textContent).toContain("Ver cuenta");
-  expect(dialog.textContent).toContain("Comandas");
-  expect(dialog.textContent).toContain("#1");
+  // MESA WORKSPACE UI V2 -- Comanda actual's own status line, the latest
+  // ACTIVE (non-RETIRADO) command's time/state; comanda numbering itself is
+  // no longer surfaced (the new layout is line/payment-based, not per-
+  // comanda cards -- see ComandaActualCard's own header comment).
+  expect(dialog.textContent).toContain("Comanda actual");
   expect(dialog.textContent).toContain("21:00");
   expect(dialog.textContent).toContain("En cocina");
   expect(dialog.textContent).not.toContain("Crear pedido");
@@ -595,7 +598,7 @@ test("an occupied Mesa with an order shows an active (never free-green) thick bo
   // backend (mesa_close_session_v1) is what actually decides whether
   // outstanding balance or pending kitchen work blocks it.
   expect(dialog.textContent).toContain("Cerrar mesa");
-  click(buttonByText(container, "＋ Nueva comanda"));
+  click(buttonByText(container, "Nueva comanda"));
   expect(onNewCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "table-1" }));
   unmount(container, root);
 });
@@ -674,55 +677,59 @@ test("in Personalizar sala, an occupied table's popup offers only layout actions
   click(buttonByText(container, "✓ Listo"));
   click(container.querySelector(".mesa-table"));
   const dialog2 = container.querySelector('[role="dialog"]');
-  expect(dialog2.textContent).toContain("＋ Nueva comanda");
+  expect(dialog2.textContent).toContain("Nueva comanda");
   expect(dialog2.textContent).toContain("Ver cuenta");
   expect(dialog2.textContent).not.toContain("Editar Mesa");
   expect(dialog2.textContent).not.toContain("Eliminar mesa");
   unmount(container, root);
 });
 
-test("a table with two comandas shows both, collapsed by default, expandable independently and distinct, and Nueva comanda stays available for a third", async () => {
+test("MESA WORKSPACE UI V2 -- a served-and-paid comanda moves to Resumen while an in-kitchen comanda stays in Comanda actual, and Nueva comanda stays available for a third", async () => {
+  // Margherita (comanda #1, RETIRADO/served) is fully paid off (remaining:0)
+  // -- the real, already-server-derived signal (groupTicketLines' own
+  // paidInFull) this slice uses to decide "resolved, out of the way", not an
+  // invented one. Coca-Cola/Agua (comanda #2, EN_COCINA) are still owed.
   const openTables = floorTables.map((table, index) => index === 0
-    ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [
-        { id: "o1", commandNumber: 1, state: "RETIRADO", items: [{ n: "Margherita" }], time: "20:50", note: "sin cebolla" },
-        { id: "o2", commandNumber: 2, state: "EN_COCINA", items: [{ n: "Coca-Cola" }, { n: "Agua" }], time: "21:10", note: "" },
-      ] }) }
+    ? { ...table, status: "open", session: emptySession({
+        coversTotal: 4, coversRemaining: 4, total: 12.5, paid: 8, outstanding: 4.5,
+        commands: [
+          { id: "o1", commandNumber: 1, state: "RETIRADO", items: [{ n: "Margherita" }], time: "20:50", note: "sin cebolla" },
+          { id: "o2", commandNumber: 2, state: "EN_COCINA", items: [{ n: "Coca-Cola" }, { n: "Agua" }], time: "21:10", note: "" },
+        ],
+        lines: [
+          { id: "l1", description: "Margherita", amount: 8, remaining: 0, quantity: 1 },
+          { id: "l2", description: "Coca-Cola", amount: 3, remaining: 3, quantity: 1 },
+          { id: "l3", description: "Agua", amount: 1.5, remaining: 1.5, quantity: 1 },
+        ],
+      }) }
     : table);
   mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
   const { container, root } = await mount("waiter");
   click(container.querySelector(".mesa-table"));
   const dialog = container.querySelector('[role="dialog"]');
-  let cards = Array.from(dialog.querySelectorAll(".mesa-command-card")).map((card) => card.textContent);
-  expect(cards).toHaveLength(2);
-  // Collapsed: number, state and time are always visible; product detail is not.
-  expect(cards[0]).toContain("#1");
-  expect(cards[0]).toContain("20:50");
-  expect(cards[0]).toContain("Servido");
-  expect(cards[0]).not.toContain("Margherita");
-  expect(cards[1]).toContain("#2");
-  expect(cards[1]).toContain("21:10");
-  expect(cards[1]).toContain("En cocina");
-  expect(cards[1]).not.toContain("Coca-Cola");
-  // Expanding #1 reveals its own products/note without touching #2.
-  const cardEls = Array.from(dialog.querySelectorAll(".mesa-command-card"));
-  click(cardEls[0].querySelector("button"));
-  cards = Array.from(dialog.querySelectorAll(".mesa-command-card")).map((card) => card.textContent);
-  expect(cards[0]).toContain("Margherita");
-  expect(cards[0]).toContain("Nota: sin cebolla");
-  expect(cards[1]).not.toContain("Margherita");
-  expect(cards[1]).not.toContain("sin cebolla");
-  expect(cards[1]).not.toContain("Coca-Cola");
-  // Expanding #2 independently reveals its own 2 products.
-  click(cardEls[1].querySelector("button"));
-  cards = Array.from(dialog.querySelectorAll(".mesa-command-card")).map((card) => card.textContent);
-  expect(cards[1]).toContain("2 productos");
-  expect(cards[1]).toContain("Coca-Cola");
-  expect(cards[1]).toContain("Agua");
-  expect(cards[0]).not.toContain("Coca-Cola");
+  // Comanda actual: the latest ACTIVE (non-RETIRADO) command's own time/state
+  // -- #2, not #1, since #1 is already terminal.
+  const current = byTestId(dialog, "mesa-current-card");
+  expect(current.textContent).toContain("21:10");
+  expect(current.textContent).toContain("En cocina");
+  expect(current.textContent).toContain("Coca-Cola");
+  expect(current.textContent).toContain("Agua");
+  expect(current.textContent).not.toContain("Margherita");
+  expect(current.textContent).toContain("Total actual");
+  expect(current.textContent).toContain("4,50");
+  // Resumen de comandas: collapsed by default, only the paid amount summary
+  // visible; expanding it reveals Margherita, never the still-owed items.
+  const resumen = byTestId(dialog, "mesa-resumen-section");
+  expect(resumen.textContent).toContain("Pedido anterior");
+  expect(resumen.textContent).toContain("8,00");
+  expect(resumen.textContent).not.toContain("Margherita");
+  click(resumen);
+  expect(byTestId(dialog, "mesa-resumen-items").textContent).toContain("Margherita");
+  expect(byTestId(dialog, "mesa-resumen-items").textContent).not.toContain("Coca-Cola");
   // the sheet actively grows for a table with real comandas to show, not
   // just the default shrink-to-content popup size
   expect(dialog.querySelector(".mesa-modal").className).toContain("tall");
-  expect(dialog.textContent).toContain("＋ Nueva comanda");
+  expect(dialog.textContent).toContain("Nueva comanda");
   expect(dialog.textContent).not.toContain("Crear pedido");
   expect(dialog.textContent).not.toContain("Añadir pedido");
   unmount(container, root);
@@ -878,7 +885,7 @@ test("a rejected Cerrar mesa keeps the confirm dialog open with an inline error,
   expect(dialogAfter).toBeTruthy();
   expect(dialogAfter.textContent).toContain("MESA_SESSION_NOT_EMPTY");
   // still occupied, still offering the same actions -- not left half-closed
-  expect(container.querySelector('[role="dialog"]').textContent).toContain("＋ Nueva comanda");
+  expect(container.querySelector('[role="dialog"]').textContent).toContain("Nueva comanda");
   expect(mesaApi.releaseEmptyTable).toHaveBeenCalledTimes(1);
   unmount(container, root);
 });
@@ -974,10 +981,14 @@ test("occupied + a future relevant reservation stays red (never yellow); the res
   expect(card.textContent).not.toContain("Reservada"); // that badge is the free+reserved case only
   click(card);
   const dialog = container.querySelector('[role="dialog"]');
-  expect(dialog.textContent).toContain("＋ Nueva comanda"); // primary action, unaffected
-  // The reservation is present but collapsed (secondary), not driving the fill.
-  click(buttonByText(dialog, "Próxima reserva"));
-  expect(dialog.textContent).toContain("Laura");
+  expect(dialog.textContent).toContain("Nueva comanda"); // primary action, unaffected
+  // MESA WORKSPACE UI V2 -- Reservas is its own always-visible compact card
+  // (muted when empty, highlighted with a synthesized summary when not); no
+  // inline expand/collapse step any more, so the guest name is directly
+  // present without an extra tap. Present, but a compact secondary card --
+  // not driving the table's own fill (asserted above), and not the Ver
+  // cuenta/Nueva comanda actions' visual weight.
+  expect(byTestId(dialog, "mesa-reservas-section").textContent).toContain("Laura");
   unmount(container, root);
 });
 
@@ -1424,7 +1435,7 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     expect(dialog.textContent).toContain("Modificar");
     expect(dialog.textContent).toContain("Enviar a cocina");
     // No second order-creator and no premature close while a draft is pending.
-    expect(dialog.textContent).not.toContain("＋ Nueva comanda");
+    expect(dialog.textContent).not.toContain("Nueva comanda");
     expect(dialog.textContent).not.toContain("Cerrar mesa");
     unmount(container, root);
   });
@@ -1526,7 +1537,7 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     click(container.querySelector(".mesa-table"));
     const dialog = container.querySelector('[role="dialog"]');
     expect(dialog.textContent).not.toContain("Comanda por confirmar");
-    expect(dialog.textContent).toContain("＋ Nueva comanda");
+    expect(dialog.textContent).toContain("Nueva comanda");
     unmount(container, root);
   });
 

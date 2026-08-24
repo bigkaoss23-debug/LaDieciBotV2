@@ -197,9 +197,9 @@ describe("MesaPhoneShell -- Lista shows the same authoritative Mesa data as Mapa
     await flush();
     click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Mesa 2")));
     await flush();
-    // "Comandas" (mixed case) is the literal DOM text -- the all-caps look
-    // on real staging is a CSS text-transform, invisible to textContent.
-    expect(container.textContent).toContain("Comandas");
+    // "Comanda actual" (mixed case) is the literal DOM text -- the all-caps
+    // look on real staging is a CSS text-transform, invisible to textContent.
+    expect(container.textContent).toContain("Comanda actual");
     expect(container.textContent).toContain("Mesa 2");
     unmount(container, root);
   });
@@ -259,7 +259,7 @@ describe("MesaPhoneShell -- Mapa stays mounted in the background (no loading fla
     // click() itself -- if Mapa had to cold-mount and refetch, the loading
     // banner would still be showing right here.
     expect(container.textContent).not.toContain("Cargando el plano de mesas");
-    expect(container.textContent).toContain("Comandas");
+    expect(container.textContent).toContain("Comanda actual");
     unmount(container, root);
   });
 });

@@ -672,13 +672,8 @@ const css = `
    that come AFTER it in the sheet never get pushed out of view (the whole
    point of the "tall" sheet is to show comandas without hiding the actions
    that act on them). */
-.mesa-commands-scroll{max-height:42vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .mesa-command-card{border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.02)}
 .mesa-command-card+.mesa-command-card{margin-top:8px}
-.mesa-command-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.mesa-command-head strong{font-size:13px}
-.mesa-command-items{margin:6px 0 0;padding-left:18px;font-size:13px;color:#e7dcc7}
-.mesa-command-items li{margin:2px 0}
 .mesa-command-note{margin-top:6px;font-size:12px;color:#d9c8aa;font-style:italic}
 .mesa-input{width:100%;box-sizing:border-box;border:1px solid rgba(208,184,145,.28);border-radius:11px;background:#0b0b0a;color:#fff;padding:12px 13px;font:inherit;outline:none}.mesa-input:focus{border-color:#d7a84b}
 .mesa-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mesa-label{display:block;color:#b9ad99;font-size:12px;font-weight:800;margin-bottom:6px}.mesa-methods{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.mesa-method{border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:11px 7px;background:rgba(255,255,255,.035);color:#fff;font-weight:850;cursor:pointer}.mesa-method.active{border-color:var(--mc);box-shadow:inset 0 0 0 1px var(--mc);background:color-mix(in srgb,var(--mc) 18%,transparent)}
@@ -753,6 +748,42 @@ const css = `
   .mesa-modal-body{padding-bottom:calc(22px + env(safe-area-inset-bottom,0px))}
 }
 @media print{body *{visibility:hidden!important}.mesa-print-layer,.mesa-print-layer *{visibility:visible!important}.mesa-print-layer{display:block!important;position:absolute;left:0;top:0;width:100%;background:#fff}.mesa-print-sheet{display:block!important} @page{size:58mm auto;margin:3mm}}
+/* ── MESA WORKSPACE UI V2 — the approved table-workspace layout (current
+   order, prior settled order, upcoming booking, actions). Same premium
+   dark/gold family as the Payment Hub above (.mesa-hub-*), reused where the
+   visual language is identical (paid-line muting, qty/desc/amount layout)
+   and only extended where the mockup's own card needs something the hub
+   didn't: an always-open, gold-bordered "current" card instead of a
+   collapsed section. NOTE: this comment is literal <style> textContent at
+   runtime (it lives inside the css template string) -- MesaPhoneShell's own
+   "Más screen stays scoped" tests assert on the ABSENCE of specific nav
+   labels in the whole container's textContent, so this block deliberately
+   never spells any of them, same convention as the reservation-agenda-row
+   comment further up in this same stylesheet. ── */
+.mesa-current-card{border:1px solid rgba(215,168,75,.4);border-radius:16px;padding:14px 15px 15px;background:rgba(215,168,75,.055)}
+.mesa-current-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mesa-current-eyebrow{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:900;letter-spacing:.6px;text-transform:uppercase;color:#e9c983}
+.mesa-current-count{border-color:rgba(215,168,75,.4);background:rgba(215,168,75,.14);color:#f3d9a4}
+.mesa-current-status{display:flex;align-items:center;gap:7px;margin-top:8px;color:#c9bd9f;font-size:12.5px}
+.mesa-current-status .mesa-hub-icon{color:#a99d89}
+.mesa-current-items{border-top:1px dashed rgba(215,168,75,.28);margin-top:11px;padding-top:2px}
+.mesa-current-item{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:14px}
+.mesa-current-item:last-child{border-bottom:0}
+.mesa-current-qty{flex:0 0 auto;min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:rgba(215,168,75,.16);border:1px solid rgba(215,168,75,.4);color:#f3d9a4;font-size:12px;font-weight:900}
+.mesa-current-desc{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px;overflow-wrap:break-word}
+.mesa-current-name{color:#f4ecdd;font-weight:700}
+.mesa-current-alias{color:#978d7c;font-size:11.5px}
+.mesa-current-amount{flex:0 0 auto;font-weight:800;color:#f4ecdd}
+.mesa-current-item.paid .mesa-current-name,.mesa-current-item.paid .mesa-current-amount{color:#8d8474}
+.mesa-current-more{display:block;width:100%;text-align:center;margin-top:8px;padding:8px;background:none;border:0;border-top:1px solid rgba(255,255,255,.07);color:#d7a84b;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer}
+.mesa-current-more:hover{color:#f3d9a4}
+.mesa-current-total{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:11px;padding-top:11px;border-top:1px solid rgba(215,168,75,.3);font-size:12px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;color:#e9c983}
+.mesa-current-total strong{color:#f3d9a4;font-size:22px;font-weight:950;letter-spacing:0;text-transform:none}
+.mesa-current-actions{display:flex;flex-direction:column;gap:9px;margin:15px 0 0}
+.mesa-current-cta-primary{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:50px;font-size:15px}
+.mesa-current-cta-row{display:flex;gap:9px}
+.mesa-current-cta-row .mesa-btn{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px}
+@media(max-width:480px){.mesa-current-card{padding:13px 13px 14px}}
 `;
 
 // size="tall" is the one and only thing that makes a table's bottom sheet
@@ -892,34 +923,149 @@ function DraftItemsList({ items }) {
   </>;
 }
 
-// Shared comanda card -- the ONE place a comanda's product list ever renders
-// (MesaWorkspace; nowhere else). Collapsed by default: a table with several
-// comandas must stay scannable (number + state + time), and the full product/
-// modifier/note detail is one tap away, not always-on screen real estate.
-// action is an optional per-command control (MesaWorkspace wires "✓ Servida"
-// through it for a ready comanda).
-function CommandCard({ command, action, defaultExpanded = false }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const productCount = (command.items || []).reduce((sum, item) => sum + (Number(item.q) || 1), 0);
-  return <div className="mesa-command-card">
-    <button type="button" onClick={() => setExpanded((value) => !value)} style={{
-      display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none",
-      border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left",
-    }}>
-      <strong>Comanda #{command.commandNumber}</strong>
-      <span className="mesa-chip" style={command.state === "LISTO" ? { borderColor: "#22C55E", color: "#22C55E" } : undefined}>{commandStateLabel(command.state)}</span>
-      <span className="mesa-muted" style={{ marginLeft: "auto" }}>{command.time || "ahora"}</span>
-      <span style={{ color: "#a99d89", transform: expanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
-    </button>
-    {!expanded && <div className="mesa-muted" style={{ fontSize: 12, marginTop: 4 }}>{productCount} producto{productCount === 1 ? "" : "s"}</div>}
-    {expanded && <>
-      <div className="mesa-muted" style={{ fontSize: 12, marginTop: 6 }}>{productCount} producto{productCount === 1 ? "" : "s"}</div>
-      {(command.items || []).length > 0 && <ul className="mesa-command-items">
-        {command.items.map((item, index) => <li key={index}>{Number(item.q) > 1 ? `${item.q}× ` : ""}{item.n}</li>)}
-      </ul>}
-      {command.note && <div className="mesa-command-note">Nota: {command.note}</div>}
-      {action && <div style={{ marginTop: 8, display: "flex" }}>{action}</div>}
-    </>}
+// ═══ MESA WORKSPACE UI V2 — approved layout ═══
+// Replaces the old flat, undifferentiated "Comandas" list (every comanda of
+// the sitting, oldest and newest side by side, only distinguished by a
+// kitchen-state chip) with the approved mockup's three-part structure:
+//   COMANDA ACTUAL      -- what is not yet paid off, right now.
+//   RESUMEN DE COMANDAS -- what already is paid off, out of the way.
+//   RESERVAS            -- unrelated, unchanged data, restyled to match.
+//
+// THE SPLIT IS FINANCIAL, NOT KITCHEN-STATE, AND IT IS NOT INVENTED. Every
+// line already carries `remaining` (F-... Payment Hub V1), and
+// groupTicketLines() already reduces that to one boolean per grouped row,
+// `paidInFull` -- the exact signal VerCuentaBody itself already treats as
+// authoritative for its own "Pagado" tag/muted styling. This file used to
+// have no concept of "current vs previous comanda" at all (a served comanda
+// stayed in the flat list forever, identical to an in-progress one); rather
+// than invent a new classification, this reuses the one real, already-
+// server-derived fact that actually means "resolved, no longer part of the
+// operative balance": every unit of it has been paid. Money itself is never
+// re-derived here either -- session.outstanding/session.paid, same as the
+// Payment Hub reads, never a client-side sum of these same rows.
+//
+// A "comanda" (kitchen order) and a paid-in-full ticket LINE are different
+// units -- a line carries no back-reference to the comanda that created it
+// (confirmed: no such field exists anywhere in this payload) -- so Resumen
+// never claims a specific comanda COUNT it cannot verify; it reports the
+// real paid amount only ("Pedido anterior · 10,50 €", matching the approved
+// mockup's own secondary line, without the unverifiable "1 comanda cerrada"
+// headline above it).
+function ComandaActualCard({ session, busy, onMarkServed }) {
+  const [itemsExpanded, setItemsExpanded] = useState(false);
+  const ticketRows = groupTicketLines(session?.lines);
+  const activeRows = ticketRows.filter((row) => !row.paidInFull);
+  const totalArticles = activeRows.reduce((sum, row) => sum + row.quantity, 0);
+  const activeCommands = (session?.commands || []).filter((command) => command.state !== "RETIRADO");
+  const latestActive = activeCommands[activeCommands.length - 1] || null;
+  const hasOrders = (session?.commands?.length || 0) > 0;
+
+  const VISIBLE_ROWS = 4;
+  const visibleRows = itemsExpanded ? activeRows : activeRows.slice(0, VISIBLE_ROWS);
+  const hiddenCount = activeRows.length - visibleRows.length;
+
+  return <section className="mesa-current-card" data-testid="mesa-current-card">
+    <div className="mesa-current-head">
+      <span className="mesa-current-eyebrow">
+        <i className="mesa-dot" style={{ width: 6, height: 6, background: "#d7a84b" }} />
+        Comanda actual
+      </span>
+      {totalArticles > 0 && <span className="mesa-chip mesa-current-count" data-testid="mesa-current-count">{totalArticles} artículo{totalArticles === 1 ? "" : "s"}</span>}
+    </div>
+    <div className="mesa-current-status">
+      <HubIcon d={ICON_CLOCK} size={15} />
+      {latestActive
+        ? <span>{latestActive.time || "ahora"} · {commandStateLabel(latestActive.state)}</span>
+        : <span className="mesa-muted">{hasOrders ? "Sin comandas activas" : "Todavía no hay comandas"}</span>}
+      {latestActive?.state === "LISTO" && <button type="button" className="mesa-btn green small" style={{ marginLeft: "auto" }}
+        disabled={busy} onClick={() => onMarkServed(latestActive.id)}>✓ Servida</button>}
+    </div>
+
+    {activeRows.length > 0 ? <>
+      <div className="mesa-current-items" data-testid="mesa-current-items">
+        {visibleRows.map((row) => <div className="mesa-current-item" key={row.key} data-testid="mesa-current-item">
+          <span className="mesa-current-qty">{row.quantity}</span>
+          <span className="mesa-current-desc">
+            <span className="mesa-current-name">{row.label.primary}</span>
+            {row.label.secondary && <small className="mesa-current-alias">{row.label.secondary}</small>}
+          </span>
+          <strong className="mesa-current-amount">{euro(row.amount)}</strong>
+        </div>)}
+      </div>
+      {hiddenCount > 0 && <button type="button" className="mesa-current-more" data-testid="mesa-current-expand"
+        onClick={() => setItemsExpanded(true)}>Ver más · {hiddenCount} artículo{hiddenCount === 1 ? "" : "s"}</button>}
+      {itemsExpanded && activeRows.length > VISIBLE_ROWS && <button type="button" className="mesa-current-more"
+        data-testid="mesa-current-collapse" onClick={() => setItemsExpanded(false)}>Mostrar menos</button>}
+    </> : <div className="mesa-hub-empty" data-testid="mesa-current-empty">
+      {ticketRows.length > 0
+        ? "Sin artículos pendientes. Consulta Resumen de comandas."
+        : Number(session?.total) > 0
+          ? "El detalle por producto todavía no está disponible."
+          : "Todavía no hay comandas."}
+    </div>}
+
+    {hasOrders && <div className="mesa-current-total" data-testid="mesa-current-total">
+      <span>Total actual</span><strong>{euro(session?.outstanding)}</strong>
+    </div>}
+  </section>;
+}
+
+// Collapsed by default (only the amount summary shows), same "muted when
+// nothing to report, highlighted when there is" language as the Reservas
+// section below -- see .mesa-card-section's own comment. Discrete/inactive
+// when this sitting has nothing paid off yet, exactly per the approved
+// brief ("se non ci sono comandas precedenti: sezione discreta/inattiva").
+function ResumenComandasSection({ session }) {
+  const [expanded, setExpanded] = useState(false);
+  const ticketRows = groupTicketLines(session?.lines);
+  const paidRows = ticketRows.filter((row) => row.paidInFull);
+  const hasPaid = paidRows.length > 0;
+  const paidAmount = Number(session?.paid) || 0;
+
+  return <div className={`mesa-card-section ${hasPaid ? "active" : "muted"}`} data-testid="mesa-resumen-section"
+    onClick={hasPaid ? () => setExpanded((value) => !value) : undefined} style={{ cursor: hasPaid ? "pointer" : "default" }}>
+    <div className="mesa-card-section-label">
+      <HubIcon d={ICON_RECEIPT} size={15} />
+      Resumen de comandas
+      {hasPaid && <span data-testid="mesa-resumen-chevron" style={{ marginLeft: "auto", color: "#a99d89", transform: expanded ? "rotate(180deg)" : "none", transition: "transform .15s" }}>⌄</span>}
+    </div>
+    {hasPaid
+      ? <div className="mesa-card-section-summary" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+          <span>Pedido anterior · {euro(paidAmount)}</span>
+          <span style={{ color: "#65d995", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>Cerrada</span>
+        </div>
+      : <div className="mesa-card-section-summary" data-testid="mesa-resumen-empty">Sin comandas anteriores en esta mesa.</div>}
+    {hasPaid && expanded && <div className="mesa-current-items" style={{ marginTop: 10 }}
+      onClick={(event) => event.stopPropagation()} data-testid="mesa-resumen-items">
+      {paidRows.map((row) => <div className="mesa-current-item paid" key={row.key}>
+        <span className="mesa-current-qty">{row.quantity}</span>
+        <span className="mesa-current-desc">
+          <span className="mesa-current-name">{row.label.primary}</span>
+          {row.label.secondary && <small className="mesa-current-alias">{row.label.secondary}</small>}
+        </span>
+        <strong className="mesa-current-amount">{euro(row.amount)}</strong>
+      </div>)}
+    </div>}
+  </div>;
+}
+
+// Same muted/active card language, same underlying data (bookedForToday) the
+// floor tiles and every other Reservas surface in this file already share --
+// see isRelevantReservation's own header comment. Tapping opens the real
+// ReservationAgenda already filtered to this table (onViewNight), the exact
+// same destination the compact phone card always used; no new reservation
+// system, no new backend call.
+function ReservasSection({ todayReservations, nextReservation, canManageReservations, onOpen }) {
+  const summary = nextReservation
+    ? `${nextReservation.guestName} · ${reservationTimeLabel(nextReservation)}${nextReservation.coversTotal != null ? ` · ${nextReservation.coversTotal} pax` : ""}${todayReservations.length > 1 ? ` · +${todayReservations.length - 1} más` : ""}`
+    : "Sin reserva para esta mesa.";
+  return <div className={`mesa-card-section ${nextReservation ? "active" : "muted"}`} data-testid="mesa-reservas-section"
+    onClick={() => { if (canManageReservations) onOpen(); }} style={{ cursor: canManageReservations ? "pointer" : "default" }}>
+    <div className="mesa-card-section-label">
+      <HubIcon d={ICON_CALENDAR} size={15} />
+      Reservas
+    </div>
+    <div className="mesa-card-section-summary">{summary}</div>
   </div>;
 }
 
@@ -1077,6 +1223,14 @@ const ICON_TAG = <><path d="M20.6 12.6 12 21.2 2.8 12V2.8H12z" /><circle cx="7.6
 const ICON_BASKET = <><path d="M3 8h18l-1.6 11.2H4.6z" /><path d="M8.5 8 12 3l3.5 5" /></>;
 const ICON_PENCIL = <><path d="M4 20h4L20 8l-4-4L4 16z" /><path d="M14.5 5.5 18.5 9.5" /></>;
 const ICON_PRINTER = <><path d="M7 9V3.5h10V9" /><rect x="3.5" y="9" width="17" height="7.5" rx="2" /><rect x="7" y="15" width="10" height="5.5" rx="1" /></>;
+// MESA WORKSPACE UI V2 -- fine outline icons for the new table workspace,
+// same HubIcon convention as the Payment Hub set above (stroke only,
+// currentColor, no fills, no emoji).
+const ICON_CLOCK = <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></>;
+const ICON_RECEIPT = <><path d="M6 3h12v17.5l-2.5-1.5-2 1.5-2-1.5-2 1.5-2-1.5L6 20.5z" /><path d="M9 8h6M9 12h6" /></>;
+const ICON_CALENDAR = <><rect x="3.5" y="5.5" width="17" height="15" rx="2.5" /><path d="M8 3v5M16 3v5M3.5 10.5h17" /></>;
+const ICON_PLUS_CIRCLE = <><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></>;
+const ICON_CLOSE_CIRCLE = <><circle cx="12" cy="12" r="9" /><path d="M9 9l6 6M15 9l-6 6" /></>;
 
 function VerCuentaBody({ table, onRefresh, onPrint }) {
   // PAYMENT HUB MESA V1.1 — the approved V1 surface, with the redundant hops
@@ -1495,10 +1649,18 @@ function UltimasCuentasModal({ onClose }) {
 // same tap). Comandas, Nueva comanda and Cerrar mesa live here; anything
 // financial (totals, payment, printable tickets) is one explicit "Ver
 // cuenta" tap away, in VerCuentaModal, never inlined here.
+// MESA WORKSPACE UI V2 -- the approved layout (2026-08-24): Comanda actual /
+// Resumen de comandas / Reservas / Actions. Same single-component, same
+// state, same handlers, same dual-shell contract as before (compactCard
+// picks the wrapper only) -- what changed is the "detail" body, which used
+// to be two near-duplicate JSX trees (one per branch) and is now ONE shared
+// renderDetail() closure called from both, so there is exactly one place
+// that ever renders a table's comandas/reservas/actions, matching this
+// slice's own "one visual authority" mandate.
 function MesaWorkspace({
   table, onClose, onNewCommand, onRefresh, onPrint,
-  canManageReservations, onEditReservation, onViewNight, onChanged, onOpened,
-  notify, draft, onClearDraft, onSendToCocina,
+  canManageReservations, onViewNight,
+  draft, onClearDraft, onSendToCocina,
   // P1_D_TABLE_FIRST_01 -- phone shell only (compact prop threaded straight
   // through from the main TabMesa render, see below). Every state/handler
   // above and below is 100% shared; only the final `return` branches, so the
@@ -1510,20 +1672,9 @@ function MesaWorkspace({
   const [error, setError] = useState("");
   const [showAccount, setShowAccount] = useState(false);
   const [sendingDraft, setSendingDraft] = useState(false);
-  // Collapsed by default, same as the free/reserved popup -- an occupied
-  // table can still have a LATER reservation booked for tonight; that must
-  // stay visible here too (it used to show in the old popup regardless of
-  // occupied state), just never competing with the comandas for attention.
-  const [reservationOpen, setReservationOpen] = useState(false);
   // Collapsed by default -- the draft must read as a compact one-line summary
   // inline in the workspace, not a second full-page view (see Fase 5 spec).
   const [draftExpanded, setDraftExpanded] = useState(false);
-  // compactCard only: the detailed per-comanda list is collapsed behind the
-  // one-line aggregate summary by default (see the brief's own "do not dump
-  // the entire order contents" instruction) -- unused, harmless, on the
-  // non-compact path, same as every other single-branch-only state above
-  // would be if it happened to not apply to one specific return.
-  const [comandasExpanded, setComandasExpanded] = useState(false);
   const session = table.session;
   const hasOrders = (session?.commands?.length || 0) > 0;
   const todayReservations = bookedForToday(table);
@@ -1543,8 +1694,6 @@ function MesaWorkspace({
   // MESA_NAV_CONSOLIDATION_01 -- derived, not a separate piece of state: the
   // compact card's in-place workspace view is 100% determined by the two
   // existing flags above, so it can never drift out of sync with them.
-  // Read only inside the compactCard branch below; harmless/unused on the
-  // non-compact path, same as comandasExpanded already is.
   const workspaceView = confirmingClose ? "close-confirm" : showAccount ? "account" : "detail";
   const backToDetail = () => { if (workspaceView === "account") setShowAccount(false); else cancelCloseConfirm(); };
   // P0-B.1 — a never-ordered table (coversTotal == null) still goes through
@@ -1584,37 +1733,85 @@ function MesaWorkspace({
   // Unknown covers -> just "Mesa 6".
   const title = `Mesa ${table.number}${session.coversTotal != null ? ` (${session.coversTotal} pax)` : ""}`;
 
+  // The shared "detail" body -- Comanda actual, the draft panel (only while
+  // one exists, unchanged logic/markup), Resumen de comandas, Reservas, and
+  // the three actions. Called once per branch below (compact card body /
+  // Modal body); a closure, not a separate component, so it needs no prop
+  // threading for the state and handlers already in scope above.
+  const renderDetail = () => <>
+    <ComandaActualCard session={session} busy={busy} onMarkServed={markServed} />
+
+    {/* Comanda por confirmar -- the local draft MesaOrderBuilder handed back
+        via "Confirmar comanda". Open by default (unlike sent comandas): this
+        IS the last check with the client before it reaches Cocina. Only
+        "Enviar a cocina" here calls the backend. Unrelated to Comanda
+        actual above -- a draft is not yet a real comanda at all. */}
+    {draft && <div className="mesa-section" data-testid="mesa-draft-panel">
+      <button type="button" data-testid="mesa-draft-toggle" onClick={() => setDraftExpanded((value) => !value)} style={{
+        display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none",
+        border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left",
+      }}>
+        <h3 style={{ margin: 0 }}>Comanda por confirmar</h3>
+        <span className="mesa-muted" style={{ marginLeft: "auto" }}>{draftItemCount} artículo{draftItemCount === 1 ? "" : "s"} · {euro(draftTotal)}</span>
+        <span style={{ color: "#a99d89", transform: draftExpanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
+      </button>
+      {draftExpanded && <div className="mesa-command-card" style={{ marginTop: 8 }}>
+        <DraftItemsList items={draft.items} />
+        {draft.nota && <div className="mesa-command-note">Nota general: {draft.nota}</div>}
+        <div style={{ marginTop: 8, textAlign: "right", fontWeight: 900 }}>{euro(draftTotal)}</div>
+      </div>}
+      <div className="mesa-actions">
+        <button className="mesa-btn" disabled={sendingDraft} onClick={() => onNewCommand(table)}>Modificar</button>
+        <button className="mesa-btn green" disabled={sendingDraft} onClick={sendToCocina}>{sendingDraft ? "Enviando…" : "Enviar a cocina"}</button>
+      </div>
+    </div>}
+
+    <ResumenComandasSection session={session} />
+    <ReservasSection todayReservations={todayReservations} nextReservation={nextReservation}
+      canManageReservations={canManageReservations} onOpen={onViewNight} />
+
+    {/* Nueva comanda (primary, full width) / Ver cuenta + Cerrar mesa (paired
+        below) -- exactly the approved bottom actions. Same handlers, same
+        P0-B.1 conditions (Nueva comanda/Cerrar mesa hidden while a draft is
+        pending) as before this slice; only the layout and icons are new. */}
+    <div className="mesa-current-actions">
+      {!draft && <button type="button" className="mesa-btn primary mesa-current-cta-primary" onClick={() => onNewCommand(table)}>
+        <HubIcon d={ICON_PLUS_CIRCLE} size={19} />Nueva comanda
+      </button>}
+      <div className="mesa-current-cta-row">
+        {/* MESA_PHONE_VISUAL_PARITY_V2 -- gold only once there is a real
+            account to review (hasOrders); otherwise the plain neutral look,
+            so the button never reads as "something needs your attention"
+            when the table has nothing billed yet. Still fully tappable
+            either way -- VerCuentaBody itself handles the zero-total state. */}
+        <button type="button" className={`mesa-btn${hasOrders ? " gold" : ""}`} onClick={() => setShowAccount(true)}>
+          <HubIcon d={ICON_WALLET} size={17} />Ver cuenta
+        </button>
+        {!draft && <button type="button" className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>
+          <HubIcon d={ICON_CLOSE_CIRCLE} size={17} />Cerrar mesa
+        </button>}
+      </div>
+    </div>
+    {/* !confirmingClose: while CerrarMesaDialog's own overlay is up (non-
+        compact only -- see below), it shows this same error itself; without
+        the guard the message would render twice. */}
+    {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
+  </>;
+
   // P1_D_TABLE_FIRST_01 -- centered focused table modal (phone shell only).
   // Reuses every handler/state above unchanged (Nueva comanda/Ver cuenta/
   // Cerrar mesa call the exact same functions the non-compact branch below
-  // calls) -- only the presentation and the COMANDAS/RESERVAS summary
-  // sections are new. Not a Modal (see the dedicated mesa-table-card-*
-  // classes' own comment): a true centered card, sized to its own compact
-  // content, dimming the map strongly behind it rather than anchoring a
-  // bottom sheet that leaves most of the screen a meaningless dark void.
+  // calls) -- only the presentation differs. Not a Modal (see the dedicated
+  // mesa-table-card-* classes' own comment): a true centered card, sized to
+  // its own compact content, dimming the map strongly behind it rather than
+  // anchoring a bottom sheet that leaves most of the screen a meaningless
+  // dark void.
   //
-  // MESA_NAV_CONSOLIDATION_01 -- Ver cuenta and Cerrar mesa used to mount as
-  // a second, independent full-viewport overlay stacked on top of this same
-  // card (VerCuentaModal / CerrarMesaDialog, each their own .mesa-overlay).
-  // They now render in-place, inside this one card, swapped in by
-  // workspaceView above -- one workspace, one modal layer, ever. The outer
-  // "×" always closes the whole workspace (onClose, unchanged); the head's
-  // back control only returns to "detail". Card dimensions, section styling
-  // and every handler are untouched below -- composition only.
+  // MESA_NAV_CONSOLIDATION_01 -- Ver cuenta and Cerrar mesa render in-place,
+  // inside this one card, swapped in by workspaceView -- one workspace, one
+  // modal layer, ever. The outer "×" always closes the whole workspace
+  // (onClose, unchanged); the head's back control only returns to "detail".
   if (compactCard) {
-    // Same pure per-comanda product-count CommandCard already computes,
-    // just summed across every comanda on this table -- not new money/
-    // quantity logic, an aggregate of an already-used computation. Money
-    // itself comes from session.total (the same authoritative figure
-    // VerCuentaModal's own "Total" stat shows), never re-derived here.
-    const totalArticles = (session.commands || []).reduce((sum, command) =>
-      sum + (command.items || []).reduce((s, item) => s + (Number(item.q) || 1), 0), 0);
-    const comandasSummary = hasOrders
-      ? `Pedido en curso · ${totalArticles} artículo${totalArticles === 1 ? "" : "s"} · ${euro(session.total)}`
-      : "Todavía no hay comandas.";
-    const reservasSummary = nextReservation
-      ? `${nextReservation.guestName} · ${reservationTimeLabel(nextReservation)}${todayReservations.length > 1 ? ` · +${todayReservations.length - 1} más` : ""}`
-      : "Sin reserva para esta mesa.";
     return <div className="mesa-table-card-overlay" role="dialog" aria-modal="true" aria-label={title}>
       <div className="mesa-table-card">
         <div className="mesa-table-card-head">
@@ -1633,76 +1830,7 @@ function MesaWorkspace({
           <button className="mesa-close" onClick={onClose} aria-label="Cerrar">×</button>
         </div>
         <div className="mesa-table-card-body">
-          {workspaceView === "detail" && <>
-            {/* Tap toggles the detailed (existing, unmodified CommandCard)
-                list -- never dumped open by default, per the brief's own
-                "the operator only needs a compact summary" instruction. */}
-            <div className={`mesa-card-section ${hasOrders ? "active" : "muted"}`} data-testid="mesa-card-comandas" onClick={() => setComandasExpanded((value) => !value)}>
-              <div className="mesa-card-section-label">
-                <i className="mesa-dot" style={{ width: 6, height: 6, background: hasOrders ? "#d7a84b" : "#5a5348" }} />
-                Comandas
-              </div>
-              <div className="mesa-card-section-summary">{comandasSummary}</div>
-              {hasOrders && comandasExpanded && <div className="mesa-commands-scroll" style={{ marginTop: 10 }} onClick={(event) => event.stopPropagation()}>
-                {session.commands.map((command) => <CommandCard key={command.id} command={command}
-                  action={command.state === "LISTO" ? <button className="mesa-btn green" style={{ marginLeft: "auto" }} disabled={busy} onClick={() => markServed(command.id)}>✓ Servida</button> : null} />)}
-              </div>}
-            </div>
-
-            {/* Tap opens the real, existing ReservationAgenda filtered to
-                this table (onViewNight, unconditionally -- the non-compact
-                branch below only exposes this once there are 2+ bookings;
-                here it's the section's own always-available tap target,
-                whether there are 0, 1 or several). Same data, same
-                mesaApi, no parallel reservation store. */}
-            <div className={`mesa-card-section ${nextReservation ? "active" : "muted"}`} data-testid="mesa-card-reservas" onClick={() => { if (canManageReservations) onViewNight(); }}>
-              <div className="mesa-card-section-label">
-                <i className="mesa-dot" style={{ width: 6, height: 6, background: nextReservation ? STATUS.reserved.color : "#5a5348" }} />
-                Reservas
-              </div>
-              <div className="mesa-card-section-summary">{reservasSummary}</div>
-            </div>
-
-            {draft && <div className="mesa-section" data-testid="mesa-draft-panel">
-              <button type="button" data-testid="mesa-draft-toggle" onClick={() => setDraftExpanded((value) => !value)} style={{
-                display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none",
-                border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left",
-              }}>
-                <h3 style={{ margin: 0 }}>Comanda por confirmar</h3>
-                <span className="mesa-muted" style={{ marginLeft: "auto" }}>{draftItemCount} artículo{draftItemCount === 1 ? "" : "s"} · {euro(draftTotal)}</span>
-                <span style={{ color: "#a99d89", transform: draftExpanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
-              </button>
-              {draftExpanded && <div className="mesa-command-card" style={{ marginTop: 8 }}>
-                <DraftItemsList items={draft.items} />
-                {draft.nota && <div className="mesa-command-note">Nota general: {draft.nota}</div>}
-                <div style={{ marginTop: 8, textAlign: "right", fontWeight: 900 }}>{euro(draftTotal)}</div>
-              </div>}
-              <div className="mesa-actions">
-                <button className="mesa-btn" disabled={sendingDraft} onClick={() => onNewCommand(table)}>Modificar</button>
-                <button className="mesa-btn green" disabled={sendingDraft} onClick={sendToCocina}>{sendingDraft ? "Enviando…" : "Enviar a cocina"}</button>
-              </div>
-            </div>}
-
-            {/* Same three actions, same handlers, same conditions as the
-                non-compact branch -- only grouped under the new sections
-                instead of a plain Modal. Nueva comanda strongest (primary),
-                Ver cuenta clearly visible (gold), Cerrar mesa lower emphasis
-                (plain) -- P0-B.1 semantics untouched either way. */}
-            <div className="mesa-actions" style={{ marginTop: 16 }}>
-              {!draft && <button className="mesa-btn primary" onClick={() => onNewCommand(table)}>＋ Nueva comanda</button>}
-              {/* MESA_PHONE_VISUAL_PARITY_V2 -- gold only once there is a
-                  real account to review (hasOrders, the exact same signal
-                  the COMANDAS section above already uses); otherwise the
-                  plain neutral .mesa-btn look Cerrar mesa already uses, so
-                  the button never reads as "something needs your attention"
-                  when the table has nothing billed yet. Still fully
-                  tappable either way -- VerCuentaModal itself handles the
-                  zero-total state, this only changes the visual weight. */}
-              <button className={`mesa-btn${hasOrders ? " gold" : ""}`} onClick={() => setShowAccount(true)}>Ver cuenta</button>
-              {!draft && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
-            </div>
-            {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
-          </>}
+          {workspaceView === "detail" && renderDetail()}
           {workspaceView === "account" && <div data-testid="mesa-card-view-account"><VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} /></div>}
           {workspaceView === "close-confirm" && <CerrarMesaConfirm tableNumber={table.number} empty={session.coversTotal == null} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
         </div>
@@ -1710,12 +1838,10 @@ function MesaWorkspace({
     </div>;
   }
 
-  // V1.1 §3 -- ONE SURFACE, NO INTERMEDIATE PREVIEW. "Ver cuenta" used to
-  // stack VerCuentaModal on top of this one, leaving the table's little
-  // summary sitting visible behind the Payment Hub: two overlays for one
-  // task. It now replaces this modal's body in place, with a back control --
-  // exactly what the compact/phone card has always done. Same hub, same
-  // markup, same handlers; only the number of layers changed.
+  // V1.1 §3 -- ONE SURFACE, NO INTERMEDIATE PREVIEW. "Ver cuenta" replaces
+  // this modal's body in place, with a back control -- exactly what the
+  // compact/phone card has always done. Same hub, same markup, same
+  // handlers; only the number of layers changed.
   const accountCovers = session.coversTotal;
   return <>
     <Modal
@@ -1728,61 +1854,7 @@ function MesaWorkspace({
         <button type="button" className="mesa-btn small mesa-hub-back" data-testid="mesa-account-back"
           onClick={() => setShowAccount(false)}>← Volver a la mesa</button>
         <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} />
-      </> : <>
-      <div className="mesa-section" style={{ marginTop: 0 }}>
-        <h3>Comandas</h3>
-        {!hasOrders ? <div className="mesa-muted">Todavía no hay comandas.</div> : <div className="mesa-commands-scroll">
-          {session.commands.map((command) => <CommandCard key={command.id} command={command}
-            action={command.state === "LISTO" ? <button className="mesa-btn green" style={{ marginLeft: "auto" }} disabled={busy} onClick={() => markServed(command.id)}>✓ Servida</button> : null} />)}
-        </div>}
-      </div>
-      {/* Comanda por confirmar -- the local draft MesaOrderBuilder handed
-          back via "Confirmar comanda". Open by default (unlike sent
-          comandas): this IS the last check with the client before it
-          reaches Cocina. Only "Enviar a cocina" here calls the backend. */}
-      {draft && <div className="mesa-section" data-testid="mesa-draft-panel">
-        <button type="button" data-testid="mesa-draft-toggle" onClick={() => setDraftExpanded((value) => !value)} style={{
-          display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none",
-          border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left",
-        }}>
-          <h3 style={{ margin: 0 }}>Comanda por confirmar</h3>
-          <span className="mesa-muted" style={{ marginLeft: "auto" }}>{draftItemCount} artículo{draftItemCount === 1 ? "" : "s"} · {euro(draftTotal)}</span>
-          <span style={{ color: "#a99d89", transform: draftExpanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
-        </button>
-        {draftExpanded && <div className="mesa-command-card" style={{ marginTop: 8 }}>
-          <DraftItemsList items={draft.items} />
-          {draft.nota && <div className="mesa-command-note">Nota general: {draft.nota}</div>}
-          <div style={{ marginTop: 8, textAlign: "right", fontWeight: 900 }}>{euro(draftTotal)}</div>
-        </div>}
-        <div className="mesa-actions">
-          <button className="mesa-btn" disabled={sendingDraft} onClick={() => onNewCommand(table)}>Modificar</button>
-          <button className="mesa-btn green" disabled={sendingDraft} onClick={sendToCocina}>{sendingDraft ? "Enviando…" : "Enviar a cocina"}</button>
-        </div>
-      </div>}
-      <div className="mesa-actions">
-        {!draft && <button className="mesa-btn primary" onClick={() => onNewCommand(table)}>＋ Nueva comanda</button>}
-        {/* MESA_PHONE_VISUAL_PARITY_V2 -- same false-positive-gold fix as the
-            compactCard branch above, applied here too since it is a shared
-            visual-correctness rule (real state, not "the button merely
-            exists"), not a phone-only concern. */}
-        <button className={`mesa-btn${hasOrders ? " gold" : ""}`} onClick={() => setShowAccount(true)}>Ver cuenta</button>
-        {!draft && <button className="mesa-btn" disabled={busy} onClick={openCloseConfirm}>Cerrar mesa</button>}
-      </div>
-      {nextReservation && <div className="mesa-section">
-        <button type="button" onClick={() => setReservationOpen((value) => !value)}
-          style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left" }}>
-          <i className="mesa-dot" style={{ background: STATUS.reserved.color, flexShrink: 0 }} />
-          <strong style={{ flex: 1 }}>Próxima reserva</strong>
-          <span className="mesa-chip">Reservada</span>
-          <span style={{ color: "#a99d89", transform: reservationOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}>⌄</span>
-        </button>
-        {reservationOpen && <div style={{ marginTop: 10 }}>
-          <ReservationItem reservation={nextReservation} table={table} onEdit={onEditReservation} onChanged={onChanged} onOpened={onOpened} />
-        </div>}
-        {todayReservations.length > 1 && canManageReservations && <button className="mesa-btn small" style={{ marginTop: 9 }} onClick={onViewNight}>Ver reservas de la noche ({todayReservations.length})</button>}
-      </div>}
-      {error && !confirmingClose && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
-      </>}
+      </> : renderDetail()}
     </Modal>
     {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
   </>;
@@ -2732,17 +2804,19 @@ export default function TabMesa({
         mounted) must fully remount MesaWorkspace, not just re-render it
         with new props. Without a key, React reuses the same instance across
         tables and its local state (error, busy, showAccount,
-        confirmingClose, draftExpanded, comandasExpanded, ...) leaks from
-        the old table into the new one -- table.id is the same stable,
-        backend-issued identifier already used as the key for every table
-        button on the floor above, never an array index. */}
+        confirmingClose, draftExpanded, ...) leaks from the old table into
+        the new one -- table.id is the same stable, backend-issued
+        identifier already used as the key for every table button on the
+        floor above, never an array index. */}
+    {/* MESA WORKSPACE UI V2 -- onEditReservation/onChanged/onOpened/notify
+        dropped: MesaWorkspace no longer renders an inline ReservationItem
+        (Reservas now opens the same onViewNight agenda the compact card
+        already used), so it never called them for any other reason. openEditor/
+        opened/notify themselves are untouched -- they still serve their other,
+        real callers elsewhere on this page. */}
     {selected?.status === "open" && <MesaWorkspace key={selected.id} table={selected} onClose={() => setSelectedId(null)} onNewCommand={startNewCommand} onRefresh={() => load({ quiet: true })} onPrint={setPrintDocument}
       canManageReservations={canManageReservations}
-      onEditReservation={(reservation) => openEditor(reservation, selected.id)}
       onViewNight={() => { setSelectedId(null); setReservationsFilterTableId(selected.id); setShowReservations(true); }}
-      onChanged={() => load({ quiet: true })}
-      onOpened={opened}
-      notify={notify}
       draft={mesaDrafts[selected.session.id] || null}
       onClearDraft={onClearDraft}
       onSendToCocina={onSendToCocina}
