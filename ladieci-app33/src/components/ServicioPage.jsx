@@ -747,7 +747,16 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     try {
       // Elimina TUTTO per questo wa_id: WA_MSGS + CONV
       const res = await api.post({action:"eliminaConversazione", wa_id: waId});
-      if (res && res.success !== false) {
+      // N-1 — the backend now refuses this call (res._ok === false, an error
+      // code in res.error) when the wa_id is invalid or any order under it
+      // carries financial evidence. The prior check here (`res.success !==
+      // false`) never actually evaluated false, since the payload never
+      // carried a `success` field — a refusal was silently treated as a
+      // success and the messages were removed from the UI regardless. Using
+      // res._ok (set by proxyPost from the real HTTP status) makes a refusal
+      // observable instead of silently no-op deleting nothing while claiming
+      // success.
+      if (res && res._ok) {
         // Rimuovi tutti i messaggi di questo wa_id dalla UI
         setWaMsgs(p => p.filter(m => {
           const mWaId = String(m.wa_id || m.tel || m.nombre || "").replace("+","");
@@ -758,7 +767,15 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         notify("🗑 Conversación eliminada", C.rosso);
       } else {
         setWaMsgs(p => p.map(m => m.id===id ? {...m, _eliminando:false} : m));
-        notify("❌ Error al eliminar", C.rosso);
+        const code = res && res.error;
+        notify(
+          code === "CONVERSATION_HAS_FINANCIAL_EVIDENCE"
+            ? "No se puede eliminar esta conversación porque contiene pedidos con información económica registrada."
+            : code === "INVALID_WA_ID"
+            ? "No se puede eliminar: identificador de conversación no válido."
+            : "❌ Error al eliminar",
+          C.rosso
+        );
       }
     } catch(err) {
       setWaMsgs(p => p.map(m => m.id===id ? {...m, _eliminando:false} : m));
