@@ -73,4 +73,24 @@ describe("describePaymentFailure", () => {
       expect(msg.length).toBeGreaterThan(15);
     }
   });
+
+  // N-5 — refusing a collection that would ALSO move the order's economic basis. Without
+  // its own entry the operator would get the generic sentence, which says nothing about
+  // the discount and gives them no way forward.
+  test("the paid-order economic refusal has its own explanation, not the generic one", () => {
+    const d = describePaymentFailure({
+      success: false,
+      code: "PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN",
+      error: "PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN",
+    });
+    expect(d.code).toBe("PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN");
+    expect(d.message).not.toBe(PAYMENT_GENERIC_FAILURE);
+    expect(d.message).toBe(PAYMENT_FAILURE_MESSAGES.PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN);
+    // It must tell the operator what to do instead, not just that it failed.
+    expect(d.message).toMatch(/descuento/i);
+  });
+
+  test("that refusal is recognised as a failure at all (nothing was charged)", () => {
+    expect(isPaymentFailure({ success: false, code: "PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN" })).toBe(true);
+  });
 });

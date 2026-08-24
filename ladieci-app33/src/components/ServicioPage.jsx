@@ -4,7 +4,9 @@ import FinalizarReconciliationPanel from './servicio/FinalizarReconciliationPane
 import { economyApi } from '../economy/economyApi';
 import { sb, api, auth } from '../api';
 import { BACKEND_BASE_URL } from '../utils/backendBase';
-import { parseEstadoTerminalError } from '../utils/orderModifyError';
+// N-5 — an order write can now be refused for two independent reasons (terminal state,
+// or a paid order whose economic basis this edit would move). One resolver, one message.
+import { parseOrderWriteRefusal } from '../utils/orderModifyError';
 import { classifyCloseOutcome } from '../utils/closeServiceOutcome';
 import { isNoOpenServiceSession, NO_OPEN_SERVICE_SESSION_CODE } from '../utils/serviceSessionError';
 import Suoni from '../sounds';
@@ -665,7 +667,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         try {
           if (nuovaHora) {
             const resOrden = await api.post({action:"updateOrden", id:ordenRef, hora:nuovaHora});
-            const parsed = parseEstadoTerminalError(resOrden);
+            const parsed = parseOrderWriteRefusal(resOrden);
             if (parsed.blocked) {
               notify("❌ " + parsed.message, C.rosso);
               return;
@@ -878,7 +880,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         }
         if (ordenEstado === ORDER_STATES.LISTO) notify("⚠️ Pedido ya LISTO — avisa al cliente!", C.orange);
       } else {
-        const parsed = parseEstadoTerminalError(res);
+        const parsed = parseOrderWriteRefusal(res);
         notify("❌ " + (parsed.blocked ? parsed.message : "Error al actualizar pedido"), C.rosso);
       }
     } catch(err) { console.error("waAddicion:", err); notify("❌ Error al añadir", C.rosso); }
@@ -994,7 +996,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
             } : {})
           })
         ]);
-        const parsed = parseEstadoTerminalError(resOrden);
+        const parsed = parseOrderWriteRefusal(resOrden);
         if (parsed.blocked) blockedTerminal = parsed;
       } catch(err) { console.error("modificaOrden:", err); }
     });
@@ -1213,7 +1215,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           let blockedTerminal = null;
           if (nuoviItems && nuoviItems.length > 0) {
             const resOrden = await api.post({action:"updateOrden", id:ordenId, items:itemsFinali, hora:ordine.hora});
-            const parsed = parseEstadoTerminalError(resOrden);
+            const parsed = parseOrderWriteRefusal(resOrden);
             if (parsed.blocked) blockedTerminal = parsed;
           }
           if (blockedTerminal) {
