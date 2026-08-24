@@ -133,7 +133,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
           onSetPlainNote={cartApi.setNota}
           showGeneralNote={false} showLineControls={false}
           onClose={onClose}
-          primaryAction={{ label: "✏️ Actualizar", onClick: handleConfirm, disabled: false }}
+          primaryAction={{ label: "Actualizar", onClick: handleConfirm, disabled: false }}
         />
         {/* En modifica, cualquier forma de cerrar el configurador (✕/Listo/
             backdrop) guarda y cierra todo -- el popup ES la pantalla, como
@@ -226,7 +226,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
             onSetPlainNote={cartApi.setNota}
             generalNote="" onSetGeneralNote={() => {}} showGeneralNote={false}
             onClose={() => setDrawerOpen(false)}
-            primaryAction={{ label: `✅ Añadir (${totalQty})`, onClick: handleConfirm, disabled: totalQty === 0 }}
+            primaryAction={{ label: `Añadir (${totalQty})`, onClick: handleConfirm, disabled: totalQty === 0 }}
           />
         )}
 

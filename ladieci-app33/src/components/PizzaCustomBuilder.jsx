@@ -125,7 +125,7 @@ const PizzaCustomBuilder = ({ INGREDIENTI, setItems }) => {
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ color: C.avana, fontWeight: 800, fontSize: 14 }}>⭐ Pizza a tu gusto</div>
+          <div style={{ color: C.avana, fontWeight: 800, fontSize: 14 }}>Pizza a tu gusto</div>
           <div data-testid="custom-base-desc" style={{ color: "#C9BCA0", fontSize: 11.5, fontWeight: 600, marginTop: 2 }}>
             Base: {PIZZA_BASE.ing} — {PIZZA_BASE.p.toFixed(2)}€
           </div>
@@ -185,7 +185,7 @@ const PizzaCustomBuilder = ({ INGREDIENTI, setItems }) => {
             boxShadow: "0 4px 14px rgba(196,168,122,0.35)",
             fontFamily: "'Satoshi',-apple-system,sans-serif",
           }}>
-            ⭐ Añadir esta pizza al pedido · {totalPrice.toFixed(2)}€
+            Añadir esta pizza al pedido · {totalPrice.toFixed(2)}€
           </button>
         </div>
       )}

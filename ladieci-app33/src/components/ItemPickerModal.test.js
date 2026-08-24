@@ -126,7 +126,7 @@ test("custom pizza accumulates in the cart instead of auto-closing the modal", a
   const onAdd = jest.fn();
   const onClose = jest.fn();
   const { container, root } = await mount({ onAdd, onClose });
-  click(buttonByText(container, "⭐ Custom"));
+  click(buttonByText(container, "Custom"));
   await flush();
   click(allByTestId(container, "custom-ingredient-chip")[0]);
   await flush();
@@ -260,7 +260,7 @@ test("Eliminar on the confirmation actually discards and closes", async () => {
 test("a custom pizza's emitted item carries NO bogus note -- the 'Base Pelusa' misparse is fixed", async () => {
   const onAdd = jest.fn();
   const { container, root } = await mount({ onAdd });
-  click(buttonByText(container, "⭐ Custom"));
+  click(buttonByText(container, "Custom"));
   await flush();
   click(allByTestId(container, "custom-ingredient-chip")[0]);
   await flush();

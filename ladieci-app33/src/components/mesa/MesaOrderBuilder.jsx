@@ -277,7 +277,7 @@ const MesaOrderBuilder = ({ target, draft, onClose, onConfirm }) => {
             generalNote={notaGeneral}
             onSetGeneralNote={setNotaGeneral}
             onClose={() => setDrawerOpen(false)}
-            primaryAction={{ label: "✅ Confirmar comanda", onClick: handleConfirm, disabled: totalQty === 0 }}
+            primaryAction={{ label: "Confirmar comanda", onClick: handleConfirm, disabled: totalQty === 0 }}
           />
         )}
 

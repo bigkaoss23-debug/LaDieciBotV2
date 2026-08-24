@@ -712,7 +712,9 @@ test("MESA WORKSPACE UI V2.1 -- Comanda actual is the single most recent REAL co
   // regardless of #1 already being paid off (real identity, not a financial
   // filter).
   const current = byTestId(dialog, "mesa-current-card");
-  expect(current.textContent).toContain("#2");
+  // MESA V2.1.1 -- spelled "Comanda 2", never "#2" (a bare "#" is reserved
+  // for PRODUCT catalogue numbers elsewhere in this same card).
+  expect(current.textContent).toContain("Comanda 2");
   expect(current.textContent).toContain("21:10");
   expect(current.textContent).toContain("En cocina");
   expect(current.textContent).toContain("Coca-Cola");
@@ -730,7 +732,7 @@ test("MESA WORKSPACE UI V2.1 -- Comanda actual is the single most recent REAL co
   expect(resumen.textContent).toContain("8,00");
   click(resumen);
   const resumenItems = byTestId(dialog, "mesa-resumen-items");
-  expect(resumenItems.textContent).toContain("#1");
+  expect(resumenItems.textContent).toContain("Comanda 1");
   expect(resumenItems.textContent).toContain("Pagada");
   expect(resumenItems.textContent).toContain("8,00");
   expect(resumenItems.textContent).not.toContain("Coca-Cola");

@@ -148,7 +148,7 @@ test("same beverage reads identically on Mesa and Teléfono -- no casing drift b
 // "Ver comanda"/"Ver pedido" afterwards; the drawer is asserted open already.
 test("same custom pizza (same ingredients) reads identically on Mesa and Teléfono", async () => {
   const addCustom = async (container) => {
-    click(buttonByText(container, "⭐ Custom"));
+    click(buttonByText(container, "Custom"));
     await flush();
     click(allByTestId(container, "custom-ingredient-chip")[0]);
     await flush();

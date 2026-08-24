@@ -122,7 +122,7 @@ test("2 · the ticket lists every product with quantity and price, grouped as in
     // space; normalise it so the assertion compares money, not whitespace.
     amount: row.querySelector(".mesa-hub-amount").textContent.replace(/\s/g, " "),
   });
-  expect(read(rows[0])).toEqual({ qty: "1", name: "#1 · Margherita Classica", alias: "El Pelusa", amount: "12,00 €" });
+  expect(read(rows[0])).toEqual({ qty: "1", name: "Nº 1 · Margherita Classica", alias: "El Pelusa", amount: "12,00 €" });
   // Two real units, one displayed row.
   expect(read(rows[2])).toEqual({ qty: "2", name: "Estrella Galicia", alias: "33cl", amount: "6,00 €" });
   expect(read(rows[4])).toEqual({ qty: "1", name: "San Miguel 0,0", alias: null, amount: "3,00 €" });
@@ -378,7 +378,7 @@ test("8 · a pizza shows its number and real name, with the nickname beneath", a
   const { container, root } = await openHub();
   const row = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'))
     .find((r) => r.textContent.includes("Bufala"));
-  expect(row.querySelector(".mesa-hub-name").textContent).toBe("#2 · Bufala");
+  expect(row.querySelector(".mesa-hub-name").textContent).toBe("Nº 2 · Bufala");
   expect(row.querySelector(".mesa-hub-alias").textContent).toBe("La Joya");
   unmount(container, root);
 });
