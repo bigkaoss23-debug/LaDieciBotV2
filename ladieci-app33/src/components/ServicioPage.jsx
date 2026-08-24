@@ -582,7 +582,12 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       request: async () => {
         const res = await api.createOrden(snapshot);
         if (!res?.id || res._ok === false || res.error || res.success === false) {
-          throw new Error(res?.error || "createOrden returned no persisted id");
+          // N-3 — a refused canonical initial payment answers with a typed code AND an
+          // operator sentence, and the order was NOT created (the payment is written inside
+          // the order's own INSERT transaction, so a refusal rolls the whole thing back).
+          // Prefer that sentence: the lifecycle renders this message verbatim, and a raw
+          // token like AUTH_SESSION_STALE tells the operator nothing about what to do next.
+          throw new Error(res?.message || res?.error || "createOrden returned no persisted id");
         }
         return res;
       },
