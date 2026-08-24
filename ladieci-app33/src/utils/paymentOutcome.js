@@ -30,6 +30,13 @@ export const PAYMENT_FAILURE_MESSAGES = Object.freeze({
     "Este pedido ya tiene un cobro registrado.",
   ORDER_WITHOUT_SERVICE_SESSION:
     "El pedido no está asociado a ningún servicio abierto. No se puede cobrar.",
+  // N-5 — the operator asked to collect AND apply a discount in one action. The backend
+  // refuses BEFORE taking any money, because a collection is registered against the total
+  // as it stands: the discount would land after the charge, recording more than was owed.
+  // Nothing was charged and the pedido has not moved, so the way through is to apply the
+  // discount first and then collect.
+  PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN:
+    "No se puede modificar el importe de un pedido que ya tiene pagos registrados. Aplica el descuento antes de cobrar.",
 });
 
 const GENERIC_FAILURE = "No se pudo registrar el cobro. El pedido no ha cambiado de estado.";
