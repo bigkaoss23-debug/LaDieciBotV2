@@ -76,7 +76,10 @@ describe("TEST B: a successful Barra order closes the form", () => {
   });
 
   test("success is still gated on a real persisted id (no masked failure)", () => {
-    expect(SERVICIO).toContain('throw new Error(res?.error || "createOrden returned no persisted id")');
+    // N-3 widened the thrown message to prefer the backend's operator sentence, but the
+    // gate itself is unchanged: no id, or any typed failure, still throws.
+    expect(SERVICIO).toContain('if (!res?.id || res._ok === false || res.error || res.success === false)');
+    expect(SERVICIO).toContain('throw new Error(res?.message || res?.error || "createOrden returned no persisted id")');
   });
 });
 
