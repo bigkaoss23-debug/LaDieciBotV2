@@ -218,8 +218,13 @@ test("window-crossing movements are surfaced, never hidden", async () => {
   });
   const { container, root } = await mount();
   const box = byTestId(container, "window-crossing");
-  expect(box.textContent).toMatch(/1 cobro\(s\) de pedidos anteriores al período/);
-  expect(box.textContent).toMatch(/1 cobro\(s\) posteriores al período/);
+  // SMOKE FIX — this is now a compact one-line summary that expands. The
+  // disclosure is unchanged in SUBSTANCE: the headline states how many
+  // crossing receipts there are, and all three categories are still named
+  // with their own counts underneath.
+  expect(box.textContent).toMatch(/3 cobros a caballo del período/);
+  expect(box.textContent).toMatch(/1 de pedidos anteriores al período/);
+  expect(box.textContent).toMatch(/1 posteriores al período/);
   expect(box.textContent).toMatch(/1 pedido\(s\) con cobros partidos por el corte/);
   unmount(container, root);
 });
@@ -248,9 +253,15 @@ test("nothing on this panel can be read as finalizing a service", async () => {
   for (const forbidden of [/cierre/i, /cerrar/i, /finalizar/i, /fin de servicio/i, /servicio cerrado/i]) {
     expect(text).not.toMatch(forbidden);
   }
-  // And it states the opposite, out loud, in both halves of the panel.
+  // And it states the opposite, out loud, where it matters most.
   expect(byTestId(container, "cash-count-not-a-close").textContent).toMatch(/no finaliza el servicio/i);
-  expect(byTestId(container, "snapshot-read-only-note").textContent).toMatch(/no modifica/i);
+  // SMOKE FIX — the second, longer read-only paragraph was removed on purpose:
+  // the panel is a picker plus a count form with no destructive control in it,
+  // and the structure said what the prose was repeating. The load-bearing
+  // sentence above stays; what is gone is documentation, not a guarantee.
+  expect(byTestId(container, "snapshot-read-only-note")).toBeNull();
+  expect(text).not.toMatch(/Solo consulta/i);
+  expect(text).not.toMatch(/Elige el tramo que vas a contar/i);
   unmount(container, root);
 });
 

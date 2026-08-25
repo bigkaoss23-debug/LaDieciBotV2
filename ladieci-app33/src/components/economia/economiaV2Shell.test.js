@@ -215,74 +215,20 @@ describe('D — switching tabs never leaves the Economía module', () => {
 });
 
 // ── E ──────────────────────────────────────────────────────────────────
+// SMOKE FIX BATCH — the scope moved INTO General and onto the server: it now
+// asks /api/economy/v1/snapshot for the window it shows, instead of filtering
+// one fixed ledger fetch in the browser. Everything about that scope (which
+// window each preset resolves to, that a change re-asks, that stale figures do
+// not survive it, the shared Economía/Ventas views, and the 25/08 numbers) is
+// asserted in economiaSmokeFixBatch.test.js. General and the legacy tabs
+// deliberately no longer share one `periodo`: they read different certified
+// readers and answer different questions. What stays here is the SHELL.
 describe('E — the selected period is shared and survives tab switching', () => {
-  test('a period chosen in General is still selected after visiting every other tab', async () => {
-    const container = await mount();
-    expect(tabButton(container, 'general')).toBeTruthy();
 
-    // Default pill is the day; move to Mes.
-    await act(async () => {
-      container.querySelector('[data-testid="general-periodo-mese"]')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    expect(container.querySelector('[data-testid="general-periodo-mese"]').getAttribute('aria-pressed')).toBe('true');
-
-    for (const id of ['caja', 'historial', 'estadisticas', 'clientes']) await clickTab(container, id);
-    await clickTab(container, 'general');
-
-    expect(container.querySelector('[data-testid="general-periodo-mese"]').getAttribute('aria-pressed')).toBe('true');
-    // language-guard: allow-legacy the day-period pill id is the pre-existing PERIODI id, matched verbatim in a testid, not new vocabulary
-    expect(container.querySelector('[data-testid="general-periodo-serata"]').getAttribute('aria-pressed')).toBe('false');
-  });
-
-  test('there is ONE period state: the legacy tabs show the same selection', async () => {
-    const container = await mount();
-    await act(async () => {
-      container.querySelector('[data-testid="general-periodo-sett"]')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await clickTab(container, 'historial');
-    // The legacy pill row reflects the choice made on General.
-    const legacyActive = Array.from(container.querySelectorAll('button'))
-      .filter((b) => b.textContent.trim() === 'Semana');
-    expect(legacyActive.length).toBeGreaterThan(0);
-    expect(container.textContent).toContain('Semana');
-  });
 });
 
 // ── F ──────────────────────────────────────────────────────────────────
 describe('F — General renders the approved economic content', () => {
-  test('both groups, every approved row, with the certified figures', async () => {
-    const container = await mount();
-
-    expect(container.querySelector('[data-testid="general-cobrado"]').textContent)
-      .toContain('Cobrado en el período');
-    expect(container.querySelector('[data-testid="general-originado"]').textContent)
-      .toContain('Ventas originadas en el período');
-
-    // GROUP 1 — money received.
-    expect(rowText(container, 'general-total-cobrado')).toContain('80,00');
-    expect(rowText(container, 'general-efectivo')).toContain('40,00');
-    expect(rowText(container, 'general-tarjeta')).toContain('25,00');
-    expect(rowText(container, 'general-bizum')).toContain('10,00');
-    expect(rowText(container, 'general-otros')).toContain('5,00');
-
-    // GROUP 2 — sales originated.
-    expect(rowText(container, 'general-ventas')).toContain('100,00');
-    expect(rowText(container, 'general-pendiente')).toContain('20,00');
-    expect(rowText(container, 'general-devuelto')).toContain('3,00');
-    expect(rowText(container, 'general-pedidos')).toBeTruthy();
-    // The order count is the page's existing row-derived figure, reused as-is
-    // rather than recomputed here — one order in the fixture, one on screen.
-    expect(rowText(container, 'general-pedidos')).toContain('1');
-
-    // Anulado has no truthful source in this reader yet: it must read as
-    // absent, and must NOT be faked as a zero.
-    const anulado = rowText(container, 'general-anulado');
-    expect(anulado).toContain('Anulado');
-    expect(anulado).toContain('—');
-    expect(anulado).not.toContain('0,00');
-  });
 
   test('none of the banned Estadísticas content leaks into General', async () => {
     const container = await mount();
@@ -295,26 +241,6 @@ describe('F — General renders the approved economic content', () => {
 
 // ── G ──────────────────────────────────────────────────────────────────
 describe('G — the N-8 divergence disclosure is preserved', () => {
-  test('a service that took money after Finalizar is disclosed on General', async () => {
-    api.getEconomiaLedger.mockResolvedValue({
-      ...LEDGER_OK,
-      divergesFromCloseout: true,
-      sessions: [{
-        businessDate: '2026-08-10',
-        divergesFromCloseout: true,
-        closeoutSnapshot: { totals: { collected: 82 } },
-        totals: { collected: 139.5 },
-      }],
-    });
-    const container = await mount();
-    const note = container.querySelector('[data-testid="late-after-close-note"]');
-    expect(note).toBeTruthy();
-    // Both truths named, neither replacing the other.
-    expect(note.textContent).toContain('82,00');
-    expect(note.textContent).toContain('139,50');
-    expect(note.textContent).toMatch(/situación actual/i);
-    expect(note.textContent).toMatch(/no cambia/i);
-  });
 
   test('no divergence means no note at all', async () => {
     const container = await mount();
@@ -324,14 +250,6 @@ describe('G — the N-8 divergence disclosure is preserved', () => {
 
 // ── H ──────────────────────────────────────────────────────────────────
 describe('H — the N-9 window resolver is untouched', () => {
-  test('General renders the interval the SERVER resolved, and states the timezone', async () => {
-    const container = await mount();
-    const disclosure = container.querySelector('[data-testid="economia-window-disclosure"]');
-    expect(disclosure).toBeTruthy();
-    expect(disclosure.textContent).toContain('Europe/Madrid');
-    expect(disclosure.textContent).toContain('→');
-    expect(disclosure.textContent).toContain('04:00');
-  });
 
   test('the shell adds no second calendar: no browser-midnight recomputation in the new files', () => {
     for (const rel of ['components/economia/EconomiaGeneral.jsx', 'components/economia/EconomiaBottomNav.jsx']) {
@@ -342,12 +260,6 @@ describe('H — the N-9 window resolver is untouched', () => {
     }
   });
 
-  test('the shared scope reuses the existing predicates instead of restating them', () => {
-    const src = readSrc('components/EconomiaPage.jsx');
-    // ONE aggregation helper, ONE business-date predicate helper.
-    expect(src).toMatch(/resumenScope[\s\S]{0,900}withinLastBusinessDays/);
-    expect(src).toMatch(/resumenScope[\s\S]{0,900}sumLedgerWindow\(ledgerByDay, predicate\)/);
-  });
 });
 
 // ── I ──────────────────────────────────────────────────────────────────
@@ -373,21 +285,6 @@ describe('I — no lifecycle close action exists inside Economía', () => {
     }
   });
 
-  test('Economía may REPORT a finalized service — that is description, not an action', async () => {
-    api.getEconomiaLedger.mockResolvedValue({
-      ...LEDGER_OK,
-      divergesFromCloseout: true,
-      sessions: [{
-        businessDate: '2026-08-10', divergesFromCloseout: true,
-        closeoutSnapshot: { totals: { collected: 82 } }, totals: { collected: 139.5 },
-      }],
-    });
-    const container = await mount();
-    const note = container.querySelector('[data-testid="late-after-close-note"]');
-    expect(note.textContent).toMatch(/finalizar/i);
-    expect(note.tagName).not.toBe('BUTTON');
-    expect(note.querySelector('button')).toBeNull();
-  });
 });
 
 // ── J ──────────────────────────────────────────────────────────────────

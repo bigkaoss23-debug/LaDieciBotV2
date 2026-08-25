@@ -44,6 +44,15 @@ beforeEach(() => {
 });
 
 const emptySession = { id: "s1", coversTotal: 2, coversRemaining: 2, total: 0, paid: 0, outstanding: 0, nextEqualShare: 0, paymentTotals: {}, commands: [], lines: [], payments: [] };
+// SMOKE FIX — every comanda already RETIRADO, so the UI has no local reason to
+// block the close. Used to keep the BACKEND rejection path covered now that a
+// locally-blocked table no longer offers a tappable close at all.
+const servedOrdersSession = {
+  ...emptySession, total: 24.5, outstanding: 24.5,
+  commands: [{ id: "c1", commandNumber: 101, state: "RETIRADO", time: "20:10", total: 24.5, items: [{ n: "Margherita", q: 2 }] }],
+  lines: [{ id: "l1", orderId: "c1", description: "Margherita", amount: 10, remaining: 10, quantity: 1 }],
+};
+
 const withOrdersSession = {
   ...emptySession, total: 24.5, outstanding: 24.5,
   commands: [{ id: "c1", commandNumber: 101, state: "EN_COCINA", time: "20:10", total: 24.5, items: [{ n: "Margherita", q: 2 }, { n: "Coca-Cola", q: 1 }] }],
@@ -336,7 +345,7 @@ describe("MesaWorkspace compactCard -- outer × vs internal back", () => {
 describe("MesaWorkspace compactCard -- table-local state isolation (key={table.id})", () => {
   test("switching directly from one open table to another resets local error and subview state", async () => {
     mesaApi.closeTable.mockRejectedValueOnce({ code: "MESA_TABLE_HAS_ACTIVE_ORDERS" });
-    const tableA = tableFixture({ id: "t1", number: 5, status: "open", session: withOrdersSession });
+    const tableA = tableFixture({ id: "t1", number: 5, status: "open", session: servedOrdersSession });
     const tableB = tableFixture({ id: "t2", number: 6, x: 60, y: 60, status: "open", session: emptySession });
     mesaApi.floor.mockResolvedValue({ ok: true, tables: [tableA, tableB] });
 
@@ -391,13 +400,35 @@ describe("MesaWorkspace compactCard -- business behavior unchanged under in-plac
     unmount(container, root);
   });
 
-  test("Cerrar mesa in-place still enforces the real backend blocker on a rejected close -- table stays open", async () => {
-    mesaApi.closeTable.mockRejectedValueOnce({ code: "MESA_TABLE_HAS_ACTIVE_ORDERS" });
+  test("a table with comandas still in Cocina does not offer a close that would fail -- one short line, disabled action", async () => {
+    // SMOKE FIX — this used to let the operator tap Cerrar mesa, call the RPC,
+    // get MESA_TABLE_HAS_ACTIVE_ORDERS back and read a paragraph about it. An
+    // action that cannot succeed is not offered.
     const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: withOrdersSession }) });
 
     click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar mesa"));
     await flush();
+
+    expect(container.querySelector('[data-testid="mesa-card-view-close-confirm"]')).not.toBeNull();
+    expect(byTestId(container, "cerrar-mesa-body").textContent).toBe("Faltan comandas por servir.");
+    expect(byTestId(container, "cerrar-mesa-confirm").disabled).toBe(true);
+
+    click(byTestId(container, "cerrar-mesa-confirm"));
+    await flush();
+    expect(mesaApi.closeTable).not.toHaveBeenCalled();
+    unmount(container, root);
+  });
+
+  test("the backend blocker is still authoritative: a close the UI allows but the server refuses keeps the table open", async () => {
+    // The UI mirror is presentation only. If the kitchen state moves between
+    // render and tap, the RPC still refuses and the operator still sees why.
+    mesaApi.closeTable.mockRejectedValueOnce({ code: "MESA_TABLE_HAS_ACTIVE_ORDERS" });
+    const { container, root } = await mount({ compact: true, table: tableFixture({ status: "open", session: servedOrdersSession }) });
+
     click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar mesa"));
+    await flush();
+    expect(byTestId(container, "cerrar-mesa-confirm").disabled).toBe(false);
+    click(byTestId(container, "cerrar-mesa-confirm"));
     await flush();
 
     expect(mesaApi.closeTable).toHaveBeenCalledWith("s1");
@@ -414,7 +445,7 @@ describe("MesaWorkspace compactCard -- business behavior unchanged under in-plac
 // branches used to hand-roll the identical, independently-broken-for-custom-
 // items interpretation (see DraftItemsList in TabMesa.jsx) -- this closes
 // the gap for the compact branch specifically.
-describe("MesaWorkspace compactCard -- draft panel item detail (Comanda por confirmar)", () => {
+describe("MesaWorkspace compactCard -- draft panel item detail (Pedido en curso)", () => {
   const draftWithDetail = {
     items: [{
       id: 1, n: "El Pelusa", q: 1, cat: "Pizzas", p: 12.5,
@@ -430,7 +461,7 @@ describe("MesaWorkspace compactCard -- draft panel item detail (Comanda por conf
       compact: true, table: tableFixture({ status: "open", session: emptySession }),
       mesaDrafts: { s1: draftWithDetail },
     });
-    click(byTestId(container, "mesa-draft-toggle"));
+    // SMOKE FIX — the draft opens expanded; no tap needed to see its detail.
     await flush();
     expect(container.textContent).toContain("El Pelusa");
     expect(container.textContent).toContain("Margherita Classica");
@@ -458,7 +489,7 @@ describe("MesaWorkspace compactCard -- draft panel item detail (Comanda por conf
       compact: true, table: tableFixture({ status: "open", session: emptySession }),
       mesaDrafts: { s1: customDraft },
     });
-    click(byTestId(container, "mesa-draft-toggle"));
+    // SMOKE FIX — the draft opens expanded; no tap needed to see its detail.
     await flush();
     expect(container.textContent).toContain("Pizza a tu gusto");
     expect(container.textContent).toContain("Tomates confitados");

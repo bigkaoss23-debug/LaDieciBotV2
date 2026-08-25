@@ -859,56 +859,12 @@ const EconomiaPage = ({onBack}) => {
   const cajaFechaLabel = fmtFechaLarga(diaCajaSeleccionado || diasCaja[0]?.data || oggiIso);
   const topClientes = useMemo(() => buildTopClientes(Array.isArray(rawData) ? rawData : []), [rawData]);
 
-  // ── ECONOMÍA V2 — THE ONE SHARED ECONOMIC SCOPE ──────────────────────
-  // Resumen reads the same `periodo` every other tab reads, resolved through
-  // the same business-date-string predicates the page has always used
-  // (`withinLastBusinessDays` / exact-day equality). No second period state,
-  // no second calendar, no second aggregation: one `sumLedgerWindow` call
-  // over the certified per-day ledger totals.
-  //
-  // N-9 IS UNTOUCHED. The window rules are not restated here — this memo only
-  // chooses WHICH of the existing predicates applies to the selected pill.
-  const resumenScope = useMemo(() => {
-    if (!ledgerReady) return null;
-    // language-guard: allow-legacy "serata" is the pre-existing PERIODI pill id declared above, matched verbatim here, not new vocabulary
-    const predicate = periodo === "serata" ? (_dt, day) => day === cajaDiaSeleccionadaKey
-      : periodo === "sett" ? (_dt, day) => withinLastBusinessDays(day, reportingDay, 7)
-      : periodo === "mese" ? (_dt, day) => withinLastBusinessDays(day, reportingDay, 30)
-      : () => true;
-    const w = sumLedgerWindow(ledgerByDay, predicate);
-    // language-guard: allow-legacy the payment-bucket field name is sumLedgerWindow's existing return key, destructured once here instead of read four times, not new vocabulary
-    const { efectivo, tarjeta, bizum, no_especificado } = w.pagamenti;
-    return {
-      cobrado: {
-        total:    w.totals.collected,
-        efectivo: efectivo.incasso,
-        tarjeta:  tarjeta.incasso,
-        bizum:    bizum.incasso,
-        otros:    no_especificado.incasso,
-      },
-      originado: {
-        ventas:    w.totals.gross,
-        pendiente: w.totals.unpaid,
-        devuelto:  w.totals.refunded,
-      },
-    };
-  }, [ledgerReady, ledgerByDay, periodo, reportingDay, cajaDiaSeleccionadaKey]);
-
-  // N-9 — the resolved interval, rendered exactly as the server sent it.
-  const resumenWindowLine = useMemo(() => {
-    if (!ledgerWindow?.from || !ledgerWindow?.to) return null;
-    const at = (iso) => {
-      const d = new Date(iso);
-      if (Number.isNaN(d.getTime())) return null;
-      return new Intl.DateTimeFormat("es-ES", {
-        timeZone: ledgerWindow.timezone || REPORTING_TIMEZONE,
-        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
-      }).format(d).replace(", ", ", ");
-    };
-    const from = at(ledgerWindow.from), to = at(ledgerWindow.to);
-    if (!from || !to) return null;
-    return `${from} → ${to} · ${ledgerWindow.timezone || REPORTING_TIMEZONE}`;
-  }, [ledgerWindow]);
+  // ECONOMÍA V2 / SMOKE FIX — the old client-side `resumenScope` memo is gone.
+  // It filtered one fixed 35-day ledger fetch, which is why selecting a period
+  // changed the figures but never the window the screen showed. General now
+  // asks /api/economy/v1/snapshot for the scope it wants and renders the window
+  // that reader resolves. `ledgerByDay` below still serves the legacy tabs and
+  // the N-8 divergence flag.
 
   // Stats per singolo giorno selezionato — filtra rawData per fecha
   const aGiorno = useMemo(() => {
@@ -1478,10 +1434,12 @@ const EconomiaPage = ({onBack}) => {
           }}/>
         </div>
         <div style={{flex:1}}>
+          {/* SMOKE FIX — the subtitle used to read "N pedidos entregados" from a
+              global row count that had nothing to do with the economic scope on
+              screen, so the header and the figures below could state two
+              different order counts at once. A screen shows ONE count, and it
+              belongs to the selected period. */}
           <div style={{color:"rgba(255,255,255,0.8)",fontWeight:900,fontSize:17,letterSpacing:.2}}>ECONOMÍA</div>
-          {a&&<div style={{color:"rgba(255,255,255,0.3)",fontSize:11,marginTop:1}}>
-            {a.countOrdini} pedidos entregados
-          </div>}
         </div>
         <button onClick={()=>setRefresh(r=>r+1)} style={{
           background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",
@@ -1500,20 +1458,7 @@ const EconomiaPage = ({onBack}) => {
             divergence disclosure and the N-9 window statement live HERE and
             nowhere else in the module — see the Caja mount below. */}
         {tab === "general" && (
-          <EconomiaGeneral
-            periodos={PERIODI_V2}
-            periodo={periodo}
-            onPeriodo={(id) => { setPeriodo(id); setGiornoFiltro(null); }}
-            windowLine={resumenWindowLine}
-            dayLine={ledgerWindow
-              ? `Día operativo ${shortBusinessDate(ledgerWindow.businessDateToday)} · cierre 04:00`
-              : null}
-            ledgerStatus={ledgerStatus}
-            onRetry={retryLedger}
-            cobrado={resumenScope?.cobrado}
-            originado={{ ...(resumenScope?.originado || {}), pedidos: vista?.pedidos ?? 0 }}
-            lateAfterClose={lateAfterClose}
-          />
+          <EconomiaGeneral lateAfterClose={lateAfterClose} />
         )}
 
         {/* ═══ TAB: CAJA ═══

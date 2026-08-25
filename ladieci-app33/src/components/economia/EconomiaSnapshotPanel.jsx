@@ -174,16 +174,18 @@ export default function EconomiaSnapshotPanel({ showEconomicWindow = true } = {}
 
       {/* ── WINDOW ─────────────────────────────────────────────────── */}
       <div style={box}>
-        <div data-testid="snapshot-panel-heading" style={{ color: C.bianco, fontSize: 14, fontWeight: 800, letterSpacing: 1, marginBottom: 4 }}>
-          {showEconomicWindow ? 'RESUMEN ECONÓMICO' : 'PERÍODO DEL CONTEO'}
-        </div>
-        <div data-testid="snapshot-read-only-note" style={{ color: C.grigio, fontSize: 12, marginBottom: 14 }}>
-          {showEconomicWindow
-            ? 'Solo consulta. Elegir un período no modifica ningún pedido, ningún cobro y ningún servicio.'
-            : 'Elige el tramo que vas a contar. Cambiar el período no modifica ningún pedido, ningún cobro y ningún servicio.'}
+        {/* SMOKE FIX — the screen used to open on two sentences of documentation
+            explaining that reading a period changes nothing. The structure says
+            that already: a picker and a count form, no destructive control in
+            sight. One word is enough. */}
+        <div data-testid="snapshot-panel-heading" style={{
+          color: 'rgba(255,255,255,0.38)', fontSize: 10.5, fontWeight: 800,
+          letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
+        }}>
+          {showEconomicWindow ? 'Resumen económico' : 'Período'}
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
           {PRESETS.map((p) => (
             <button
               key={p.key}
@@ -202,27 +204,32 @@ export default function EconomiaSnapshotPanel({ showEconomicWindow = true } = {}
                 setPreset(p.key);
               }}
               style={{
-                background: preset === p.key ? C.avana : 'transparent',
-                color: preset === p.key ? C.nero : C.bianco,
-                border: `1px solid ${preset === p.key ? C.avana : C.fumo}`,
+                background: preset === p.key ? 'rgba(249,115,22,.14)' : 'rgba(255,255,255,.045)',
+                color: preset === p.key ? '#ffd9b8' : 'rgba(255,255,255,0.5)',
+                border: `1px solid ${preset === p.key ? C.orange : 'rgba(255,255,255,.10)'}`,
+                boxShadow: preset === p.key ? '0 0 14px rgba(249,115,22,.15)' : 'none',
                 borderRadius: 999, padding: '7px 14px',
-                fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                fontSize: 12.5, fontWeight: preset === p.key ? 850 : 700,
+                cursor: 'pointer', whiteSpace: 'nowrap',
               }}
             >{p.label}</button>
           ))}
         </div>
 
         {preset === 'personalizado' && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
-            <label style={{ color: C.grigio, fontSize: 11 }}>
-              Desde<br />
+          <div style={{
+            display: 'grid', gap: 9, marginTop: 11,
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          }}>
+            <label style={{ color: C.grigio, fontSize: 10.5, fontWeight: 700, letterSpacing: .5 }}>
+              DESDE
               <input data-testid="custom-from" type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)}
-                style={{ background: C.carbone2, color: C.bianco, border: `1px solid ${C.fumo}`, borderRadius: 8, padding: '7px 9px', marginTop: 4 }} />
+                style={{ display: 'block', width: '100%', background: C.carbone2, color: C.bianco, border: '1px solid rgba(255,255,255,.12)', borderRadius: 9, padding: '9px 10px', marginTop: 4, fontSize: 13 }} />
             </label>
-            <label style={{ color: C.grigio, fontSize: 11 }}>
-              Hasta<br />
+            <label style={{ color: C.grigio, fontSize: 10.5, fontWeight: 700, letterSpacing: .5 }}>
+              HASTA
               <input data-testid="custom-to" type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)}
-                style={{ background: C.carbone2, color: C.bianco, border: `1px solid ${C.fumo}`, borderRadius: 8, padding: '7px 9px', marginTop: 4 }} />
+                style={{ display: 'block', width: '100%', background: C.carbone2, color: C.bianco, border: '1px solid rgba(255,255,255,.12)', borderRadius: 9, padding: '9px 10px', marginTop: 4, fontSize: 13 }} />
             </label>
           </div>
         )}
@@ -277,36 +284,52 @@ export default function EconomiaSnapshotPanel({ showEconomicWindow = true } = {}
           </div>
           </>)}
 
-          {(snapshot.windowCrossing.obligationBeforeWindowReceiptInside.length > 0
-            || snapshot.windowCrossing.obligationInsideWindowReceiptAfter.length > 0
-            || snapshot.windowCrossing.receiptsSplitAcrossBoundary.length > 0) && (
-            <div data-testid="window-crossing" style={{ ...box, borderColor: C.avana }}>
-              <div style={{ color: C.avana, fontSize: 11, letterSpacing: 1, marginBottom: 8 }}>
-                MOVIMIENTOS A CABALLO DEL PERÍODO
-              </div>
-              <div style={{ color: C.grigio, fontSize: 12, lineHeight: 1.6 }}>
+          {(() => {
+            const crossingCount =
+              snapshot.windowCrossing.obligationBeforeWindowReceiptInside.length
+              + snapshot.windowCrossing.obligationInsideWindowReceiptAfter.length
+              + snapshot.windowCrossing.receiptsSplitAcrossBoundary.length;
+            return crossingCount > 0 && (
+            <details data-testid="window-crossing" style={{
+              border: '1px solid rgba(255,255,255,.09)', background: 'rgba(255,255,255,.025)',
+              borderRadius: 12, padding: '9px 12px',
+            }}>
+              {/* SMOKE FIX — this was a titled block competing with the cash
+                  count for attention. It is a correctness disclosure, not a
+                  headline: one line, expandable. */}
+              <summary style={{
+                color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: 700,
+                cursor: 'pointer', listStyle: 'none',
+              }}>
+                {crossingCount} {crossingCount === 1 ? 'cobro a caballo del período' : 'cobros a caballo del período'}
+              </summary>
+              <div style={{ color: C.grigio, fontSize: 11.5, lineHeight: 1.6, marginTop: 8 }}>
                 {snapshot.windowCrossing.obligationBeforeWindowReceiptInside.length > 0 && (
-                  <div>· {snapshot.windowCrossing.obligationBeforeWindowReceiptInside.length} cobro(s) de pedidos anteriores al período.</div>
+                  <div>· {snapshot.windowCrossing.obligationBeforeWindowReceiptInside.length} de pedidos anteriores al período.</div>
                 )}
                 {snapshot.windowCrossing.obligationInsideWindowReceiptAfter.length > 0 && (
-                  <div>· {snapshot.windowCrossing.obligationInsideWindowReceiptAfter.length} cobro(s) posteriores al período, de pedidos de dentro.</div>
+                  <div>· {snapshot.windowCrossing.obligationInsideWindowReceiptAfter.length} posteriores al período, de pedidos de dentro.</div>
                 )}
                 {snapshot.windowCrossing.receiptsSplitAcrossBoundary.length > 0 && (
                   <div>· {snapshot.windowCrossing.receiptsSplitAcrossBoundary.length} pedido(s) con cobros partidos por el corte.</div>
                 )}
               </div>
-            </div>
-          )}
+            </details>
+            );
+          })()}
 
           {/* ── CASH COUNT ───────────────────────────────────────────── */}
           <div style={{ ...box, borderColor: C.avana }}>
             <div style={{ color: C.bianco, fontSize: 14, fontWeight: 800, letterSpacing: 1 }}>
               CONTEO DE CAJA
             </div>
-            {/* The load-bearing sentence of this whole panel. */}
-            <div data-testid="cash-count-not-a-close" style={{ color: C.grigio, fontSize: 12, marginTop: 6, marginBottom: 16, lineHeight: 1.5 }}>
-              Contar la caja <strong>no finaliza el servicio</strong> y no modifica ningún dato: solo deja registrado,
-              con tu nombre y la hora, cuánto efectivo había físicamente en este momento.
+            {/* SMOKE FIX — this was three lines of prose. The sentence that
+                earns its place is the one that stops "conteo" reading as
+                "cierre"; the rest (that it records who and when, that it
+                changes nothing) is what the form and the append-only history
+                below already show. Kept short, kept exact, kept testable. */}
+            <div data-testid="cash-count-not-a-close" style={{ color: C.grigio, fontSize: 11.5, marginTop: 4, marginBottom: 14 }}>
+              Contar la caja <strong>no finaliza el servicio</strong>.
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 14 }}>

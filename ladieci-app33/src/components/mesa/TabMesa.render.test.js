@@ -603,9 +603,35 @@ test("an occupied Mesa with an order shows an active (never free-green) thick bo
   unmount(container, root);
 });
 
-test("confirming Cerrar mesa on an OCCUPIED table calls closeTable (not releaseEmptyTable), and a blocked close surfaces the backend's error", async () => {
+test("a table with comandas still in Cocina does not offer a close that would fail -- one short line, disabled action", async () => {
+  // SMOKE FIX — EN_COCINA and LISTO both make the RPC refuse. The UI used to
+  // present a fully actionable "Cerrar mesa" anyway and then explain the
+  // failure in a sentence. It now says one line and disables the action.
   const openTables = floorTables.map((table, index) => index === 0
     ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [{ id: "o1", commandNumber: 1, state: "EN_COCINA", items: [{ n: "Margherita" }], time: "21:00" }] }) }
+    : table);
+  mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+  const { container, root } = await mount("waiter");
+  click(container.querySelector(".mesa-table"));
+  click(buttonByText(container, "Cerrar mesa"));
+  const confirmDialog = container.querySelector('[role="alertdialog"]');
+  // Dialog copy must not claim the table is empty when it plainly is not.
+  expect(confirmDialog.textContent).not.toContain("La mesa está vacía");
+  expect(byTestId(container, "cerrar-mesa-body").textContent).toBe("Faltan comandas por servir.");
+  const confirm = byTestId(container, "cerrar-mesa-confirm");
+  expect(confirm.disabled).toBe(true);
+  click(confirm);
+  await flush();
+  expect(mesaApi.closeTable).not.toHaveBeenCalled();
+  expect(mesaApi.releaseEmptyTable).not.toHaveBeenCalled();
+  unmount(container, root);
+});
+
+test("the backend blocker stays authoritative: an allowed close the server refuses keeps the table open and shows why", async () => {
+  // Every comanda is served, so the UI has no local reason to block. The RPC
+  // is still the authority and its refusal still reaches the operator.
+  const openTables = floorTables.map((table, index) => index === 0
+    ? { ...table, status: "open", session: emptySession({ coversTotal: 4, coversRemaining: 4, commands: [{ id: "o1", commandNumber: 1, state: "RETIRADO", items: [{ n: "Margherita" }], time: "21:00" }] }) }
     : table);
   mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
   mesaApi.closeTable.mockRejectedValueOnce({ code: "MESA_TABLE_HAS_ACTIVE_ORDERS" });
@@ -613,14 +639,13 @@ test("confirming Cerrar mesa on an OCCUPIED table calls closeTable (not releaseE
   click(container.querySelector(".mesa-table"));
   click(buttonByText(container, "Cerrar mesa"));
   const confirmDialog = container.querySelector('[role="alertdialog"]');
-  // Dialog copy must not claim the table is empty when it plainly is not.
-  expect(confirmDialog.textContent).not.toContain("La mesa está vacía");
-  click(buttonByText(confirmDialog, "Cerrar mesa"));
+  const confirm = byTestId(container, "cerrar-mesa-confirm");
+  expect(confirm.disabled).toBe(false);
+  click(confirm);
   await flush();
   expect(mesaApi.closeTable).toHaveBeenCalledTimes(1);
   expect(mesaApi.closeTable).toHaveBeenCalledWith("session-x");
   expect(mesaApi.releaseEmptyTable).not.toHaveBeenCalled();
-  // Blocked: dialog stays open and shows the mapped error, table not closed.
   expect(container.querySelector('[role="alertdialog"]')).toBeTruthy();
   expect(describeMesaError).toHaveBeenCalledWith({ code: "MESA_TABLE_HAS_ACTIVE_ORDERS" });
   unmount(container, root);
@@ -1431,22 +1456,41 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     nota: "mesa junto a la ventana", coversTotal: 4, client_req_id: "draft-req-1",
   };
 
-  test("a pending draft renders collapsed as a compact summary by default, with Modificar/Enviar a cocina, and hides Nueva comanda + Cerrar mesa", async () => {
+  test("a pending draft is the ACTIVE surface: named Pedido en curso, open by default, with Modificar/Enviar a cocina, and hides Nueva comanda + Cerrar mesa", async () => {
     const openTables = floorTables.map((table, index) => index === 0
       ? { ...table, status: "open", session: emptySession() } : table);
     mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
     const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": sampleDraft } });
     click(container.querySelector(".mesa-table"));
     const dialog = container.querySelector('[role="dialog"]');
-    expect(dialog.textContent).toContain("Comanda por confirmar");
+    // SMOKE FIX — an unsent draft is not a comanda, and it is what the
+    // operator is working on. It says so, and it opens showing its contents.
+    expect(dialog.textContent).toContain("Pedido en curso");
+    expect(dialog.textContent).not.toContain("Comanda por confirmar");
     expect(dialog.textContent).toContain("2 artículos");
-    // Collapsed: full item detail is NOT in the DOM yet, only the summary line.
-    expect(dialog.textContent).not.toContain("Margherita Classica");
+    expect(dialog.textContent).toContain("Margherita Classica");
     expect(dialog.textContent).toContain("Modificar");
     expect(dialog.textContent).toContain("Enviar a cocina");
     // No second order-creator and no premature close while a draft is pending.
     expect(dialog.textContent).not.toContain("Nueva comanda");
     expect(dialog.textContent).not.toContain("Cerrar mesa");
+    unmount(container, root);
+  });
+
+  test("with a draft pending and nothing sent yet, no empty Comanda actual card competes with it", async () => {
+    const openTables = floorTables.map((table, index) => index === 0
+      ? { ...table, status: "open", session: emptySession() } : table);
+    mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
+    const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": sampleDraft } });
+    click(container.querySelector(".mesa-table"));
+    // The old screen highlighted an empty "Comanda actual" above a real
+    // 10-item draft. There is no such card to highlight any more.
+    expect(byTestId(container, "mesa-current-card")).toBeNull();
+    expect(byTestId(container, "mesa-current-empty")).toBeNull();
+    // The draft carries the active-surface treatment.
+    const panel = byTestId(container, "mesa-draft-panel");
+    expect(panel).not.toBeNull();
+    expect(panel.className).toContain("mesa-draft-card");
     unmount(container, root);
   });
 
@@ -1457,15 +1501,18 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": sampleDraft } });
     click(container.querySelector(".mesa-table"));
     const dialog = container.querySelector('[role="dialog"]');
-    click(byTestId(container, "mesa-draft-toggle"));
+    // SMOKE FIX — it now OPENS expanded, so the detail is there immediately.
     expect(dialog.textContent).toContain("El Pelusa");
     expect(dialog.textContent).toContain("Margherita Classica");
     expect(dialog.textContent).toContain("Jamón cocido");
     expect(dialog.textContent).toContain("Albahaca");
     expect(dialog.textContent).toContain("poco hecha");
     expect(dialog.textContent).toContain("mesa junto a la ventana");
+    // The toggle still works in both directions.
     click(byTestId(container, "mesa-draft-toggle"));
     expect(dialog.textContent).not.toContain("Margherita Classica");
+    click(byTestId(container, "mesa-draft-toggle"));
+    expect(dialog.textContent).toContain("Margherita Classica");
     unmount(container, root);
   });
 
@@ -1530,8 +1577,7 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     await flush();
     const dialog = container.querySelector('[role="dialog"]');
     expect(dialog.textContent).toContain("MESA_SERVER_ERROR");
-    expect(dialog.textContent).toContain("Comanda por confirmar");
-    click(byTestId(container, "mesa-draft-toggle"));
+    expect(dialog.textContent).toContain("Pedido en curso");
     expect(dialog.textContent).toContain("El Pelusa");
     expect(onClearDraft).not.toHaveBeenCalled();
     const retryBtn = buttonByText(container, "Enviar a cocina");
@@ -1539,14 +1585,14 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     unmount(container, root);
   });
 
-  test("without a pending draft, the workspace looks exactly as before: Nueva comanda shown, no 'Comanda por confirmar' section", async () => {
+  test("without a pending draft, the workspace looks exactly as before: Nueva comanda shown, no 'Pedido en curso' section", async () => {
     const openTables = floorTables.map((table, index) => index === 0
       ? { ...table, status: "open", session: emptySession() } : table);
     mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
     const { container, root } = await mount("waiter", { mesaDrafts: {} });
     click(container.querySelector(".mesa-table"));
     const dialog = container.querySelector('[role="dialog"]');
-    expect(dialog.textContent).not.toContain("Comanda por confirmar");
+    expect(dialog.textContent).not.toContain("Pedido en curso");
     expect(dialog.textContent).toContain("Nueva comanda");
     unmount(container, root);
   });
@@ -1578,7 +1624,7 @@ describe("MesaWorkspace pre-comanda panel (Confirmar comanda -> Enviar a cocina)
     mesaApi.floor.mockResolvedValue({ ok: true, tables: openTables });
     const { container, root } = await mount("waiter", { mesaDrafts: { "session-x": customDraft } });
     click(container.querySelector(".mesa-table"));
-    click(byTestId(container, "mesa-draft-toggle"));
+    // SMOKE FIX — the draft opens expanded; no tap needed to see its detail.
     const dialog = container.querySelector('[role="dialog"]');
     expect(dialog.textContent).toContain("Pizza a tu gusto");
     expect(dialog.textContent).toContain("Tomates confitados");

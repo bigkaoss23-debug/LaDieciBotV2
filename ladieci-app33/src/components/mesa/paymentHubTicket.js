@@ -99,7 +99,7 @@ export function groupTicketLines(lines) {
       byKey.set(key, {
         key, label, description: label.primary,
         quantity: 0, amount: 0, remaining: 0,
-        lineIds: [], selectableLineIds: [],
+        lineIds: [], selectableLineIds: [], selectableUnits: [],
       });
       order.push(key);
     }
@@ -114,7 +114,17 @@ export function groupTicketLines(lines) {
       row.lineIds.push(id);
       // Only units with something still owed may be charged again. This is
       // the list that reaches mesa_post_payment_v1.
-      if (safeRemaining > 0) row.selectableLineIds.push(id);
+      //
+      // SMOKE FIX — each chargeable unit is also kept WITH its own remaining.
+      // "4 × Heineken" is four real rows in the backend, so charging one of
+      // them is a matter of sending one id; what it is worth is that unit's
+      // own remaining, never row.remaining / quantity. Units of the same
+      // product can carry different remainings once one of them is partly
+      // paid, and dividing would quietly invent a price.
+      if (safeRemaining > 0) {
+        row.selectableLineIds.push(id);
+        row.selectableUnits.push({ id, remaining: safeRemaining });
+      }
     }
   }
   return order.map((key) => {
@@ -126,17 +136,46 @@ export function groupTicketLines(lines) {
 // What a selection of grouped rows is worth, and which real line ids it maps
 // to. The amount here is only what the operator is SHOWN — the server
 // recomputes it from these same ids before charging anything.
-export function selectionTotals(rows, selectedKeys) {
-  const keys = selectedKeys instanceof Set ? selectedKeys : new Set(selectedKeys || []);
+//
+// SMOKE FIX — the selection may now be a Map of key -> how many UNITS of that
+// row are selected, so "1 of 4 Heineken" is expressible. A Set (or any
+// iterable of keys) still means "all chargeable units of these rows", which is
+// exactly what it meant before, so every pre-existing caller is unchanged.
+export function selectionTotals(rows, selection) {
+  const counts = selection instanceof Map
+    ? selection
+    : new Map([...(selection || [])].map((key) => [key, Infinity]));
   let amount = 0;
   const lineIds = [];
   for (const row of Array.isArray(rows) ? rows : []) {
-    if (!keys.has(row.key) || row.paidInFull) continue;
-    amount = Math.round((amount + row.remaining) * 100) / 100;
-    lineIds.push(...row.selectableLineIds);
+    if (row.paidInFull || !counts.has(row.key)) continue;
+    const units = Array.isArray(row.selectableUnits) && row.selectableUnits.length
+      ? row.selectableUnits
+      // Defensive: a row built before selectableUnits existed still charges
+      // its whole remaining rather than nothing.
+      : row.selectableLineIds.map((id) => ({ id, remaining: null }));
+    const wanted = counts.get(row.key);
+    const take = wanted === Infinity ? units.length
+      : Math.max(0, Math.min(units.length, Math.floor(Number(wanted) || 0)));
+    if (take === 0) continue;
+    const chosen = units.slice(0, take);
+    if (chosen.some((u) => u.remaining == null)) {
+      // No per-unit figures available: only a whole-row charge is honest.
+      amount = Math.round((amount + row.remaining) * 100) / 100;
+    } else {
+      for (const unit of chosen) amount = Math.round((amount + unit.remaining) * 100) / 100;
+    }
+    lineIds.push(...chosen.map((u) => u.id));
   }
   return { amount, lineIds };
 }
+
+// How many chargeable units a grouped row has. The quantity column counts
+// every unit including the already-paid ones; only these can be charged.
+export const selectableCount = (row) =>
+  (Array.isArray(row?.selectableUnits) && row.selectableUnits.length)
+    ? row.selectableUnits.length
+    : (Array.isArray(row?.selectableLineIds) ? row.selectableLineIds.length : 0);
 
 // Por personas. The denominator is the table's REAL remaining covers, and the
 // shares come from the same equal-split arithmetic Mesa already uses, so N

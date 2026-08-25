@@ -198,11 +198,18 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
         )}
       </div>
 
-      {/* The one line that stops 85,00 and 157,50 reading as a contradiction. */}
-      {r.serviceCount > 1 && (
+      {/* The one line that stops the two cash figures reading as a contradiction.
+          SMOKE FIX — it used to assert "este día operativo tuvo N servicios",
+          inferred from `serviceCount`. On 2026-08-25 that read "2 servicios"
+          while exactly one service_session belonged to the business date: the
+          extra money was a payment received today for an OLDER service. Money
+          received today is a RECEIPT fact, not evidence about how many services
+          the day contains, so the line now states only what it can see — the
+          day's cash, and this service's share of it — and shows whenever the
+          two genuinely differ rather than when a count happens to exceed one. */}
+      {Math.round(((Number(r.cashReceipts) || 0) - (Number(s.byMethod.efectivo) || 0)) * 100) !== 0 && (
         <div data-testid="scope-explainer" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, lineHeight: 1.5 }}>
-          Este día operativo tuvo <strong>{r.serviceCount} servicios</strong>, por eso el efectivo del día
-          ({eur(r.cashReceipts)}) es mayor que el de este servicio ({eur(s.byMethod.efectivo)}).
+          Hoy se cobraron {eur(r.cashReceipts)} en efectivo. De este servicio: {eur(s.byMethod.efectivo)}.
         </div>
       )}
     </div>
