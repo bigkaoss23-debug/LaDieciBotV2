@@ -306,6 +306,14 @@ describe('copy · the screen stopped reading like documentation', () => {
     expect(c.textContent).not.toMatch(/Elige el tramo que vas a contar/i);
   });
 
+  test('the first tab is headed Situación económica, and never says "resumen"', async () => {
+    const c = await mount();
+    const general = t(c, 'economia-general');
+    expect(general.textContent).toContain('Situación económica');
+    expect(general.textContent).toMatch(/Período/);
+    expect(general.textContent).not.toMatch(/resumen/i);
+  });
+
   test('the header states no order count of its own', async () => {
     const c = await mount();
     expect(c.textContent).not.toMatch(/pedidos entregados/i);

@@ -143,6 +143,12 @@ export default function EconomiaGeneral({ lateAfterClose }) {
     <div data-testid="economia-general">
       {/* ── SHARED SCOPE — chosen once, used by both inner views ───────── */}
       <div style={{ ...card }} data-testid="general-scope">
+        {/* The page heading. The scope control below is labelled only
+            "Período" — a picker does not need a sentence explaining that
+            picking changes nothing. */}
+        <h2 style={{
+          margin: '0 0 12px', color: CREAM, fontSize: 15.5, fontWeight: 900, letterSpacing: .2,
+        }}>Situación económica</h2>
         <div style={{
           color: MUTED, fontSize: 10.5, fontWeight: 800, letterSpacing: 1,
           textTransform: 'uppercase', marginBottom: 10,
