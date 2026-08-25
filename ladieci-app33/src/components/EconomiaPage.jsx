@@ -652,6 +652,32 @@ const EconomiaPage = ({onBack}) => {
   // re-run, and the selected period below is untouched. That is the whole point
   // of the shell — five destinations, not five mini-apps.
   const [tab, setTab] = useState("general");
+  // VENTAS context — a label lookup, never a figure. The certified reader
+  // carries each order's identity, amount and payment state but not its
+  // channel, so "Mesa 2" / "Domicilio · Q2" is resolved from order rows keyed
+  // by order id. Money NEVER comes from here. An order missing from the lookup
+  // still renders its number, amount and state; it just shows no context chip.
+  const [activeOrdenes, setActiveOrdenes] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    api.getOrdenes()
+      // language-guard: allow-legacy `ordenes` is the existing api.js payload key being read, not new vocabulary
+      .then(r => { if (!cancelled) setActiveOrdenes(Array.isArray(r?.ordenes) ? r.ordenes : []); })
+      .catch(() => { if (!cancelled) setActiveOrdenes([]); });
+    return () => { cancelled = true; };
+  }, [refresh]);
+
+  const orderContext = useMemo(() => {
+    const map = {};
+    const put = (row) => {
+      const key = String(row?.orden_id || row?.id || "").trim();
+      if (key && !map[key]) map[key] = row;
+    };
+    (Array.isArray(rawData) ? rawData : []).forEach(put);
+    activeOrdenes.forEach(put);
+    return map;
+  }, [rawData, activeOrdenes]);
+
   const retryLedger = () => setLedgerRetryTick(t => t + 1);
 
   // Carica il resumen ledger (Economía's ONE money source) — finestra ~35 giorni,
@@ -1458,7 +1484,7 @@ const EconomiaPage = ({onBack}) => {
             divergence disclosure and the N-9 window statement live HERE and
             nowhere else in the module — see the Caja mount below. */}
         {tab === "general" && (
-          <EconomiaGeneral lateAfterClose={lateAfterClose} />
+          <EconomiaGeneral lateAfterClose={lateAfterClose} orderContext={orderContext} />
         )}
 
         {/* ═══ TAB: CAJA ═══

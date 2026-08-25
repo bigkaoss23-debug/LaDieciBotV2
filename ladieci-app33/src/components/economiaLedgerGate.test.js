@@ -18,7 +18,7 @@ jest.mock('../api', () => ({
   api: {
     getStorico: jest.fn(),
     getSerata: jest.fn(),
-    getEconomiaLedger: jest.fn(),
+    getEconomiaLedger: jest.fn(), getOrdenes: jest.fn(),
   },
   sb: { select: jest.fn(async () => []) },
 }));
@@ -90,6 +90,8 @@ beforeEach(() => {
   api.getStorico.mockReset().mockResolvedValue({ righe: [] });
   api.getSerata.mockReset().mockResolvedValue(SERATA_WITH_UNPROVEN_CASH_ORDER);
   api.getEconomiaLedger.mockReset();
+  // language-guard: allow-legacy `ordenes` is the existing api.js payload key, not new vocabulary
+  api.getOrdenes.mockReset().mockResolvedValue({ ordenes: [] });
 });
 
 describe('Economía — ledger loading state', () => {

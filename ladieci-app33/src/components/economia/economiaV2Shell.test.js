@@ -24,7 +24,7 @@ jest.mock('../../api', () => ({
     getStorico: jest.fn(),
     // language-guard: allow-legacy getSerata is the existing api.js method name being mocked, not new vocabulary
     getSerata: jest.fn(),
-    getEconomiaLedger: jest.fn(),
+    getEconomiaLedger: jest.fn(), getOrdenes: jest.fn(),
   },
   sb: { select: jest.fn(async () => []) },
 }));
@@ -115,6 +115,8 @@ beforeEach(() => {
   // language-guard: allow-legacy getSerata is the existing api.js method name being mocked, not new vocabulary
   api.getSerata.mockReset().mockResolvedValue(SERATA);
   api.getEconomiaLedger.mockReset().mockResolvedValue(LEDGER_OK);
+  // language-guard: allow-legacy `ordenes` is the existing api.js payload key, not new vocabulary
+  api.getOrdenes.mockReset().mockResolvedValue({ ordenes: [] });
 });
 
 // ── A ──────────────────────────────────────────────────────────────────
