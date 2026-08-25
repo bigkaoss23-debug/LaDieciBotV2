@@ -96,7 +96,17 @@ export function Metric({ label, value, tone = C.bianco, hint = null, testId }) {
   );
 }
 
-export default function EconomiaSnapshotPanel() {
+// STEP 1.1 — `showEconomicWindow` switches OFF the read-only economic half
+// (the two period totals) while keeping the window selector, the boundary
+// disclosure and the whole cash-count contract.
+//
+// WHY A PROP AND NOT A DELETION. This panel has always been two things, and
+// its own header comment says so. Economía V2 gave the economic half its own
+// tab (General), so rendering it again under Caja made the two tabs read as
+// duplicates of one page. The half is not gone — it moved — and the default
+// stays `true` so the panel's own certified contract is unchanged for any
+// caller that still wants both halves.
+export default function EconomiaSnapshotPanel({ showEconomicWindow = true } = {}) {
   const [preset, setPreset] = useState('hoy');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -164,11 +174,13 @@ export default function EconomiaSnapshotPanel() {
 
       {/* ── WINDOW ─────────────────────────────────────────────────── */}
       <div style={box}>
-        <div style={{ color: C.bianco, fontSize: 14, fontWeight: 800, letterSpacing: 1, marginBottom: 4 }}>
-          RESUMEN ECONÓMICO
+        <div data-testid="snapshot-panel-heading" style={{ color: C.bianco, fontSize: 14, fontWeight: 800, letterSpacing: 1, marginBottom: 4 }}>
+          {showEconomicWindow ? 'RESUMEN ECONÓMICO' : 'PERÍODO DEL CONTEO'}
         </div>
         <div data-testid="snapshot-read-only-note" style={{ color: C.grigio, fontSize: 12, marginBottom: 14 }}>
-          Solo consulta. Elegir un período no modifica ningún pedido, ningún cobro y ningún servicio.
+          {showEconomicWindow
+            ? 'Solo consulta. Elegir un período no modifica ningún pedido, ningún cobro y ningún servicio.'
+            : 'Elige el tramo que vas a contar. Cambiar el período no modifica ningún pedido, ningún cobro y ningún servicio.'}
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -228,6 +240,8 @@ export default function EconomiaSnapshotPanel() {
 
       {snapshot && !loading && (
         <>
+          {/* ── THE ECONOMIC HALF — General's content, not Caja's ──────── */}
+          {showEconomicWindow && (<>
           <div style={box}>
             <div style={{ color: C.grigio, fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>
               COBRADO EN EL PERÍODO
@@ -261,6 +275,7 @@ export default function EconomiaSnapshotPanel() {
               períodos distintos, y por eso las dos cifras no tienen por qué coincidir.
             </div>
           </div>
+          </>)}
 
           {(snapshot.windowCrossing.obligationBeforeWindowReceiptInside.length > 0
             || snapshot.windowCrossing.obligationInsideWindowReceiptAfter.length > 0
