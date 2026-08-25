@@ -53,6 +53,23 @@ function kpiCardByLabel(container, label) {
   return buttons.find((b) => Array.from(b.querySelectorAll('div')).some((d) => d.textContent.trim() === label));
 }
 
+// ECONOMÍA V2 — the KPI grid this suite guards now lives on the legacy tabs;
+// the module opens on Resumen. Every pre-V2 assertion below is preserved
+// verbatim, reached by first switching to a tab that renders that grid. The
+// new default surface is covered separately, at the bottom of this file: the
+// gate has to hold on BOTH, and the one the operator lands on matters most.
+async function gotoLegacyTab(container, id = 'historial') {
+  const btn = container.querySelector(`[data-testid="economia-tab-${id}"]`);
+  expect(btn).toBeTruthy();
+  await act(async () => { btn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+}
+
+// Reads a Resumen row's rendered amount by its stable testid.
+function resumenRow(container, testId) {
+  const el = container.querySelector(`[data-testid="${testId}"]`);
+  return el ? el.textContent : null;
+}
+
 async function mountEconomia() {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -80,6 +97,7 @@ describe('Economía — ledger loading state', () => {
     api.getEconomiaLedger.mockImplementation(() => new Promise(() => {})); // never resolves
     const { container } = await mountEconomia();
     await flush();
+    await gotoLegacyTab(container);
 
     expect(container.textContent).toContain('Cargando importes contables');
     const ventas = kpiCardByLabel(container, 'Ventas');
@@ -96,6 +114,7 @@ describe('Economía — ledger error state', () => {
     api.getEconomiaLedger.mockResolvedValue({ error: 'backend_unavailable' });
     const { container } = await mountEconomia();
     await flush();
+    await gotoLegacyTab(container);
 
     expect(container.textContent).toContain('No se pudieron cargar los importes contables');
     const retryBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent.includes('Reintentar'));
@@ -112,6 +131,7 @@ describe('Economía — ledger error state', () => {
     api.getEconomiaLedger.mockResolvedValueOnce({ error: 'backend_unavailable' });
     const { container } = await mountEconomia();
     await flush();
+    await gotoLegacyTab(container);
     expect(container.textContent).toContain('No se pudieron cargar los importes contables');
 
     api.getEconomiaLedger.mockResolvedValueOnce({
@@ -144,6 +164,7 @@ describe('Economía — ledger success: no metodo_pago used as proof of payment'
     });
     const { container } = await mountEconomia();
     await flush();
+    await gotoLegacyTab(container);
 
     expect(container.textContent).not.toContain('Cargando importes contables');
     expect(container.textContent).not.toContain('No se pudieron cargar');
@@ -163,9 +184,75 @@ describe('Economía — ledger success: no metodo_pago used as proof of payment'
     });
     const { container } = await mountEconomia();
     await flush();
+    await gotoLegacyTab(container);
 
     const ventas = kpiCardByLabel(container, 'Ventas');
     expect(ventas.textContent).toContain('12€');
     expect(ventas.disabled).toBe(false);
+  });
+});
+
+// ECONOMÍA V2 — the same gate, on the tab the module actually opens on.
+describe('Economía V2 — the money gate holds on the default Resumen tab', () => {
+  test('while the ledger is pending, Resumen shows no amount at all — never 0, never the legacy 12€', async () => {
+    api.getEconomiaLedger.mockImplementation(() => new Promise(() => {}));
+    const { container } = await mountEconomia();
+    await flush();
+
+    expect(container.querySelector('[data-testid="economia-resumen"]')).toBeTruthy();
+    expect(container.textContent).toContain('Cargando importes contables');
+    for (const id of ['resumen-total-cobrado', 'resumen-efectivo', 'resumen-ventas', 'resumen-pendiente']) {
+      const text = resumenRow(container, id);
+      expect(text).toContain('···');
+      expect(text).not.toContain('0,00');
+      expect(text).not.toContain('12,00');
+    }
+  });
+
+  test('on ledger failure Resumen states the failure and offers retry, and prints no amount', async () => {
+    api.getEconomiaLedger.mockResolvedValue({ error: 'backend_unavailable' });
+    const { container } = await mountEconomia();
+    await flush();
+
+    expect(container.querySelector('[data-testid="resumen-ledger-error"]')).toBeTruthy();
+    const retryBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent.includes('Reintentar'));
+    expect(retryBtn).toBeTruthy();
+    expect(resumenRow(container, 'resumen-total-cobrado')).not.toContain('12,00');
+    expect(resumenRow(container, 'resumen-total-cobrado')).not.toContain('0,00');
+  });
+
+  test('a ledger reporting 0 collected against a 12€ unpaid sale shows both truths, unmixed', async () => {
+    api.getEconomiaLedger.mockResolvedValue({
+      porGiorno: [{
+        businessDate: todayIso(),
+        paymentTotals: { efectivo: 0, tarjeta: 0, bizum: 0, other: 0 },
+        totals: { collected: 0, gross: 12, refunded: 0, unpaid: 12 },
+      }],
+    });
+    const { container } = await mountEconomia();
+    await flush();
+
+    // Collected really is zero — and that zero is now provable, so it prints.
+    expect(resumenRow(container, 'resumen-total-cobrado')).toContain('0,00');
+    expect(resumenRow(container, 'resumen-efectivo')).toContain('0,00');
+    // The sale exists and is unpaid: gross and unpaid are NOT the collected figure.
+    expect(resumenRow(container, 'resumen-ventas')).toContain('12,00');
+    expect(resumenRow(container, 'resumen-pendiente')).toContain('12,00');
+  });
+
+  test('a confirmed 12€ cash payment reaches both the total and the cash row', async () => {
+    api.getEconomiaLedger.mockResolvedValue({
+      porGiorno: [{
+        businessDate: todayIso(),
+        paymentTotals: { efectivo: 12, tarjeta: 0, bizum: 0, other: 0 },
+        totals: { collected: 12, gross: 12, refunded: 0, unpaid: 0 },
+      }],
+    });
+    const { container } = await mountEconomia();
+    await flush();
+
+    expect(resumenRow(container, 'resumen-total-cobrado')).toContain('12,00');
+    expect(resumenRow(container, 'resumen-efectivo')).toContain('12,00');
+    expect(resumenRow(container, 'resumen-pendiente')).toContain('0,00');
   });
 });
