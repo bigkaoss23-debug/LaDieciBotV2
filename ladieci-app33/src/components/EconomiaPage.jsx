@@ -2,6 +2,13 @@ import { useState, useEffect, useMemo } from 'react';
 import { C, LOGO_RED_SRC, calcTotale as calcTotaleHelper } from '../constants';
 import { api, sb } from '../api';
 import EconomiaSnapshotPanel from './economia/EconomiaSnapshotPanel';
+// N-9 — the reporting calendar. Never `new Date().setHours(0,0,0,0)`.
+import { madridBusinessDate, shiftBusinessDate, withinLastBusinessDays,
+         REPORTING_TIMEZONE, BUSINESS_DAY_ROLLOVER_MIN } from '../economy/businessDay';
+
+// The hour the business day opens (04:00 Madrid). Used only to order the
+// franjas axis so it starts where the business day starts.
+const BUSINESS_DAY_START_HOUR = Math.floor(BUSINESS_DAY_ROLLOVER_MIN / 60);
 
 // Legge il primo campo non-null tra le chiavi fornite — compatibilità multi-formato
 const getField = (obj, ...keys) => {
@@ -48,14 +55,22 @@ const newPagBucketFromLedger = () => ({
   no_especificado: {incasso:0, count:0},
 });
 
-// Sums ledgerByDay entries whose day matches `predicate(dayDate)`. Returns a pagamenti
-// bucket (same shape the rest of the file expects) plus the raw collected total.
+// Sums ledgerByDay entries whose day matches `predicate(dayDate, businessDate)`.
+// Returns a pagamenti bucket (same shape the rest of the file expects) plus the
+// raw collected total.
+//
+// N-9 — the predicate now also receives the raw `YYYY-MM-DD` key. Those keys are
+// Europe/Madrid BUSINESS dates (04:00 rollover), and `parseDataKey` turns them
+// into a BROWSER-local midnight Date: comparing that Date against another
+// browser-local Date silently re-anchored every period to the operator's laptop
+// timezone. Every window predicate in this file now compares the STRING; the
+// Date argument is kept only so pre-N-9 callers/tests keep working unchanged.
 const sumLedgerWindow = (ledgerByDay, predicate) => {
   const pagamenti = newPagBucketFromLedger();
   let collected = 0;
   Object.keys(ledgerByDay || {}).forEach(day => {
     const dt = parseDataKey(day);
-    if (!dt || !predicate(dt)) return;
+    if (!dt || !predicate(dt, String(day).slice(0, 10))) return;
     const entry = ledgerByDay[day];
     if (!entry) return;
     const pt = entry.paymentTotals || {};
@@ -73,7 +88,12 @@ const sumLedgerWindow = (ledgerByDay, predicate) => {
 // sessions in range is a legitimate "confirmed zero", and must be told apart from
 // "still loading" / "failed" — both of which must show NO money figure at all, not a
 // row-based guess and not a silent 0.
-const aggrega = (righe, ledgerByDay, ledgerReady) => {
+// N-9 — `businessDateToday` is the reporting day the SERVER resolved
+// (getEconomiaLedger's `window.businessDateToday`, Europe/Madrid, 04:00
+// rollover). It is the authority; the Madrid-correct local default only covers
+// the render that happens before that response lands. It is never the browser's
+// calendar day.
+const aggrega = (righe, ledgerByDay, ledgerReady, businessDateToday = madridBusinessDate()) => {
   if(!righe || righe.length === 0) return null;
 
   // Backend v7 manda oggetti con chiavi — normalizza gestisce entrambi i casi
@@ -134,10 +154,14 @@ const aggrega = (righe, ledgerByDay, ledgerReady) => {
   const pagamentiMese = newPagBucket();
   const GIORNI   = ["Domingo","Lunes","Martes","Miercoles","Jueves","Viernes","Sabado"];
   // Fasce orarie da 30 minuti — più granulari per pianificazione driver/pizzaiolo
+  // N-9 — was `h = 19; h < 24`, i.e. an evening-only axis that discarded every
+  // lunch service. The axis now covers the whole business day (04:00 rollover →
+  // 04:00), in Madrid business-day order, so a midday franja has a bucket to
+  // land in at all.
   const FASCE_30 = [];
-  for (let h = 19; h < 24; h++) {
-    FASCE_30.push(`${String(h).padStart(2,"0")}:00`);
-    FASCE_30.push(`${String(h).padStart(2,"0")}:30`);
+  for (let i = 0; i < 48; i++) {
+    const h = Math.floor(((BUSINESS_DAY_START_HOUR * 2) + i) / 2) % 24;
+    FASCE_30.push(`${String(h).padStart(2,"0")}:${i % 2 === 0 ? "00" : "30"}`);
   }
 
   righeNorm.forEach(r => {
@@ -164,11 +188,16 @@ const aggrega = (righe, ledgerByDay, ledgerReady) => {
       else if(fechaStr.includes("/")) { try { const [dd,mm,yy]=fechaStr.split("/").map(Number); refDate=new Date(yy,mm-1,dd); } catch(e){} }
     }
 
-    // Filtra solo orari di apertura (19:50–23:00) — escludi test/dati fuori servizio
-    if(refMs) {
-      const hm = new Date(refMs).getHours() * 60 + new Date(refMs).getMinutes();
-      if(hm < 19 * 60 + 50 || hm >= 23 * 60) return;
-    }
+    // N-9 — REMOVED: a hard-coded 19:50–23:00 BROWSER-LOCAL band used to `return`
+    // here, silently dropping every order outside it from the headline count, the product
+    // mix, canales, tipo de entrega, franjas and días — and from the divisor of the
+    // ticket medio, whose numerator (the ledger) never had such a filter. It was
+    // never a period the operator selected; it was an invisible second window laid
+    // on top of the one they did select. Proven on real staging data: of 12 archived
+    // rows worth 205,01 €, it kept 6 and dropped 6 worth 124,00 € — including a
+    // 19:49 order, one minute before an arbitrary threshold. The selected period is
+    // now the ONLY filter. Deliberately no replacement: rows arrive already scoped
+    // by the requested window.
 
     incassoTot += totale;
     countOrdini++;
@@ -210,7 +239,9 @@ const aggrega = (righe, ledgerByDay, ledgerReady) => {
     const parts = hora.split(":");
     const hh = parts[0] ? parseInt(parts[0]) : null;
     const mm = parts[1] ? parseInt(parts[1]) : 0;
-    if (hh !== null && !isNaN(hh) && hh >= 19 && hh < 24) {
+    // N-9 — was `hh >= 19 && hh < 24`: a lunch order's franja was computed and
+    // then thrown away. Any real hour is now bucketed.
+    if (hh !== null && !isNaN(hh) && hh >= 0 && hh < 24) {
       const slot = (!isNaN(mm) && mm >= 30) ? 30 : 0;
       const label = `${String(hh).padStart(2,"0")}:${String(slot).padStart(2,"0")}`;
       fasceMap[label] = (fasceMap[label]||0) + 1;
@@ -294,16 +325,21 @@ const aggrega = (righe, ledgerByDay, ledgerReady) => {
   // S2-7D6E4 — the row-based incassoTot/pagamenti/etc. computed above are NEVER shown:
   // they exist only so non-money fields (countOrdini, canali, consegne, prodotti) stay
   // available immediately. Every money field is ledger-or-null — no row-based fallback.
-  const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+  // N-9 — was `new Date(); setHours(0,0,0,0)`, i.e. browser midnight in the
+  // browser's timezone. The ledger is keyed by Madrid business date, so that
+  // comparison asked a different calendar than the one the data is filed under
+  // (and between 00:00 and 04:00 Madrid it asked for the wrong day outright).
+  const today = businessDateToday;
   let finalIncassoTot = null, finalIncassoOggi = null, finalIncassoSett = null, finalIncassoMese = null;
   let finalPagamenti = null, finalPagamentiOggi = null, finalPagamentiSett = null, finalPagamentiMese = null;
   let finalGiorniDettaglio = giorniDettaglio.map(d => ({ ...d, incasso: null }));
   let finalTicketMedio = null;
   if (ledgerReady) {
+    // Pure business-date-string comparison: no Date, no offset, no DST drift.
     const wTot  = sumLedgerWindow(ledgerByDay, () => true);
-    const wOggi = sumLedgerWindow(ledgerByDay, (dt) => dt.getTime() === todayMidnight.getTime());
-    const wSett = sumLedgerWindow(ledgerByDay, (dt) => (now - dt.getTime()) < settMs);
-    const wMese = sumLedgerWindow(ledgerByDay, (dt) => (now - dt.getTime()) < meseMs);
+    const wOggi = sumLedgerWindow(ledgerByDay, (_dt, day) => day === today);
+    const wSett = sumLedgerWindow(ledgerByDay, (_dt, day) => withinLastBusinessDays(day, today, 7));
+    const wMese = sumLedgerWindow(ledgerByDay, (_dt, day) => withinLastBusinessDays(day, today, 30));
     finalIncassoTot = wTot.collected; finalPagamenti = wTot.pagamenti;
     finalIncassoOggi = wOggi.collected; finalPagamentiOggi = wOggi.pagamenti;
     finalIncassoSett = wSett.collected; finalPagamentiSett = wSett.pagamenti;
@@ -351,16 +387,30 @@ const parseDataKey = (s) => {
   return null;
 };
 
-// Formatta YYYY-MM-DD per display breve (es. "Ieri", "Lun 21")
-const fmtGiorno = (iso) => {
+// Formatta YYYY-MM-DD per display breve (es. "Ayer", "Lun 21")
+//
+// N-9 — "Hoy"/"Ayer" used to be decided by comparing a browser-local midnight
+// Date against another browser-local midnight Date. `iso` is a Madrid business
+// date, so the comparison is a plain string compare against the business date
+// the server resolved; only the weekday name still needs a Date, and that one
+// is built from the date parts themselves (never re-parsed from a local string).
+const fmtGiorno = (iso, today = madridBusinessDate()) => {
+  const key = String(iso || "").slice(0, 10);
   const dt = parseDataKey(iso);
   if(!dt) return iso;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const ieri  = new Date(today); ieri.setDate(today.getDate()-1);
-  if(dt.getTime()===today.getTime()) return "Hoy";
-  if(dt.getTime()===ieri.getTime())  return "Ayer";
+  if(key === today)                          return "Hoy";
+  if(key === shiftBusinessDate(today, -1))   return "Ayer";
   const GIORNI = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
   return GIORNI[dt.getDay()]+" "+dt.getDate();
+};
+
+// N-9 — a business-date string rendered without ever going through a
+// browser-local Date (which is how a label slips a day).
+const shortBusinessDate = (day) => {
+  const k = String(day || "").slice(0, 10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(k)) return k || "—";
+  const [y,m,d] = k.split("-");
+  return `${d}/${m}/${y}`;
 };
 
 const isoLocal = (dt = new Date()) =>
@@ -373,11 +423,17 @@ const fmtFechaLarga = (iso) => {
   return `${DIAS[dt.getDay()]} ${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${dt.getFullYear()}`;
 };
 
+// N-9 — this key is compared directly against a Madrid BUSINESS date (the Caja
+// day selector filters rows with `fechaKeyOf(r) === dia`), so the two INSTANT
+// branches below must resolve to that same calendar. They used to resolve to the
+// browser's local calendar date, which put every after-midnight order — and,
+// for a non-Madrid operator, potentially every order — on the wrong day. The two
+// plain-date branches carry no time and need no conversion.
 const fechaKeyOf = (r) => {
   const raw = String(r?.fecha || "");
   if(raw.match(/^\d{4}-\d{2}-\d{2}/)) return raw.slice(0,10);
   if(raw.includes("T")) {
-    try { return isoLocal(new Date(raw)); } catch(e) { return ""; }
+    try { return madridBusinessDate(new Date(raw)); } catch(e) { return ""; }
   }
   if(raw.includes("/")) {
     const [dd,mm,yy] = raw.split("/").map(Number);
@@ -386,7 +442,7 @@ const fechaKeyOf = (r) => {
   const ts = Number(r?.ts || 0);
   if(ts > 0) {
     const ms = ts < 1e12 ? ts * 1000 : ts;
-    try { return isoLocal(new Date(ms)); } catch(e) { return ""; }
+    try { return madridBusinessDate(new Date(ms)); } catch(e) { return ""; }
   }
   return "";
 };
@@ -554,6 +610,10 @@ const EconomiaPage = ({onBack}) => {
   // "loading" and "error" must NEVER show a metodo_pago-derived number — the row-based
   // aggregation functions below only compute real values when this is "ready".
   const [ledgerByDay, setLedgerByDay] = useState({});
+  // N-9 — the interval the SERVER actually resolved: { timezone, businessDateFrom,
+  // businessDateTo, businessDateToday, from, to, bounds }. This is the authority for
+  // every period question on this screen, and it is what the UI shows the operator.
+  const [ledgerWindow, setLedgerWindow] = useState(null);
   const [ledgerStatus, setLedgerStatus] = useState("loading"); // "loading" | "error" | "ready"
   const [ledgerRetryTick, setLedgerRetryTick] = useState(0);
   // N-8 — a service that was already finalized can still take money afterwards. When
@@ -568,9 +628,11 @@ const EconomiaPage = ({onBack}) => {
   useEffect(() => {
     let cancelled = false;
     setLedgerStatus("loading");
-    const hasta = isoLocal();
-    const desdeDt = new Date(); desdeDt.setDate(desdeDt.getDate() - 35);
-    const desde = isoLocal(desdeDt);
+    // N-9 — was isoLocal()/`-35 days` on a browser-local Date, so the range the
+    // server was asked for depended on the operator's timezone. Business dates are
+    // the ledger's own key: ask in that vocabulary, shift by calendar days.
+    const hasta = madridBusinessDate();
+    const desde = shiftBusinessDate(hasta, -35);
     api.getEconomiaLedger(desde, hasta)
       .then(r => {
         if (cancelled) return;
@@ -582,6 +644,8 @@ const EconomiaPage = ({onBack}) => {
         const byDay = {};
         r.porGiorno.forEach(d => { if (d?.businessDate) byDay[d.businessDate] = d; });
         setLedgerByDay(byDay);
+        // N-9 — never recomputed here; rendered and used exactly as resolved.
+        setLedgerWindow(r.window ? { ...r.window, generatedAt: r.generatedAt || null } : null);
         // N-8 — only services that actually diverge; an empty list means every closed
         // service in range still reads exactly as its closeout registered.
         const diverged = (Array.isArray(r.sessions) ? r.sessions : [])
@@ -675,6 +739,24 @@ const EconomiaPage = ({onBack}) => {
 
   // Aggrega — se già pre-aggregato dal backend, i campi monetari passano comunque dal
   // gate del ledger: mai un'eccezione che lasci passare un numero metodo_pago-based.
+  // N-9 — one reporting day for the whole screen: the server's when we have it,
+  // a Madrid-correct default only until then. Never the browser calendar day.
+  const reportingDay = ledgerWindow?.businessDateToday || madridBusinessDate();
+  // language-guard: allow-legacy oggiIso is the pre-existing local name ~20 call sites below already read; aliased here rather than renamed across all of them in a time-window slice
+  const oggiIso = reportingDay;
+
+  // N-9 — what the selected pill means as a RANGE of business days. These are the
+  // windows the aggregation actually applies (see the three ledger sums above),
+  // stated in the same vocabulary, so the label can never drift from the maths.
+  const periodoWindowLabel = useMemo(() => {
+    const day = reportingDay;
+    // language-guard: allow-legacy "serata" is the pre-existing PERIODI pill id declared above, matched verbatim here, not new vocabulary
+    if (periodo === "serata") return `Caja · ${shortBusinessDate(day)}`;
+    if (periodo === "sett")   return `Semana · ${shortBusinessDate(shiftBusinessDate(day, -6))} → ${shortBusinessDate(day)}`;
+    if (periodo === "mese")   return `Mes · ${shortBusinessDate(shiftBusinessDate(day, -29))} → ${shortBusinessDate(day)}`;
+    return "Todo el histórico cargado";
+  }, [periodo, reportingDay]);
+
   const a = useMemo(() => {
     if(!rawData) return null;
     if(rawData._preAggregated) {
@@ -688,10 +770,8 @@ const EconomiaPage = ({onBack}) => {
       return { ...pre, incassoTot: wTot.collected, pagamenti: wTot.pagamenti,
         ticketMedio: pre.countOrdini > 0 ? wTot.collected / pre.countOrdini : 0 };
     }
-    return aggrega(rawData, ledgerByDay, ledgerReady);
-  }, [rawData, ledgerByDay, ledgerReady]);
-
-  const oggiIso = isoLocal();
+    return aggrega(rawData, ledgerByDay, ledgerReady, reportingDay);
+  }, [rawData, ledgerByDay, ledgerReady, reportingDay]);
 
   const diasCaja = useMemo(() => {
     const byData = {};
@@ -1358,6 +1438,19 @@ const EconomiaPage = ({onBack}) => {
           })}
         </div>
 
+        {/* N-9 — the period actually queried, stated plainly. Before N-9 an
+            invisible 19:50–23:00 band narrowed what the operator saw without
+            ever saying so; a reporting screen has to be able to answer "which
+            window is this?". One line, no clutter. */}
+        {ledgerWindow && (
+          <div data-testid="economia-window-disclosure" style={{
+            color:"rgba(255,255,255,0.42)", fontSize:11, marginBottom:12,
+            letterSpacing:0.2
+          }}>
+            {periodoWindowLabel} · día operativo {shortBusinessDate(ledgerWindow.businessDateToday)} ({REPORTING_TIMEZONE}, cierre 04:00)
+          </div>
+        )}
+
         {/* Selettore giorni — Caja del día */}
         {periodo === "serata" && (
           <div style={{
@@ -1389,7 +1482,7 @@ const EconomiaPage = ({onBack}) => {
                     boxShadow:attivo?"0 3px 10px rgba(249,115,22,0.4)":"none",
                     display:"flex", flexDirection:"column", alignItems:"center", gap:2
                   }}>
-                    <span>{fmtGiorno(d.data)}</span>
+                    <span>{fmtGiorno(d.data, reportingDay)}</span>
                     <span style={{opacity:.7,fontSize:10,fontWeight:600}}>
                       {/* S2-7D6E4 — d.incasso is null while the ledger is loading/failed:
                           never coalesce to 0, show a neutral placeholder instead. */}
