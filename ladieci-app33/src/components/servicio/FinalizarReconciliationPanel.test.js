@@ -110,18 +110,36 @@ test("the two scopes are never presented as one number", async () => {
   unmount(container, root);
 });
 
-test("a multi-service day explains WHY the two cash figures differ", async () => {
+test("differing cash figures are explained by RECEIPTS, never by a claimed number of services", async () => {
+  // SMOKE FIX — this line used to assert "este día operativo tuvo 2 servicios".
+  // On 2026-08-25 it said exactly that while ONE service_session belonged to
+  // the business date: the extra cash was a payment taken today for an older
+  // service. Money received today is a receipt fact and says nothing about how
+  // many services the day holds, so the copy now states only the two figures.
   const { container, root } = await mount({ data: DATA });
   const note = byTestId(container, "scope-explainer");
-  expect(note.textContent).toMatch(/2\s*servicios/);
   expect(note.textContent).toMatch(/157,50\s?€/);
   expect(note.textContent).toMatch(/85,00\s?€/);
+  expect(note.textContent).not.toMatch(/servicios/i);
   unmount(container, root);
 });
 
-test("a single-service day shows no explainer, because there is nothing to explain", async () => {
+test("the explainer follows the figures, not serviceCount: one service can still differ", async () => {
+  // The real 25/08 shape: a single service on the business date, and day cash
+  // larger than this service's because of a receipt for an older one.
   const single = { ...DATA, reconciliation: { ...DATA.reconciliation, serviceCount: 1 } };
   const { container, root } = await mount({ data: single });
+  const note = byTestId(container, "scope-explainer");
+  expect(note).not.toBeNull();
+  expect(note.textContent).not.toMatch(/servicios/i);
+  unmount(container, root);
+});
+
+test("when the two cash figures agree there is nothing to explain, and nothing is said", async () => {
+  // The honest condition is "do these numbers differ?", not "how many services
+  // does the backend think the day had?".
+  const agreeing = { ...DATA, reconciliation: { ...DATA.reconciliation, cashReceipts: 85 } };
+  const { container, root } = await mount({ data: agreeing });
   expect(byTestId(container, "scope-explainer")).toBeNull();
   unmount(container, root);
 });

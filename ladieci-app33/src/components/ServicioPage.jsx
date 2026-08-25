@@ -1865,7 +1865,13 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
                     {chiudiModal.blocking?.tables > 0
                       ? "Hay mesas con cuenta abierta: cóbralas antes de cerrar el servicio."
                       : chiudiModal.blocking?.orders > 0
-                        ? "Se quedarán sin resolver y se registrarán como incidencias del cierre, con su importe pendiente."
+                        // SMOKE FIX — this used to say "con su importe pendiente" for
+                        // every unresolved order. An order can be POR_CONFIRMAR and
+                        // already PAID: the backend files it as an operational
+                        // incident with financial exposure null, and calling its
+                        // amount pending is simply false. Operational pending and
+                        // money owed are two different statements.
+                        ? "Se registrarán como incidencias del cierre. Las que estén cobradas no dejan importe pendiente."
                         : "Los mensajes sin pedido pueden quedarse para el siguiente servicio."}
                   </div>
                 </div>

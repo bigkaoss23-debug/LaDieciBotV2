@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { C } from "../../constants";
 import { createMesaRequestId, describeMesaError, mesaApi } from "../../mesa/mesaApi";
 import { normalizeOrderLine } from "../../menu/normalizeOrderLine";
 import OrderLineView from "../order/OrderLineView";
 import HybridFloorScene, { hybridSceneCss } from "./HybridFloorScene";
-import { groupTicketLines, selectionTotals, personShares, amountForPersons } from "./paymentHubTicket";
+import { groupTicketLines, selectionTotals, selectableCount, personShares, amountForPersons } from "./paymentHubTicket";
 import {
   ROOM_Y_MIN, ROOM_Y_MAX, sceneGeometry, tableFootprint, tableGeometry, unprojectScreenPoint,
 } from "./hybridScene";
@@ -178,6 +178,17 @@ function resolveTablePositions(tables) {
 // Short Spanish label for a comanda's kitchen state, shown in the table's own
 // popup so a waiter never has to open "Ver cuenta" just to see where an order
 // stands.
+// SMOKE FIX — the states that make "Cerrar mesa" fail. This is a PRESENTATION
+// mirror of the backend rule (MESA_TABLE_HAS_ACTIVE_ORDERS), not a new
+// contract: the RPC remains the authority and still refuses on its own. It
+// exists so the UI stops offering an action that cannot succeed. Fail-safe by
+// construction: if this list is ever too narrow the button is merely enabled
+// and the backend refuses exactly as it does today.
+const CLOSE_BLOCKING_STATES = new Set(["EN_COCINA", "LISTO"]);
+export function commandsBlockingClose(session) {
+  return (session?.commands || []).filter((command) => CLOSE_BLOCKING_STATES.has(command?.state));
+}
+
 function commandStateLabel(estado) {
   if (estado === "LISTO") return "Listo para servir";
   if (estado === "EN_COCINA") return "En cocina";
@@ -584,6 +595,13 @@ const css = `
 .mesa-hub-line.paid .mesa-hub-name,.mesa-hub-line.paid .mesa-hub-amount{color:#8d8474}
 .mesa-hub-paid-tag{flex:0 0 auto;border:1px solid rgba(101,217,149,.34);color:#65d995;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.3px}
 .mesa-hub-pickhint{color:#d7a84b;font-size:11.5px;margin:-4px 0 8px}
+/* Quantity stepper for an aggregated line. Sits under its row, indented to
+   read as part of it, and only appears while Por productos is picking. */
+.mesa-hub-qty-step{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:0 6px 9px 37px;border-bottom:1px solid rgba(255,255,255,.06)}
+.mesa-hub-qty-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;flex:0 0 auto;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.04);color:#d7a84b;cursor:pointer;padding:0}
+.mesa-hub-qty-btn:hover:not(:disabled){background:rgba(215,168,75,.14);border-color:rgba(215,168,75,.4)}
+.mesa-hub-qty-btn:disabled{opacity:.3;cursor:not-allowed}
+.mesa-hub-qty-count{min-width:44px;text-align:center;font-size:13px;font-weight:800;color:#f4ecdd;font-variant-numeric:tabular-nums}
 .mesa-hub-ticket.picking{border-color:rgba(215,168,75,.34)}
 .mesa-hub-line.selectable{width:100%;-webkit-appearance:none;appearance:none;font:inherit;text-align:left;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.06);border-radius:10px;cursor:pointer;padding:9px 6px;min-height:46px}
 .mesa-hub-line.selectable:hover:not(:disabled){background:rgba(255,255,255,.04)}
@@ -765,6 +783,11 @@ const css = `
    never spells any of them, same convention as the reservation-agenda-row
    comment further up in this same stylesheet. ── */
 .mesa-current-card{border:1px solid rgba(215,168,75,.4);border-radius:16px;padding:14px 15px 15px;background:rgba(215,168,75,.055)}
+/* Secondary: a real card, but not the live surface. */
+.mesa-current-card.is-muted{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.025)}
+.mesa-current-card.is-muted .mesa-current-eyebrow{color:rgba(255,255,255,.42)}
+/* The unsent draft, while it exists, IS the live surface. */
+.mesa-draft-card{margin-bottom:14px;border-color:rgba(215,168,75,.55);box-shadow:0 0 22px rgba(215,168,75,.10)}
 .mesa-current-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .mesa-current-head-toggle{width:100%;background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .mesa-current-eyebrow{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:900;letter-spacing:.6px;text-transform:uppercase;color:#e9c983}
@@ -862,7 +885,7 @@ function useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel }) {
   }, [busy, onCancel]);
 }
 
-function CerrarMesaDialog({ tableNumber, empty, busy, error, onCancel, onConfirm }) {
+function CerrarMesaDialog({ tableNumber, empty, blocked = 0, busy, error, onCancel, onConfirm }) {
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
   useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel });
@@ -874,13 +897,15 @@ function CerrarMesaDialog({ tableNumber, empty, busy, error, onCancel, onConfirm
         <div id="cerrar-mesa-title" style={{ fontWeight: 950, fontSize: 19 }}>{`Cerrar Mesa ${tableNumber}`}</div>
       </div>
       <div className="mesa-modal-body">
-        <p id="cerrar-mesa-body" className="mesa-muted">
-          {empty ? "La mesa está vacía y no tiene comandas ni pagos." : "La mesa quedará libre para nuevos clientes."}
+        <p id="cerrar-mesa-body" className="mesa-muted" data-testid="cerrar-mesa-body">
+          {blocked > 0
+            ? "Faltan comandas por servir."
+            : empty ? "La mesa está vacía y no tiene comandas ni pagos." : "La mesa quedará libre para nuevos clientes."}
         </p>
         {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
         <div className="mesa-actions" style={{ marginTop: 16 }}>
           <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>Cancelar</button>
-          <button ref={confirmRef} className="mesa-btn danger" disabled={busy} onClick={onConfirm}>{busy ? "Cerrando…" : "Cerrar mesa"}</button>
+          <button ref={confirmRef} className="mesa-btn danger" data-testid="cerrar-mesa-confirm" disabled={busy || blocked > 0} onClick={onConfirm}>{busy ? "Cerrando…" : "Cerrar mesa"}</button>
         </div>
       </div>
     </div>
@@ -895,20 +920,22 @@ function CerrarMesaDialog({ tableNumber, empty, busy, error, onCancel, onConfirm
 // .mesa-overlay/.mesa-modal, so there is no nested-overlay stacking on
 // phone. The non-compact path keeps using the standalone CerrarMesaDialog
 // above, byte-for-byte unchanged.
-function CerrarMesaConfirm({ tableNumber, empty, busy, error, onCancel, onConfirm }) {
+function CerrarMesaConfirm({ tableNumber, empty, blocked = 0, busy, error, onCancel, onConfirm }) {
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
   useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel });
 
   return <div role="alertdialog" aria-labelledby="cerrar-mesa-title-inline" aria-describedby="cerrar-mesa-body-inline" data-testid="mesa-card-view-close-confirm">
     <div id="cerrar-mesa-title-inline" style={{ fontWeight: 950, fontSize: 19 }}>{`Cerrar Mesa ${tableNumber}`}</div>
-    <p id="cerrar-mesa-body-inline" className="mesa-muted" style={{ marginTop: 8 }}>
-      {empty ? "La mesa está vacía y no tiene comandas ni pagos." : "La mesa quedará libre para nuevos clientes."}
+    <p id="cerrar-mesa-body-inline" className="mesa-muted" style={{ marginTop: 8 }} data-testid="cerrar-mesa-body">
+      {blocked > 0
+        ? "Faltan comandas por servir."
+        : empty ? "La mesa está vacía y no tiene comandas ni pagos." : "La mesa quedará libre para nuevos clientes."}
     </p>
     {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
     <div className="mesa-actions" style={{ marginTop: 16 }}>
       <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>Cancelar</button>
-      <button ref={confirmRef} className="mesa-btn danger" disabled={busy} onClick={onConfirm}>{busy ? "Cerrando…" : "Cerrar mesa"}</button>
+      <button ref={confirmRef} className="mesa-btn danger" data-testid="cerrar-mesa-confirm" disabled={busy || blocked > 0} onClick={onConfirm}>{busy ? "Cerrando…" : "Cerrar mesa"}</button>
     </div>
   </div>;
 }
@@ -987,11 +1014,18 @@ function ComandaActualCard({ session, draft, busy, onMarkServed, onAddItems, onS
   const visibleRows = itemsExpanded ? ticketRows : ticketRows.slice(0, VISIBLE_ROWS);
   const hiddenCount = ticketRows.length - visibleRows.length;
 
+  // SMOKE FIX — there is nothing to show and something else IS live. An empty
+  // gold "Comanda actual" card next to a real 10-item draft told the operator
+  // the wrong thing about which surface was active, so it is simply not drawn.
+  if (!current && draft) return null;
+
   if (!current) {
-    return <section className="mesa-current-card" data-testid="mesa-current-card">
+    // Still nothing sent, and no draft either: an empty state is honest here,
+    // but it is not an active surface and must not be dressed as one.
+    return <section className="mesa-current-card is-muted" data-testid="mesa-current-card">
       <div className="mesa-current-head">
         <span className="mesa-current-eyebrow">
-          <i className="mesa-dot" style={{ width: 6, height: 6, background: "#d7a84b" }} />
+          <i className="mesa-dot" style={{ width: 6, height: 6, background: "rgba(255,255,255,.28)" }} />
           Comanda actual
         </span>
       </div>
@@ -999,7 +1033,9 @@ function ComandaActualCard({ session, draft, busy, onMarkServed, onAddItems, onS
     </section>;
   }
 
-  return <section className="mesa-current-card" data-testid="mesa-current-card">
+  // A sent comanda is real, but while a draft is pending it is history, not
+  // the active surface: the draft above carries the highlight.
+  return <section className={`mesa-current-card${draft ? " is-muted" : ""}`} data-testid="mesa-current-card">
     <button type="button" className="mesa-current-head mesa-current-head-toggle" data-testid="mesa-current-toggle"
       aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
       <span className="mesa-current-eyebrow">
@@ -1318,6 +1354,8 @@ const ICON_RECEIPT = <><path d="M6 3h12v17.5l-2.5-1.5-2 1.5-2-1.5-2 1.5-2-1.5L6 
 const ICON_CALENDAR = <><rect x="3.5" y="5.5" width="17" height="15" rx="2.5" /><path d="M8 3v5M16 3v5M3.5 10.5h17" /></>;
 const ICON_PLUS_CIRCLE = <><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></>;
 const ICON_CLOSE_CIRCLE = <><circle cx="12" cy="12" r="9" /><path d="M9 9l6 6M15 9l-6 6" /></>;
+const ICON_MINUS = <><path d="M6 12h12" /></>;
+const ICON_PLUS = <><path d="M12 6v12M6 12h12" /></>;
 
 function VerCuentaBody({ table, onRefresh, onPrint }) {
   // PAYMENT HUB MESA V1.1 — the approved V1 surface, with the redundant hops
@@ -1347,7 +1385,10 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
   const session = table.session;
   const [action, setAction] = useState(null);
   const [partialMode, setPartialMode] = useState(null);
-  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+  // SMOKE FIX — how many UNITS of each grouped row are selected, not merely
+  // which rows. "4 × Heineken" is four real backend lines, so 1/4 is a real,
+  // exactly-priced selection rather than an approximation.
+  const [selectedKeys, setSelectedKeys] = useState(() => new Map());
   const [persons, setPersons] = useState(null);
   const [freeAmount, setFreeAmount] = useState("");
   const [method, setMethod] = useState("efectivo");
@@ -1370,7 +1411,7 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
 
   const billDocument = () => buildBillDocument(session, table.number);
   const resetDrawer = () => {
-    setPartialMode(null); setSelectedKeys(new Set()); setPersons(null); setFreeAmount("");
+    setPartialMode(null); setSelectedKeys(new Map()); setPersons(null); setFreeAmount("");
   };
   const paid = async (result, usedMethod) => {
     const outstandingAfter = result.outstandingAfter == null
@@ -1428,16 +1469,32 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
     setAction((current) => (current === next ? null : next));
   };
   const openPartial = (next) => {
-    setError(""); setSelectedKeys(new Set()); setPersons(null); setFreeAmount("");
+    setError(""); setSelectedKeys(new Map()); setPersons(null); setFreeAmount("");
     requestIdRef.current = createMesaRequestId("pay");
     setPartialMode((current) => (current === next ? null : next));
   };
+  // Tapping the row keeps its original meaning: none <-> all of it.
   const toggleRow = (row) => {
     if (row.paidInFull) return;
     setError("");
     setSelectedKeys((current) => {
-      const next = new Set(current);
-      if (next.has(row.key)) next.delete(row.key); else next.add(row.key);
+      const next = new Map(current);
+      if (next.has(row.key)) next.delete(row.key);
+      else next.set(row.key, selectableCount(row));
+      return next;
+    });
+  };
+  // The stepper. Down to zero it deselects the row entirely, so the two
+  // controls can never disagree about what is selected.
+  const stepRow = (row, delta) => {
+    if (row.paidInFull) return;
+    setError("");
+    setSelectedKeys((current) => {
+      const next = new Map(current);
+      const max = selectableCount(row);
+      const now = next.has(row.key) ? next.get(row.key) : 0;
+      const wanted = Math.max(0, Math.min(max, now + delta));
+      if (wanted === 0) next.delete(row.key); else next.set(row.key, wanted);
       return next;
     });
   };
@@ -1479,7 +1536,9 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
           </div>
         : <div className="mesa-hub-lines">
             {ticketRows.map((row) => {
-              const selected = selectedKeys.has(row.key);
+              const selectedUnits = selectedKeys.get(row.key) || 0;
+              const selected = selectedUnits > 0;
+              const maxUnits = selectableCount(row);
               const inner = <>
                 <span className="mesa-hub-qty">{row.quantity}×</span>
                 <span className="mesa-hub-desc">
@@ -1492,13 +1551,36 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
               if (!picking) {
                 return <div className={`mesa-hub-line${row.paidInFull ? " paid" : ""}`} key={row.key} data-testid="mesa-hub-line">{inner}</div>;
               }
-              return <button type="button" key={row.key} data-testid="mesa-hub-line"
-                data-selected={selected ? "true" : "false"}
-                className={`mesa-hub-line selectable${selected ? " selected" : ""}${row.paidInFull ? " paid" : ""}`}
-                disabled={row.paidInFull} aria-pressed={selected} onClick={() => toggleRow(row)}>
-                <span className="mesa-hub-check" aria-hidden="true">{selected ? "✓" : ""}</span>
-                {inner}
-              </button>;
+              // The stepper is a SIBLING of the row button, never nested inside
+              // it: a button inside a button is invalid HTML and the browser
+              // would swallow one of the two taps.
+              return <Fragment key={row.key}>
+                <button type="button" data-testid="mesa-hub-line"
+                  data-selected={selected ? "true" : "false"}
+                  data-selected-units={String(selectedUnits)}
+                  className={`mesa-hub-line selectable${selected ? " selected" : ""}${row.paidInFull ? " paid" : ""}`}
+                  disabled={row.paidInFull} aria-pressed={selected} onClick={() => toggleRow(row)}>
+                  <span className="mesa-hub-check" aria-hidden="true">{selected ? "✓" : ""}</span>
+                  {inner}
+                </button>
+                {maxUnits > 1 && (
+                  <div className="mesa-hub-qty-step" data-testid="mesa-hub-qty-stepper" data-row-key={row.key}>
+                    <button type="button" className="mesa-hub-qty-btn" data-testid="mesa-hub-qty-minus"
+                      aria-label={`Quitar una unidad de ${row.label.primary}`}
+                      disabled={selectedUnits === 0} onClick={() => stepRow(row, -1)}>
+                      <HubIcon d={ICON_MINUS} size={15} />
+                    </button>
+                    <span className="mesa-hub-qty-count" data-testid="mesa-hub-qty-count">
+                      {selectedUnits} / {maxUnits}
+                    </span>
+                    <button type="button" className="mesa-hub-qty-btn" data-testid="mesa-hub-qty-plus"
+                      aria-label={`Añadir una unidad de ${row.label.primary}`}
+                      disabled={selectedUnits >= maxUnits} onClick={() => stepRow(row, 1)}>
+                      <HubIcon d={ICON_PLUS} size={15} />
+                    </button>
+                  </div>
+                )}
+              </Fragment>;
             })}
           </div>}
       <div className="mesa-hub-totals">
@@ -1759,9 +1841,12 @@ function MesaWorkspace({
   const [error, setError] = useState("");
   const [showAccount, setShowAccount] = useState(false);
   const [sendingDraft, setSendingDraft] = useState(false);
-  // Collapsed by default -- the draft must read as a compact one-line summary
+  // SMOKE FIX — expanded by default. An unsent draft is the thing the
+  // operator is working on right now; collapsing it put the live work behind
+  // a tap while an empty "Comanda actual" card held the gold highlight.
+  // (Historic note below describes the previous, now-superseded default.)
   // inline in the workspace, not a second full-page view (see Fase 5 spec).
-  const [draftExpanded, setDraftExpanded] = useState(false);
+  const [draftExpanded, setDraftExpanded] = useState(true);
   // V2.1 Fase 5 -- which product row's read-only detail sheet is open, if any.
   const [selectedLine, setSelectedLine] = useState(null);
   const session = table.session;
@@ -1827,7 +1912,36 @@ function MesaWorkspace({
   // the three actions. Called once per branch below (compact card body /
   // Modal body); a closure, not a separate component, so it needs no prop
   // threading for the state and handlers already in scope above.
+  // The unsent draft. Named "Pedido en curso": it is not a comanda yet, and
+  // calling it one is exactly what made the screen read backwards.
+  const renderDraftPanel = () => <div className="mesa-current-card mesa-draft-card" data-testid="mesa-draft-panel">
+    <button type="button" data-testid="mesa-draft-toggle" onClick={() => setDraftExpanded((value) => !value)} style={{
+      display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none",
+      border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left",
+    }}>
+      <span className="mesa-current-eyebrow">
+        <i className="mesa-dot" style={{ width: 6, height: 6, background: "#d7a84b" }} />
+        Pedido en curso
+      </span>
+      <span className="mesa-muted" style={{ marginLeft: "auto" }}>{draftItemCount} artículo{draftItemCount === 1 ? "" : "s"} · {euro(draftTotal)}</span>
+      <span style={{ color: "#a99d89", transform: draftExpanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
+    </button>
+    {draftExpanded && <div className="mesa-command-card" style={{ marginTop: 10 }}>
+      <DraftItemsList items={draft.items} />
+      {draft.nota && <div className="mesa-command-note">Nota general: {draft.nota}</div>}
+      <div style={{ marginTop: 8, textAlign: "right", fontWeight: 900 }}>{euro(draftTotal)}</div>
+    </div>}
+    <div className="mesa-actions">
+      <button className="mesa-btn" disabled={sendingDraft} onClick={() => onNewCommand(table)}>Modificar</button>
+      <button className="mesa-btn green" disabled={sendingDraft} onClick={sendToCocina}>{sendingDraft ? "Enviando…" : "Enviar a cocina"}</button>
+    </div>
+  </div>;
+
   const renderDetail = () => <>
+    {/* SMOKE FIX — order matters. While a draft exists it is the live work and
+        goes first, with the gold treatment; Comanda actual drops to secondary
+        (see ComandaActualCard). With no draft, nothing moves. */}
+    {draft && renderDraftPanel()}
     <ComandaActualCard session={session} draft={draft} busy={busy} onMarkServed={markServed}
       onAddItems={() => onNewCommand(table)} onSelectLine={setSelectedLine} />
     {selectedLine && <LineDetailSheet payload={selectedLine} onClose={() => setSelectedLine(null)} />}
@@ -1837,25 +1951,6 @@ function MesaWorkspace({
         IS the last check with the client before it reaches Cocina. Only
         "Enviar a cocina" here calls the backend. Unrelated to Comanda
         actual above -- a draft is not yet a real comanda at all. */}
-    {draft && <div className="mesa-section" data-testid="mesa-draft-panel">
-      <button type="button" data-testid="mesa-draft-toggle" onClick={() => setDraftExpanded((value) => !value)} style={{
-        display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none",
-        border: "none", padding: 0, cursor: "pointer", color: "inherit", font: "inherit", textAlign: "left",
-      }}>
-        <h3 style={{ margin: 0 }}>Comanda por confirmar</h3>
-        <span className="mesa-muted" style={{ marginLeft: "auto" }}>{draftItemCount} artículo{draftItemCount === 1 ? "" : "s"} · {euro(draftTotal)}</span>
-        <span style={{ color: "#a99d89", transform: draftExpanded ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }}>⌄</span>
-      </button>
-      {draftExpanded && <div className="mesa-command-card" style={{ marginTop: 8 }}>
-        <DraftItemsList items={draft.items} />
-        {draft.nota && <div className="mesa-command-note">Nota general: {draft.nota}</div>}
-        <div style={{ marginTop: 8, textAlign: "right", fontWeight: 900 }}>{euro(draftTotal)}</div>
-      </div>}
-      <div className="mesa-actions">
-        <button className="mesa-btn" disabled={sendingDraft} onClick={() => onNewCommand(table)}>Modificar</button>
-        <button className="mesa-btn green" disabled={sendingDraft} onClick={sendToCocina}>{sendingDraft ? "Enviando…" : "Enviar a cocina"}</button>
-      </div>
-    </div>}
 
     <ResumenComandasSection session={session} />
     <ReservasSection todayReservations={todayReservations} nextReservation={nextReservation}
@@ -1923,7 +2018,7 @@ function MesaWorkspace({
         <div className="mesa-table-card-body">
           {workspaceView === "detail" && renderDetail()}
           {workspaceView === "account" && <div data-testid="mesa-card-view-account"><VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} /></div>}
-          {workspaceView === "close-confirm" && <CerrarMesaConfirm tableNumber={table.number} empty={session.coversTotal == null} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
+          {workspaceView === "close-confirm" && <CerrarMesaConfirm tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
         </div>
       </div>
     </div>;
@@ -1947,7 +2042,7 @@ function MesaWorkspace({
         <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} />
       </> : renderDetail()}
     </Modal>
-    {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
+    {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
   </>;
 }
 

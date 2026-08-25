@@ -192,67 +192,8 @@ describe('Economía — ledger success: no metodo_pago used as proof of payment'
   });
 });
 
-// ECONOMÍA V2 — the same gate, on the tab the module actually opens on.
-describe('Economía V2 — the money gate holds on the default General tab', () => {
-  test('while the ledger is pending, General shows no amount at all — never 0, never the legacy 12€', async () => {
-    api.getEconomiaLedger.mockImplementation(() => new Promise(() => {}));
-    const { container } = await mountEconomia();
-    await flush();
-
-    expect(container.querySelector('[data-testid="economia-general"]')).toBeTruthy();
-    expect(container.textContent).toContain('Cargando importes contables');
-    for (const id of ['general-total-cobrado', 'general-efectivo', 'general-ventas', 'general-pendiente']) {
-      const text = generalRow(container, id);
-      expect(text).toContain('···');
-      expect(text).not.toContain('0,00');
-      expect(text).not.toContain('12,00');
-    }
-  });
-
-  test('on ledger failure General states the failure and offers retry, and prints no amount', async () => {
-    api.getEconomiaLedger.mockResolvedValue({ error: 'backend_unavailable' });
-    const { container } = await mountEconomia();
-    await flush();
-
-    expect(container.querySelector('[data-testid="general-ledger-error"]')).toBeTruthy();
-    const retryBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent.includes('Reintentar'));
-    expect(retryBtn).toBeTruthy();
-    expect(generalRow(container, 'general-total-cobrado')).not.toContain('12,00');
-    expect(generalRow(container, 'general-total-cobrado')).not.toContain('0,00');
-  });
-
-  test('a ledger reporting 0 collected against a 12€ unpaid sale shows both truths, unmixed', async () => {
-    api.getEconomiaLedger.mockResolvedValue({
-      porGiorno: [{
-        businessDate: todayIso(),
-        paymentTotals: { efectivo: 0, tarjeta: 0, bizum: 0, other: 0 },
-        totals: { collected: 0, gross: 12, refunded: 0, unpaid: 12 },
-      }],
-    });
-    const { container } = await mountEconomia();
-    await flush();
-
-    // Collected really is zero — and that zero is now provable, so it prints.
-    expect(generalRow(container, 'general-total-cobrado')).toContain('0,00');
-    expect(generalRow(container, 'general-efectivo')).toContain('0,00');
-    // The sale exists and is unpaid: gross and unpaid are NOT the collected figure.
-    expect(generalRow(container, 'general-ventas')).toContain('12,00');
-    expect(generalRow(container, 'general-pendiente')).toContain('12,00');
-  });
-
-  test('a confirmed 12€ cash payment reaches both the total and the cash row', async () => {
-    api.getEconomiaLedger.mockResolvedValue({
-      porGiorno: [{
-        businessDate: todayIso(),
-        paymentTotals: { efectivo: 12, tarjeta: 0, bizum: 0, other: 0 },
-        totals: { collected: 12, gross: 12, refunded: 0, unpaid: 0 },
-      }],
-    });
-    const { container } = await mountEconomia();
-    await flush();
-
-    expect(generalRow(container, 'general-total-cobrado')).toContain('12,00');
-    expect(generalRow(container, 'general-efectivo')).toContain('12,00');
-    expect(generalRow(container, 'general-pendiente')).toContain('0,00');
-  });
-});
+// ECONOMÍA V2 / SMOKE FIX — the first tab no longer reads this ledger at all.
+// It asks /api/economy/v1/snapshot for the scope it is showing, so its own
+// "never print a figure you cannot prove" behaviour is asserted where that
+// reader lives: economiaGeneralCajaBoundary.test.js. What remains here is the
+// legacy KPI surface, whose gate is unchanged.

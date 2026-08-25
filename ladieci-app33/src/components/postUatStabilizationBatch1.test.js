@@ -145,7 +145,19 @@ describe("TEST H: Finalizar copy never promises a cancellation", () => {
 
   test("the explanatory line describes incidents, not cancellation", () => {
     expect(SERVICIO_CODE).not.toContain("ciérralos expresamente como anulados");
-    expect(SERVICIO).toContain("se registrarán como incidencias del cierre");
+    expect(SERVICIO).toMatch(/[Ss]e registrarán como incidencias del cierre/);
+  });
+
+  test("SMOKE FIX — an unresolved order is not described as money owed unless it is", () => {
+    // An order can be POR_CONFIRMAR and already PAID. The backend files exactly
+    // that as an operational incident with financial exposure null, so the old
+    // blanket "con su importe pendiente" was false for it. Operational pending
+    // and financial exposure are two different claims.
+    // SERVICIO_CODE, not SERVICIO: the comment above the fixed line quotes the
+    // old wording verbatim to explain why it was wrong, and a prose mention is
+    // not a UI string. This is the same reason SERVICIO_CODE exists.
+    expect(SERVICIO_CODE).not.toContain("con su importe pendiente");
+    expect(SERVICIO_CODE).toContain("Las que estén cobradas no dejan importe pendiente");
   });
 
   test("no surviving UI string promises automatic cancellation on close", () => {
