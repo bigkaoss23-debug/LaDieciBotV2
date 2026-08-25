@@ -58,11 +58,13 @@ const DireccionInlinePanel = ({
     zonaInfo !== null;
 
   return (
-    <section className="np-panel np-address-panel" aria-label="Dirección de entrega">
+    <section className={`np-panel np-address-panel${isDomicilio ? "" : " is-pickup"}`}
+      data-testid="np-entrega-panel"
+      aria-label={isDomicilio ? "Dirección de entrega" : "Recogida"}>
       {/* Header: titolo + indicador compacto de compatibilidad (era una pill aislada
           debajo que comía altura). Solo estado, no es un botón. */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", margin: "0 0 12px" }}>
-        <h2 style={{ margin: 0 }}>Dirección de entrega</h2>
+        <h2 style={{ margin: 0 }}>{isDomicilio ? "Dirección de entrega" : "Recogida"}</h2>
         {isDomicilio && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span style={{
@@ -87,16 +89,21 @@ const DireccionInlinePanel = ({
         )}
       </div>
 
-      <div className="np-input-like np-address-input">
-        {isDomicilio && deliveryZona && <ZonaBadgeComponent zona={deliveryZona} size="sm" />}
-        <span className="np-address-ic">{isDomicilio ? "📍" : "🏪"}</span>
-        <input
-          className="np-address-text"
-          value={direccion}
-          onChange={e => setDireccion(e.target.value)}
-          placeholder="Añadir dirección de entrega"
-        />
-      </div>
+      {/* La dirección ya no decide el tipo de pedido, así que en una recogida
+          no pinta nada: pedir "Añadir dirección de entrega" para recoger en
+          local era justamente lo que hacía ilegible la pantalla en el móvil. */}
+      {isDomicilio && (
+        <div className="np-input-like np-address-input" data-testid="np-address-input">
+          {deliveryZona && <ZonaBadgeComponent zona={deliveryZona} size="sm" />}
+          <span className="np-address-ic">📍</span>
+          <input
+            className="np-address-text"
+            value={direccion}
+            onChange={e => setDireccion(e.target.value)}
+            placeholder="Añadir dirección de entrega"
+          />
+        </div>
+      )}
 
       {isDomicilio && (
         <input

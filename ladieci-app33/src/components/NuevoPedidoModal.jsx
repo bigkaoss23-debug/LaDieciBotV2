@@ -13,6 +13,25 @@ import DireccionInlinePanel from './DireccionInlinePanel';
 import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
 import { getKitchenCapacityStatus } from '../core/kitchen/capacity';
+
+// Sólo layout. jsdom y navegadores viejos sin matchMedia caen en "no es
+// teléfono", que es el comportamiento previo a este cambio.
+const PHONE_QUERY = "(max-width:680px)";
+function useIsPhone() {
+  const [phone, setPhone] = useState(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia(PHONE_QUERY).matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const mq = window.matchMedia(PHONE_QUERY);
+    const onChange = (e) => setPhone(e.matches);
+    setPhone(mq.matches);
+    if (mq.addEventListener) { mq.addEventListener("change", onChange); return () => mq.removeEventListener("change", onChange); }
+    mq.addListener(onChange); return () => mq.removeListener(onChange);
+  }, []);
+  return phone;
+}
 // S2-7D4E-A — the modal no longer reads the draft flag. Draft blocking is a
 // property of the persistence gateway, surfaced as a typed result.
 import {
@@ -53,6 +72,12 @@ const NPFS_CSS = `
 /* P2: selettore origen Teléfono/Barra (canal TEL/BANCO) + WA read-only. */
 .npfs .np-origen-wa{ display:inline-flex; align-items:center; gap:6px; color:#25D366; font-size:13px; font-weight:900; white-space:nowrap; }
 .npfs .np-origen-seg{ display:inline-flex; align-items:center; border:1px solid rgba(208,184,145,0.32); border-radius:999px; overflow:hidden; }
+/* Modo de entrega — mando principal del formulario. Dos opciones, ancho
+   completo en móvil para que sea la primera decisión evidente. */
+.npfs .np-entrega-mode{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 0 10px; }
+.npfs .np-entrega-opt{ appearance:none; min-height:44px; border:1px solid rgba(208,184,145,0.22); border-radius:10px; background:rgba(255,255,255,0.025); color:#bcae93; font-size:14px; font-weight:800; cursor:pointer; }
+.npfs .np-entrega-opt:hover{ background:rgba(255,255,255,0.05); }
+.npfs .np-entrega-opt.is-active{ border-color:#d7a84b; background:rgba(215,168,75,0.14); color:#ffd9b8; }
 .npfs .np-origen-opt{ appearance:none; border:0; background:transparent; color:#bcae93; font-size:12px; font-weight:800; padding:4px 12px; cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; gap:5px; }
 .npfs .np-origen-opt:not(:last-child){ border-right:1px solid rgba(208,184,145,0.22); }
 .npfs .np-origen-opt.is-active{ background:rgba(250,204,21,0.16); color:#ffd24a; }
@@ -175,8 +200,16 @@ const NPFS_CSS = `
   .npfs .np-fixedtop{ padding:12px 14px; gap:10px; }
   .npfs .np-top{ grid-template-columns:1fr; }
   .npfs .np-panel{ padding:14px; }
-  .npfs .np-customer-grid{ grid-template-columns:1fr; }
-  .npfs .np-customer-flags{ width:100%; flex-wrap:wrap; }
+  /* Ficha cliente compacta (§19). El nombre y el teléfono siguen siendo lo
+     primero y siguen siendo editables; lo que se recorta es el aire: campos
+     más bajos, una sola fila de rasgos, y fuera el icono de contacto, que sin
+     etiqueta parecía un tercer campo vacío. */
+  .npfs .np-customer-grid{ grid-template-columns:minmax(0,1fr) 46px; gap:8px; }
+  .npfs .np-input-like{ min-height:42px; padding:0 12px; gap:8px; }
+  .npfs .np-contact-info{ display:none; }
+  .npfs .np-customer-flags{ width:100%; margin-top:8px; flex-wrap:nowrap; overflow-x:auto; font-size:12.5px; }
+  .npfs .np-customer-flags span{ padding:7px 12px; }
+  .npfs .np-panel h2{ margin:0 0 8px; }
   .npfs .np-delivery-cards{ grid-template-columns:1fr 1fr; }
   .npfs .np-products-head{ padding:10px 14px; }
   .npfs .np-products{ padding:0 14px 10px; }
@@ -197,6 +230,17 @@ const NPFS_CSS = `
   .npfs .np-footer > .np-summary .np-total{ font-size:24px; }
   .npfs .np-footer > .np-summary .np-items{ font-size:18px; }
   .npfs .np-footer > .np-confirm{ grid-column:1 / -1; min-height:52px; }
+  /* Pie de teléfono: N items · TOTAL, y un único CTA. Todo lo demás detrás
+     de «Pago y detalles», que ocupa una línea cerrado. */
+  .npfs .np-footer > .np-pago{ grid-column:1 / -1; }
+  .npfs .np-pago{ border:1px solid rgba(208,184,145,0.22); border-radius:10px; background:rgba(255,255,255,0.02); }
+  .npfs .np-pago-summary{ list-style:none; cursor:pointer; padding:9px 12px; min-height:40px; display:flex; align-items:center; color:#cfc3ae; font-size:13px; font-weight:800; }
+  .npfs .np-pago-summary::-webkit-details-marker{ display:none; }
+  .npfs .np-pago-summary::after{ content:"⌄"; margin-left:auto; color:#a99d89; }
+  .npfs .np-pago[open] .np-pago-summary::after{ transform:rotate(180deg); }
+  .npfs .np-pago-body{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:0 12px 12px; }
+  /* El contenido no puede quedar debajo del pie fijo. */
+  .npfs .np-products{ padding-bottom:12px; }
 
   /* Mobile/tablet portrait: il blocco superiore (cliente+dirección) impilato
      riempiva tutta la viewport e schiacciava la lista prodotti a ~10px. Qui
@@ -338,6 +382,18 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
   const [hora,            setHora]            = useState("");
   const [nota,            setNota]            = useState("");
   const [canal,           setCanal]           = useState("TEL");
+  // ── Modo de entrega — LA autoridad de tipoConsegna en el frontend ──────
+  // Antes el tipo de pedido se DEDUCÍA del campo dirección: escribir algo lo
+  // convertía en DOMICILIO, vaciarlo lo devolvía a RITIRO. Eso hacía del panel
+  // de dirección el selector real, así que no se podía ocultar en un RITIRO sin
+  // dejar al operador sin ninguna forma de crear un pedido a domicilio. Ahora
+  // el operador lo elige, y la dirección vuelve a ser sólo un dato del pedido.
+  // language-guard: allow-legacy tipoConsegna/RITIRO/DOMICILIO are the existing order-type identifier and enum values, referenced by the new explicit mode control, not new vocabulary
+  const [modoEntrega,     setModoEntrega]     = useState("RITIRO");
+  // Presentación, no lógica: el teléfono coloca los mandos secundarios detrás
+  // de un desplegable en vez de apilarlos en un pie enorme. Mismos handlers,
+  // mismo estado, una sola instancia de cada control.
+  const isPhone = useIsPhone();
   const [direccion,       setDireccion]       = useState("");
   const [direccionNote,   setDireccionNote]   = useState("");
   const [clienteAbitual,  setClienteAbitual]  = useState(null);
@@ -427,9 +483,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
   const [editingItem,     setEditingItem]     = useState(null); // null = nuovo, item = modifica
   const isTableOrder = Boolean(tableContext && tableContext.sessionId);
 
-  // ── Tipo consegna: si determina automaticamente dall'indirizzo ─────────
-  // Se l'indirizzo è compilato → DOMICILIO, altrimenti → RITIRO
-  const tipoConsegna = direccion.trim().length > 0 ? "DOMICILIO" : "RITIRO";
+  // ── Tipo consegna ───────────────────────────────────────────────────────
+  // UNA sola fuente: lo que el operador ha elegido. Todo lo que ya leía
+  // `tipoConsegna` (payload, planner, zona, totales) sigue leyendo lo mismo;
+  // lo único que ha cambiado es quién lo decide.
+  // language-guard: allow-legacy tipoConsegna/RITIRO/DOMICILIO are the existing order-type identifier and enum values, referenced by the new explicit mode control, not new vocabulary
+  const tipoConsegna = modoEntrega;
 
   // ── Totale ──────────────────────────────────────────────────────────────
   // Sorgente unica: calcTotale (sum items + delivery_fee). Niente più magic numbers.
@@ -439,7 +498,48 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
   const total = descPreview.totale.toFixed(2);
   const descuentoImporte = descPreview.importe;
   const zonaAssegnata = tipoConsegna !== "DOMICILIO" || (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
-  const ok = items.length > 0 && nombre.trim().length > 0 && zonaAssegnata && (!yaPagedo || metodoPago !== "");
+  // Un DOMICILIO sin dirección ya no es imposible por construcción: hay que
+  // exigirlo. Mismo umbral que usa el geocoder, para no aceptar como válido
+  // algo que la resolución de zona va a descartar.
+  // language-guard: allow-legacy tipoConsegna/RITIRO/DOMICILIO are the existing order-type identifier and enum values, referenced by the new explicit mode control, not new vocabulary
+  const direccionOk = tipoConsegna !== "DOMICILIO" || direccion.trim().length >= 5;
+  const ok = items.length > 0 && nombre.trim().length > 0 && direccionOk && zonaAssegnata && (!yaPagedo || metodoPago !== "");
+
+  const descuentoControl = isTableOrder ? null : (
+    <div style={{ display: "flex", alignItems: "center" }}>
+      <DescuentoInput
+        tipo={descuentoTipo}
+        valor={descuentoValor}
+        onChange={(t, v) => { setDescuentoTipo(t); setDescuentoValor(v); }}
+        totaleBase={totaleBase}
+        compact
+      />
+    </div>
+  );
+  const pagadoControl = isTableOrder ? null : (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => { setYaPagedo(v => !v); setMetodoPago(""); }} style={{
+                background: yaPagedo ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.03)",
+                border: `1px solid ${yaPagedo ? "rgba(34,197,94,0.5)" : "rgba(208,184,145,0.22)"}`,
+                color: yaPagedo ? "#7ee2a0" : "#cfc3ae",
+                borderRadius: 8, padding: "9px 12px", fontSize: 15, fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap"
+              }}>
+                {yaPagedo ? "☑" : "☐"} Pagado
+              </button>
+              {yaPagedo && (<>
+                <button onClick={() => setMetodoPago("efectivo")} style={{
+                  background: metodoPago === "efectivo" ? "#16A34A" : "rgba(255,255,255,0.06)",
+                  border: `1px solid ${metodoPago === "efectivo" ? "#16A34A" : "rgba(208,184,145,0.22)"}`,
+                  color: "#fff", borderRadius: 8, padding: "9px 12px", fontSize: 14, fontWeight: 800, cursor: "pointer"
+                }}>💵 Efectivo</button>
+                <button onClick={() => setMetodoPago("tarjeta")} style={{
+                  background: metodoPago === "tarjeta" ? "#2563EB" : "rgba(255,255,255,0.06)",
+                  border: `1px solid ${metodoPago === "tarjeta" ? "#2563EB" : "rgba(208,184,145,0.22)"}`,
+                  color: "#fff", borderRadius: 8, padding: "9px 12px", fontSize: 14, fontWeight: 800, cursor: "pointer"
+                }}>💳 Tarjeta</button>
+              </>)}
+            </div>
+  );
 
   // ── Anti double-submit ───────────────────────────────────────────────────
   // submittingRef: guardia immediata (sync) contro rapid click prima del
@@ -473,7 +573,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
   // ── Reset ────────────────────────────────────────────────────────────────
   const reset = () => {
     setItems([]); setTel(""); setNombre(""); setHora(""); setNota("");
-    setCanal("TEL"); setDireccion(""); setDireccionNote("");
+    // language-guard: allow-legacy tipoConsegna/RITIRO/DOMICILIO are the existing order-type identifier and enum values, referenced by the new explicit mode control, not new vocabulary
+    setCanal("TEL"); setModoEntrega("RITIRO"); setDireccion(""); setDireccionNote("");
     setClienteAbitual(null); setShowNotaGen(false);
     setYaPagedo(false); setMetodoPago("");
     setDescuentoTipo(null); setDescuentoValor(0);
@@ -814,8 +915,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
     }
   };
 
-  // "Ritiro inmediato" è RITIRO-only: se l'operatore inserisce un indirizzo
-  // (→ DOMICILIO) lo spegniamo, così non resta un campo ora offuscato.
+  // "Ritiro inmediato" es sólo de RITIRO: si el operador cambia a DOMICILIO lo
+  // apagamos, para no dejar un campo de hora bloqueado sin motivo visible.
   useEffect(() => {
     if (tipoConsegna === "DOMICILIO" && ritiroInmediato) setRitiroInmediato(false);
   }, [tipoConsegna, ritiroInmediato]);
@@ -1205,8 +1306,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
       if (prefill.metodo_pago)   setMetodoPago(prefill.metodo_pago);
       if (prefill.descuento_tipo) setDescuentoTipo(prefill.descuento_tipo);
       if (Number(prefill.descuento_valor) > 0) setDescuentoValor(Number(prefill.descuento_valor));
-      // tipo_consegna ora è derivato dall'indirizzo — se prefill ha un indirizzo, si attiva da solo
-      if (prefill.tipo_consegna === "DOMICILIO" && prefill.direccion) setDireccion(prefill.direccion);
+      // El modo se siembra del pedido que se está reeditando; ya no se infiere
+      // de que venga o no una dirección.
+      // language-guard: allow-legacy tipoConsegna/RITIRO/DOMICILIO are the existing order-type identifier and enum values, referenced by the new explicit mode control, not new vocabulary
+      if (prefill.tipo_consegna === "DOMICILIO" || prefill.tipo_consegna === "RITIRO") {
+        // language-guard: allow-legacy tipoConsegna/RITIRO/DOMICILIO are the existing order-type identifier and enum values, referenced by the new explicit mode control, not new vocabulary
+        setModoEntrega(prefill.tipo_consegna);
+      }
       if (prefill.direccion)     setDireccion(prefill.direccion);
       if (prefill.direccion_note) setDireccionNote(prefill.direccion_note);
     }
@@ -1665,6 +1771,27 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
                   )}
                 </section>
 
+                {/* ── MODO DE ENTREGA — el único mando que decide el tipo ──
+                    Antes esto lo decidía el campo dirección, lo que obligaba a
+                    enseñar la UI de reparto incluso en una recogida. Ahora se
+                    elige, y el formulario se adapta a lo elegido. */}
+                <div className="np-entrega-mode" role="group" aria-label="Tipo de pedido"
+                  data-testid="np-entrega-mode">
+                  {[
+                    // language-guard: allow-legacy tipoConsegna/RITIRO/DOMICILIO are the existing order-type identifier and enum values, referenced by the new explicit mode control, not new vocabulary
+                    { id: "RITIRO", label: "Retiro" },
+                    { id: "DOMICILIO", label: "Domicilio" },
+                  ].map(opt => (
+                    <button key={opt.id} type="button"
+                      data-testid={`np-entrega-${opt.id}`}
+                      aria-pressed={modoEntrega === opt.id}
+                      className={`np-entrega-opt${modoEntrega === opt.id ? " is-active" : ""}`}
+                      onClick={() => setModoEntrega(opt.id)}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
                 <DireccionInlinePanel
                   tipoConsegna={tipoConsegna}
                   direccion={direccion}
@@ -2033,9 +2160,15 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
             <div className="np-products-head">
               <div>
                 <h2>Productos</h2>
-                <span className="np-count-pill">{items.length} línea{items.length !== 1 ? "s" : ""} · {itemQtyTotal} item{itemQtyTotal !== 1 ? "s" : ""}</span>
+                {/* El contador sólo aparece cuando cuenta algo. "0 líneas · 0
+                    items" encima de "Todavía no hay nada" encima de "Pulsa
+                    Añadir producto" eran tres formas de decir lo mismo. */}
+                {items.length > 0 && (
+                  <span className="np-count-pill">{items.length} línea{items.length !== 1 ? "s" : ""} · {itemQtyTotal} item{itemQtyTotal !== 1 ? "s" : ""}</span>
+                )}
               </div>
-              <button className="np-gold-btn" onClick={() => { setEditingItem(null); setPickerVisible(true); }}>⊕ Añadir producto</button>
+              <button className="np-gold-btn" data-testid="np-add-product"
+                onClick={() => { setEditingItem(null); setPickerVisible(true); }}>⊕ Añadir producto</button>
             </div>
 
             {/* Quick-add (barra Rápido) rimossa: solo «Añadir producto» (sopra) + picker. */}
@@ -2044,12 +2177,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
             <div className="np-products">
 
               {items.length === 0 ? (
-                /* Stato vuoto */
-                <div className="np-empty">
-                  <span style={{ fontSize: 40 }}>🍕</span>
-                  <strong style={{ color: "#e7dcc4", fontSize: 17, fontWeight: 900 }}>Todavía no hay nada</strong>
-                  <span style={{ color: "#a99f8b", fontSize: 14 }}>Pulsa «Añadir producto» para empezar</span>
-                </div>
+                /* Vacío: el botón de arriba ya es la única acción posible. */
+                <div className="np-empty" data-testid="np-products-empty" />
               ) : (
                 items.map((item, idx) => (
                   <div key={item._uid} className="np-row">
@@ -2146,8 +2275,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
             <div className="np-summary">
               <span className="np-items">{itemQtyTotal} item{itemQtyTotal !== 1 ? "s" : ""}</span>
               <span className="np-total">Total {total}€</span>
+              {/* "0 items · Total 2,50 € · Incl. 2,50 € entrega" era correcto y
+                  desconcertante. Se enseña de qué se compone. */}
               {tipoConsegna === "DOMICILIO" && (
-                <small>Incl. {DELIVERY_FEE.toFixed(2).replace(".", ",")}€ entrega</small>
+                <small data-testid="np-fee-breakdown">
+                  Productos {(totaleBase - DELIVERY_FEE).toFixed(2).replace(".", ",")}€
+                  {" · "}Entrega {DELIVERY_FEE.toFixed(2).replace(".", ",")}€
+                </small>
               )}
               {descuentoImporte > 0 && (
                 <small style={{ color: "#f0b429" }}>−{descuentoImporte.toFixed(2)}€ desc · subtotal {totaleBase.toFixed(2)}€</small>
@@ -2160,40 +2294,15 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
               )}
             </div>
 
-            {/* Descuento (componente esistente, non modificato) */}
-            {!isTableOrder && <div style={{ display: "flex", alignItems: "center" }}>
-              <DescuentoInput
-                tipo={descuentoTipo}
-                valor={descuentoValor}
-                onChange={(t, v) => { setDescuentoTipo(t); setDescuentoValor(v); }}
-                totaleBase={totaleBase}
-                compact
-              />
-            </div>}
-
-            {/* Ya pagado + metodo */}
-            {!isTableOrder && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={() => { setYaPagedo(v => !v); setMetodoPago(""); }} style={{
-                background: yaPagedo ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.03)",
-                border: `1px solid ${yaPagedo ? "rgba(34,197,94,0.5)" : "rgba(208,184,145,0.22)"}`,
-                color: yaPagedo ? "#7ee2a0" : "#cfc3ae",
-                borderRadius: 8, padding: "9px 12px", fontSize: 15, fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap"
-              }}>
-                {yaPagedo ? "☑" : "☐"} Pagado
-              </button>
-              {yaPagedo && (<>
-                <button onClick={() => setMetodoPago("efectivo")} style={{
-                  background: metodoPago === "efectivo" ? "#16A34A" : "rgba(255,255,255,0.06)",
-                  border: `1px solid ${metodoPago === "efectivo" ? "#16A34A" : "rgba(208,184,145,0.22)"}`,
-                  color: "#fff", borderRadius: 8, padding: "9px 12px", fontSize: 14, fontWeight: 800, cursor: "pointer"
-                }}>💵 Efectivo</button>
-                <button onClick={() => setMetodoPago("tarjeta")} style={{
-                  background: metodoPago === "tarjeta" ? "#2563EB" : "rgba(255,255,255,0.06)",
-                  border: `1px solid ${metodoPago === "tarjeta" ? "#2563EB" : "rgba(208,184,145,0.22)"}`,
-                  color: "#fff", borderRadius: 8, padding: "9px 12px", fontSize: 14, fontWeight: 800, cursor: "pointer"
-                }}>💳 Tarjeta</button>
-              </>)}
-            </div>}
+            {/* Descuento + Pagado. En teléfono viven dentro de «Pago y detalles»
+                (un solo desplegable), en tablet siguen en el pie como siempre.
+                Es el MISMO nodo en ambos casos: sin duplicar controles ni estado. */}
+            {!isTableOrder && (isPhone
+              ? <details className="np-pago" data-testid="np-pago-details">
+                  <summary className="np-pago-summary">Pago y detalles</summary>
+                  <div className="np-pago-body">{descuentoControl}{pagadoControl}</div>
+                </details>
+              : <>{descuentoControl}{pagadoControl}</>)}
 
             {/* S2-7D4E-A — SINGLE in-modal result surface. One element, keyed by a
                 sequence number, so pressing Confirmar repeatedly refreshes this
