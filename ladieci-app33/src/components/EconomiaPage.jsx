@@ -556,6 +556,11 @@ const EconomiaPage = ({onBack}) => {
   const [ledgerByDay, setLedgerByDay] = useState({});
   const [ledgerStatus, setLedgerStatus] = useState("loading"); // "loading" | "error" | "ready"
   const [ledgerRetryTick, setLedgerRetryTick] = useState(0);
+  // N-8 — a service that was already finalized can still take money afterwards. When
+  // that happened inside the loaded window, these figures (the CURRENT situation) no
+  // longer match what the closeout registered at Finalizar. Neither number is wrong;
+  // they answer different questions, so the difference is stated instead of hidden.
+  const [lateAfterClose, setLateAfterClose] = useState(null);
   const retryLedger = () => setLedgerRetryTick(t => t + 1);
 
   // Carica il resumen ledger (Economía's ONE money source) — finestra ~35 giorni,
@@ -577,6 +582,16 @@ const EconomiaPage = ({onBack}) => {
         const byDay = {};
         r.porGiorno.forEach(d => { if (d?.businessDate) byDay[d.businessDate] = d; });
         setLedgerByDay(byDay);
+        // N-8 — only services that actually diverge; an empty list means every closed
+        // service in range still reads exactly as its closeout registered.
+        const diverged = (Array.isArray(r.sessions) ? r.sessions : [])
+          .filter(x => x && x.divergesFromCloseout && x.closeoutSnapshot)
+          .map(x => ({
+            businessDate: x.businessDate,
+            alFinalizar: Number(x.closeoutSnapshot.totals?.collected) || 0,
+            ahora: Number(x.totals?.collected) || 0,
+          }));
+        setLateAfterClose(r.divergesFromCloseout && diverged.length > 0 ? diverged : null);
         setLedgerStatus("ready");
       })
       .catch(e => {
@@ -2253,6 +2268,25 @@ const EconomiaPage = ({onBack}) => {
           return (
             <Modal titolo={vista.contesto === "caja" ? "Caja del día" : "Ventas"} sub={titoloCtx} icona="💶" color={C.verde} onClose={closeM}>
               <RigaDato label="Total ventas" value={fmtEur(vista.ventas)} color={C.verde} big/>
+              {lateAfterClose && (
+                <div data-testid="late-after-close-note" style={{
+                  background:"rgba(251,191,36,0.10)", border:"1px solid rgba(251,191,36,0.35)",
+                  borderRadius:8, padding:"9px 11px", margin:"8px 0 4px",
+                  fontSize:12.5, lineHeight:1.45, color:"#fbbf24",
+                }}>
+                  ℹ️ Estos importes son la <strong>situación actual</strong>.{" "}
+                  {lateAfterClose.length === 1
+                    ? "En un servicio ya cerrado entró dinero después del cierre: "
+                    : `En ${lateAfterClose.length} servicios ya cerrados entró dinero después del cierre: `}
+                  {lateAfterClose.map((x, i) => (
+                    <span key={x.businessDate + "-" + i}>
+                      {i > 0 ? " · " : ""}
+                      {x.businessDate} — al finalizar {fmtEur(x.alFinalizar)}, ahora {fmtEur(x.ahora)}
+                    </span>
+                  ))}
+                  . El cierre registrado no cambia.
+                </div>
+              )}
               <ModalSection titolo="Cobros por método de pago">
                 {PAG_ROWS.map(({k,label,col}) => {
                   const p = pag[k] || {incasso:0,count:0};
