@@ -118,11 +118,11 @@ beforeEach(() => {
 });
 
 // ── A ──────────────────────────────────────────────────────────────────
-describe('A — Economía opens on Resumen', () => {
-  test('the default tab is Resumen, and it is the tab marked selected', async () => {
+describe('A — Economía opens on General', () => {
+  test('the default tab is General, and it is the tab marked selected', async () => {
     const container = await mount();
-    expect(container.querySelector('[data-testid="economia-resumen"]')).toBeTruthy();
-    expect(tabButton(container, 'resumen').getAttribute('aria-selected')).toBe('true');
+    expect(container.querySelector('[data-testid="economia-general"]')).toBeTruthy();
+    expect(tabButton(container, 'general').getAttribute('aria-selected')).toBe('true');
     for (const other of ['caja', 'historial', 'estadisticas', 'clientes']) {
       expect(tabButton(container, other).getAttribute('aria-selected')).toBe('false');
     }
@@ -138,9 +138,9 @@ describe('B — the bottom nav holds exactly five destinations', () => {
     const buttons = Array.from(nav.querySelectorAll('button'));
     expect(buttons).toHaveLength(5);
     expect(buttons.map((b) => b.textContent.trim()))
-      .toEqual(['Resumen', 'Caja', 'Historial', 'Estadísticas', 'Clientes']);
+      .toEqual(['General', 'Caja', 'Historial', 'Estadísticas', 'Clientes']);
     expect(ECONOMIA_TABS.map((t) => t.id))
-      .toEqual(['resumen', 'caja', 'historial', 'estadisticas', 'clientes']);
+      .toEqual(['general', 'caja', 'historial', 'estadisticas', 'clientes']);
   });
 });
 
@@ -155,7 +155,7 @@ describe('C — vector icons only, no emoji in the new shell', () => {
 
   test.each([
     'components/economia/EconomiaBottomNav.jsx',
-    'components/economia/EconomiaResumen.jsx',
+    'components/economia/EconomiaGeneral.jsx',
   ])('%s contains no emoji', (rel) => {
     const src = readSrc(rel);
     const hit = src.match(EMOJI);
@@ -189,7 +189,7 @@ describe('D — switching tabs never leaves the Economía module', () => {
     // language-guard: allow-legacy getStorico is the existing api.js method name whose call count is read, not new vocabulary
     const storicoCallsAfterMount = api.getStorico.mock.calls.length;
 
-    for (const id of ['caja', 'historial', 'estadisticas', 'clientes', 'resumen']) {
+    for (const id of ['caja', 'historial', 'estadisticas', 'clientes', 'general']) {
       await clickTab(container, id);
       // The module header and its own nav are still on screen throughout.
       expect(container.textContent).toContain('ECONOMÍA');
@@ -216,33 +216,33 @@ describe('D — switching tabs never leaves the Economía module', () => {
 
 // ── E ──────────────────────────────────────────────────────────────────
 describe('E — the selected period is shared and survives tab switching', () => {
-  test('a period chosen in Resumen is still selected after visiting every other tab', async () => {
+  test('a period chosen in General is still selected after visiting every other tab', async () => {
     const container = await mount();
-    expect(tabButton(container, 'resumen')).toBeTruthy();
+    expect(tabButton(container, 'general')).toBeTruthy();
 
     // Default pill is the day; move to Mes.
     await act(async () => {
-      container.querySelector('[data-testid="resumen-periodo-mese"]')
+      container.querySelector('[data-testid="general-periodo-mese"]')
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    expect(container.querySelector('[data-testid="resumen-periodo-mese"]').getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelector('[data-testid="general-periodo-mese"]').getAttribute('aria-pressed')).toBe('true');
 
     for (const id of ['caja', 'historial', 'estadisticas', 'clientes']) await clickTab(container, id);
-    await clickTab(container, 'resumen');
+    await clickTab(container, 'general');
 
-    expect(container.querySelector('[data-testid="resumen-periodo-mese"]').getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelector('[data-testid="general-periodo-mese"]').getAttribute('aria-pressed')).toBe('true');
     // language-guard: allow-legacy the day-period pill id is the pre-existing PERIODI id, matched verbatim in a testid, not new vocabulary
-    expect(container.querySelector('[data-testid="resumen-periodo-serata"]').getAttribute('aria-pressed')).toBe('false');
+    expect(container.querySelector('[data-testid="general-periodo-serata"]').getAttribute('aria-pressed')).toBe('false');
   });
 
   test('there is ONE period state: the legacy tabs show the same selection', async () => {
     const container = await mount();
     await act(async () => {
-      container.querySelector('[data-testid="resumen-periodo-sett"]')
+      container.querySelector('[data-testid="general-periodo-sett"]')
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await clickTab(container, 'historial');
-    // The legacy pill row reflects the choice made on Resumen.
+    // The legacy pill row reflects the choice made on General.
     const legacyActive = Array.from(container.querySelectorAll('button'))
       .filter((b) => b.textContent.trim() === 'Semana');
     expect(legacyActive.length).toBeGreaterThan(0);
@@ -251,51 +251,51 @@ describe('E — the selected period is shared and survives tab switching', () =>
 });
 
 // ── F ──────────────────────────────────────────────────────────────────
-describe('F — Resumen renders the approved economic content', () => {
+describe('F — General renders the approved economic content', () => {
   test('both groups, every approved row, with the certified figures', async () => {
     const container = await mount();
 
-    expect(container.querySelector('[data-testid="resumen-cobrado"]').textContent)
+    expect(container.querySelector('[data-testid="general-cobrado"]').textContent)
       .toContain('Cobrado en el período');
-    expect(container.querySelector('[data-testid="resumen-originado"]').textContent)
+    expect(container.querySelector('[data-testid="general-originado"]').textContent)
       .toContain('Ventas originadas en el período');
 
     // GROUP 1 — money received.
-    expect(rowText(container, 'resumen-total-cobrado')).toContain('80,00');
-    expect(rowText(container, 'resumen-efectivo')).toContain('40,00');
-    expect(rowText(container, 'resumen-tarjeta')).toContain('25,00');
-    expect(rowText(container, 'resumen-bizum')).toContain('10,00');
-    expect(rowText(container, 'resumen-otros')).toContain('5,00');
+    expect(rowText(container, 'general-total-cobrado')).toContain('80,00');
+    expect(rowText(container, 'general-efectivo')).toContain('40,00');
+    expect(rowText(container, 'general-tarjeta')).toContain('25,00');
+    expect(rowText(container, 'general-bizum')).toContain('10,00');
+    expect(rowText(container, 'general-otros')).toContain('5,00');
 
     // GROUP 2 — sales originated.
-    expect(rowText(container, 'resumen-ventas')).toContain('100,00');
-    expect(rowText(container, 'resumen-pendiente')).toContain('20,00');
-    expect(rowText(container, 'resumen-devuelto')).toContain('3,00');
-    expect(rowText(container, 'resumen-pedidos')).toBeTruthy();
+    expect(rowText(container, 'general-ventas')).toContain('100,00');
+    expect(rowText(container, 'general-pendiente')).toContain('20,00');
+    expect(rowText(container, 'general-devuelto')).toContain('3,00');
+    expect(rowText(container, 'general-pedidos')).toBeTruthy();
     // The order count is the page's existing row-derived figure, reused as-is
     // rather than recomputed here — one order in the fixture, one on screen.
-    expect(rowText(container, 'resumen-pedidos')).toContain('1');
+    expect(rowText(container, 'general-pedidos')).toContain('1');
 
     // Anulado has no truthful source in this reader yet: it must read as
     // absent, and must NOT be faked as a zero.
-    const anulado = rowText(container, 'resumen-anulado');
+    const anulado = rowText(container, 'general-anulado');
     expect(anulado).toContain('Anulado');
     expect(anulado).toContain('—');
     expect(anulado).not.toContain('0,00');
   });
 
-  test('none of the banned Estadísticas content leaks into Resumen', async () => {
+  test('none of the banned Estadísticas content leaks into General', async () => {
     const container = await mount();
-    const resumen = container.querySelector('[data-testid="economia-resumen"]').textContent;
+    const general = container.querySelector('[data-testid="economia-general"]').textContent;
     for (const banned of [/pizza/i, /bebida/i, /delivery/i, /cliente/i, /ranking/i]) {
-      expect(resumen).not.toMatch(banned);
+      expect(general).not.toMatch(banned);
     }
   });
 });
 
 // ── G ──────────────────────────────────────────────────────────────────
 describe('G — the N-8 divergence disclosure is preserved', () => {
-  test('a service that took money after Finalizar is disclosed on Resumen', async () => {
+  test('a service that took money after Finalizar is disclosed on General', async () => {
     api.getEconomiaLedger.mockResolvedValue({
       ...LEDGER_OK,
       divergesFromCloseout: true,
@@ -324,7 +324,7 @@ describe('G — the N-8 divergence disclosure is preserved', () => {
 
 // ── H ──────────────────────────────────────────────────────────────────
 describe('H — the N-9 window resolver is untouched', () => {
-  test('Resumen renders the interval the SERVER resolved, and states the timezone', async () => {
+  test('General renders the interval the SERVER resolved, and states the timezone', async () => {
     const container = await mount();
     const disclosure = container.querySelector('[data-testid="economia-window-disclosure"]');
     expect(disclosure).toBeTruthy();
@@ -334,7 +334,7 @@ describe('H — the N-9 window resolver is untouched', () => {
   });
 
   test('the shell adds no second calendar: no browser-midnight recomputation in the new files', () => {
-    for (const rel of ['components/economia/EconomiaResumen.jsx', 'components/economia/EconomiaBottomNav.jsx']) {
+    for (const rel of ['components/economia/EconomiaGeneral.jsx', 'components/economia/EconomiaBottomNav.jsx']) {
       const src = readSrc(rel);
       expect(src).not.toMatch(/setHours\s*\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/);
       expect(src).not.toMatch(/toISOString\s*\(\s*\)\s*\.\s*slice/);
@@ -356,7 +356,7 @@ describe('I — no lifecycle close action exists inside Economía', () => {
 
   test('no control anywhere in the module offers to close the service', async () => {
     const container = await mount();
-    for (const id of ['resumen', 'caja', 'historial', 'estadisticas', 'clientes']) {
+    for (const id of ['general', 'caja', 'historial', 'estadisticas', 'clientes']) {
       await clickTab(container, id);
       const controls = Array.from(container.querySelectorAll('button, a, [role="button"]'));
       for (const el of controls) {
@@ -367,7 +367,7 @@ describe('I — no lifecycle close action exists inside Economía', () => {
   });
 
   test('the new shell files declare no close handler', () => {
-    for (const rel of ['components/economia/EconomiaResumen.jsx', 'components/economia/EconomiaBottomNav.jsx']) {
+    for (const rel of ['components/economia/EconomiaGeneral.jsx', 'components/economia/EconomiaBottomNav.jsx']) {
       const src = readSrc(rel);
       expect(src).not.toMatch(/onFinalizar|finalizarServicio|closeService|cerrarServicio/);
     }
@@ -400,7 +400,7 @@ describe('J — admin access behaviour is unchanged', () => {
   });
 
   test('the shell introduces no role logic', () => {
-    for (const rel of ['components/economia/EconomiaResumen.jsx', 'components/economia/EconomiaBottomNav.jsx']) {
+    for (const rel of ['components/economia/EconomiaGeneral.jsx', 'components/economia/EconomiaBottomNav.jsx']) {
       expect(readSrc(rel)).not.toMatch(/getRole|canAccess|isAdmin|role\s*===/);
     }
   });

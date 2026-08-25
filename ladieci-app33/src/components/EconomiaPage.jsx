@@ -4,7 +4,7 @@ import { api, sb } from '../api';
 import EconomiaSnapshotPanel from './economia/EconomiaSnapshotPanel';
 // ECONOMÍA V2 — the module shell. One page, one data layer, five tabs.
 import EconomiaBottomNav, { ECONOMIA_TABS } from './economia/EconomiaBottomNav';
-import EconomiaResumen from './economia/EconomiaResumen';
+import EconomiaGeneral from './economia/EconomiaGeneral';
 // N-9 — the reporting calendar. Never `new Date().setHours(0,0,0,0)`.
 import { madridBusinessDate, shiftBusinessDate, withinLastBusinessDays,
          REPORTING_TIMEZONE, BUSINESS_DAY_ROLLOVER_MIN } from '../economy/businessDay';
@@ -651,7 +651,7 @@ const EconomiaPage = ({onBack}) => {
   // tab switch changes: the page never unmounts, the three fetches above never
   // re-run, and the selected period below is untouched. That is the whole point
   // of the shell — five destinations, not five mini-apps.
-  const [tab, setTab] = useState("resumen");
+  const [tab, setTab] = useState("general");
   const retryLedger = () => setLedgerRetryTick(t => t + 1);
 
   // Carica il resumen ledger (Economía's ONE money source) — finestra ~35 giorni,
@@ -1495,9 +1495,12 @@ const EconomiaPage = ({onBack}) => {
           hidden behind the bar. */}
       <div style={{flex:1,padding:"14px 14px calc(86px + env(safe-area-inset-bottom, 0px))",overflowY:"auto"}}>
 
-        {/* ═══ TAB: RESUMEN — the V2 default ═══ */}
-        {tab === "resumen" && (
-          <EconomiaResumen
+        {/* ═══ TAB: GENERAL — the V2 default ═══
+            Read-only economic truth. The two period groups, the N-8
+            divergence disclosure and the N-9 window statement live HERE and
+            nowhere else in the module — see the Caja mount below. */}
+        {tab === "general" && (
+          <EconomiaGeneral
             periodos={PERIODI_V2}
             periodo={periodo}
             onPeriodo={(id) => { setPeriodo(id); setGiornoFiltro(null); }}
@@ -1522,9 +1525,16 @@ const EconomiaPage = ({onBack}) => {
 
             Kept MOUNTED and merely hidden off-tab, on purpose: it owns its own
             fetch, and unmounting it would make every visit to Caja re-request
-            the same window. A shell switches views, it does not reload them. */}
+            the same window. A shell switches views, it does not reload them.
+
+            STEP 1.1 — `showEconomicWindow={false}`. The panel's read-only
+            economic half duplicated General's two groups, so Caja opened on a
+            second economic summary before reaching the thing it exists for.
+            Caja now renders only cash: the counting window, what the ledger
+            recorded in it, the physical count, the difference and the
+            append-only history. The cash-count contract is untouched. */}
         <div style={{display: tab === "caja" ? "block" : "none"}} data-testid="economia-tab-panel-caja">
-          <EconomiaSnapshotPanel />
+          <EconomiaSnapshotPanel showEconomicWindow={false} />
         </div>
 
         {/* ═══ TABS: HISTORIAL · ESTADÍSTICAS · CLIENTES ═══
