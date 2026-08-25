@@ -10,6 +10,8 @@
 
 import { calcTotale } from "./constants";
 import { isDeleteConfirmed } from "./utils/deleteReconcile";
+// N-9 — the reporting calendar (Europe/Madrid, 04:00 business-day rollover).
+import { madridBusinessDate } from "./economy/businessDay";
 import { BACKEND_BASE_URL } from "./utils/backendBase";
 import { isBlockedMutation, assertMutationAllowed, DraftWriteBlockedError } from "./draftGuard";
 
@@ -798,16 +800,28 @@ const api = {
     };
   },
 
+  // N-9 — "Caja" = the CURRENT BUSINESS DAY, Europe/Madrid, 04:00→04:00.
+  //
+  // WHAT WAS WRONG. The old predicate was:
+  //   d.toISOString().slice(0,10) === oggiIso && d.getHours() >= 19 && d.getHours() < 23
+  // which compares a UTC calendar date against a UTC "today", and then filters on
+  // a BROWSER-LOCAL hour — two different clocks inside one boolean. In Madrid
+  // summer (UTC+2) it dropped every order from 23:00 local onward, dropped the
+  // whole 00:00–04:00 tail of the business day (whose UTC date has already rolled
+  // over), and dropped every lunch service outright. It also disagreed with
+  // EconomiaPage's own 19:50–23:00 band, so the same night could be two different
+  // "cajas" on two parts of one screen.
+  //
+  // Now: ONE window, the business day the reporting calendar already defines, and
+  // no hour band at all — a service that runs at midday is as real as one at 21:00.
   getSerata: async function() {
-    const oggiDate = new Date();
-    const oggiIso  = oggiDate.toISOString().slice(0, 10);
+    const oggiIso  = madridBusinessDate();
     const toMs = (ts) => { const n = Number(ts); if (!n) return null; return n < 1e12 ? n * 1000 : n; };
     const rowsOrdenes = await sb.select("ordenes", `estado=in.(COMPLETADO,RETIRADO)&order=ts.desc&limit=500`);
     const ordineLive = (Array.isArray(rowsOrdenes) ? rowsOrdenes : []).filter(r => {
       const ms = toMs(r.ts);
       if (!ms) return false;
-      const d = new Date(ms);
-      return d.toISOString().slice(0,10) === oggiIso && d.getHours() >= 19 && d.getHours() < 23;
+      return madridBusinessDate(new Date(ms)) === oggiIso;
     }).map(r => ({ ...r, _src: "live" }));
     const rowsStorico = await sb.select("storico", `fecha=eq.${oggiIso}&order=ts.desc&limit=200`);
     const ordiniStorico = (Array.isArray(rowsStorico) ? rowsStorico : []).map(r => ({
