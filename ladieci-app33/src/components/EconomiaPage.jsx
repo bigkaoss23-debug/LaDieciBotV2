@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { C, LOGO_RED_SRC, calcTotale as calcTotaleHelper } from '../constants';
 import { api, sb } from '../api';
 import EconomiaSnapshotPanel from './economia/EconomiaSnapshotPanel';
+// ECONOMÍA V2 — the module shell. One page, one data layer, five tabs.
+import EconomiaBottomNav, { ECONOMIA_TABS } from './economia/EconomiaBottomNav';
+import EconomiaResumen from './economia/EconomiaResumen';
 // N-9 — the reporting calendar. Never `new Date().setHours(0,0,0,0)`.
 import { madridBusinessDate, shiftBusinessDate, withinLastBusinessDays,
          REPORTING_TIMEZONE, BUSINESS_DAY_ROLLOVER_MIN } from '../economy/businessDay';
@@ -65,8 +68,16 @@ const newPagBucketFromLedger = () => ({
 // browser-local Date silently re-anchored every period to the operator's laptop
 // timezone. Every window predicate in this file now compares the STRING; the
 // Date argument is kept only so pre-N-9 callers/tests keep working unchanged.
+//
+// ECONOMÍA V2 — the return is EXTENDED, never changed: both pre-V2 keys stay
+// byte-identical for every existing caller, and a `totals` bucket is added
+// alongside so Resumen can show gross/unpaid/refunded without a second
+// aggregation path. Those three values are summed straight off the certified
+// reader's own per-day `totals` — nothing is re-derived here, and no row data
+// ever enters this function.
 const sumLedgerWindow = (ledgerByDay, predicate) => {
   const pagamenti = newPagBucketFromLedger();
+  const totals = { gross: 0, collected: 0, refunded: 0, unpaid: 0 };
   let collected = 0;
   Object.keys(ledgerByDay || {}).forEach(day => {
     const dt = parseDataKey(day);
@@ -79,8 +90,13 @@ const sumLedgerWindow = (ledgerByDay, predicate) => {
     pagamenti.bizum.incasso           = Math.round((pagamenti.bizum.incasso    + (pt.bizum||0))    * 100) / 100;
     pagamenti.no_especificado.incasso = Math.round((pagamenti.no_especificado.incasso + (pt.other||0)) * 100) / 100;
     collected = Math.round((collected + (entry.totals?.collected || 0)) * 100) / 100;
+    const et = entry.totals || {};
+    totals.gross    = Math.round((totals.gross    + (et.gross    || 0)) * 100) / 100;
+    totals.collected= Math.round((totals.collected+ (et.collected|| 0)) * 100) / 100;
+    totals.refunded = Math.round((totals.refunded + (et.refunded || 0)) * 100) / 100;
+    totals.unpaid   = Math.round((totals.unpaid   + (et.unpaid   || 0)) * 100) / 100;
   });
-  return { pagamenti, collected };
+  return { pagamenti, collected, totals };
 };
 
 // S2-7D6E4 — `ledgerReady` must be the EXPLICIT status flag (ledgerStatus === "ready"),
@@ -372,6 +388,16 @@ const PERIODI = [
   {id:"tutto",  label:"Todo"},
 ];
 
+// ECONOMÍA V2 — the SAME four period ids, relabelled for Resumen: no emoji,
+// and the day pill reads "Día" rather than "Caja" now that Caja is a tab of
+// its own. Ids are deliberately identical to PERIODI above, so this is a label
+// map and nothing else — the N-9 window rules behind each id are untouched.
+const PERIODI_V2 = PERIODI.map(p => ({
+  ...p,
+  // language-guard: allow-legacy "serata" is the pre-existing PERIODI pill id declared above, matched verbatim here, not new vocabulary
+  label: p.id === "serata" ? "Día" : p.label,
+}));
+
 // Trasforma qualsiasi formato data → Date JS (mezzanotte locale)
 const parseDataKey = (s) => {
   if(!s) return null;
@@ -621,6 +647,11 @@ const EconomiaPage = ({onBack}) => {
   // longer match what the closeout registered at Finalizar. Neither number is wrong;
   // they answer different questions, so the difference is stated instead of hidden.
   const [lateAfterClose, setLateAfterClose] = useState(null);
+  // ECONOMÍA V2 — which tab of the module is showing. This is the ONLY thing a
+  // tab switch changes: the page never unmounts, the three fetches above never
+  // re-run, and the selected period below is untouched. That is the whole point
+  // of the shell — five destinations, not five mini-apps.
+  const [tab, setTab] = useState("resumen");
   const retryLedger = () => setLedgerRetryTick(t => t + 1);
 
   // Carica il resumen ledger (Economía's ONE money source) — finestra ~35 giorni,
@@ -827,6 +858,57 @@ const EconomiaPage = ({onBack}) => {
   );
   const cajaFechaLabel = fmtFechaLarga(diaCajaSeleccionado || diasCaja[0]?.data || oggiIso);
   const topClientes = useMemo(() => buildTopClientes(Array.isArray(rawData) ? rawData : []), [rawData]);
+
+  // ── ECONOMÍA V2 — THE ONE SHARED ECONOMIC SCOPE ──────────────────────
+  // Resumen reads the same `periodo` every other tab reads, resolved through
+  // the same business-date-string predicates the page has always used
+  // (`withinLastBusinessDays` / exact-day equality). No second period state,
+  // no second calendar, no second aggregation: one `sumLedgerWindow` call
+  // over the certified per-day ledger totals.
+  //
+  // N-9 IS UNTOUCHED. The window rules are not restated here — this memo only
+  // chooses WHICH of the existing predicates applies to the selected pill.
+  const resumenScope = useMemo(() => {
+    if (!ledgerReady) return null;
+    // language-guard: allow-legacy "serata" is the pre-existing PERIODI pill id declared above, matched verbatim here, not new vocabulary
+    const predicate = periodo === "serata" ? (_dt, day) => day === cajaDiaSeleccionadaKey
+      : periodo === "sett" ? (_dt, day) => withinLastBusinessDays(day, reportingDay, 7)
+      : periodo === "mese" ? (_dt, day) => withinLastBusinessDays(day, reportingDay, 30)
+      : () => true;
+    const w = sumLedgerWindow(ledgerByDay, predicate);
+    // language-guard: allow-legacy the payment-bucket field name is sumLedgerWindow's existing return key, destructured once here instead of read four times, not new vocabulary
+    const { efectivo, tarjeta, bizum, no_especificado } = w.pagamenti;
+    return {
+      cobrado: {
+        total:    w.totals.collected,
+        efectivo: efectivo.incasso,
+        tarjeta:  tarjeta.incasso,
+        bizum:    bizum.incasso,
+        otros:    no_especificado.incasso,
+      },
+      originado: {
+        ventas:    w.totals.gross,
+        pendiente: w.totals.unpaid,
+        devuelto:  w.totals.refunded,
+      },
+    };
+  }, [ledgerReady, ledgerByDay, periodo, reportingDay, cajaDiaSeleccionadaKey]);
+
+  // N-9 — the resolved interval, rendered exactly as the server sent it.
+  const resumenWindowLine = useMemo(() => {
+    if (!ledgerWindow?.from || !ledgerWindow?.to) return null;
+    const at = (iso) => {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return null;
+      return new Intl.DateTimeFormat("es-ES", {
+        timeZone: ledgerWindow.timezone || REPORTING_TIMEZONE,
+        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+      }).format(d).replace(", ", ", ");
+    };
+    const from = at(ledgerWindow.from), to = at(ledgerWindow.to);
+    if (!from || !to) return null;
+    return `${from} → ${to} · ${ledgerWindow.timezone || REPORTING_TIMEZONE}`;
+  }, [ledgerWindow]);
 
   // Stats per singolo giorno selezionato — filtra rawData per fecha
   const aGiorno = useMemo(() => {
@@ -1408,15 +1490,56 @@ const EconomiaPage = ({onBack}) => {
           flexShrink:0}} title="Aggiorna">⟳</button>
       </div>
 
-      <div style={{flex:1,padding:"14px 14px 40px",overflowY:"auto"}}>
+      {/* ECONOMÍA V2 — the shell body. Bottom padding clears the fixed nav
+          (and the phone home indicator) so the last row of a tab is never
+          hidden behind the bar. */}
+      <div style={{flex:1,padding:"14px 14px calc(86px + env(safe-area-inset-bottom, 0px))",overflowY:"auto"}}>
 
-        {/* I-1 — the timestamp-windowed economic snapshot and the physical cash
-            count. Mounted FIRST and kept entirely self-contained: it reads the
-            backend's own /api/economy/v1 reader rather than any figure this
-            page derives, so the number an operator counts against is the one
-            the economic ledger actually holds. Everything below this panel is
-            the pre-existing row-based reporting and is untouched. */}
-        <EconomiaSnapshotPanel />
+        {/* ═══ TAB: RESUMEN — the V2 default ═══ */}
+        {tab === "resumen" && (
+          <EconomiaResumen
+            periodos={PERIODI_V2}
+            periodo={periodo}
+            onPeriodo={(id) => { setPeriodo(id); setGiornoFiltro(null); }}
+            windowLine={resumenWindowLine}
+            dayLine={ledgerWindow
+              ? `Día operativo ${shortBusinessDate(ledgerWindow.businessDateToday)} · cierre 04:00`
+              : null}
+            ledgerStatus={ledgerStatus}
+            onRetry={retryLedger}
+            cobrado={resumenScope?.cobrado}
+            originado={{ ...(resumenScope?.originado || {}), pedidos: vista?.pedidos ?? 0 }}
+            lateAfterClose={lateAfterClose}
+          />
+        )}
+
+        {/* ═══ TAB: CAJA ═══
+            I-1 — the timestamp-windowed economic snapshot and the physical cash
+            count. It reads the backend's own /api/economy/v1 reader rather than
+            any figure this page derives, so the number an operator counts
+            against is the one the economic ledger actually holds. Its internals
+            are NOT redesigned in this slice.
+
+            Kept MOUNTED and merely hidden off-tab, on purpose: it owns its own
+            fetch, and unmounting it would make every visit to Caja re-request
+            the same window. A shell switches views, it does not reload them. */}
+        <div style={{display: tab === "caja" ? "block" : "none"}} data-testid="economia-tab-panel-caja">
+          <EconomiaSnapshotPanel />
+        </div>
+
+        {/* ═══ TABS: HISTORIAL · ESTADÍSTICAS · CLIENTES ═══
+            Out of scope for this slice by design. The existing surface — period
+            pills, day selector, KPI grid, ticket list and the two section entry
+            points — is rendered here UNCHANGED, so everything stays reachable
+            inside the new shell while its redesign waits for its own slice. */}
+        {(tab === "historial" || tab === "estadisticas" || tab === "clientes") && (
+        <>
+        <div data-testid={`economia-legacy-${tab}`} style={{
+          color:"#8b8172", fontSize:11.5, fontWeight:700, letterSpacing:.3,
+          textTransform:"uppercase", marginBottom:10
+        }}>
+          {(ECONOMIA_TABS.find(t => t.id === tab) || {}).label} · vista actual
+        </div>
 
         {/* Filtro periodo — pill principali */}
         <div style={{display:"flex",gap:8,marginBottom:8,overflowX:"auto"}}>
@@ -2329,7 +2452,15 @@ const EconomiaPage = ({onBack}) => {
             </>
           );
         })()}
+        </>
+        )}
       </div>
+
+      {/* ECONOMÍA V2 — the persistent module navigation. Fixed, so it survives
+          normal scrolling of whichever tab is showing. Five destinations, vector
+          icons, and deliberately NO lifecycle action: Finalizar servicio belongs
+          to Servicio and stays there. */}
+      <EconomiaBottomNav tab={tab} onTab={setTab} />
 
       {/* ═══ MODALS ═══ */}
       {modalAperto && vista && (() => {
