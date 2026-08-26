@@ -595,21 +595,27 @@ const css = `
 .mesa-hub-line.paid .mesa-hub-name,.mesa-hub-line.paid .mesa-hub-amount{color:#8d8474}
 .mesa-hub-paid-tag{flex:0 0 auto;border:1px solid rgba(101,217,149,.34);color:#65d995;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.3px}
 .mesa-hub-pickhint{color:#d7a84b;font-size:11.5px;margin:-4px 0 8px}
-/* Quantity stepper for an aggregated line. Sits under its row, indented to
-   read as part of it, and only appears while Por productos is picking. */
-.mesa-hub-qty-step{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:0 6px 9px 37px;border-bottom:1px solid rgba(255,255,255,.06)}
-.mesa-hub-qty-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;flex:0 0 auto;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.04);color:#d7a84b;cursor:pointer;padding:0}
-.mesa-hub-qty-btn:hover:not(:disabled){background:rgba(215,168,75,.14);border-color:rgba(215,168,75,.4)}
-.mesa-hub-qty-btn:disabled{opacity:.3;cursor:not-allowed}
-.mesa-hub-qty-count{min-width:44px;text-align:center;font-size:13px;font-weight:800;color:#f4ecdd;font-variant-numeric:tabular-nums}
+/* Selection state line for a row being picked in Por productos. Sits under
+   the row, indented to read as part of it, and only appears once at least
+   one unit of that row is selected -- the row itself carries the "tap to
+   add a unit" interaction, this line carries the one clear way back down.
+   MOBILE UX HARDENING -- replaces the old always-visible +/- stepper pair:
+   tapping the whole row now IS the increment, so there is exactly one
+   control left here (minus), never two competing ways to reach the same
+   count. */
+.mesa-hub-qty-step{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 6px 9px 37px;border-bottom:1px solid rgba(255,255,255,.06)}
+.mesa-hub-qty-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;flex:0 0 auto;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.04);color:#d7a84b;cursor:pointer;padding:0}
+.mesa-hub-qty-btn:hover{background:rgba(215,168,75,.14);border-color:rgba(215,168,75,.4)}
+.mesa-hub-qty-count{color:#d7a84b;font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums}
+.mesa-hub-pending-tag{flex:0 0 auto;color:#a99d89;font-size:10.5px;font-weight:800}
 .mesa-hub-ticket.picking{border-color:rgba(215,168,75,.34)}
+/* The whole row is the tap target -- no separate checkbox or +/- pair
+   competing with it (MOBILE UX HARDENING). min-height keeps it a real touch
+   target on the phone; the phone media query below grows it further. */
 .mesa-hub-line.selectable{width:100%;-webkit-appearance:none;appearance:none;font:inherit;text-align:left;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.06);border-radius:10px;cursor:pointer;padding:9px 6px;min-height:46px}
 .mesa-hub-line.selectable:hover:not(:disabled){background:rgba(255,255,255,.04)}
 .mesa-hub-line.selectable:disabled{cursor:not-allowed}
 .mesa-hub-line.selectable.selected{background:rgba(215,168,75,.12);border-bottom-color:rgba(215,168,75,.3)}
-.mesa-hub-check{flex:0 0 auto;width:19px;height:19px;border:1px solid rgba(255,255,255,.22);border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#211707}
-.mesa-hub-line.selected .mesa-hub-check{background:#d7a84b;border-color:#d7a84b}
-.mesa-hub-line.paid .mesa-hub-check{opacity:.25}
 /* The three ways to pay a part of the bill. */
 .mesa-hub-modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
 .mesa-hub-mode{padding:10px 6px;border:1px solid rgba(255,255,255,.10);border-radius:11px;background:rgba(255,255,255,.03);color:#efe6d5;font:inherit;font-size:12.5px;font-weight:820;cursor:pointer;line-height:1.2}
@@ -835,6 +841,10 @@ const css = `
 .mesa-resumen-state.paid{color:#65d995}
 .mesa-resumen-amount{flex:0 0 auto;color:#f4ecdd;font-weight:800}
 @media(max-width:480px){.mesa-current-card{padding:13px 13px 14px}}
+/* MOBILE UX HARDENING -- the minus is the one remaining manual control once
+   the row itself carries the +1 tap, so on the phone it gets a full 44px
+   touch target instead of the tablet's already-comfortable 34px. */
+@media(max-width:480px){.mesa-hub-qty-btn{width:44px;height:44px}}
 `;
 
 // size="tall" is the one and only thing that makes a table's bottom sheet
@@ -1367,7 +1377,6 @@ const ICON_CALENDAR = <><rect x="3.5" y="5.5" width="17" height="15" rx="2.5" />
 const ICON_PLUS_CIRCLE = <><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></>;
 const ICON_CLOSE_CIRCLE = <><circle cx="12" cy="12" r="9" /><path d="M9 9l6 6M15 9l-6 6" /></>;
 const ICON_MINUS = <><path d="M6 12h12" /></>;
-const ICON_PLUS = <><path d="M12 6v12M6 12h12" /></>;
 
 function VerCuentaBody({ table, onRefresh, onPrint }) {
   // PAYMENT HUB MESA V1.1 — the approved V1 surface, with the redundant hops
@@ -1543,19 +1552,10 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
     requestIdRef.current = createMesaRequestId("pay");
     setPartialMode((current) => (current === next ? null : next));
   };
-  // Tapping the row keeps its original meaning: none <-> all of it.
-  const toggleRow = (row) => {
-    if (row.paidInFull) return;
-    setError("");
-    setSelectedKeys((current) => {
-      const next = new Map(current);
-      if (next.has(row.key)) next.delete(row.key);
-      else next.set(row.key, selectableCount(row));
-      return next;
-    });
-  };
-  // The stepper. Down to zero it deselects the row entirely, so the two
-  // controls can never disagree about what is selected.
+  // MOBILE UX HARDENING -- the row IS the stepper now: tapping it adds
+  // exactly one unit (clamped at the row's payable capacity), and minus takes
+  // one away. Down to zero it deselects the row entirely, so nothing here can
+  // ever disagree with what selectionTotals() charges.
   const stepRow = (row, delta) => {
     if (row.paidInFull) return;
     setError("");
@@ -1609,6 +1609,12 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
               const selectedUnits = selectedKeys.get(row.key) || 0;
               const selected = selectedUnits > 0;
               const maxUnits = selectableCount(row);
+              // Pending units vs. the row's original quantity: only shown while
+              // picking, and only when some (not all) units are already
+              // settled -- "3 pendientes de 5" tells the operator the truth
+              // about what is left to charge without pretending the other 2
+              // are still up for grabs.
+              const pendingOfOriginal = !row.paidInFull && maxUnits > 0 && maxUnits < row.quantity;
               const inner = <>
                 <span className="mesa-hub-qty">{row.quantity}×</span>
                 <span className="mesa-hub-desc">
@@ -1616,37 +1622,44 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
                   {row.label.secondary && <small className="mesa-hub-alias">{row.label.secondary}</small>}
                 </span>
                 {row.paidInFull && <span className="mesa-hub-paid-tag" data-testid="mesa-hub-paid-tag">Pagado</span>}
+                {picking && pendingOfOriginal && (
+                  <span className="mesa-hub-pending-tag" data-testid="mesa-hub-pending-tag">{maxUnits} pendientes de {row.quantity}</span>
+                )}
                 <strong className="mesa-hub-amount">{euro(row.amount)}</strong>
               </>;
               if (!picking) {
                 return <div className={`mesa-hub-line${row.paidInFull ? " paid" : ""}`} key={row.key} data-testid="mesa-hub-line">{inner}</div>;
               }
-              // The stepper is a SIBLING of the row button, never nested inside
-              // it: a button inside a button is invalid HTML and the browser
-              // would swallow one of the two taps.
+              // MOBILE UX HARDENING -- the row itself IS the +1 control (fast
+              // restaurant-picker feel: tap, tap, tap to select 3 units), so
+              // there is no checkbox and no separate plus button competing
+              // with it for the same tap. Tapping again once every unit is
+              // already selected is a harmless no-op (stepRow clamps at
+              // maxUnits). The one remaining manual action -- minus -- is a
+              // SIBLING of the row button, never nested inside it: a button
+              // inside a button is invalid HTML and the browser would swallow
+              // one of the two taps. It also stops propagation explicitly so
+              // a tap on it can never be read as a second, accidental tap on
+              // the row underneath it.
               return <Fragment key={row.key}>
                 <button type="button" data-testid="mesa-hub-line"
                   data-selected={selected ? "true" : "false"}
                   data-selected-units={String(selectedUnits)}
                   className={`mesa-hub-line selectable${selected ? " selected" : ""}${row.paidInFull ? " paid" : ""}`}
-                  disabled={row.paidInFull} aria-pressed={selected} onClick={() => toggleRow(row)}>
-                  <span className="mesa-hub-check" aria-hidden="true">{selected ? "✓" : ""}</span>
+                  disabled={row.paidInFull} aria-pressed={selected}
+                  aria-label={`${row.label.primary}. ${selectedUnits} de ${maxUnits} seleccionadas. Toca para sumar una unidad.`}
+                  onClick={() => stepRow(row, 1)}>
                   {inner}
                 </button>
-                {maxUnits > 1 && (
+                {selected && (
                   <div className="mesa-hub-qty-step" data-testid="mesa-hub-qty-stepper" data-row-key={row.key}>
+                    <span className="mesa-hub-qty-count" data-testid="mesa-hub-qty-count">
+                      {selectedUnits} / {maxUnits} seleccionado
+                    </span>
                     <button type="button" className="mesa-hub-qty-btn" data-testid="mesa-hub-qty-minus"
                       aria-label={`Quitar una unidad de ${row.label.primary}`}
-                      disabled={selectedUnits === 0} onClick={() => stepRow(row, -1)}>
+                      onClick={(event) => { event.stopPropagation(); stepRow(row, -1); }}>
                       <HubIcon d={ICON_MINUS} size={15} />
-                    </button>
-                    <span className="mesa-hub-qty-count" data-testid="mesa-hub-qty-count">
-                      {selectedUnits} / {maxUnits}
-                    </span>
-                    <button type="button" className="mesa-hub-qty-btn" data-testid="mesa-hub-qty-plus"
-                      aria-label={`Añadir una unidad de ${row.label.primary}`}
-                      disabled={selectedUnits >= maxUnits} onClick={() => stepRow(row, 1)}>
-                      <HubIcon d={ICON_PLUS} size={15} />
                     </button>
                   </div>
                 )}

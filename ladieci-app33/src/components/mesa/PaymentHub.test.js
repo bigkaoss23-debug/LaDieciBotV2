@@ -231,7 +231,7 @@ test("5 · Por productos makes the ticket selectable in place — no second list
   unmount(container, root);
 });
 
-test("5 · tap selects, second tap deselects, and the total follows", async () => {
+test("5 · MOBILE UX HARDENING — tap adds a unit, a second tap on a full row is a no-op, minus is what takes it back to zero", async () => {
   const { container, root } = await openHub();
   click(byTestId(container, "mesa-hub-pago-parcial"));
   click(byTestId(container, "mesa-hub-mode-productos"));
@@ -239,12 +239,65 @@ test("5 · tap selects, second tap deselects, and the total follows", async () =
   const laJoya = rows.find((r) => r.textContent.includes("La Joya"));
 
   expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/0,00\s?€/);
+  click(laJoya); // 0/1 -> 1/1
+  expect(laJoya.getAttribute("data-selected")).toBe("true");
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/15,00\s?€/);
+  // a single-unit row is already at capacity: tapping the row again must not
+  // toggle it back off, or a fast double-tap on a 1-unit product would look
+  // exactly like a deselect the operator never intended.
   click(laJoya);
   expect(laJoya.getAttribute("data-selected")).toBe("true");
   expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/15,00\s?€/);
-  click(laJoya);
+  // minus is the one explicit way back down.
+  click(byTestId(container, "mesa-hub-qty-minus"));
   expect(laJoya.getAttribute("data-selected")).toBe("false");
   expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/0,00\s?€/);
+  unmount(container, root);
+});
+
+test("5 · repeated taps on a multi-unit row add one unit at a time, and cannot exceed its capacity", async () => {
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const rows = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  // 2× Estrella Galicia == two real backend lines (l3, l4), 3,00 € each.
+  const beers = rows.find((r) => r.textContent.includes("Estrella Galicia"));
+
+  click(beers); // 0/2 -> 1/2
+  expect(byTestId(container, "mesa-hub-qty-count").textContent).toMatch(/1 \/ 2/);
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/3,00\s?€/);
+
+  click(beers); // 1/2 -> 2/2
+  expect(byTestId(container, "mesa-hub-qty-count").textContent).toMatch(/2 \/ 2/);
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/6,00\s?€/);
+
+  // capacity is 2: a further tap at 2/2 is a no-op, never overshoots.
+  click(beers);
+  expect(byTestId(container, "mesa-hub-qty-count").textContent).toMatch(/2 \/ 2/);
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/6,00\s?€/);
+
+  // minus decrements exactly one unit at a time, never below zero.
+  click(byTestId(container, "mesa-hub-qty-minus"));
+  expect(byTestId(container, "mesa-hub-qty-count").textContent).toMatch(/1 \/ 2/);
+  click(byTestId(container, "mesa-hub-qty-minus"));
+  expect(container.querySelectorAll('[data-testid="mesa-hub-qty-stepper"]')).toHaveLength(0);
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/0,00\s?€/);
+  unmount(container, root);
+});
+
+test("5 · the minus click stops propagation and never also re-triggers the row's own increment", async () => {
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const rows = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  const beers = rows.find((r) => r.textContent.includes("Estrella Galicia"));
+  click(beers); click(beers); // 2/2
+  expect(byTestId(container, "mesa-hub-qty-count").textContent).toMatch(/2 \/ 2/);
+  // Exactly ONE minus tap must produce exactly ONE decrement -- if the click
+  // bubbled into the row's own onClick, this single tap would net to zero
+  // change (a -1 immediately followed by a +1) instead of landing on 1/2.
+  click(byTestId(container, "mesa-hub-qty-minus"));
+  expect(byTestId(container, "mesa-hub-qty-count").textContent).toMatch(/1 \/ 2/);
   unmount(container, root);
 });
 
@@ -282,7 +335,8 @@ test("5 · the REAL economic line ids are what reach the writer, grouping and al
   // One displayed row, TWO real units behind it.
   const beers = rows.find((r) => r.textContent.includes("Estrella Galicia"));
   expect(beers.textContent).toContain("2");
-  click(beers);
+  click(beers); // 0/2 -> 1/2
+  click(beers); // 1/2 -> 2/2 -- tap adds one unit at a time
   click(buttonByText(container, "Confirmar cobro"));
   await flush();
   expect(mesaApi.pay).toHaveBeenCalledWith("session-mockup", {
@@ -293,6 +347,140 @@ test("5 · the REAL economic line ids are what reach the writer, grouping and al
     coversSettled: 0,
     clientRequestId: "mesa_test_request",
   });
+  unmount(container, root);
+});
+
+// ── MOBILE UX HARDENING -- no competing checkbox ───────────────────────────
+test("5 · there is no visible checkbox glyph competing with the row tap / minus model", async () => {
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  expect(container.querySelectorAll(".mesa-hub-check")).toHaveLength(0);
+  const rows = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  click(rows.find((r) => r.textContent.includes("La Joya")));
+  // Still true selected once picked -- just not via a checkbox glyph.
+  expect(container.querySelectorAll(".mesa-hub-check")).toHaveLength(0);
+  unmount(container, root);
+});
+
+// ── MOBILE UX HARDENING -- previously-settled units within a grouped row ───
+test("9 · a row with some units already settled only exposes the truly payable ones, and says so", async () => {
+  mesaApi.pay.mockResolvedValue({ amount: 43.5, outstandingAfter: 0 });
+  const table = {
+    ...TABLE,
+    session: {
+      ...MOCKUP_SESSION, total: 72.5, paid: 29, outstanding: 43.5,
+      lines: [
+        { id: "v1", description: "Vegetariana", amount: 14.5, paid: 14.5, remaining: 0, product: { fantasyName: "Vegetariana" } },
+        { id: "v2", description: "Vegetariana", amount: 14.5, paid: 14.5, remaining: 0, product: { fantasyName: "Vegetariana" } },
+        { id: "v3", description: "Vegetariana", amount: 14.5, paid: 0, remaining: 14.5, product: { fantasyName: "Vegetariana" } },
+        { id: "v4", description: "Vegetariana", amount: 14.5, paid: 0, remaining: 14.5, product: { fantasyName: "Vegetariana" } },
+        { id: "v5", description: "Vegetariana", amount: 14.5, paid: 0, remaining: 14.5, product: { fantasyName: "Vegetariana" } },
+      ],
+    },
+  };
+  const { container, root } = await openHub({ table });
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const row = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'))
+    .find((r) => r.textContent.includes("Vegetariana"));
+  // 5 original units, 2 already settled -- the row must not claim all 5 are
+  // still up for grabs.
+  expect(row.textContent).toContain("3 pendientes de 5");
+  expect(row.disabled).toBe(false); // NOT paidInFull -- 3 units remain payable
+
+  click(row); // 0/3 -> 1/3
+  click(row); // 1/3 -> 2/3
+  click(row); // 2/3 -> 3/3
+  expect(byTestId(container, "mesa-hub-qty-count").textContent).toMatch(/3 \/ 3/);
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/43,50\s?€/);
+  // capacity is 3: a 4th tap must not reach into the already-settled v1/v2.
+  click(row);
+  expect(byTestId(container, "mesa-hub-qty-count").textContent).toMatch(/3 \/ 3/);
+
+  click(buttonByText(container, "Confirmar cobro"));
+  await flush();
+  const sentIds = mesaApi.pay.mock.calls[0][1].lineIds;
+  expect(sentIds.sort()).toEqual(["v3", "v4", "v5"]);
+  expect(sentIds).not.toContain("v1");
+  expect(sentIds).not.toContain("v2");
+  unmount(container, root);
+});
+
+test("10 · a partially paid unit contributes only its own remaining, never its original price", async () => {
+  mesaApi.pay.mockResolvedValue({ amount: 4.5, outstandingAfter: 0 });
+  const table = {
+    ...TABLE,
+    session: {
+      ...MOCKUP_SESSION, total: 43.5, paid: 39, outstanding: 4.5,
+      lines: [
+        // Two units already fully settled, one settled down to 4,50 through a
+        // mixed split (10,00 tarjeta + 2,25 bizum + 2,25 efectivo, per the
+        // live example the payment-ledger audit found) -- exactly the shape
+        // where reconstructing price from row.amount / row.quantity (14,50)
+        // would silently overcharge by 10,00.
+        { id: "v1", description: "Vegetariana", amount: 14.5, paid: 14.5, remaining: 0, product: { fantasyName: "Vegetariana" } },
+        { id: "v2", description: "Vegetariana", amount: 14.5, paid: 14.5, remaining: 0, product: { fantasyName: "Vegetariana" } },
+        { id: "v3", description: "Vegetariana", amount: 14.5, paid: 10, remaining: 4.5, product: { fantasyName: "Vegetariana" } },
+      ],
+    },
+  };
+  const { container, root } = await openHub({ table });
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const row = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'))
+    .find((r) => r.textContent.includes("Vegetariana"));
+  expect(row.textContent).toContain("1 pendientes de 3");
+  click(row); // the only payable unit
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/4,50\s?€/);
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).not.toMatch(/14,50/);
+
+  click(buttonByText(container, "Confirmar cobro"));
+  await flush();
+  expect(mesaApi.pay.mock.calls[0][1]).toEqual(expect.objectContaining({ lineIds: ["v3"] }));
+  unmount(container, root);
+});
+
+// ── MOBILE UX HARDENING -- selection survives tender/mode changes ──────────
+test("13 · switching payment method (Efectivo -> Tarjeta -> Bizum) preserves the product selection", async () => {
+  mesaApi.pay.mockResolvedValue({ amount: 15, outstandingAfter: 14.5 });
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const rows = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  const laJoya = rows.find((r) => r.textContent.includes("La Joya"));
+  click(laJoya);
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/15,00\s?€/);
+
+  const methodButton = (label) => Array.from(container.querySelectorAll(".mesa-method")).find((b) => b.textContent.includes(label));
+  click(methodButton("Tarjeta"));
+  expect(laJoya.getAttribute("data-selected")).toBe("true");
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/15,00\s?€/);
+  click(methodButton("Bizum"));
+  expect(laJoya.getAttribute("data-selected")).toBe("true");
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/15,00\s?€/);
+
+  click(buttonByText(container, "Confirmar cobro"));
+  await flush();
+  expect(mesaApi.pay).toHaveBeenCalledWith("session-mockup", expect.objectContaining({
+    paymentMethod: "bizum", lineIds: ["l2"],
+  }));
+  unmount(container, root);
+});
+
+test("14 · leaving Por productos for another mode and coming back never leaks a stale selection", async () => {
+  const { container, root } = await openHub();
+  click(byTestId(container, "mesa-hub-pago-parcial"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const rows = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  click(rows.find((r) => r.textContent.includes("La Joya")));
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/15,00\s?€/);
+
+  click(byTestId(container, "mesa-hub-mode-personas"));
+  click(byTestId(container, "mesa-hub-mode-productos"));
+  const rowsAfter = Array.from(container.querySelectorAll('[data-testid="mesa-hub-line"]'));
+  expect(rowsAfter.every((r) => r.getAttribute("data-selected") !== "true")).toBe(true);
+  expect(byTestId(container, "mesa-hub-selected-total").textContent).toMatch(/0,00\s?€/);
   unmount(container, root);
 });
 
