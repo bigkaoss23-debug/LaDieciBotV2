@@ -10,6 +10,7 @@ import {
 } from "./hybridScene";
 import { MADRID_TIMEZONE, euro, madridFields, formatClockTime } from "./mesaFormat";
 import MesaPaymentsList from "./MesaPaymentsList";
+import MesaAccountBalance from "./MesaAccountBalance";
 
 // MESA_HYBRID_3D — renderer selection only, never a domain switch. Off, this
 // file behaves byte-identically to before: same markup, same CSS, same drag
@@ -609,6 +610,12 @@ const css = `
 .mesa-hub-total-row strong{font-weight:800}
 .mesa-hub-total-row.outstanding{margin-top:6px;padding-top:10px;border-top:1px solid rgba(255,255,255,.10);color:#d7a84b;font-size:17px}
 .mesa-hub-total-row.outstanding strong{color:#d7a84b;font-size:22px;font-weight:950}
+/* OVER-COLLECTED / AJUSTE COMERCIAL V1 SLICE C — same amber warning language
+   as .mesa-payhist-warning below, not a new color vocabulary: this row is a
+   different DIRECTION of the same "needs attention" state as .outstanding
+   (owed TO the customer instead of BY them), and the label already says which. */
+.mesa-hub-total-row.overcollected{margin-top:6px;padding-top:10px;border-top:1px solid rgba(215,168,75,.25);color:#d7a84b;font-size:15px}
+.mesa-hub-total-row.overcollected strong{color:#d7a84b;font-weight:900}
 /* Exactly three, always the same three, always equal width. */
 .mesa-hub-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0 0}
 .mesa-hub-action{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:78px;padding:12px 6px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(255,255,255,.03);color:#efe6d5;font:inherit;font-size:13px;font-weight:850;cursor:pointer;text-align:center;line-height:1.2}
@@ -916,10 +923,26 @@ function useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel }) {
   }, [busy, onCancel]);
 }
 
-function CerrarMesaDialog({ tableNumber, empty, blocked = 0, busy, error, onCancel, onConfirm }) {
+// OVER-COLLECTED / AJUSTE COMERCIAL V1 SLICE C — §17/§18. mesa_close_session_v1
+// never gates on overCollected (only `unpaid > 0` blocks; the RPC returns
+// overCollected in its own success payload regardless), so there is no
+// backend "acknowledgment parameter" to send — the warning below is a pure
+// client-side courtesy step before a call the backend already permits.
+// Deliberately its OWN branch, not merged with the `blocked` copy above: a
+// table with pending kitchen work is not closable at all (confirm stays
+// disabled) and takes priority: only shown once nothing else is blocking.
+function cerrarMesaBody({ blocked, empty, overCollected }) {
+  if (blocked > 0) return "Faltan comandas por servir.";
+  if (overCollected > 0) return `Hay ${euro(overCollected)} cobrados de más.`;
+  return empty ? "La mesa está vacía y no tiene comandas ni pagos." : "La mesa quedará libre para nuevos clientes.";
+}
+const CERRAR_MESA_OVERCOLLECTED_HINT = "Puedes reembolsarlo ahora o cerrar la mesa dejando la incidencia registrada.";
+
+function CerrarMesaDialog({ tableNumber, empty, blocked = 0, overCollected = 0, busy, error, onCancel, onConfirm }) {
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
   useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel });
+  const showOverCollected = blocked === 0 && overCollected > 0;
 
   return <div className="mesa-overlay" onClick={() => { if (!busy) onCancel(); }}>
     <div className="mesa-modal" role="alertdialog" aria-modal="true" aria-labelledby="cerrar-mesa-title" aria-describedby="cerrar-mesa-body"
@@ -929,14 +952,19 @@ function CerrarMesaDialog({ tableNumber, empty, blocked = 0, busy, error, onCanc
       </div>
       <div className="mesa-modal-body">
         <p id="cerrar-mesa-body" className="mesa-muted" data-testid="cerrar-mesa-body">
-          {blocked > 0
-            ? "Faltan comandas por servir."
-            : empty ? "La mesa está vacía y no tiene comandas ni pagos." : "La mesa quedará libre para nuevos clientes."}
+          {cerrarMesaBody({ blocked, empty, overCollected })}
         </p>
+        {showOverCollected && (
+          <p className="mesa-muted" data-testid="cerrar-mesa-overcollected-hint" style={{ marginTop: 4 }}>
+            {CERRAR_MESA_OVERCOLLECTED_HINT}
+          </p>
+        )}
         {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
         <div className="mesa-actions" style={{ marginTop: 16 }}>
-          <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>Cancelar</button>
-          <button ref={confirmRef} className="mesa-btn danger" data-testid="cerrar-mesa-confirm" disabled={busy || blocked > 0} onClick={onConfirm}>{busy ? "Cerrando…" : "Cerrar mesa"}</button>
+          <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>{showOverCollected ? "Volver" : "Cancelar"}</button>
+          <button ref={confirmRef} className="mesa-btn danger" data-testid="cerrar-mesa-confirm" disabled={busy || blocked > 0} onClick={onConfirm}>
+            {busy ? "Cerrando…" : showOverCollected ? "Cerrar igualmente" : "Cerrar mesa"}
+          </button>
         </div>
       </div>
     </div>
@@ -951,22 +979,28 @@ function CerrarMesaDialog({ tableNumber, empty, blocked = 0, busy, error, onCanc
 // .mesa-overlay/.mesa-modal, so there is no nested-overlay stacking on
 // phone. The non-compact path keeps using the standalone CerrarMesaDialog
 // above, byte-for-byte unchanged.
-function CerrarMesaConfirm({ tableNumber, empty, blocked = 0, busy, error, onCancel, onConfirm }) {
+function CerrarMesaConfirm({ tableNumber, empty, blocked = 0, overCollected = 0, busy, error, onCancel, onConfirm }) {
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
   useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel });
+  const showOverCollected = blocked === 0 && overCollected > 0;
 
   return <div role="alertdialog" aria-labelledby="cerrar-mesa-title-inline" aria-describedby="cerrar-mesa-body-inline" data-testid="mesa-card-view-close-confirm">
     <div id="cerrar-mesa-title-inline" style={{ fontWeight: 950, fontSize: 19 }}>{`Cerrar Mesa ${tableNumber}`}</div>
     <p id="cerrar-mesa-body-inline" className="mesa-muted" style={{ marginTop: 8 }} data-testid="cerrar-mesa-body">
-      {blocked > 0
-        ? "Faltan comandas por servir."
-        : empty ? "La mesa está vacía y no tiene comandas ni pagos." : "La mesa quedará libre para nuevos clientes."}
+      {cerrarMesaBody({ blocked, empty, overCollected })}
     </p>
+    {showOverCollected && (
+      <p className="mesa-muted" data-testid="cerrar-mesa-overcollected-hint" style={{ marginTop: 4 }}>
+        {CERRAR_MESA_OVERCOLLECTED_HINT}
+      </p>
+    )}
     {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
     <div className="mesa-actions" style={{ marginTop: 16 }}>
-      <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>Cancelar</button>
-      <button ref={confirmRef} className="mesa-btn danger" data-testid="cerrar-mesa-confirm" disabled={busy || blocked > 0} onClick={onConfirm}>{busy ? "Cerrando…" : "Cerrar mesa"}</button>
+      <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>{showOverCollected ? "Volver" : "Cancelar"}</button>
+      <button ref={confirmRef} className="mesa-btn danger" data-testid="cerrar-mesa-confirm" disabled={busy || blocked > 0} onClick={onConfirm}>
+        {busy ? "Cerrando…" : showOverCollected ? "Cerrar igualmente" : "Cerrar mesa"}
+      </button>
     </div>
   </div>;
 }
@@ -1675,17 +1709,7 @@ function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false }) {
               </Fragment>;
             })}
           </div>}
-      <div className="mesa-hub-totals">
-        <div className="mesa-hub-total-row" data-testid="mesa-hub-total">
-          <span>Total</span><strong>{euro(session?.total)}</strong>
-        </div>
-        <div className="mesa-hub-total-row" data-testid="mesa-hub-paid">
-          <span>Ya cobrado</span><strong style={{ color: "#65d995" }}>{euro(session?.paid)}</strong>
-        </div>
-        <div className="mesa-hub-total-row outstanding" data-testid="mesa-hub-outstanding">
-          <span>Resta por pagar</span><strong>{euro(outstanding)}</strong>
-        </div>
-      </div>
+      <MesaAccountBalance account={session} />
     </section>
 
     {isOpen && <>
@@ -1907,11 +1931,9 @@ function UltimasCuentasModal({ onClose, canRefund = false }) {
       {busy && <div className="mesa-muted" style={{ padding: "14px 2px", fontSize: 13 }}>Cargando…</div>}
       {detail && <div style={{ marginTop: 12 }}>
         <div className="mesa-summary">
-          <div className="mesa-stat"><small>Total</small><strong>{euro(detail.account.total)}</strong></div>
-          <div className="mesa-stat"><small>Cobrado</small><strong style={{ color: "#65d995" }}>{euro(detail.account.paid)}</strong></div>
-          <div className="mesa-stat"><small>Pendiente</small><strong style={{ color: "#ffc65c" }}>{euro(detail.account.outstanding)}</strong></div>
           <div className="mesa-stat"><small>Personas</small><strong>{detail.account.coversTotal ?? "—"}</strong></div>
         </div>
+        <MesaAccountBalance account={detail.account} />
         <div className="mesa-section">
           <h3>Cerrada</h3>
           <div className="mesa-row">
@@ -2152,7 +2174,7 @@ function MesaWorkspace({
         <div className="mesa-table-card-body">
           {workspaceView === "detail" && renderDetail()}
           {workspaceView === "account" && <div data-testid="mesa-card-view-account"><VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} canRefund={canRefund} /></div>}
-          {workspaceView === "close-confirm" && <CerrarMesaConfirm tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
+          {workspaceView === "close-confirm" && <CerrarMesaConfirm tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} overCollected={Number(session.overCollected) || 0} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
         </div>
       </div>
     </div>;
@@ -2176,7 +2198,7 @@ function MesaWorkspace({
         <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} canRefund={canRefund} />
       </> : renderDetail()}
     </Modal>
-    {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
+    {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} overCollected={Number(session.overCollected) || 0} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
   </>;
 }
 

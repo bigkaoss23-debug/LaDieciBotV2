@@ -1,0 +1,90 @@
+// EconomiaGeneral.test.js — OVER-COLLECTED / AJUSTE COMERCIAL V1 SLICE C, §15.
+//
+// The one thing this slice adds to Economía: a "Cobrado de más" KPI reading
+// the backend's own dedicated `balance` section (economicSnapshot.js, Over-
+// Collected Slice A) verbatim, never netted against Pendiente. Same mocking
+// seam as EconomiaSnapshotPanel.test.js: both useEconomySnapshot and
+// useServiceSessions call economyApi.snapshot() internally.
+import React, { act } from "react";
+import { createRoot } from "react-dom/client";
+
+global.IS_REACT_ACT_ENVIRONMENT = true;
+
+jest.mock("../../economy/economyApi", () => ({
+  __esModule: true,
+  EconomyApiError: class EconomyApiError extends Error {
+    constructor(code, status = 0) { super(code); this.name = "EconomyApiError"; this.code = code; this.status = status; }
+  },
+  economyApi: { snapshot: jest.fn() },
+}));
+
+const EconomiaGeneral = require("./EconomiaGeneral").default;
+const { economyApi } = require("../../economy/economyApi");
+
+const WINDOW = Object.freeze({
+  preset: "hoy", label: "Hoy",
+  from: "2026-08-20T15:30:00.000Z", to: "2026-08-21T02:00:00.000Z",
+  timezone: "Europe/Madrid", businessDate: "2026-08-20", serviceSessionId: null,
+  bounds: "[from,to)", asOf: "2026-08-21T12:00:00.000Z", generatedAt: "2026-08-21T12:00:00.000Z",
+});
+const NO_CROSSING = Object.freeze({
+  obligationBeforeWindowReceiptInside: [], obligationInsideWindowReceiptAfter: [], receiptsSplitAcrossBoundary: [],
+});
+const baseSnapshot = (balance) => Object.freeze({
+  ok: true, window: WINDOW,
+  obligation: { gross: 30, unpaid: 0, voided: 0, refunded: 0 },
+  receipts: { collected: 30, collectedGross: 30, refunded: 0, byMethod: { efectivo: 30, tarjeta: 0, bizum: 0, other: 0 } },
+  balance,
+  counts: { obligations: 1, obligationsCancelled: 0, obligationsUnpaid: 0, receiptEvents: 1, payments: 1, refunds: 0 },
+  economicBreakdown: { obligations: {}, receipts: {}, source: "stamped_era_read_rule" },
+  windowCrossing: NO_CROSSING,
+  drillDown: { obligations: [], receipts: [], legacyReceipts: [] },
+  serviceProvenance: [],
+});
+
+async function flush() { await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }); }
+function byTestId(c, id) { return c.querySelector(`[data-testid="${id}"]`); }
+async function mount() {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => { root.render(<EconomiaGeneral />); });
+  await flush();
+  return { container, root };
+}
+function unmount(container, root) { act(() => { root.unmount(); }); container.remove(); }
+
+beforeEach(() => { jest.clearAllMocks(); });
+
+test("balance.overCollected > 0: Cobrado de más KPI shows the exact figure", async () => {
+  economyApi.snapshot.mockResolvedValue(baseSnapshot({ unpaid: 0, overCollected: 12.5, unresolvedOverCollected: 12.5 }));
+  const { container, root } = await mount();
+  const kpi = byTestId(container, "general-kpi-cobrado-de-mas");
+  expect(kpi).toBeTruthy();
+  expect(kpi.textContent).toContain("Cobrado de más");
+  expect(kpi.textContent).toMatch(/12,50\s?€/);
+  unmount(container, root);
+});
+
+test("balance.overCollected === 0: no KPI rendered (compact, no noise)", async () => {
+  economyApi.snapshot.mockResolvedValue(baseSnapshot({ unpaid: 0, overCollected: 0, unresolvedOverCollected: 0 }));
+  const { container, root } = await mount();
+  expect(byTestId(container, "general-kpi-cobrado-de-mas")).toBe(null);
+  unmount(container, root);
+});
+
+test("unpaid and overCollected both non-zero at once: both KPIs shown, never netted", async () => {
+  // unpaid lives on BOTH `obligation.unpaid` (what EconomiaGeneral's own
+  // Pendiente KPI reads) and `balance.unpaid` (the dedicated section) in the
+  // real backend shape -- both set here, matching that duplication honestly.
+  economyApi.snapshot.mockResolvedValue({
+    ...baseSnapshot({ unpaid: 10, overCollected: 10, unresolvedOverCollected: 10 }),
+    obligation: { gross: 30, unpaid: 10, voided: 0, refunded: 0 },
+  });
+  const { container, root } = await mount();
+  expect(byTestId(container, "general-kpi-pendiente").textContent).toMatch(/10,00\s?€/);
+  const overKpi = byTestId(container, "general-kpi-cobrado-de-mas");
+  expect(overKpi).toBeTruthy();
+  expect(overKpi.textContent).toMatch(/10,00\s?€/);
+  unmount(container, root);
+});

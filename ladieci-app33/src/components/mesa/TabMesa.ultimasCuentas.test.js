@@ -205,9 +205,13 @@ describe("the drilled-in Mesa 4 account", () => {
     // paid and total are the SAME figure here (fully settled), so assert the
     // stat labels are both present alongside it rather than double-counting
     // the same regex match
+    // OVER-COLLECTED / AJUSTE COMERCIAL V1 SLICE C -- Ultimas Cuentas now
+    // shares MesaAccountBalance with the open Payment Hub (contract §14), so
+    // the labels are that component's exact wording, not the old
+    // Total/Cobrado/Pendiente stat-grid strings.
     expect(container.textContent).toContain("Total");
-    expect(container.textContent).toContain("Cobrado");
-    expect(container.textContent).toContain("Pendiente");
+    expect(container.textContent).toContain("Ya cobrado");
+    expect(container.textContent).toContain("Resta por pagar");
     unmount(container, root);
   });
 

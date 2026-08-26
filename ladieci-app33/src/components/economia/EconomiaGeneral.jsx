@@ -151,6 +151,13 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
   const receipts = snapshot?.receipts || {};
   const byMethod = receipts.byMethod || {};
   const counts = snapshot?.counts || {};
+  // OVER-COLLECTED / AJUSTE COMERCIAL V1 SLICE C (§15) -- the backend's own
+  // dedicated section (economicSnapshot.js, Over-Collected Slice A), read
+  // exactly as-is: unpaid and overCollected are two independent exposures
+  // that can BOTH be non-zero at once (different tables/orders on opposite
+  // sides), so this is never netted into unpaid - overCollected here or
+  // anywhere below.
+  const balance = snapshot?.balance || {};
 
   // Entering Personalizado with empty inputs while the previous preset's range
   // stayed on screen was the contradiction smoke found. The custom range now
@@ -352,6 +359,11 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
               onClick={() => setView('ventas')} sub={`${count(counts.obligations)} pedidos`} />
             <Kpi label="Pendiente" value={money(obligation.unpaid)} testId="general-kpi-pendiente"
               tone={ready && (obligation.unpaid || 0) > 0 ? ACCENT : undefined} />
+            {/* §5/§15 -- compact: only shown once it is genuinely non-zero, exactly
+                like Pendiente's own tone above never implies it replaces this. */}
+            {ready && (balance.overCollected || 0) > 0 && (
+              <Kpi label="Cobrado de más" value={money(balance.overCollected)} testId="general-kpi-cobrado-de-mas" tone={ACCENT} />
+            )}
             <Kpi label="Devuelto" value={money(obligation.refunded)} testId="general-kpi-devuelto" />
             <Kpi label="Anulado" value={money(obligation.voided)} testId="general-kpi-anulado" />
           </div>
