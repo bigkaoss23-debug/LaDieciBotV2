@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { C } from "../../constants";
-import { createMesaRequestId, describeMesaError, mesaApi } from "../../mesa/mesaApi";
+import { createMesaRequestId, describeMesaError, mesaApi, MESA_DUPLICATE_PAYMENT_CODE } from "../../mesa/mesaApi";
 import { normalizeOrderLine } from "../../menu/normalizeOrderLine";
 import OrderLineView from "../order/OrderLineView";
 import HybridFloorScene, { hybridSceneCss } from "./HybridFloorScene";
@@ -663,6 +663,18 @@ const css = `
 .mesa-hub-soon{display:flex;flex-direction:column;gap:5px}
 .mesa-hub-soon strong{color:#d7a84b;font-size:13px}
 .mesa-hub-soon span{color:#978d7c;font-size:12.5px;line-height:1.5}
+/* DUP-01 — a question, styled as one. Gold (the hub's own accent) rather than
+   the .mesa-error red, because "Registrar igualmente" is a normal, correct
+   operator action and must not read as forcing past a fault. */
+.mesa-hub-dup{margin-top:12px;border:1px solid rgba(215,168,75,.55);border-radius:16px;background:rgba(215,168,75,.10);padding:14px}
+.mesa-hub-dup-title{display:block;color:#f8ecd2;font-size:15px;font-weight:900}
+.mesa-hub-dup-amount{margin-top:6px;color:#d7a84b;font-size:26px;font-weight:950;line-height:1.1}
+.mesa-hub-dup-text{margin:8px 0 14px;color:#e6dcc9;font-size:13.5px;line-height:1.5}
+/* Stacked on the phone so neither action is a thumb-width target; side by side
+   only once there is genuinely room for both. */
+.mesa-hub-dup-actions{display:grid;grid-template-columns:1fr;gap:10px}
+@media(min-width:420px){.mesa-hub-dup-actions{grid-template-columns:1fr 1fr}}
+.mesa-hub-dup-btn{min-height:48px;font-size:15px}
 /* Secondary, and it reads as secondary. */
 .mesa-hub-print{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;margin-top:12px;min-height:50px;padding:12px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(255,255,255,.025);color:#cfc4b0;font:inherit;font-size:14px;font-weight:800;cursor:pointer}
 .mesa-hub-print:hover{background:rgba(255,255,255,.06);color:#efe6d5}
@@ -1394,8 +1406,16 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
   const [method, setMethod] = useState("efectivo");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // DUP-01 — the payment the backend flagged as duplicate-LOOKING, held here
+  // until the operator says which it is. `null` = nothing pending. It stores
+  // the ORIGINAL body verbatim, so confirming re-sends the same payment rather
+  // than rebuilding one from whatever the drawer happens to hold by then.
+  const [duplicate, setDuplicate] = useState(null);
   // One id per opened charge: stable across a failed retry so the backend
   // replays instead of double-charging, fresh for a genuinely new payment.
+  // DUP-01 leans on exactly this: the confirmed retry reuses this same id, so
+  // it stays ONE logical payment attempt and every existing idempotency
+  // guarantee (unique key, request_hash, double-tap, network retry) still holds.
   const requestIdRef = useRef(createMesaRequestId("pay"));
 
   const ticketRows = groupTicketLines(session?.lines);
@@ -1417,7 +1437,7 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
     const outstandingAfter = result.outstandingAfter == null
       ? Math.max(0, Math.round((Number(session.outstanding) - Number(result.amount)) * 100) / 100)
       : Number(result.outstandingAfter);
-    setAction(null); resetDrawer(); setBusy(false);
+    setAction(null); resetDrawer(); setBusy(false); setDuplicate(null);
     onPrint({
       title: "RECIBO DE PAGO", tableNumber: table.number,
       rows: [
@@ -1431,12 +1451,62 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
     });
     await onRefresh();
   };
-  const charge = async (body) => {
+  // What this charge is worth, for the confirmation copy only. Never sent, and
+  // never used to decide anything: item_selection is priced by the server from
+  // the line ids, and `full` is whatever the server says outstanding is.
+  const chargeAmount = (body) => {
+    if (body?.mode === "full") return outstanding;
+    if (body?.amount != null) return Number(body.amount);
+    if (body?.mode === "item_selection") return selection.amount;
+    return null;
+  };
+  // ONE charge path for all three modes — full, custom_amount and
+  // item_selection all arrive here, so DUP-01 covers Cobrar todo, Por personas,
+  // Por productos and Importe libre without any per-screen special case.
+  //
+  // `confirmed` is the ONLY thing that changes between the first attempt and
+  // the operator-confirmed retry. Everything else — mode, amount, method,
+  // coversSettled, lineIds and the clientRequestId — is re-sent verbatim.
+  const charge = async (body, { confirmed = false } = {}) => {
     setBusy(true); setError("");
     try {
-      const result = await mesaApi.pay(session.id, { ...body, clientRequestId: requestIdRef.current });
+      const result = await mesaApi.pay(session.id, {
+        ...body,
+        clientRequestId: requestIdRef.current,
+        // Absent on the normal path: the flag is an operator decision, and a
+        // payment nobody was asked about must never carry it.
+        ...(confirmed ? { confirmDuplicate: true } : {}),
+      });
       await paid(result, method);
-    } catch (err) { setError(describeMesaError(err)); setBusy(false); }
+    } catch (err) {
+      // A duplicate-LOOKING first attempt is not a failure — it is a question.
+      // On the confirmed retry we deliberately do NOT re-open the dialog: the
+      // operator has already answered it, so anything coming back now is real
+      // and is shown as the error it is (the dictionary has honest copy for
+      // this code too). That is also what makes a confirm loop impossible.
+      // `err.code` is checked truthy FIRST on purpose: a rejection carrying no
+      // code must never match a constant that is itself undefined (which is
+      // exactly what a stale module mock produces). Fail towards the normal
+      // error path — never towards inventing a duplicate question.
+      if (!confirmed && err?.code && err.code === MESA_DUPLICATE_PAYMENT_CODE) {
+        setDuplicate({ body, method, amount: chargeAmount(body) });
+        setBusy(false);
+        return;
+      }
+      setError(describeMesaError(err)); setBusy(false); setDuplicate(null);
+    }
+  };
+  const cancelDuplicate = () => {
+    // Explicitly NOT a payment path: no request, no new clientRequestId, no
+    // local paid state. The account is left exactly as the backend has it —
+    // one payment recorded, the second never attempted.
+    setDuplicate(null);
+  };
+  const confirmDuplicatePayment = () => {
+    if (!duplicate) return;
+    const pending = duplicate;
+    setDuplicate(null);
+    return charge(pending.body, { confirmed: true });
   };
 
   // Mode "full" is byte-identical to what Mesa has always sent.
@@ -1464,12 +1534,12 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
   };
 
   const openAction = (next) => {
-    setError(""); resetDrawer();
+    setError(""); resetDrawer(); setDuplicate(null);
     if (action !== next) requestIdRef.current = createMesaRequestId("pay");
     setAction((current) => (current === next ? null : next));
   };
   const openPartial = (next) => {
-    setError(""); setSelectedKeys(new Map()); setPersons(null); setFreeAmount("");
+    setError(""); setSelectedKeys(new Map()); setPersons(null); setFreeAmount(""); setDuplicate(null);
     requestIdRef.current = createMesaRequestId("pay");
     setPartialMode((current) => (current === next ? null : next));
   };
@@ -1514,7 +1584,7 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
     </div>
   );
   const confirmButton = (onClick, label) => (
-    <button type="button" className="mesa-btn green mesa-hub-confirm" disabled={busy} onClick={onClick}>
+    <button type="button" className="mesa-btn green mesa-hub-confirm" disabled={busy || !!duplicate} onClick={onClick}>
       {busy ? "Registrando…" : label}
     </button>
   );
@@ -1680,6 +1750,27 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
 
       </div>}
     </>}
+
+    {/* DUP-01 — deliberately INLINE, not a second overlay. V1.1 collapsed the
+        hub from two stacked modals to one, and the operator is already reading
+        this exact spot for the outcome of the charge they just made. Amber, not
+        red: nothing failed and nothing is suspicious — the system simply cannot
+        tell a real second payment from a double-submit, and only the operator
+        can. */}
+    {duplicate && <div className="mesa-hub-dup" role="alertdialog" aria-labelledby="mesa-hub-dup-title"
+      data-testid="mesa-hub-duplicate">
+      <strong className="mesa-hub-dup-title" id="mesa-hub-dup-title">Posible pago duplicado</strong>
+      {duplicate.amount > 0 && <div className="mesa-hub-dup-amount" data-testid="mesa-hub-duplicate-amount">
+        {euro(duplicate.amount)}
+      </div>}
+      <p className="mesa-hub-dup-text">Ya se registró un pago idéntico hace poco. ¿Es realmente un segundo pago?</p>
+      <div className="mesa-hub-dup-actions">
+        <button type="button" className="mesa-btn mesa-hub-dup-btn" disabled={busy}
+          data-testid="mesa-hub-duplicate-cancel" onClick={cancelDuplicate}>Cancelar</button>
+        <button type="button" className="mesa-btn gold mesa-hub-dup-btn" disabled={busy}
+          data-testid="mesa-hub-duplicate-confirm" onClick={confirmDuplicatePayment}>Registrar igualmente</button>
+      </div>
+    </div>}
 
     {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }} data-testid="mesa-hub-error">{error}</div>}
 

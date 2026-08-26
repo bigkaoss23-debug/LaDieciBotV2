@@ -120,6 +120,20 @@ export const mesaApi = Object.freeze({
   },
 });
 
+// DUP-01 -- the ONE wire code that is not an error the operator can only read.
+// mesa_post_payment_v1 raises it when this table session already took a payment
+// with the SAME kind/mode/amount/payment_method/covers_settled under a DIFFERENT
+// client_request_id in the last 120 seconds. That shape is genuinely ambiguous:
+// it is what a double-submit looks like, and equally what "two guests each pay
+// 30,00 tarjeta on a 60,00 check" looks like. The backend has always been able
+// to tell them apart -- it just needs the operator to say which one this is,
+// via p_confirm_duplicate (see mesaDao.js:223 / mesaService.js:502 on the
+// backend, both of which have shipped since 2026-08-15).
+//
+// Exported so the payment hub and its tests share ONE spelling of the code
+// rather than each carrying a literal that could drift from the backend's.
+export const MESA_DUPLICATE_PAYMENT_CODE = "MESA_POSSIBLE_DUPLICATE_PAYMENT";
+
 // MESA_ error-code keys are the wire vocabulary shared with the backend
 // (mesaHttpHandlers/mesaService) and, for several codes, the mesa_*_v1 Postgres
 // functions. This frontend build must not deploy ahead of the coordinated V3-J
@@ -137,6 +151,11 @@ const ERROR_MESSAGES = Object.freeze({
   MESA_PAYMENT_AMOUNT_INVALID: "El importe no es válido para el saldo pendiente.",
   MESA_LINE_SELECTION_INVALID: "Selecciona productos pendientes de pago.",
   MESA_PAYMENT_IDEMPOTENCY_CONFLICT: "El pago no se ha repetido: actualiza la mesa y compruébalo.",
+  // DUP-01 -- reached only when this code arrives somewhere that does NOT offer
+  // the confirmation (any surface other than the payment hub, or a confirmed
+  // retry that somehow came back duplicate again). It must never read as a
+  // technical failure: nothing is broken, the payment is simply unconfirmed.
+  [MESA_DUPLICATE_PAYMENT_CODE]: "Ya se registró un pago idéntico hace poco. Confirma que es un segundo pago real.",
   MESA_WAITER_NOT_ASSIGNED: "Esta mesa está asignada a otro camarero.",
   MESA_COMMAND_NOT_READY: "La comanda todavía no está lista en Cocina.",
   MESA_COMMAND_NOT_FOUND: "No se encontró esta comanda en la mesa.",
