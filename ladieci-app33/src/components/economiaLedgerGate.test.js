@@ -18,7 +18,7 @@ jest.mock('../api', () => ({
   api: {
     getStorico: jest.fn(),
     getSerata: jest.fn(),
-    getEconomiaLedger: jest.fn(), getOrdenes: jest.fn(),
+    getEconomiaLedger: jest.fn(), getOrdenes: jest.fn(), getOrdenesArchivadosSesion: jest.fn(),
   },
   sb: { select: jest.fn(async () => []) },
 }));
@@ -92,6 +92,8 @@ beforeEach(() => {
   api.getEconomiaLedger.mockReset();
   // language-guard: allow-legacy `ordenes` is the existing api.js payload key, not new vocabulary
   api.getOrdenes.mockReset().mockResolvedValue({ ordenes: [] });
+  // language-guard: allow-legacy `ordenes` is the existing api.js payload key, not new vocabulary
+  api.getOrdenesArchivadosSesion.mockReset().mockResolvedValue({ ordenes: [] });
 });
 
 describe('Economía — ledger loading state', () => {

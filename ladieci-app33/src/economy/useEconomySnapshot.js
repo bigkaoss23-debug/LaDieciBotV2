@@ -69,8 +69,33 @@ export const scopeIsReady = (scope) => {
 
 // What actually goes on the wire for a scope — one place, so the request can
 // never drift from what `scopeIsReady` just approved.
+// `<input type="datetime-local">` yields a WALL CLOCK with no offset —
+// "2026-08-25T19:02". Sent as-is, the server's own `new Date(value)` reads an
+// offset-less datetime as SERVER-local, and the server runs in UTC: 19:02
+// became 19:02Z, i.e. 21:02 in Madrid. Every custom range was pushed forward
+// by the operator's offset (+2h in summer, +1h in winter), which is why a
+// range that really held three orders came back empty.
+//
+// The browser is the only party that knows what the operator meant by 19:02,
+// so the browser resolves it: `new Date(local).toISOString()` applies its own
+// offset ONCE and hands over a real instant. This is exactly what the Caja
+// panel has always done — which is why Caja never showed the bug. One idiom,
+// now used in both places. Nothing here computes a Madrid business-day
+// boundary; that stays server-side.
+export const localWallClockToInstant = (value) => {
+  if (!value) return value;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toISOString();
+};
+
 export const scopeToParams = (scope) => {
-  if (scope.preset === 'personalizado') return { preset: 'personalizado', from: scope.from, to: scope.to };
+  if (scope.preset === 'personalizado') {
+    return {
+      preset: 'personalizado',
+      from: localWallClockToInstant(scope.from),
+      to: localWallClockToInstant(scope.to),
+    };
+  }
   if (scope.preset === 'servicio') return { preset: 'servicio', serviceSessionId: scope.serviceSessionId };
   return { preset: scope.preset };
 };
@@ -132,6 +157,7 @@ export default function useEconomySnapshot(scope) {
 // ===============================================================
 export function useServiceSessions(dayPreset = 'hoy') {
   const [sessions, setSessions] = useState([]);
+  const [businessDate, setBusinessDate] = useState(null);
   const [status, setStatus] = useState('loading');
 
   useEffect(() => {
@@ -140,19 +166,33 @@ export function useServiceSessions(dayPreset = 'hoy') {
     economyApi.snapshot({ preset: dayPreset })
       .then((payload) => {
         if (cancelled) return;
+        // `serviceProvenance` IS NOT MEMBERSHIP. It answers "which services did
+        // the money in this window belong to", and money in a window can belong
+        // to an OLDER service: on 2026-08-25 the day window legitimately held
+        // three receipts totalling 35,00 € for a service whose business_date was
+        // 2026-08-23 (the N-9 cross-window case). Listing provenance unfiltered
+        // therefore put a 23/08 service inside "Servicios del 25/08" and — since
+        // the heading was read off the first row — mislabelled the whole group.
+        //
+        // Membership is the authoritative `business_date` and nothing else:
+        // never opened_at's calendar date, never the closing date, never a time
+        // range. The day itself comes from the window the SERVER resolved.
+        const day = payload?.window?.businessDate || null;
         const rows = Array.isArray(payload?.serviceProvenance) ? payload.serviceProvenance : [];
+        setBusinessDate(day);
         setSessions(
           rows
             .filter((r) => r && r.serviceSessionId)
+            .filter((r) => !day || r.businessDate === day)
             // Oldest first: services read as a timeline of the day.
             .slice()
             .sort((a, b) => String(a.openedAt || '').localeCompare(String(b.openedAt || ''))),
         );
         setStatus('ready');
       })
-      .catch(() => { if (!cancelled) { setSessions([]); setStatus('error'); } });
+      .catch(() => { if (!cancelled) { setSessions([]); setBusinessDate(null); setStatus('error'); } });
     return () => { cancelled = true; };
   }, [dayPreset]);
 
-  return useMemo(() => ({ sessions, status }), [sessions, status]);
+  return useMemo(() => ({ sessions, businessDate, status }), [sessions, businessDate, status]);
 }
