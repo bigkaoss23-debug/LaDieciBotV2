@@ -8,6 +8,8 @@ import { groupTicketLines, selectionTotals, selectableCount, personShares, amoun
 import {
   ROOM_Y_MIN, ROOM_Y_MAX, sceneGeometry, tableFootprint, tableGeometry, unprojectScreenPoint,
 } from "./hybridScene";
+import { MADRID_TIMEZONE, euro, madridFields, formatClockTime } from "./mesaFormat";
+import MesaPaymentsList from "./MesaPaymentsList";
 
 // MESA_HYBRID_3D — renderer selection only, never a domain switch. Off, this
 // file behaves byte-identically to before: same markup, same CSS, same drag
@@ -16,10 +18,6 @@ import {
 // Same flag convention as REACT_APP_MESA_ENABLED / the dynamic-menu flags.
 const MESA_HYBRID_3D = process.env.REACT_APP_MESA_HYBRID_3D_ENABLED === "true";
 
-const euro = (value) => new Intl.NumberFormat("es-ES", {
-  style: "currency", currency: "EUR", minimumFractionDigits: 2,
-}).format(Number(value) || 0);
-
 const METHODS = [
   { id: "efectivo", label: "Efectivo", icon: "💵", color: "#16A34A" },
   { id: "tarjeta", label: "Tarjeta", icon: "💳", color: "#2563EB" },
@@ -27,7 +25,11 @@ const METHODS = [
 ];
 
 const RESERVATION_ROLES = new Set(["admin", "operator", "owner", "cashier", "waiter", "shift_manager", "legacy_operator"]);
-const MADRID_TIMEZONE = "Europe/Madrid";
+// Refund V1 -- mirrors the backend's REFUND_ROLES (mesaService.js) exactly:
+// narrower than PAYMENT_ROLES on purpose. The role that takes money should
+// not be the one that can silently return it. Frontend hiding is UX only --
+// the backend RPC enforces this independently and remains authoritative.
+const REFUND_ROLES = new Set(["admin", "owner"]);
 // Mirrors the exact `canEdit`/`canManageReservations` checks the component
 // itself uses below -- exported so MesaPhoneShell's Más screen can decide
 // which secondary actions to offer without duplicating (and risking drift
@@ -37,6 +39,9 @@ function canEditMesaRoom(role) {
 }
 function canManageMesaReservations(role) {
   return RESERVATION_ROLES.has(role);
+}
+function canRefundMesaPayment(role) {
+  return REFUND_ROLES.has(role);
 }
 
 // Three operative shapes, always offered in this exact order everywhere
@@ -197,21 +202,6 @@ function commandStateLabel(estado) {
   return estado || "—";
 }
 
-function madridFields(value = new Date()) {
-  const out = {};
-  new Intl.DateTimeFormat("en-GB", {
-    timeZone: MADRID_TIMEZONE,
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  }).formatToParts(value instanceof Date ? value : new Date(value)).forEach((part) => {
-    if (part.type !== "literal") out[part.type] = part.value;
-  });
-  return {
-    date: `${out.year}-${out.month}-${out.day}`,
-    time: `${String(Number(out.hour) % 24).padStart(2, "0")}:${out.minute}`,
-  };
-}
-
 function reservationLocalFields(reservation) {
   return reservation?.reservedAt ? madridFields(reservation.reservedAt) : madridFields(new Date(Date.now() + 60 * 60 * 1000));
 }
@@ -251,24 +241,10 @@ function reservationTimeLabel(reservation) {
   return madridFields(reservation.reservedAt).time;
 }
 
-// formatClockTime(value) -- ACC-01's Ultimas Cuentas modal (below) needs a
-// bare "HH:MM" for a session/payment timestamp that may legitimately be
-// absent (a just-opened session has no closedAt yet). It reuses the SAME
-// Madrid-timezone convention as reservationTimeLabel just above, so a closed
-// account reads in the identical clock the rest of Mesa already uses --
-// nothing new is invented here.
-//
-// madridFields itself is NOT null-safe for this purpose: its default param
-// turns undefined into "now", and it happily converts null into the Unix
-// epoch (both would print a plausible-looking wrong time instead of an
-// honest blank), and it throws on an unparsable string. All three cases are
-// guarded here explicitly rather than trusted to fall through.
-function formatClockTime(value) {
-  if (value === null || value === undefined || value === "") return "—";
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return madridFields(date).time;
-}
+// formatClockTime is imported from ./mesaFormat (moved there so
+// MesaPaymentsList.jsx can share it without a circular import back into this
+// file). ACC-01's Ultimas Cuentas modal (below) needs a bare "HH:MM" for a
+// session/payment timestamp that may legitimately be absent.
 
 // Fill is a strict 1:1 function of physical state only -- green=free (nobody
 // seated, no relevant future booking), yellow=free-now-but-booked-tonight,
@@ -681,6 +657,39 @@ const css = `
 .mesa-hub-dup-actions{display:grid;grid-template-columns:1fr;gap:10px}
 @media(min-width:420px){.mesa-hub-dup-actions{grid-template-columns:1fr 1fr}}
 .mesa-hub-dup-btn{min-height:48px;font-size:15px}
+/* REFUND V1 -- MesaPaymentsList. Same visual language as the payment hub
+   above (mesa-hub-* tokens), compact by design: mobile is first-class here
+   (§24) and this list can carry several payments/refunds per table. */
+.mesa-payhist{margin-top:16px;border-top:1px dashed rgba(255,255,255,.14);padding-top:14px}
+.mesa-payhist-title{margin:0 0 8px;color:#d9c8aa;font-size:13px;font-weight:900;letter-spacing:.4px}
+.mesa-payhist-item{border-bottom:1px solid rgba(255,255,255,.065);padding:8px 0}
+.mesa-payhist-item:last-child{border-bottom:0}
+.mesa-payhist-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:13.5px;padding:2px 0}
+.mesa-payhist-meta{color:#cfc4b0}
+.mesa-payhist-amount{color:#f4ecdd;font-weight:850}
+.mesa-payhist-amount.refund{color:#ff8f80}
+/* The nested refund child is visually subordinate to its original (§9/§25:
+   "refund children clearly subordinate to original transaction") -- indent
+   plus a slightly smaller, muted meta label, never a competing row. */
+.mesa-payhist-child{padding-left:16px;font-size:12.5px}
+.mesa-payhist-child .mesa-payhist-meta{color:#a99d89}
+.mesa-payhist-full{margin-top:4px;color:#65d995;font-size:11.5px;font-weight:800}
+.mesa-payhist-remaining{margin-top:4px;color:#d7a84b;font-size:11.5px;font-weight:800}
+.mesa-payhist-refund-btn{margin-top:8px;min-height:40px;padding:8px 14px;font-size:13px}
+.mesa-payhist-success{margin-bottom:10px;border:1px solid rgba(101,217,149,.34);border-radius:12px;background:rgba(101,217,149,.08);color:#65d995;padding:10px 12px;font-size:13px;font-weight:800}
+.mesa-payhist-form{position:relative;margin-top:10px;border:1px solid rgba(215,168,75,.34);border-radius:14px;background:rgba(215,168,75,.045);padding:12px 12px 14px}
+.mesa-payhist-form-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:3px 0;font-size:13px;color:#cfc4b0}
+.mesa-payhist-form-row strong{color:#f4ecdd;font-weight:800}
+.mesa-payhist-reasons{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+@media(min-width:420px){.mesa-payhist-reasons{grid-template-columns:repeat(3,1fr)}}
+/* §16 -- load-bearing economic-effect copy: prominent but compact, never a
+   full-width banner that would crowd out the amount/reason fields above it. */
+.mesa-payhist-warning{margin-top:12px;border:1px solid rgba(215,168,75,.4);border-radius:11px;background:rgba(215,168,75,.10);color:#f2dfb8;font-size:12.5px;font-weight:750;line-height:1.5;padding:9px 11px}
+/* §17 -- external-settlement (tarjeta/bizum) recording notice, visually
+   secondary to the economic warning above it. */
+.mesa-payhist-external{margin-top:8px;color:#a99d89;font-size:11.5px;line-height:1.5}
+.mesa-payhist-form-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.mesa-payhist-form-actions .mesa-btn{min-height:46px}
 /* Secondary, and it reads as secondary. */
 .mesa-hub-print{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;margin-top:12px;min-height:50px;padding:12px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(255,255,255,.025);color:#cfc4b0;font:inherit;font-size:14px;font-weight:800;cursor:pointer}
 .mesa-hub-print:hover{background:rgba(255,255,255,.06);color:#efe6d5}
@@ -1378,7 +1387,7 @@ const ICON_PLUS_CIRCLE = <><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12
 const ICON_CLOSE_CIRCLE = <><circle cx="12" cy="12" r="9" /><path d="M9 9l6 6M15 9l-6 6" /></>;
 const ICON_MINUS = <><path d="M6 12h12" /></>;
 
-function VerCuentaBody({ table, onRefresh, onPrint }) {
+function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false }) {
   // PAYMENT HUB MESA V1.1 — the approved V1 surface, with the redundant hops
   // taken out of it. Layout, colours, typography and the three primary actions
   // are unchanged; what changed is how few taps each one costs.
@@ -1791,6 +1800,13 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
       data-testid="mesa-hub-imprimir" onClick={() => onPrint(billDocument())}>
       <HubIcon d={ICON_PRINTER} size={18} />Imprimir ticket
     </button>}
+
+    {/* REFUND V1 -- the open-table Payment Hub previously had NO payments
+        list at all (ACC-01/Refund V1 contract audit finding); this is that
+        missing read, plus the refund action where the role allows it.
+        Closed tables are refundable too -- see UltimasCuentasModal below,
+        which renders the SAME component against the closed-session reader. */}
+    <MesaPaymentsList sessionId={session.id} payments={session.payments} canRefund={canRefund} onRefunded={onRefresh} />
   </div>;
 }
 
@@ -1813,7 +1829,13 @@ function VerCuentaBody({ table, onRefresh, onPrint }) {
 // STRICTLY READ-ONLY. It calls two GETs and renders. There is no payment
 // action, no reopen, no close, no print-to-collect — a settled table is
 // finished, and this only lets you look back at it.
-function UltimasCuentasModal({ onClose }) {
+// REFUND V1 -- STILL first-class read-only for everything above; the one
+// addition is MesaPaymentsList below, which can now write (via
+// mesa_post_refund_v1, the RPC this modal never called before). A closed
+// table remains closed after a refund -- see MesaPaymentsList's own header
+// note and contract §12: this modal must never reopen/close/settle anything
+// as a side effect of refreshing after one.
+function UltimasCuentasModal({ onClose, canRefund = false }) {
   const [sessions, setSessions] = useState(null);
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -1836,6 +1858,22 @@ function UltimasCuentasModal({ onClose }) {
       setError(describeMesaError(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Post-refund refresh (§19/§23, frozen): re-reads the SAME canonical
+  // account, never fabricates the new state locally. Deliberately does NOT
+  // clear `detail` first (unlike openAccount above) or touch `busy` --
+  // MesaPaymentsList already re-renders from the fresh `payments` the moment
+  // this resolves, and the rest of the panel (total/paid/outstanding,
+  // commands, lines) should not flash to a loading state for a read the
+  // operator didn't ask for.
+  const refreshAfterRefund = async () => {
+    if (!selected) return;
+    try {
+      setDetail(await mesaApi.sessionAccount(selected.tableSessionId));
+    } catch (err) {
+      setError(describeMesaError(err));
     }
   };
 
@@ -1898,19 +1936,8 @@ function UltimasCuentasModal({ onClose }) {
             </div>
           ))}
         </div>}
-        {detail.account.payments.length > 0 && <div className="mesa-section">
-          <h3>Pagos</h3>
-          {detail.account.payments.map((payment) => (
-            <div className="mesa-row" key={payment.id}>
-              <span>
-                {formatClockTime(payment.createdAt)} ·{" "}
-                {METHODS.find((item) => item.id === payment.method)?.label || payment.method}
-                {payment.kind === "refund" ? " (devolución)" : ""}
-              </span>
-              <strong>{euro(payment.amount)}</strong>
-            </div>
-          ))}
-        </div>}
+        <MesaPaymentsList sessionId={detail.tableSessionId} payments={detail.account.payments}
+          canRefund={canRefund} onRefunded={refreshAfterRefund} />
       </div>}
     </>}
   </Modal>;
@@ -1933,6 +1960,9 @@ function UltimasCuentasModal({ onClose }) {
 function MesaWorkspace({
   table, onClose, onNewCommand, onRefresh, onPrint,
   canManageReservations, onViewNight,
+  // REFUND V1 -- UX-only gate (admin/owner); the backend RPC remains
+  // authoritative regardless of what this hides.
+  canRefund = false,
   draft, onClearDraft, onSendToCocina,
   // P1_D_TABLE_FIRST_01 -- phone shell only (compact prop threaded straight
   // through from the main TabMesa render, see below). Every state/handler
@@ -2121,7 +2151,7 @@ function MesaWorkspace({
         </div>
         <div className="mesa-table-card-body">
           {workspaceView === "detail" && renderDetail()}
-          {workspaceView === "account" && <div data-testid="mesa-card-view-account"><VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} /></div>}
+          {workspaceView === "account" && <div data-testid="mesa-card-view-account"><VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} canRefund={canRefund} /></div>}
           {workspaceView === "close-confirm" && <CerrarMesaConfirm tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
         </div>
       </div>
@@ -2143,7 +2173,7 @@ function MesaWorkspace({
       {showAccount ? <>
         <button type="button" className="mesa-btn small mesa-hub-back" data-testid="mesa-account-back"
           onClick={() => setShowAccount(false)}>← Volver a la mesa</button>
-        <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} />
+        <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} canRefund={canRefund} />
       </> : renderDetail()}
     </Modal>
     {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
@@ -2620,6 +2650,7 @@ export default function TabMesa({
 }) {
   const canEdit = canEditMesaRoom(role);
   const canManageReservations = canManageMesaReservations(role);
+  const canRefund = canRefundMesaPayment(role);
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -3076,7 +3107,7 @@ export default function TabMesa({
           as-is; its meaning was verified, not guessed. */}
       <button className="mesa-btn icon" title="Actualizar el plano" aria-label="Actualizar el plano" onClick={() => load()}>↻</button>
     </div>}
-    {showUltimasCuentas && <UltimasCuentasModal onClose={() => setShowUltimasCuentas(false)} />}
+    {showUltimasCuentas && <UltimasCuentasModal onClose={() => setShowUltimasCuentas(false)} canRefund={canRefund} />}
     {menuTable && <TableContextPopup
       table={menuTable} canEdit={canEdit} editing={editing} canManageReservations={canManageReservations}
       onClose={() => setMenuId(null)}
@@ -3106,6 +3137,7 @@ export default function TabMesa({
         real callers elsewhere on this page. */}
     {selected?.status === "open" && <MesaWorkspace key={selected.id} table={selected} onClose={() => setSelectedId(null)} onNewCommand={startNewCommand} onRefresh={() => load({ quiet: true })} onPrint={setPrintDocument}
       canManageReservations={canManageReservations}
+      canRefund={canRefund}
       onViewNight={() => { setSelectedId(null); setReservationsFilterTableId(selected.id); setShowReservations(true); }}
       draft={mesaDrafts[selected.session.id] || null}
       onClearDraft={onClearDraft}

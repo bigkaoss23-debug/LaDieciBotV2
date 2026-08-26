@@ -1,6 +1,7 @@
 jest.mock("../utils/backendBase", () => ({ BACKEND_BASE_URL: "https://staging.example" }));
+jest.mock("../api", () => ({ auth: { getToken: () => "test-token", clear: jest.fn() } }));
 
-import { createMesaRequestId, describeMesaError, mesaApi } from "./mesaApi";
+import { createMesaRequestId, describeMesaError, mesaApi, MESA_API_ROOT } from "./mesaApi";
 
 describe("Mesa client helpers", () => {
   test("creates API-safe idempotency keys", () => {
@@ -37,5 +38,108 @@ describe("Mesa client helpers", () => {
     const message = describeMesaError({ code: "ORDER_INTAKE_CLOSED" });
     expect(message).toBe("Ahora no se pueden enviar nuevas comandas. El servicio vuelve a abrir a las 18:00.");
     expect(message).not.toBe("No se pudo completar la operación. Actualiza e inténtalo de nuevo.");
+  });
+});
+
+// REFUND V1 -- every domain code mesa_post_refund_v1 / order_refund's
+// containment guard can raise must have a specific, operator-safe Spanish
+// message in THIS slice (the Slice A audit's own requirement). None may fall
+// through to the generic fallback, and none may leak SQL/technical detail.
+describe("Refund V1 -- error dictionary completeness", () => {
+  const GENERIC_FALLBACK = "No se pudo completar la operación. Actualiza e inténtalo de nuevo.";
+  const REQUIRED_CODES = [
+    "MESA_REFUND_INVALID", "MESA_REFUND_META_INVALID", "MESA_REFUND_AMOUNT_INVALID",
+    "MESA_REFUND_REASON_REQUIRED", "MESA_RELOGIN_REQUIRED", "MESA_REFUND_FORBIDDEN",
+    "MESA_TRANSACTION_NOT_FOUND", "MESA_SESSION_NOT_FOUND", "MESA_REFUND_TRANSACTION_MISMATCH",
+    "MESA_REFUND_NOT_REFUNDABLE", "MESA_REFUND_EXCEEDS_REMAINING", "MESA_REFUND_ALREADY_FULL",
+    "MESA_REFUND_IDEMPOTENCY_CONFLICT", "MESA_REFUND_ALLOCATION_MISMATCH", "AUTH_REFUND_TRANSACTION_BACKED",
+  ];
+
+  test.each(REQUIRED_CODES)("%s has a specific message, never the generic fallback", (code) => {
+    const message = describeMesaError({ code });
+    expect(message).not.toBe(GENERIC_FALLBACK);
+    expect(typeof message).toBe("string");
+    expect(message.length).toBeGreaterThan(0);
+  });
+
+  test("no message leaks SQL/technical vocabulary to the operator", () => {
+    for (const code of REQUIRED_CODES) {
+      const message = describeMesaError({ code });
+      expect(message).not.toMatch(/SELECT|INSERT|RAISE|SQLSTATE|constraint|null pointer|undefined/i);
+    }
+  });
+
+  test("specific UX semantics for the state-conflict codes (contract §7 examples)", () => {
+    expect(describeMesaError({ code: "MESA_REFUND_ALREADY_FULL" })).toContain("reembolsado por completo");
+    expect(describeMesaError({ code: "MESA_REFUND_EXCEEDS_REMAINING" })).toContain("disponible");
+    expect(describeMesaError({ code: "MESA_REFUND_FORBIDDEN" })).toContain("permiso");
+  });
+
+  test("a defensive guard against the DUP-01 undefined===undefined trap: an error with NO code never matches any refund code by accident", () => {
+    // err?.code is falsy here, so describeMesaError must fall through to its
+    // own MESA_SERVER_ERROR default -- never to whatever REQUIRED_CODES[0]
+    // happens to be (which is exactly the bug class an `err.code === undefined`
+    // comparison would produce).
+    expect(describeMesaError({})).not.toBe(describeMesaError({ code: REQUIRED_CODES[0] }));
+    expect(describeMesaError(undefined)).toBe(describeMesaError({}));
+  });
+});
+
+describe("Refund V1 -- mesaApi.refund() request shape", () => {
+  const jsonResponse = (body, ok = true, status = 200) => Promise.resolve({
+    ok, status, json: () => Promise.resolve(body),
+  });
+
+  beforeEach(() => {
+    global.fetch = jest.fn();
+  });
+
+  test("posts to the exact Slice A endpoint for this session", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: true, refundTransactionId: "rt-1" }));
+    await mesaApi.refund("session-9", {
+      originalTransactionId: "pt-1", amount: 10, reason: "Error de importe", clientRequestId: "refund_abc",
+    });
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toBe(`https://staging.example${MESA_API_ROOT}/sessions/session-9/refunds`);
+    expect(init.method).toBe("POST");
+  });
+
+  test("sends exactly originalTransactionId/amount/reason/clientRequestId -- nothing else", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: true }));
+    await mesaApi.refund("session-9", {
+      originalTransactionId: "pt-1", amount: 10, reason: "Error de importe", clientRequestId: "refund_abc",
+    });
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(Object.keys(body).sort()).toEqual(["amount", "clientRequestId", "originalTransactionId", "reason"].sort());
+    expect(body.originalTransactionId).toBe("pt-1");
+    expect(body.amount).toBe(10);
+    expect(body.reason).toBe("Error de importe");
+    expect(body.clientRequestId).toBe("refund_abc");
+  });
+
+  test("NEVER sends paymentMethod, lineIds, coversSettled or confirmDuplicate -- backend is authoritative for all four", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: true }));
+    await mesaApi.refund("session-9", {
+      originalTransactionId: "pt-1", amount: 10, reason: "Error de importe", clientRequestId: "refund_abc",
+    });
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect("paymentMethod" in body).toBe(false);
+    expect("lineIds" in body).toBe(false);
+    expect("coversSettled" in body).toBe(false);
+    expect("confirmDuplicate" in body).toBe(false);
+  });
+
+  test("a session id with reserved URL characters is encoded", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: true }));
+    await mesaApi.refund("session with spaces/9", { originalTransactionId: "pt-1", amount: 1, reason: "Otro", clientRequestId: "r1" });
+    const [url] = global.fetch.mock.calls[0];
+    expect(url).toBe(`https://staging.example${MESA_API_ROOT}/sessions/${encodeURIComponent("session with spaces/9")}/refunds`);
+  });
+
+  test("a domain error from the backend surfaces as a MesaApiError carrying the exact code", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: false, code: "MESA_REFUND_ALREADY_FULL" }, false, 409));
+    await expect(mesaApi.refund("session-9", {
+      originalTransactionId: "pt-1", amount: 1, reason: "Otro", clientRequestId: "r1",
+    })).rejects.toMatchObject({ code: "MESA_REFUND_ALREADY_FULL", status: 409 });
   });
 });

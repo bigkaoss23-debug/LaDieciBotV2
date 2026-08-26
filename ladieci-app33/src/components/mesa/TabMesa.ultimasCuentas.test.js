@@ -25,17 +25,23 @@ import { createRoot } from "react-dom/client";
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
+// REFUND V1 -- UltimasCuentasModal now renders MesaPaymentsList (the shared
+// payments/refund component also used by the open-table Payment Hub), which
+// needs createMesaRequestId and mesaApi.refund even when no test here
+// actually exercises a refund.
 jest.mock("../../mesa/mesaApi", () => ({
   __esModule: true,
   describeMesaError: jest.fn((err) => err?.message || "No se pudo cargar."),
+  createMesaRequestId: jest.fn(() => "mesa_test_refund_request"),
   mesaApi: {
     recentClosedSessions: jest.fn(),
     sessionAccount: jest.fn(),
+    refund: jest.fn(),
   },
 }));
 
 const { UltimasCuentasModal } = require("./TabMesa");
-const { mesaApi, describeMesaError } = require("../../mesa/mesaApi");
+const { mesaApi, describeMesaError, createMesaRequestId } = require("../../mesa/mesaApi");
 
 const SESSION_ID = "b490d667-5747-485b-8821-fdbdb579446f";
 
@@ -121,12 +127,12 @@ function byTestId(container, id) { return container.querySelector(`[data-testid=
 function allByTestId(container, id) { return Array.from(container.querySelectorAll(`[data-testid="${id}"]`)); }
 function click(element) { act(() => { element.dispatchEvent(new MouseEvent("click", { bubbles: true })); }); }
 
-async function mount(onClose = jest.fn()) {
+async function mount(onClose = jest.fn(), canRefund = false) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<UltimasCuentasModal onClose={onClose} />);
+    root.render(<UltimasCuentasModal onClose={onClose} canRefund={canRefund} />);
   });
   await flush();
   return { container, root, onClose };
@@ -146,6 +152,7 @@ beforeEach(() => {
   // place. Re-establish it explicitly, every test, same as the two mesaApi
   // methods just below.
   describeMesaError.mockImplementation((err) => err?.message || "No se pudo cargar.");
+  createMesaRequestId.mockImplementation(() => "mesa_test_refund_request");
   mesaApi.recentClosedSessions.mockResolvedValue(RECENT_SESSIONS);
   mesaApi.sessionAccount.mockResolvedValue(MESA_4_ACCOUNT);
 });
@@ -176,8 +183,8 @@ test("B. the list view renders the read-only Ultimas Cuentas surface", async () 
 });
 
 describe("the drilled-in Mesa 4 account", () => {
-  async function openMesa4() {
-    const mounted = await mount();
+  async function openMesa4(canRefund = false) {
+    const mounted = await mount(jest.fn(), canRefund);
     click(byTestId(mounted.container, "ultimas-cuentas-item"));
     await flush();
     return mounted;
@@ -296,4 +303,69 @@ test("a fetch failure surfaces the error banner instead of crashing", async () =
   expect(thrown).toBeNull();
   expect(container.textContent).toContain("network down");
   unmount(container, root);
+});
+
+// ═══ REFUND V1 -- CLOSED TABLES ARE FIRST-CLASS (§12/§37) ═══════════════════
+// This modal is otherwise strictly read-only (see its own header comment);
+// MesaPaymentsList is the one write path it now carries, gated on the same
+// canRefund prop TabMesa threads down from the operator's role.
+describe("Refund V1 -- closed-table refund (§12/§37)", () => {
+  async function openMesa4(canRefund = false) {
+    const mounted = await mount(jest.fn(), canRefund);
+    click(byTestId(mounted.container, "ultimas-cuentas-item"));
+    await flush();
+    return mounted;
+  }
+
+  test("without canRefund, no Reembolsar action exists on a closed table's payments", async () => {
+    const { container, root } = await openMesa4(false);
+    expect(byTestId(container, "mesa-payhist-refund-btn")).toBeNull();
+    unmount(container, root);
+  });
+
+  test("with canRefund, the closed table's own payments show Reembolsar", async () => {
+    const { container, root } = await openMesa4(true);
+    expect(allByTestId(container, "mesa-payhist-refund-btn").length).toBe(5); // all 5 fixture payments are unrefunded originals
+    unmount(container, root);
+  });
+
+  test("a real refund submitted here calls mesaApi.refund with THIS session id, refreshes from the server, and the table stays CLOSED", async () => {
+    mesaApi.refund.mockResolvedValue({ ok: true, refundTransactionId: "rt-1", amount: 10 });
+    // The server's account AFTER the refund -- tx1 (33.50 tarjeta) partially reversed.
+    const AFTER_REFUND = {
+      ...MESA_4_ACCOUNT,
+      account: {
+        ...MESA_4_ACCOUNT.account,
+        paid: 118.5,
+        outstanding: 10,
+        payments: [
+          ...MESA_4_ACCOUNT.account.payments,
+          { id: "rt-1", kind: "refund", amount: 10, method: "tarjeta", coversSettled: 0, actor: "owner", createdAt: "2026-08-20T19:40:00Z", reversesTransactionId: "tx1" },
+        ],
+      },
+    };
+    mesaApi.sessionAccount.mockResolvedValueOnce(MESA_4_ACCOUNT).mockResolvedValueOnce(AFTER_REFUND);
+
+    const { container, root } = await openMesa4(true);
+    click(allByTestId(container, "mesa-payhist-refund-btn")[0]);
+    click(byTestId(container, "mesa-refund-reason-importe"));
+    click(byTestId(container, "mesa-refund-confirm"));
+    await flush();
+
+    expect(mesaApi.refund).toHaveBeenCalledTimes(1);
+    expect(mesaApi.refund.mock.calls[0][0]).toBe(SESSION_ID);
+    expect(mesaApi.refund.mock.calls[0][1].originalTransactionId).toBe("tx1");
+
+    // Server-refresh proof: sessionAccount was called again for the SAME
+    // session, and the refund now appears with its linkage preserved.
+    expect(mesaApi.sessionAccount).toHaveBeenCalledTimes(2);
+    expect(mesaApi.sessionAccount).toHaveBeenNthCalledWith(2, SESSION_ID);
+    expect(allByTestId(container, "mesa-payhist-refund").length).toBe(1);
+
+    // §12/§37 -- never reopened, never closed again, never any Mesa write.
+    for (const forbidden of ["openTable", "closeTable", "pay", "setCovers", "releaseEmptyTable", "saveTable"]) {
+      expect(mesaApi[forbidden]).toBeUndefined();
+    }
+    unmount(container, root);
+  });
 });

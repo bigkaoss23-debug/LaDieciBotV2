@@ -106,6 +106,14 @@ export const mesaApi = Object.freeze({
   pay(sessionId, payment) {
     return request("POST", `/sessions/${encodeURIComponent(sessionId)}/payments`, payment);
   },
+  // REFUND V1 -- transaction-centric reversal against one identified
+  // original payment. Sends ONLY originalTransactionId/amount/reason/
+  // clientRequestId: paymentMethod, lineIds, coversSettled and
+  // confirmDuplicate are all backend-authoritative for a refund and are
+  // deliberately never sent from here (contract §5/§8, frozen).
+  refund(sessionId, refund) {
+    return request("POST", `/sessions/${encodeURIComponent(sessionId)}/refunds`, refund);
+  },
   createReservation(tableId, reservation) {
     return request("POST", `/tables/${encodeURIComponent(tableId)}/reservations`, reservation);
   },
@@ -180,6 +188,30 @@ const ERROR_MESSAGES = Object.freeze({
   MESA_RELOGIN_REQUIRED: "Vuelve a entrar con tu PIN antes de cobrar.",
   MESA_UNAUTHENTICATED: "La sesión ha caducado.",
   MESA_SESSION_STALE: "Tu acceso ha cambiado. Vuelve a entrar.",
+  MESA_SESSION_NOT_FOUND: "Esta mesa ya no está disponible.",
+  // REFUND V1 -- every domain code mesa_post_refund_v1 / order_refund's
+  // containment guard can raise, mapped in the SAME slice that shipped the
+  // backend RPC (Slice A's own audit required this; DUP-01's lesson: a code
+  // shipped without frontend copy sits unreachable/confusing for as long as
+  // nobody notices).
+  MESA_REFUND_INVALID: "No se pudo registrar el reembolso. Actualiza la cuenta e inténtalo de nuevo.",
+  MESA_REFUND_META_INVALID: "No se pudo registrar el reembolso. Actualiza la cuenta e inténtalo de nuevo.",
+  MESA_REFUND_AMOUNT_INVALID: "El importe no es válido para lo disponible a reembolsar.",
+  MESA_REFUND_REASON_REQUIRED: "Indica el motivo del reembolso.",
+  MESA_REFUND_FORBIDDEN: "No tienes permiso para registrar reembolsos.",
+  MESA_TRANSACTION_NOT_FOUND: "No se encontró este pago. Actualiza la cuenta e inténtalo de nuevo.",
+  MESA_REFUND_TRANSACTION_MISMATCH: "Este pago no pertenece a esta mesa. Actualiza la cuenta.",
+  MESA_REFUND_NOT_REFUNDABLE: "Este movimiento no se puede reembolsar.",
+  MESA_REFUND_EXCEEDS_REMAINING: "El importe supera lo que queda disponible para reembolsar.",
+  MESA_REFUND_ALREADY_FULL: "Este pago ya ha sido reembolsado por completo.",
+  MESA_REFUND_IDEMPOTENCY_CONFLICT: "El reembolso no se ha repetido: actualiza la mesa y compruébalo.",
+  // Invariant-breach class (500 on the backend): never technical detail, and
+  // deliberately worded like every other unexpected-failure message here.
+  MESA_REFUND_ALLOCATION_MISMATCH: "No se pudo completar el reembolso. Inténtalo de nuevo.",
+  // Legacy order_refund's containment guard (Slice A) -- not reachable from
+  // this Mesa refund flow today (Mesa never calls order_refund), mapped for
+  // completeness so no future caller of this dictionary ever shows raw text.
+  AUTH_REFUND_TRANSACTION_BACKED: "Este pago no se puede reembolsar desde aquí.",
   // Not MESA_-prefixed: this one comes from the order-intake schedule
   // resolver (resolve_order_intake_context_v1 / orderIntakePolicy.js on the
   // backend), reused as-is for addCommand's own rejection during the daily
