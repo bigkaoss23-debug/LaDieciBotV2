@@ -657,13 +657,31 @@ const EconomiaPage = ({onBack}) => {
   // channel, so "Mesa 2" / "Domicilio · Q2" is resolved from order rows keyed
   // by order id. Money NEVER comes from here. An order missing from the lookup
   // still renders its number, amount and state; it just shows no context chip.
-  const [activeOrdenes, setActiveOrdenes] = useState([]);
+  // ECON-VENTAS-02 — `getOrdenes` is scoped TWICE: to the current operational
+  // session, and to ACTIVE states only
+  // (POR_CONFIRMAR,NUEVO,EN_COCINA,LISTO,EN_ENTREGA). That is why a delivery
+  // still in the kitchen showed "Domicilio · Q2" while #999031 — RETIRADO in
+  // the very same service — showed nothing. Its terminal sibling reader
+  // (`getOrdenesArchivadosSesion`, same session scope, terminal states) closes
+  // exactly that half of the gap.
+  //
+  // KNOWN REMAINING GAP, reported rather than papered over: both readers are
+  // scoped to the CURRENT session, so an order belonging to an already-closed
+  // service (#999030 in Service B) or to an older one (#999029 in Service A)
+  // is reachable by neither, and its row renders without a context chip. The
+  // money is unaffected — it never comes from here.
+  const [contextOrdenes, setContextOrdenes] = useState([]);
   useEffect(() => {
     let cancelled = false;
-    api.getOrdenes()
+    Promise.all([
+      api.getOrdenes().catch(() => null),
+      api.getOrdenesArchivadosSesion().catch(() => null),
+    ]).then(([activas, terminales]) => {
+      if (cancelled) return;
       // language-guard: allow-legacy `ordenes` is the existing api.js payload key being read, not new vocabulary
-      .then(r => { if (!cancelled) setActiveOrdenes(Array.isArray(r?.ordenes) ? r.ordenes : []); })
-      .catch(() => { if (!cancelled) setActiveOrdenes([]); });
+      const rows = [...(activas?.ordenes || []), ...(terminales?.ordenes || [])];
+      setContextOrdenes(rows);
+    });
     return () => { cancelled = true; };
   }, [refresh]);
 
@@ -674,9 +692,9 @@ const EconomiaPage = ({onBack}) => {
       if (key && !map[key]) map[key] = row;
     };
     (Array.isArray(rawData) ? rawData : []).forEach(put);
-    activeOrdenes.forEach(put);
+    contextOrdenes.forEach(put);
     return map;
-  }, [rawData, activeOrdenes]);
+  }, [rawData, contextOrdenes]);
 
   const retryLedger = () => setLedgerRetryTick(t => t + 1);
 

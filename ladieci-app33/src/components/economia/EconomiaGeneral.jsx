@@ -67,6 +67,23 @@ const I_OTHER = <><rect x="3.5" y="3.5" width="17" height="17" rx="4" /><path d=
 const I_CAL   = <><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" /><path d="M8 3v4M16 3v4M3.5 10h17" /></>;
 const I_CHEV  = <><path d="M9 6l6 6-6 6" /></>;
 
+// A service that opened and closed on different local dates must say so. One
+// anomalous session on staging ran 23/08 18:16 → 25/08 18:50; rendered as bare
+// clock times it read "18:16 → 18:50", which looks like a 34-minute service
+// instead of a two-day one. Same-day sessions stay compact — the dates are
+// only added where their absence would mislead.
+const dayOf = (iso) => (iso ? madrid(iso, { day: '2-digit', month: '2-digit' }) : null);
+export function serviceSpan(session) {
+  const openDay = dayOf(session?.openedAt);
+  const closeDay = session?.closedAt ? dayOf(session.closedAt) : null;
+  const open = hhmm(session?.openedAt);
+  const close = session?.closedAt ? hhmm(session.closedAt) : 'ahora';
+  const crossesDate = Boolean(closeDay) && closeDay !== openDay;
+  return crossesDate
+    ? `${openDay} ${open} → ${closeDay} ${close}`
+    : `${open} → ${close}`;
+}
+
 const Kpi = ({ label, value, testId, tone, big, onClick, sub }) => {
   const Tag = onClick ? 'button' : 'div';
   return (
@@ -123,7 +140,7 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
   const [n8Open, setN8Open] = useState(false);
 
   const { snapshot, status, error, reload } = useEconomySnapshot(scope);
-  const { sessions, status: sessionsStatus } = useServiceSessions('hoy');
+  const { sessions, businessDate: servicesDay, status: sessionsStatus } = useServiceSessions('hoy');
   const ready = status === 'ready' && snapshot;
 
   const win = snapshot?.window || null;
@@ -196,8 +213,8 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
         {/* ── SERVICIOS — the real, persisted sessions of the day ───────── */}
         {scope.preset === 'servicio' && (
           <div data-testid="general-service-picker" style={{ marginTop: 10 }}>
-            <div style={{ ...eyebrow, marginBottom: 6 }}>
-              Servicios{sessions[0]?.businessDate ? ` del ${sessions[0].businessDate.slice(8, 10)}/${sessions[0].businessDate.slice(5, 7)}` : ''}
+            <div style={{ ...eyebrow, marginBottom: 6 }} data-testid="general-services-heading">
+              Servicios{servicesDay ? ` del ${servicesDay.slice(8, 10)}/${servicesDay.slice(5, 7)}` : ''}
             </div>
             {sessionsStatus === 'loading' && <div style={{ color: MUTED, fontSize: 12 }}>···</div>}
             {sessionsStatus === 'ready' && sessions.length === 0 && (
@@ -224,7 +241,7 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
                       flex: '1 1 auto', minWidth: 0, color: active ? '#ffd9b8' : CREAM,
                       fontSize: 13, fontWeight: 800, fontFamily: "'DM Mono',monospace",
                     }}>
-                      {hhmm(s.openedAt)} → {s.closedAt ? hhmm(s.closedAt) : 'ahora'}
+                      {serviceSpan(s)}
                     </span>
                     <span style={{
                       flexShrink: 0, fontSize: 10.5, fontWeight: 800, letterSpacing: .4,

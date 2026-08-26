@@ -30,7 +30,7 @@ global.IS_REACT_ACT_ENVIRONMENT = true;
 jest.mock('../../api', () => ({
   __esModule: true,
   // language-guard: allow-legacy getStorico/getSerata are the existing api.js method names being mocked, not new vocabulary
-  api: { getStorico: jest.fn(), getSerata: jest.fn(), getEconomiaLedger: jest.fn(), getOrdenes: jest.fn(), },
+  api: { getStorico: jest.fn(), getSerata: jest.fn(), getEconomiaLedger: jest.fn(), getOrdenes: jest.fn(), getOrdenesArchivadosSesion: jest.fn(), },
   sb: { select: jest.fn(async () => []) },
 }));
 
@@ -45,6 +45,7 @@ jest.mock('../../economy/economyApi', () => ({
 
 import EconomiaPage from '../EconomiaPage';
 import { ECONOMIA_TABS } from './EconomiaBottomNav';
+import { serviceSpan } from './EconomiaGeneral';
 import { api } from '../../api';
 import { economyApi, createEconomyRequestId } from '../../economy/economyApi';
 
@@ -76,7 +77,14 @@ const snapshotFor = (window, over = {}) => ({
 // are the staging fixtures, and they are what the Servicios browser lists.
 const SERVICE_B = '51cf341a-2609-4a74-9e12-c49a0a3d6d84';
 const SERVICE_C = '42af1de9-8981-4d01-b331-554566bec60a';
+const SERVICE_A = 'f93ecbf5-2608-4f91-8c38-84632203684f';
+// Service A is the real staging anomaly: business_date 23/08, opened 23/08,
+// closed 25/08, and it holds three receipts totalling 35,00 € that land inside
+// the 25/08 window. It therefore APPEARS in 25/08's serviceProvenance while
+// belonging to another business day — the contamination this suite pins.
 const PROVENANCE = [
+  { serviceSessionId: SERVICE_A, businessDate: '2026-08-23', status: 'closed',
+    openedAt: '2026-08-23T16:16:00.000Z', closedAt: '2026-08-25T16:50:00.000Z' },
   { serviceSessionId: SERVICE_B, businessDate: DAY, status: 'closed',
     openedAt: '2026-08-25T16:55:20.049Z', closedAt: '2026-08-25T17:01:33.177Z' },
   { serviceSessionId: SERVICE_C, businessDate: DAY, status: 'open',
@@ -159,6 +167,8 @@ beforeEach(() => {
     // language-guard: allow-legacy tipo_consegna is the existing delivery-type field name, not new vocabulary
     { id: '#999033', tipo_consegna: 'DOMICILIO', canal: 'MANUAL', nombre: 'Big Art', zona: 'Q2' },
   ] });
+  // language-guard: allow-legacy `ordenes` is the existing api.js payload key, not new vocabulary
+  api.getOrdenesArchivadosSesion.mockReset().mockResolvedValue({ ordenes: [] });
   createEconomyRequestId.mockImplementation(() => 'cash_testrequestid0001');
   economyApi.snapshot.mockResolvedValue(DIA);
   economyApi.listCashCounts.mockResolvedValue({ ok: true, counts: [] });
@@ -215,12 +225,19 @@ describe('scope · the selector controls the window, and the window is the serve
     expect(t(c, 'general-custom-from').value).toBeTruthy();
     expect(t(c, 'general-custom-to').value).toBeTruthy();
     expect(lastSnapshotArg().preset).toBe('personalizado');
-    expect(lastSnapshotArg().from).toBe(t(c, 'general-custom-from').value);
-    expect(lastSnapshotArg().to).toBe(t(c, 'general-custom-to').value);
-    // Editing re-asks with the operator's own instants.
+    // ECON-CUSTOM-01 — the wall clock in the input is resolved to a real
+    // instant ONCE, by the browser, before it goes on the wire. Sending the
+    // bare "2026-08-25T19:02" let the server (running in UTC) read it as
+    // 19:02Z and shifted every custom range by the operator's offset.
+    expect(lastSnapshotArg().from).toBe(new Date(t(c, 'general-custom-from').value).toISOString());
+    expect(lastSnapshotArg().to).toBe(new Date(t(c, 'general-custom-to').value).toISOString());
+    expect(lastSnapshotArg().from).toMatch(/Z$/);
+    // Editing re-asks with the operator's own instant, still resolved once.
     await setInput(t(c, 'general-custom-from'), '2026-08-25T17:30');
     expect(lastSnapshotArg()).toEqual({
-      preset: 'personalizado', from: '2026-08-25T17:30', to: t(c, 'general-custom-to').value,
+      preset: 'personalizado',
+      from: new Date('2026-08-25T17:30').toISOString(),
+      to: new Date(t(c, 'general-custom-to').value).toISOString(),
     });
   });
 
@@ -433,6 +450,50 @@ describe('servicios · real persisted sessions, open and closed alike', () => {
   });
 });
 
+// ── SERVICIOS · membership is business_date, and nothing else ──────────────
+describe('servicios · a service belongs to the business day the DB says it does', () => {
+  test('a foreign-business-day service is excluded, however its money lands in this window', async () => {
+    const c = await mount();
+    await clickEl(t(c, 'general-scope-servicio'));
+    // 25/08 must list B and C only. A (23/08) is in provenance because 35,00 €
+    // was collected for it today; that is receipt provenance, not membership.
+    expect(t(c, `general-service-${SERVICE_B}`)).toBeTruthy();
+    expect(t(c, `general-service-${SERVICE_C}`)).toBeTruthy();
+    expect(t(c, `general-service-${SERVICE_A}`)).toBeNull();
+    // buttons only — the picker container shares the testid prefix
+    expect(c.querySelectorAll('button[data-testid^="general-service-"]')).toHaveLength(2);
+  });
+
+  test('the heading names the resolved business day, not whichever row sorted first', async () => {
+    const c = await mount();
+    await clickEl(t(c, 'general-scope-servicio'));
+    // It used to read "Servicios del 23/08" for a 25/08 list, because the
+    // heading was taken from sessions[0] — which was the foreign service.
+    expect(t(c, 'general-services-heading').textContent).toContain('25/08');
+    expect(t(c, 'general-services-heading').textContent).not.toContain('23/08');
+  });
+
+  test('membership is not inferred from opened_at, closed_at or a time range', () => {
+    // Service A opened AND closed on dates that overlap the 25/08 window; only
+    // its business_date keeps it out.
+    const foreign = PROVENANCE.find((p) => p.serviceSessionId === SERVICE_A);
+    expect(foreign.closedAt.slice(0, 10)).toBe('2026-08-25');
+    expect(foreign.businessDate).toBe('2026-08-23');
+  });
+
+  test('a service spanning two calendar dates shows its dates instead of a fake 34 minutes', () => {
+    expect(serviceSpan({ openedAt: '2026-08-23T16:16:00.000Z', closedAt: '2026-08-25T16:50:00.000Z' }))
+      .toMatch(/2?3\/0?8 18:16 → 2?5\/0?8 18:50/);
+  });
+
+  test('a same-day service stays compact, and an open one still reads "ahora"', () => {
+    expect(serviceSpan({ openedAt: '2026-08-25T16:55:20.049Z', closedAt: '2026-08-25T17:01:33.177Z' }))
+      .toBe('18:55 → 19:01');
+    expect(serviceSpan({ openedAt: '2026-08-25T17:02:59.058Z', closedAt: null }))
+      .toBe('19:02 → ahora');
+  });
+});
+
 // ── VENTAS · identifiable orders, not an anonymous status list ─────────────
 describe('ventas · which sales compose this scope', () => {
   test('each row carries its order number, context, amount and payment state', async () => {
@@ -458,6 +519,53 @@ describe('ventas · which sales compose this scope', () => {
     // Context resolved from the order rows the page already holds.
     expect(text[0]).toContain('Mesa 2');
     expect(text[1]).toContain('Domicilio · Q2');
+  });
+
+  test('a TERMINAL order of the current service gets its Mesa context', async () => {
+    // ECON-VENTAS-02. #999031 is RETIRADO, so `getOrdenes` — which is scoped to
+    // ACTIVE states — never carried it, while #999032 (EN_ENTREGA) did. That is
+    // exactly why a delivery showed "Domicilio · Q2" and a table order showed
+    // nothing. Its terminal sibling reader supplies it.
+    // language-guard: allow-legacy `ordenes` is the existing api.js payload key, not new vocabulary
+    api.getOrdenes.mockResolvedValue({ ordenes: [
+      // language-guard: allow-legacy tipo_consegna is the existing delivery-type field name, not new vocabulary
+      { id: '#999032', tipo_consegna: 'DOMICILIO', canal: 'MANUAL', nombre: 'Big Art', zona: 'Q2' },
+    ] });
+    // language-guard: allow-legacy `ordenes` is the existing api.js payload key, not new vocabulary
+    api.getOrdenesArchivadosSesion.mockResolvedValue({ ordenes: [
+      // language-guard: allow-legacy tipo_consegna/RITIRO are the existing delivery-type field and enum value, not new vocabulary
+      { id: '#999031', tipo_consegna: 'RITIRO', canal: 'BANCO', nombre: 'Mesa 2', zona: null },
+    ] });
+    economyApi.snapshot.mockImplementation((args) => Promise.resolve(
+      args?.preset === 'servicio' ? SERVICE_C_SNAPSHOT : DIA,
+    ));
+    const c = await mount();
+    await clickEl(t(c, 'general-scope-servicio'));
+    await clickEl(t(c, `general-service-${SERVICE_C}`));
+    await clickEl(t(c, 'general-view-ventas'));
+    const rows = Array.from(c.querySelectorAll('[data-testid="general-ventas-row"]'));
+    expect(rows[0].textContent).toContain('Mesa 2');
+    expect(rows[1].textContent).toContain('Domicilio · Q2');
+  });
+
+  test('the amount is the certified snapshot\'s, never the context reader\'s', async () => {
+    // The context join must never become a second economic truth. Here the
+    // lookup row carries a deliberately wrong total; the row must ignore it.
+    // language-guard: allow-legacy `ordenes` is the existing api.js payload key, not new vocabulary
+    api.getOrdenes.mockResolvedValue({ ordenes: [
+      // language-guard: allow-legacy tipo_consegna/RITIRO are the existing delivery-type field and enum value, not new vocabulary
+      { id: '#999031', tipo_consegna: 'RITIRO', canal: 'BANCO', nombre: 'Mesa 2', zona: null, totale: 999.99 },
+    ] });
+    economyApi.snapshot.mockImplementation((args) => Promise.resolve(
+      args?.preset === 'servicio' ? SERVICE_C_SNAPSHOT : DIA,
+    ));
+    const c = await mount();
+    await clickEl(t(c, 'general-scope-servicio'));
+    await clickEl(t(c, `general-service-${SERVICE_C}`));
+    await clickEl(t(c, 'general-view-ventas'));
+    const first = c.querySelectorAll('[data-testid="general-ventas-row"]')[0];
+    expect(first.textContent).toContain('69,00');
+    expect(first.textContent).not.toContain('999,99');
   });
 
   test('an order with no context row still renders its number, amount and state', async () => {
