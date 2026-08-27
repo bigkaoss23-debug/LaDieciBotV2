@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { C } from "../../constants";
-import { createMesaRequestId, describeMesaError, mesaApi, MESA_DUPLICATE_PAYMENT_CODE } from "../../mesa/mesaApi";
+import { createMesaRequestId, describeMesaError, mesaApi, MESA_DUPLICATE_PAYMENT_CODE, MESA_CLOSE_OVER_COLLECTED_CODE } from "../../mesa/mesaApi";
 import { normalizeOrderLine } from "../../menu/normalizeOrderLine";
 import OrderLineView from "../order/OrderLineView";
 import HybridFloorScene, { hybridSceneCss } from "./HybridFloorScene";
@@ -11,6 +11,7 @@ import {
 import { MADRID_TIMEZONE, euro, madridFields, formatClockTime } from "./mesaFormat";
 import MesaPaymentsList from "./MesaPaymentsList";
 import MesaAccountBalance from "./MesaAccountBalance";
+import MesaCommercialAdjustments from "./MesaCommercialAdjustments";
 
 // MESA_HYBRID_3D — renderer selection only, never a domain switch. Off, this
 // file behaves byte-identically to before: same markup, same CSS, same drag
@@ -31,6 +32,13 @@ const RESERVATION_ROLES = new Set(["admin", "operator", "owner", "cashier", "wai
 // not be the one that can silently return it. Frontend hiding is UX only --
 // the backend RPC enforces this independently and remains authoritative.
 const REFUND_ROLES = new Set(["admin", "owner"]);
+// AJUSTE COMERCIAL V1 -- mirrors the backend's ADJUSTMENT_ROLES (mesaService.js)
+// exactly: admin/owner only, identical to REFUND_ROLES and strictly narrower than
+// the pay roles. Reducing what the house is owed is at least as sensitive as
+// returning money. Frontend hiding is UX only -- mesa_post_commercial_adjustment_v1
+// enforces this independently and stays authoritative. It does NOT ride on the
+// refund gate: they are separate capabilities (contract §28).
+const ADJUSTMENT_ROLES = new Set(["admin", "owner"]);
 // Mirrors the exact `canEdit`/`canManageReservations` checks the component
 // itself uses below -- exported so MesaPhoneShell's Más screen can decide
 // which secondary actions to offer without duplicating (and risking drift
@@ -43,6 +51,9 @@ function canManageMesaReservations(role) {
 }
 function canRefundMesaPayment(role) {
   return REFUND_ROLES.has(role);
+}
+function canAdjustMesaObligation(role) {
+  return ADJUSTMENT_ROLES.has(role);
 }
 
 // Three operative shapes, always offered in this exact order everywhere
@@ -923,26 +934,31 @@ function useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel }) {
   }, [busy, onCancel]);
 }
 
-// OVER-COLLECTED / AJUSTE COMERCIAL V1 SLICE C — §17/§18. mesa_close_session_v1
-// never gates on overCollected (only `unpaid > 0` blocks; the RPC returns
-// overCollected in its own success payload regardless), so there is no
-// backend "acknowledgment parameter" to send — the warning below is a pure
-// client-side courtesy step before a call the backend already permits.
-// Deliberately its OWN branch, not merged with the `blocked` copy above: a
-// table with pending kitchen work is not closable at all (confirm stays
-// disabled) and takes priority: only shown once nothing else is blocking.
-function cerrarMesaBody({ blocked, empty, overCollected }) {
+// OVER-COLLECTED / AJUSTE COMERCIAL V1 SLICE C — §5/§6/§8, reworked for the
+// ledger-119 backend authority. The acknowledgement step is NO LONGER a
+// client-side guess from session.overCollected: it appears ONLY after the
+// backend has rejected a real close attempt with MESA_CLOSE_OVER_COLLECTED,
+// and the amount shown is the one the backend returned with that rejection
+// (`overCollectedAck.amount`). `overCollectedAck` is null until then.
+//
+// Deliberately its OWN branch, not merged with the `blocked` copy: a table with
+// pending kitchen work is not closable at all (confirm stays disabled) and
+// takes priority — the acknowledgement step is only shown once nothing else is
+// blocking. Passing `blocked > 0` here would never happen anyway (the first
+// close attempt fails on MESA_TABLE_HAS_ACTIVE_ORDERS long before the backend
+// ever evaluates over-collection), but the guard keeps the copy unambiguous.
+function cerrarMesaBody({ blocked, empty, overCollectedAck }) {
   if (blocked > 0) return "Faltan comandas por servir.";
-  if (overCollected > 0) return `Hay ${euro(overCollected)} cobrados de más.`;
+  if (overCollectedAck) return `Hay ${euro(overCollectedAck.amount)} cobrados de más.`;
   return empty ? "La mesa está vacía y no tiene comandas ni pagos." : "La mesa quedará libre para nuevos clientes.";
 }
 const CERRAR_MESA_OVERCOLLECTED_HINT = "Puedes reembolsarlo ahora o cerrar la mesa dejando la incidencia registrada.";
 
-function CerrarMesaDialog({ tableNumber, empty, blocked = 0, overCollected = 0, busy, error, onCancel, onConfirm }) {
+function CerrarMesaDialog({ tableNumber, empty, blocked = 0, overCollectedAck = null, busy, error, onCancel, onConfirm }) {
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
   useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel });
-  const showOverCollected = blocked === 0 && overCollected > 0;
+  const showOverCollected = blocked === 0 && !!overCollectedAck;
 
   return <div className="mesa-overlay" onClick={() => { if (!busy) onCancel(); }}>
     <div className="mesa-modal" role="alertdialog" aria-modal="true" aria-labelledby="cerrar-mesa-title" aria-describedby="cerrar-mesa-body"
@@ -952,7 +968,7 @@ function CerrarMesaDialog({ tableNumber, empty, blocked = 0, overCollected = 0, 
       </div>
       <div className="mesa-modal-body">
         <p id="cerrar-mesa-body" className="mesa-muted" data-testid="cerrar-mesa-body">
-          {cerrarMesaBody({ blocked, empty, overCollected })}
+          {cerrarMesaBody({ blocked, empty, overCollectedAck })}
         </p>
         {showOverCollected && (
           <p className="mesa-muted" data-testid="cerrar-mesa-overcollected-hint" style={{ marginTop: 4 }}>
@@ -962,7 +978,7 @@ function CerrarMesaDialog({ tableNumber, empty, blocked = 0, overCollected = 0, 
         {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
         <div className="mesa-actions" style={{ marginTop: 16 }}>
           <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>{showOverCollected ? "Volver" : "Cancelar"}</button>
-          <button ref={confirmRef} className="mesa-btn danger" data-testid="cerrar-mesa-confirm" disabled={busy || blocked > 0} onClick={onConfirm}>
+          <button ref={confirmRef} className="mesa-btn danger" data-testid="cerrar-mesa-confirm" disabled={busy || blocked > 0} onClick={() => onConfirm(showOverCollected)}>
             {busy ? "Cerrando…" : showOverCollected ? "Cerrar igualmente" : "Cerrar mesa"}
           </button>
         </div>
@@ -979,16 +995,16 @@ function CerrarMesaDialog({ tableNumber, empty, blocked = 0, overCollected = 0, 
 // .mesa-overlay/.mesa-modal, so there is no nested-overlay stacking on
 // phone. The non-compact path keeps using the standalone CerrarMesaDialog
 // above, byte-for-byte unchanged.
-function CerrarMesaConfirm({ tableNumber, empty, blocked = 0, overCollected = 0, busy, error, onCancel, onConfirm }) {
+function CerrarMesaConfirm({ tableNumber, empty, blocked = 0, overCollectedAck = null, busy, error, onCancel, onConfirm }) {
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
   useCerrarMesaFocusTrap({ cancelRef, confirmRef, busy, onCancel });
-  const showOverCollected = blocked === 0 && overCollected > 0;
+  const showOverCollected = blocked === 0 && !!overCollectedAck;
 
   return <div role="alertdialog" aria-labelledby="cerrar-mesa-title-inline" aria-describedby="cerrar-mesa-body-inline" data-testid="mesa-card-view-close-confirm">
     <div id="cerrar-mesa-title-inline" style={{ fontWeight: 950, fontSize: 19 }}>{`Cerrar Mesa ${tableNumber}`}</div>
     <p id="cerrar-mesa-body-inline" className="mesa-muted" style={{ marginTop: 8 }} data-testid="cerrar-mesa-body">
-      {cerrarMesaBody({ blocked, empty, overCollected })}
+      {cerrarMesaBody({ blocked, empty, overCollectedAck })}
     </p>
     {showOverCollected && (
       <p className="mesa-muted" data-testid="cerrar-mesa-overcollected-hint" style={{ marginTop: 4 }}>
@@ -998,7 +1014,7 @@ function CerrarMesaConfirm({ tableNumber, empty, blocked = 0, overCollected = 0,
     {error && <div className="mesa-banner mesa-error" style={{ marginTop: 12 }}>{error}</div>}
     <div className="mesa-actions" style={{ marginTop: 16 }}>
       <button ref={cancelRef} className="mesa-btn" disabled={busy} onClick={onCancel}>{showOverCollected ? "Volver" : "Cancelar"}</button>
-      <button ref={confirmRef} className="mesa-btn danger" data-testid="cerrar-mesa-confirm" disabled={busy || blocked > 0} onClick={onConfirm}>
+      <button ref={confirmRef} className="mesa-btn danger" data-testid="cerrar-mesa-confirm" disabled={busy || blocked > 0} onClick={() => onConfirm(showOverCollected)}>
         {busy ? "Cerrando…" : showOverCollected ? "Cerrar igualmente" : "Cerrar mesa"}
       </button>
     </div>
@@ -1421,7 +1437,7 @@ const ICON_PLUS_CIRCLE = <><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12
 const ICON_CLOSE_CIRCLE = <><circle cx="12" cy="12" r="9" /><path d="M9 9l6 6M15 9l-6 6" /></>;
 const ICON_MINUS = <><path d="M6 12h12" /></>;
 
-function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false }) {
+function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false, canAdjust = false }) {
   // PAYMENT HUB MESA V1.1 — the approved V1 surface, with the redundant hops
   // taken out of it. Layout, colours, typography and the three primary actions
   // are unchanged; what changed is how few taps each one costs.
@@ -1831,6 +1847,11 @@ function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false }) {
         Closed tables are refundable too -- see UltimasCuentasModal below,
         which renders the SAME component against the closed-session reader. */}
     <MesaPaymentsList sessionId={session.id} payments={session.payments} canRefund={canRefund} onRefunded={onRefresh} />
+    {/* AJUSTE COMERCIAL V1 SLICE C -- admin-only, order-scoped (financial.orderUid),
+        the SAME shared component UltimasCuentasModal renders against the closed
+        reader. Renders nothing at all for a non-admin or when no command is
+        adjustable. */}
+    <MesaCommercialAdjustments sessionId={session.id} account={session} canAdjust={canAdjust} onAdjusted={onRefresh} />
   </div>;
 }
 
@@ -1859,7 +1880,7 @@ function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false }) {
 // table remains closed after a refund -- see MesaPaymentsList's own header
 // note and contract §12: this modal must never reopen/close/settle anything
 // as a side effect of refreshing after one.
-function UltimasCuentasModal({ onClose, canRefund = false }) {
+function UltimasCuentasModal({ onClose, canRefund = false, canAdjust = false }) {
   const [sessions, setSessions] = useState(null);
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -1960,6 +1981,11 @@ function UltimasCuentasModal({ onClose, canRefund = false }) {
         </div>}
         <MesaPaymentsList sessionId={detail.tableSessionId} payments={detail.account.payments}
           canRefund={canRefund} onRefunded={refreshAfterRefund} />
+        {/* AJUSTE COMERCIAL V1 SLICE C / §21 -- a closed table is first-class:
+            mesa_post_commercial_adjustment_v1 accepts a closed session and never
+            reopens it. refreshAfterRefund re-reads the SAME canonical account. */}
+        <MesaCommercialAdjustments sessionId={detail.tableSessionId} account={detail.account}
+          canAdjust={canAdjust} onAdjusted={refreshAfterRefund} />
       </div>}
     </>}
   </Modal>;
@@ -1985,6 +2011,9 @@ function MesaWorkspace({
   // REFUND V1 -- UX-only gate (admin/owner); the backend RPC remains
   // authoritative regardless of what this hides.
   canRefund = false,
+  // AJUSTE COMERCIAL V1 -- separate UX-only gate (admin/owner), NOT tied to
+  // canRefund; mesa_post_commercial_adjustment_v1 stays authoritative.
+  canAdjust = false,
   draft, onClearDraft, onSendToCocina,
   // P1_D_TABLE_FIRST_01 -- phone shell only (compact prop threaded straight
   // through from the main TabMesa render, see below). Every state/handler
@@ -2019,8 +2048,16 @@ function MesaWorkspace({
     finally { setBusy(false); }
   };
   const [confirmingClose, setConfirmingClose] = useState(false);
+  // OVER-COLLECTED / AJUSTE COMERCIAL V1 SLICE C (§5/§6) — null until the
+  // backend REJECTS a real close attempt with MESA_CLOSE_OVER_COLLECTED; then
+  // `{ amount }` (the amount the backend returned). This is the ONLY thing that
+  // turns the dialog into the "Volver / Cerrar igualmente" acknowledgement
+  // step. The frontend never sets it from session.overCollected — the passive
+  // "Cobrado de más" figure in the account summary is display, not the close
+  // authority.
+  const [overCollectedAck, setOverCollectedAck] = useState(null);
   const openCloseConfirm = () => setConfirmingClose(true);
-  const cancelCloseConfirm = () => { if (!busy) { setConfirmingClose(false); setError(""); } };
+  const cancelCloseConfirm = () => { if (!busy) { setConfirmingClose(false); setError(""); setOverCollectedAck(null); } };
   // MESA_NAV_CONSOLIDATION_01 -- derived, not a separate piece of state: the
   // compact card's in-place workspace view is 100% determined by the two
   // existing flags above, so it can never drift out of sync with them.
@@ -2028,18 +2065,36 @@ function MesaWorkspace({
   const backToDetail = () => { if (workspaceView === "account") setShowAccount(false); else cancelCloseConfirm(); };
   // P0-B.1 — a never-ordered table (coversTotal == null) still goes through
   // releaseEmptyTable; an occupied table (real comandas, possibly already
-  // fully paid) goes through the new explicit closeTable. Same dialog, same
-  // confirmation, same error banner either way -- the backend decides
-  // whether the close is actually allowed right now (unpaid balance or
-  // genuine pending Cocina work both come back as a normal error here, not
-  // a crash or a silent no-op).
-  const confirmClose = async () => {
+  // fully paid) goes through the new explicit closeTable. The backend decides
+  // whether the close is actually allowed right now.
+  //
+  // OVER-COLLECTED / AJUSTE COMERCIAL V1 SLICE C (§5/§8, ledger 119):
+  //  1. The FIRST attempt never sends confirmOverCollected (it is not a local
+  //     decision).
+  //  2. MESA_CLOSE_OVER_COLLECTED back -> store the backend's amount in
+  //     overCollectedAck; the dialog becomes Volver / Cerrar igualmente. No
+  //     error banner (the dialog carries its own warning copy).
+  //  3. "Cerrar igualmente" calls this again with acknowledge=true, which sends
+  //     confirmOverCollected: true. Backend success -> canonical refresh.
+  //  4. MESA_TABLE_NOT_SETTLED / any other failure -> the normal error banner,
+  //     NEVER the over-collected override.
+  //  5. If the acknowledged (step 3) request itself fails, its error is shown
+  //     and we do NOT loop back into the acknowledgement step.
+  const confirmClose = async (acknowledge = false) => {
     setBusy(true); setError("");
     try {
       if (session.coversTotal == null) await mesaApi.releaseEmptyTable(session.id);
+      else if (acknowledge) await mesaApi.closeTable(session.id, { confirmOverCollected: true });
       else await mesaApi.closeTable(session.id);
-      setConfirmingClose(false); await onRefresh();
-    } catch (err) { setError(describeMesaError(err)); setBusy(false); }
+      setConfirmingClose(false); setOverCollectedAck(null); await onRefresh();
+    } catch (err) {
+      if (!acknowledge && err?.code === MESA_CLOSE_OVER_COLLECTED_CODE) {
+        setOverCollectedAck({ amount: Number(err.overCollected) || 0 });
+        setBusy(false);
+        return;
+      }
+      setError(describeMesaError(err)); setBusy(false);
+    }
   };
   // The real, authoritative Cocina submit -- the ONLY place a Mesa comanda
   // reaches the backend. One request, button disabled while in flight (both
@@ -2173,8 +2228,8 @@ function MesaWorkspace({
         </div>
         <div className="mesa-table-card-body">
           {workspaceView === "detail" && renderDetail()}
-          {workspaceView === "account" && <div data-testid="mesa-card-view-account"><VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} canRefund={canRefund} /></div>}
-          {workspaceView === "close-confirm" && <CerrarMesaConfirm tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} overCollected={Number(session.overCollected) || 0} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
+          {workspaceView === "account" && <div data-testid="mesa-card-view-account"><VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} canRefund={canRefund} canAdjust={canAdjust} /></div>}
+          {workspaceView === "close-confirm" && <CerrarMesaConfirm tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} overCollectedAck={overCollectedAck} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
         </div>
       </div>
     </div>;
@@ -2195,10 +2250,10 @@ function MesaWorkspace({
       {showAccount ? <>
         <button type="button" className="mesa-btn small mesa-hub-back" data-testid="mesa-account-back"
           onClick={() => setShowAccount(false)}>← Volver a la mesa</button>
-        <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} canRefund={canRefund} />
+        <VerCuentaBody table={table} onRefresh={onRefresh} onPrint={onPrint} canRefund={canRefund} canAdjust={canAdjust} />
       </> : renderDetail()}
     </Modal>
-    {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} overCollected={Number(session.overCollected) || 0} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
+    {confirmingClose && <CerrarMesaDialog tableNumber={table.number} empty={session.coversTotal == null} blocked={commandsBlockingClose(session).length} overCollectedAck={overCollectedAck} busy={busy} error={error} onCancel={cancelCloseConfirm} onConfirm={confirmClose} />}
   </>;
 }
 
@@ -2673,6 +2728,7 @@ export default function TabMesa({
   const canEdit = canEditMesaRoom(role);
   const canManageReservations = canManageMesaReservations(role);
   const canRefund = canRefundMesaPayment(role);
+  const canAdjust = canAdjustMesaObligation(role);
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -3129,7 +3185,7 @@ export default function TabMesa({
           as-is; its meaning was verified, not guessed. */}
       <button className="mesa-btn icon" title="Actualizar el plano" aria-label="Actualizar el plano" onClick={() => load()}>↻</button>
     </div>}
-    {showUltimasCuentas && <UltimasCuentasModal onClose={() => setShowUltimasCuentas(false)} canRefund={canRefund} />}
+    {showUltimasCuentas && <UltimasCuentasModal onClose={() => setShowUltimasCuentas(false)} canRefund={canRefund} canAdjust={canAdjust} />}
     {menuTable && <TableContextPopup
       table={menuTable} canEdit={canEdit} editing={editing} canManageReservations={canManageReservations}
       onClose={() => setMenuId(null)}
@@ -3160,6 +3216,7 @@ export default function TabMesa({
     {selected?.status === "open" && <MesaWorkspace key={selected.id} table={selected} onClose={() => setSelectedId(null)} onNewCommand={startNewCommand} onRefresh={() => load({ quiet: true })} onPrint={setPrintDocument}
       canManageReservations={canManageReservations}
       canRefund={canRefund}
+      canAdjust={canAdjust}
       onViewNight={() => { setSelectedId(null); setReservationsFilterTableId(selected.id); setShowReservations(true); }}
       draft={mesaDrafts[selected.session.id] || null}
       onClearDraft={onClearDraft}

@@ -4,13 +4,26 @@ import { BACKEND_BASE_URL } from "../utils/backendBase";
 export const MESA_API_ROOT = "/api/mesa/v1";
 
 export class MesaApiError extends Error {
-  constructor(code, status = 0) {
+  constructor(code, status = 0, extra = null) {
     super(code || "MESA_NETWORK_ERROR");
     this.name = "MesaApiError";
     this.code = code || "MESA_NETWORK_ERROR";
     this.status = status;
+    // OVER-COLLECTED / AJUSTE COMERCIAL SLICE C — the ONE structured field the
+    // HTTP-safe layer forwards on a rejection: the parsed overCollected amount
+    // that comes back with MESA_CLOSE_OVER_COLLECTED (mesaHttpHandlers.safeError,
+    // ledger 119). Never any other error's detail, never raw SQL. `null` for
+    // every other code.
+    this.overCollected = extra && typeof extra.overCollected === "number"
+      ? extra.overCollected : null;
   }
 }
+
+// OVER-COLLECTED / AJUSTE COMERCIAL SLICE C — exported so the close flow and its
+// tests share ONE spelling of the code the backend raises (ledger 119) when a
+// table has collected MORE than it currently owes and the operator has not yet
+// acknowledged it. Same discipline as MESA_DUPLICATE_PAYMENT_CODE below.
+export const MESA_CLOSE_OVER_COLLECTED_CODE = "MESA_CLOSE_OVER_COLLECTED";
 
 const SESSION_CODES = new Set(["MESA_UNAUTHENTICATED", "MESA_SESSION_STALE"]);
 
@@ -43,7 +56,12 @@ async function request(method, path, body) {
   const code = typeof payload?.code === "string" ? payload.code : null;
   if (SESSION_CODES.has(code)) invalidateOperationalSession();
   if (!response.ok || !payload || payload.ok !== true) {
-    throw new MesaApiError(code || "MESA_SERVER_ERROR", response.status);
+    // Only ONE whitelisted structured field survives onto the thrown error:
+    // `overCollected` (a number), which the backend forwards with
+    // MESA_CLOSE_OVER_COLLECTED. Every other rejection carries code + status only.
+    const extra = typeof payload?.overCollected === "number"
+      ? { overCollected: payload.overCollected } : null;
+    throw new MesaApiError(code || "MESA_SERVER_ERROR", response.status, extra);
   }
   return payload;
 }
@@ -80,8 +98,29 @@ export const mesaApi = Object.freeze({
   // P0-B.1 — the explicit close for an OCCUPIED table (releaseEmptyTable
   // above stays scoped to the never-ordered case). No force param exposed
   // here: force-close is backend-only in this phase, no frontend UI for it.
-  closeTable(sessionId) {
-    return request("POST", `/sessions/${encodeURIComponent(sessionId)}/close`, {});
+  //
+  // OVER-COLLECTED / AJUSTE COMERCIAL SLICE C (ledger 119) — confirmOverCollected
+  // is the operator's explicit acknowledgement, sent ONLY on the deliberate
+  // "Cerrar igualmente" retry AFTER the backend has rejected the first attempt
+  // with MESA_CLOSE_OVER_COLLECTED. The first attempt never sends it (it is not
+  // a local decision), and it never bypasses the unpaid-balance block. `=== true`
+  // strictly: a truthy-ish value must not stand in for the operator's choice.
+  closeTable(sessionId, { confirmOverCollected } = {}) {
+    return request(
+      "POST",
+      `/sessions/${encodeURIComponent(sessionId)}/close`,
+      confirmOverCollected === true ? { confirmOverCollected: true } : {},
+    );
+  },
+  // AJUSTE COMERCIAL V1 (ledger 118 route, ledger-119 reader) — a MANUAL
+  // commercial adjustment moves what ONE order's customer OWES; it never touches
+  // physical cash. Sends ONLY orderUid (the PERMANENT identity, never the display
+  // #NNN) / newGross (the ABSOLUTE new obligation, never a delta) / reason /
+  // expectedCurrentGross (optimistic concurrency) / clientRequestId. paymentMethod,
+  // lineIds, refund/transaction ids, cash fields, table status and any revision
+  // number are all backend-authoritative and deliberately never sent from here.
+  adjust(sessionId, adjustment) {
+    return request("POST", `/sessions/${encodeURIComponent(sessionId)}/adjustments`, adjustment);
   },
   saveTable(tableId, table) {
     return request("PUT", `/tables/${encodeURIComponent(tableId || "new")}`, table);
@@ -185,6 +224,29 @@ const ERROR_MESSAGES = Object.freeze({
   MESA_TABLE_HAS_ORDERS: "Esta mesa ya tiene comandas; cobra la cuenta para cerrarla.",
   MESA_TABLE_NOT_SETTLED: "Esta mesa todavía tiene saldo pendiente. Cóbralo antes de cerrar la mesa.",
   MESA_TABLE_HAS_ACTIVE_ORDERS: "Faltan comandas por servir.",
+  // OVER-COLLECTED / AJUSTE COMERCIAL SLICE C (ledger 119). MESA_CLOSE_OVER_COLLECTED
+  // is normally intercepted by the Cerrar mesa dialog itself (it becomes the
+  // Volver / Cerrar igualmente acknowledgement step, never a toast) -- this copy
+  // is only the fallback if it ever surfaces through describeMesaError elsewhere.
+  MESA_CLOSE_OVER_COLLECTED: "Esta mesa ha cobrado de más. Reembolsa la diferencia o confirma el cierre dejando la incidencia registrada.",
+  MESA_CLOSE_INCIDENT_PERSISTENCE_FAILED: "No se pudo registrar la incidencia del cierre. Inténtalo de nuevo.",
+  // AJUSTE COMERCIAL V1 -- every domain code mesa_post_commercial_adjustment_v1 /
+  // order_obligation_apply_adjustment_v1 can raise, mapped in the SAME slice that
+  // wires the frontend action (DUP-01 / Refund V1 lesson: a code shipped without
+  // frontend copy sits unreachable and confusing).
+  MESA_ADJUSTMENT_FORBIDDEN: "No tienes permiso para registrar ajustes comerciales.",
+  MESA_ADJUSTMENT_REASON_REQUIRED: "Indica el motivo del ajuste.",
+  MESA_ADJUSTMENT_INVALID: "No se pudo registrar el ajuste. Actualiza la cuenta e inténtalo de nuevo.",
+  MESA_ADJUSTMENT_META_INVALID: "No se pudo registrar el ajuste. Actualiza la cuenta e inténtalo de nuevo.",
+  MESA_ADJUSTMENT_EXCEEDS_OBLIGATION: "Un ajuste solo puede reducir la obligación, nunca aumentarla.",
+  MESA_ADJUSTMENT_NO_CHANGE: "El importe es el mismo: no hay ningún ajuste que registrar.",
+  MESA_ADJUSTMENT_STALE_OBLIGATION: "La obligación ha cambiado mientras tanto. Actualiza la cuenta y revisa el importe.",
+  MESA_ADJUSTMENT_IDEMPOTENCY_CONFLICT: "El ajuste no se ha repetido: actualiza la mesa y compruébalo.",
+  MESA_ADJUSTMENT_ORDER_NOT_FOUND: "No se encontró esta comanda. Actualiza la cuenta e inténtalo de nuevo.",
+  MESA_ADJUSTMENT_ORDER_MISMATCH: "Esta comanda no pertenece a esta mesa. Actualiza la cuenta.",
+  // Shared obligation primitive (order_cancel_v1 uses it too) -- a Class B order
+  // with no resolvable permanent identity fails closed here.
+  ORDER_WITHOUT_STABLE_IDENTITY: "Esta comanda no tiene una identidad estable y no se puede ajustar.",
   MESA_RELOGIN_REQUIRED: "Vuelve a entrar con tu PIN antes de cobrar.",
   MESA_UNAUTHENTICATED: "La sesión ha caducado.",
   MESA_SESSION_STALE: "Tu acceso ha cambiado. Vuelve a entrar.",

@@ -109,3 +109,71 @@ test("a missing/null account renders safely at zero, not a crash", async () => {
   expect(byTestId(container, "mesa-hub-overcollected")).toBe(null);
   unmount(container, root);
 });
+
+// ── AJUSTE COMERCIAL SLICE C §20/§29 — the ITEMISED layout, driven ONLY by
+// commands[].financial.commercialAdjustment !== 0. With no adjustment the
+// layout is byte-for-byte the compact one above; the cases below prove the
+// itemised one reads the canonical per-order obligation figures and derives
+// Cobrado de más / Resta por pagar against account.paid.
+const fin = (o) => ({
+  orderUid: o.orderUid || `uid-${o.n || 1}`,
+  originalObligation: o.original, currentObligation: o.current,
+  commercialAdjustment: Math.round((o.current - o.original) * 100) / 100,
+  obligationRevision: o.rev ?? 0, adjustable: o.adjustable ?? true,
+});
+
+test("§20 adjusted-case: Venta original 30 / Ajuste comercial -10 / Obligación actual 20 / Cobrado 30 / Cobrado de más 10", async () => {
+  const { container, root } = await mount({
+    total: 30, paid: 30, outstanding: 0, overCollected: 0, payments: [],
+    commands: [{ commandNumber: 1, total: 20, financial: fin({ original: 30, current: 20, rev: 2 }) }],
+  });
+  const balance = byTestId(container, "mesa-account-balance");
+  expect(balance.getAttribute("data-adjusted")).toBe("true");
+  expect(byTestId(container, "mesa-hub-original-sale").textContent).toMatch(/30,00\s?€/);
+  expect(byTestId(container, "mesa-hub-commercial-adjustment").textContent).toMatch(/-10,00\s?€/);
+  expect(byTestId(container, "mesa-hub-current-obligation").textContent).toMatch(/20,00\s?€/);
+  expect(byTestId(container, "mesa-hub-paid").textContent).toMatch(/30,00\s?€/);
+  expect(byTestId(container, "mesa-hub-outstanding").textContent).toMatch(/0,00\s?€/);
+  expect(byTestId(container, "mesa-hub-overcollected").textContent).toMatch(/10,00\s?€/);
+  // the compact "Total" row is not shown in the itemised layout
+  expect(byTestId(container, "mesa-hub-total")).toBe(null);
+  unmount(container, root);
+});
+
+test("§20 adjusted, still unpaid: obligation 20 after -10, paid 12 -> Resta por pagar 8, no Cobrado de más", async () => {
+  const { container, root } = await mount({
+    total: 30, paid: 12, outstanding: 18, overCollected: 0, payments: [],
+    commands: [{ commandNumber: 1, total: 20, financial: fin({ original: 30, current: 20 }) }],
+  });
+  expect(byTestId(container, "mesa-hub-outstanding").textContent).toMatch(/8,00\s?€/);
+  expect(byTestId(container, "mesa-hub-overcollected")).toBe(null);
+  unmount(container, root);
+});
+
+test("§22 multiple comandas, only one adjusted: figures aggregate across all commands", async () => {
+  const { container, root } = await mount({
+    total: 45, paid: 45, outstanding: 0, overCollected: 0, payments: [],
+    commands: [
+      { commandNumber: 1, total: 20, financial: fin({ n: 1, original: 30, current: 20 }) },
+      { commandNumber: 2, total: 15, financial: fin({ n: 2, original: 15, current: 15 }) },
+    ],
+  });
+  expect(byTestId(container, "mesa-hub-original-sale").textContent).toMatch(/45,00\s?€/);
+  expect(byTestId(container, "mesa-hub-commercial-adjustment").textContent).toMatch(/-10,00\s?€/);
+  expect(byTestId(container, "mesa-hub-current-obligation").textContent).toMatch(/35,00\s?€/);
+  expect(byTestId(container, "mesa-hub-overcollected").textContent).toMatch(/10,00\s?€/);
+  unmount(container, root);
+});
+
+test("commands present but NOTHING adjusted -> compact layout, byte-identical to the no-commands case", async () => {
+  const { container, root } = await mount({
+    total: 30, paid: 20, outstanding: 10, overCollected: 0, payments: [],
+    commands: [
+      { commandNumber: 1, total: 30, financial: fin({ original: 30, current: 30, rev: 1 }) },
+    ],
+  });
+  expect(byTestId(container, "mesa-account-balance").getAttribute("data-adjusted")).toBe(null);
+  expect(byTestId(container, "mesa-hub-total").textContent).toMatch(/30,00\s?€/);
+  expect(byTestId(container, "mesa-hub-current-obligation")).toBe(null);
+  unmount(container, root);
+});

@@ -143,3 +143,111 @@ describe("Refund V1 -- mesaApi.refund() request shape", () => {
     })).rejects.toMatchObject({ code: "MESA_REFUND_ALREADY_FULL", status: 409 });
   });
 });
+
+// OVER-COLLECTED / AJUSTE COMERCIAL SLICE C -- close acknowledgement + adjust route.
+describe("Slice C -- close over-collected acknowledgement", () => {
+  const jsonResponse = (body, ok = true, status = 200) => Promise.resolve({
+    ok, status, json: () => Promise.resolve(body),
+  });
+  beforeEach(() => { global.fetch = jest.fn(); });
+
+  test("the FIRST close attempt sends an empty body -- never confirmOverCollected", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: true, status: "closed" }));
+    await mesaApi.closeTable("s9");
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toBe(`https://staging.example${MESA_API_ROOT}/sessions/s9/close`);
+    expect(JSON.parse(init.body)).toEqual({});
+  });
+
+  test("the acknowledged retry sends { confirmOverCollected: true } -- and ONLY on === true", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: true, status: "closed" }));
+    await mesaApi.closeTable("s9", { confirmOverCollected: true });
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ confirmOverCollected: true });
+
+    global.fetch.mockClear();
+    await mesaApi.closeTable("s9", { confirmOverCollected: "yes" });
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({});
+    global.fetch.mockClear();
+    await mesaApi.closeTable("s9", { confirmOverCollected: 1 });
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({});
+  });
+
+  test("MESA_CLOSE_OVER_COLLECTED carries the parsed overCollected number onto the thrown error", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: false, code: "MESA_CLOSE_OVER_COLLECTED", overCollected: 10 }, false, 409));
+    await expect(mesaApi.closeTable("s9")).rejects.toMatchObject({
+      code: "MESA_CLOSE_OVER_COLLECTED", status: 409, overCollected: 10,
+    });
+  });
+
+  test("no other rejection carries overCollected -- it stays null", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: false, code: "MESA_TABLE_NOT_SETTLED" }, false, 409));
+    await mesaApi.closeTable("s9").catch((err) => {
+      expect(err.code).toBe("MESA_TABLE_NOT_SETTLED");
+      expect(err.overCollected).toBeNull();
+    });
+  });
+
+  test("MESA_CLOSE_OVER_COLLECTED / MESA_CLOSE_INCIDENT_PERSISTENCE_FAILED have specific, non-technical copy", () => {
+    const generic = "No se pudo completar la operación. Actualiza e inténtalo de nuevo.";
+    expect(describeMesaError({ code: "MESA_CLOSE_OVER_COLLECTED" })).not.toBe(generic);
+    expect(describeMesaError({ code: "MESA_CLOSE_INCIDENT_PERSISTENCE_FAILED" })).not.toBe(generic);
+    expect(describeMesaError({ code: "MESA_CLOSE_INCIDENT_PERSISTENCE_FAILED" })).not.toMatch(/SQL|SELECT|INSERT|constraint|null/i);
+  });
+});
+
+describe("Ajuste Comercial V1 -- mesaApi.adjust() request shape", () => {
+  const jsonResponse = (body, ok = true, status = 200) => Promise.resolve({
+    ok, status, json: () => Promise.resolve(body),
+  });
+  beforeEach(() => { global.fetch = jest.fn(); });
+
+  test("posts to /sessions/:id/adjustments", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: true, currentObligation: 20 }));
+    await mesaApi.adjust("session-9", {
+      orderUid: "11111111-1111-4111-8111-111111111111", newGross: 20, reason: "Cortesía",
+      expectedCurrentGross: 30, clientRequestId: "adj_abc",
+    });
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toBe(`https://staging.example${MESA_API_ROOT}/sessions/session-9/adjustments`);
+    expect(init.method).toBe("POST");
+  });
+
+  test("passes exactly the fields it is given -- and never a payment/refund/line/cash field", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: true }));
+    await mesaApi.adjust("session-9", {
+      orderUid: "11111111-1111-4111-8111-111111111111", newGross: 20, reason: "Cortesía",
+      expectedCurrentGross: 30, clientRequestId: "adj_abc",
+    });
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(Object.keys(body).sort()).toEqual(
+      ["clientRequestId", "expectedCurrentGross", "newGross", "orderUid", "reason"].sort());
+    for (const forbidden of ["paymentMethod", "lineIds", "coversSettled", "confirmDuplicate",
+      "originalTransactionId", "amount", "status", "revision", "cash", "id"]) {
+      expect(forbidden in body).toBe(false);
+    }
+  });
+
+  test("every MESA_ADJUSTMENT_* code + ORDER_WITHOUT_STABLE_IDENTITY has specific copy, no SQL leak", () => {
+    const generic = "No se pudo completar la operación. Actualiza e inténtalo de nuevo.";
+    const codes = [
+      "MESA_ADJUSTMENT_FORBIDDEN", "MESA_ADJUSTMENT_REASON_REQUIRED", "MESA_ADJUSTMENT_INVALID",
+      "MESA_ADJUSTMENT_META_INVALID", "MESA_ADJUSTMENT_EXCEEDS_OBLIGATION", "MESA_ADJUSTMENT_NO_CHANGE",
+      "MESA_ADJUSTMENT_STALE_OBLIGATION", "MESA_ADJUSTMENT_IDEMPOTENCY_CONFLICT",
+      "MESA_ADJUSTMENT_ORDER_NOT_FOUND", "MESA_ADJUSTMENT_ORDER_MISMATCH", "ORDER_WITHOUT_STABLE_IDENTITY",
+    ];
+    for (const code of codes) {
+      const message = describeMesaError({ code });
+      expect(message).not.toBe(generic);
+      expect(message).not.toMatch(/SQL|SELECT|INSERT|constraint|pg_|prosrc/i);
+    }
+    expect(describeMesaError({ code: "MESA_ADJUSTMENT_EXCEEDS_OBLIGATION" })).toMatch(/reducir/i);
+    expect(describeMesaError({ code: "MESA_ADJUSTMENT_FORBIDDEN" })).toMatch(/permiso/i);
+  });
+
+  test("a domain error surfaces as a MesaApiError with the exact code", async () => {
+    global.fetch.mockReturnValue(jsonResponse({ ok: false, code: "MESA_ADJUSTMENT_STALE_OBLIGATION" }, false, 409));
+    await expect(mesaApi.adjust("session-9", {
+      orderUid: "u", newGross: 1, reason: "x", clientRequestId: "r",
+    })).rejects.toMatchObject({ code: "MESA_ADJUSTMENT_STALE_OBLIGATION", status: 409 });
+  });
+});
