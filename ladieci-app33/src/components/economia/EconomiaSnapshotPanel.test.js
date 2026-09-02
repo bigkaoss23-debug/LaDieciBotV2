@@ -113,6 +113,26 @@ test("shows the window economy exactly as the backend reader reported it", async
   unmount(container, root);
 });
 
+// ECONOMÍA REFUND REPORTING FIX — Devuelto moved into "COBRADO EN EL
+// PERÍODO" (it is a receipt event, not a sale), reading receipts.refunded.
+// This box is dead in the shipped app today (EconomiaPage.jsx always mounts
+// this component with showEconomicWindow={false}), but this test suite
+// mounts it bare and is this field's only real coverage -- proven against
+// the same live UAT shape as EconomiaGeneral.test.js's cross-day case
+// (#999034, 2026-08-28): a sale from an earlier day, refunded today.
+test("cross-day refund: Devuelto reads receipts.refunded, never obligation.refunded", async () => {
+  economyApi.snapshot.mockResolvedValue({
+    ...SNAPSHOT,
+    obligation: { gross: 0, unpaid: 0, voided: 0, refunded: 0 },
+    receipts: { collected: -15, collectedGross: 0, refunded: 15, byMethod: { efectivo: -15, tarjeta: 0, bizum: 0, other: 0 } },
+  });
+  const { container, root } = await mount();
+  expect(byTestId(container, "m-refund").textContent).toMatch(/15,00\s?€/);
+  // And it now lives beside the other receipt-scoped figures, not the sale ones.
+  expect(byTestId(container, "m-collected").parentElement).toBe(byTestId(container, "m-refund").parentElement);
+  unmount(container, root);
+});
+
 test("opening the panel reads and writes nothing", async () => {
   const { container, root } = await mount();
   expect(economyApi.snapshot).toHaveBeenCalledTimes(1);

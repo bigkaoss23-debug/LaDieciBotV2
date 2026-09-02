@@ -364,7 +364,19 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
             {ready && (balance.overCollected || 0) > 0 && (
               <Kpi label="Cobrado de más" value={money(balance.overCollected)} testId="general-kpi-cobrado-de-mas" tone={ACCENT} />
             )}
-            <Kpi label="Devuelto" value={money(obligation.refunded)} testId="general-kpi-devuelto" />
+            {/* ECONOMÍA REFUND REPORTING FIX — this KPI answers "how much money
+                moved back out in this window", which is a RECEIPT question
+                (an event with its own instant), never an OBLIGATION one (an
+                order born in this window). `obligation.refunded` sums refunds
+                against sales that ORIGINATED here regardless of when the
+                refund happened, so it reads 0,00 € for a same-day sale
+                refunded on a later day even though the ledger holds a real
+                refund event today (proven live: UAT #999034, 85 paid /
+                15 refunded on 2026-08-28, "Hoy" showed Devuelto 0,00 €).
+                `receipts.refunded` is the field already scoped to this
+                window's own receipt instants — the same scope `Cobrado`
+                above already reads. */}
+            <Kpi label="Devuelto" value={money(receipts.refunded)} testId="general-kpi-devuelto" />
             <Kpi label="Anulado" value={money(obligation.voided)} testId="general-kpi-anulado" />
           </div>
 

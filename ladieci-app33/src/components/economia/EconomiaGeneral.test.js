@@ -88,3 +88,36 @@ test("unpaid and overCollected both non-zero at once: both KPIs shown, never net
   expect(overKpi.textContent).toMatch(/10,00\s?€/);
   unmount(container, root);
 });
+
+// ECONOMÍA REFUND REPORTING FIX — the exact live UAT shape (#999034, Mesa 6,
+// 2026-08-28): a sale ORIGINATED on an earlier business day is refunded
+// TODAY. `obligation.refunded` is correctly 0 (no sale was BORN in "Hoy");
+// `receipts.refunded` is correctly 15 (a refund EVENT landed in "Hoy").
+// Before this fix, Devuelto read the first field and showed 0,00 € on
+// screen despite a real 15,00 € refund existing in the canonical ledger for
+// the selected window -- this test fails against the pre-fix code and is
+// the regression pin for that exact defect.
+test("cross-day refund: Devuelto reads the RECEIPT-scoped figure, never the obligation-scoped one", async () => {
+  economyApi.snapshot.mockResolvedValue({
+    ...baseSnapshot({ unpaid: 0, overCollected: 0, unresolvedOverCollected: 0 }),
+    obligation: { gross: 0, unpaid: 0, voided: 0, refunded: 0 },
+    receipts: { collected: -15, collectedGross: 0, refunded: 15, byMethod: { efectivo: -15, tarjeta: 0, bizum: 0, other: 0 } },
+  });
+  const { container, root } = await mount();
+  expect(byTestId(container, "general-kpi-devuelto").textContent).toMatch(/15,00\s?€/);
+  unmount(container, root);
+});
+
+// Same-day sanity: when both scopes agree (the common case), the fix must
+// not have introduced a divergence where none exists.
+test("same-day payment and refund: Devuelto still matches when obligation.refunded and receipts.refunded happen to agree", async () => {
+  economyApi.snapshot.mockResolvedValue({
+    ...baseSnapshot({ unpaid: 0, overCollected: 0, unresolvedOverCollected: 0 }),
+    obligation: { gross: 85, unpaid: 0, voided: 0, refunded: 15 },
+    receipts: { collected: 70, collectedGross: 85, refunded: 15, byMethod: { efectivo: 70, tarjeta: 0, bizum: 0, other: 0 } },
+  });
+  const { container, root } = await mount();
+  expect(byTestId(container, "general-kpi-cobrado").textContent).toMatch(/70,00\s?€/);
+  expect(byTestId(container, "general-kpi-devuelto").textContent).toMatch(/15,00\s?€/);
+  unmount(container, root);
+});

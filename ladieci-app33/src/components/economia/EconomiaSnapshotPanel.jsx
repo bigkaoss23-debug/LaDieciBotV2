@@ -259,6 +259,16 @@ export default function EconomiaSnapshotPanel({ showEconomicWindow = true } = {}
               <Metric testId="m-card" label="Tarjeta" value={eur(snapshot.receipts.byMethod.tarjeta)} />
               <Metric testId="m-bizum" label="Bizum" value={eur(snapshot.receipts.byMethod.bizum)} />
               <Metric testId="m-other" label="Otros" value={eur(snapshot.receipts.byMethod.other)} />
+              {/* ECONOMÍA REFUND REPORTING FIX — a refund is money moving, with
+                  its OWN instant, exactly like the four metrics above it (and
+                  unlike the box below, which is about when a sale ORIGINATED).
+                  Moved here from "VENTAS ORIGINADAS" — reading
+                  snapshot.obligation.refunded there summed refunds against
+                  sales born in this window regardless of when the refund
+                  itself happened, so a same-day sale refunded on a LATER day
+                  read 0,00 € here even with a real refund event on screen
+                  (proven live: UAT #999034, 2026-08-28). */}
+              <Metric testId="m-refund" label="Devuelto" value={eur(snapshot.receipts.refunded)} />
             </div>
           </div>
 
@@ -271,7 +281,6 @@ export default function EconomiaSnapshotPanel({ showEconomicWindow = true } = {}
               <Metric testId="m-unpaid" label="Pendiente de cobro" value={eur(snapshot.obligation.unpaid)}
                 tone={snapshot.obligation.unpaid > 0 ? C.orange : C.bianco} />
               <Metric testId="m-void" label="Anulado" value={eur(snapshot.obligation.voided)} />
-              <Metric testId="m-refund" label="Devuelto" value={eur(snapshot.obligation.refunded)} />
               <Metric testId="m-tickets" label="Pedidos" value={String(snapshot.counts.obligations)} />
             </div>
             {/* The one sentence that stops the two blocks above being read as a
