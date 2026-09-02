@@ -141,7 +141,7 @@ test("C · a POR_DEVOLVER Mesa item renders in its own group, distinct from cobr
 });
 
 // ── D · REQUIERE_REVISION ────────────────────────────────────────────────
-test("D · REQUIERE_REVISION renders separately, with mapped human copy, raw code only behind Detalles", async () => {
+test("D · REQUIERE_REVISION renders in its own group with mapped human copy; the raw reasonCode is never rendered", async () => {
   const { container, root } = await mount();
   const group = byId(container, "pendientes-group-revision");
   expect(group).toBeTruthy();
@@ -149,13 +149,15 @@ test("D · REQUIERE_REVISION renders separately, with mapped human copy, raw cod
   expect(rows).toHaveLength(1);
   expect(rows[0].textContent).toContain("Movimiento económico sin pedido identificable.");
   expect(rows[0].textContent).toMatch(/5,00\s?€/);
-  // raw backend reason code is NOT primary copy
-  expect(rows[0].textContent).not.toContain("ORPHANED_LEDGER_EVENT");
-  // it is available on demand
-  const toggle = byId(container, "pendientes-item-revision-details-toggle");
-  expect(toggle).toBeTruthy();
-  await act(async () => { toggle.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
-  expect(byId(container, "pendientes-item-revision-details").textContent).toContain("ORPHANED_LEDGER_EVENT");
+  // the revision group is visually/semantically its own thing — not folded
+  // into cobrar/devolver
+  expect(byId(container, "pendientes-item-cobrar")).toBeTruthy();
+  expect(group.contains(allById(container, "pendientes-item-cobrar")[0])).toBe(false);
+  // raw backend vocabulary never reaches the DOM, anywhere in the view
+  expect(container.textContent).not.toContain("ORPHANED_LEDGER_EVENT");
+  expect(container.textContent).not.toMatch(/reasonCode|POR_DEVOLVER|POR_COBRAR/);
+  // and the row carries no interactive control
+  expect(rows[0].querySelector("button")).toBeNull();
   unmount(container, root);
 });
 
@@ -295,15 +297,26 @@ test("M2 · an unknown error code falls back to a generic operator-safe line", a
 });
 
 // ── N · no write action anywhere ────────────────────────────────────────
-test("N · the view exposes no cobrar / reembolsar / resolver / cerrar control", async () => {
+test("N · on the loaded view there is NO button at all — the only control is the search box", async () => {
+  const { container, root } = await mount();
+  expect(byId(container, "pendientes-group-cobrar")).toBeTruthy(); // loaded, not error/loading
+  const buttons = Array.from(container.querySelectorAll("button"));
+  expect(buttons).toHaveLength(0);
+  expect(byId(container, "pendientes-search")).toBeTruthy();
+  // and no action-shaped affordance smuggled in as a link or role=button
+  const affordances = Array.from(container.querySelectorAll("a, [role='button']"));
+  for (const el of affordances) {
+    expect(el.textContent).not.toMatch(/cobrar|reembols|devolver|corregir|marcar|resolver|cerrar|finalizar|reabrir/i);
+  }
+  unmount(container, root);
+});
+
+test("N2 · the ONLY button that ever appears is Reintentar, and only on error", async () => {
+  economyApi.pendencies.mockRejectedValue(new EconomyApiError("ECONOMY_READ_FORBIDDEN", 403));
   const { container, root } = await mount();
   const buttons = Array.from(container.querySelectorAll("button"));
-  for (const b of buttons) {
-    expect(b.textContent).not.toMatch(/cobrar|reembols|devolver saldo|corregir|marcar|resolver|cerrar|finalizar|reabrir/i);
-  }
-  // the only interactive controls are the search box and the revision Detalles toggle
-  expect(byId(container, "pendientes-search")).toBeTruthy();
-  expect(buttons.every((b) => /detalles/i.test(b.textContent))).toBe(true);
+  expect(buttons).toHaveLength(1);
+  expect(buttons[0].getAttribute("data-testid")).toBe("pendientes-retry");
   unmount(container, root);
 });
 
@@ -320,6 +333,51 @@ test("O · typing in the search box re-queries the reader with q after a short p
     await act(async () => { jest.advanceTimersByTime(300); });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(economyApi.pendencies).toHaveBeenCalledWith({ q: "juan" });
+    unmount(container, root);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+// ── O2 · a slow earlier search never overwrites a newer one ─────────────
+test("O2 · when an earlier search resolves after a newer one, the newer result stays on screen", async () => {
+  jest.useFakeTimers();
+  try {
+    let resolveA;
+    let resolveAb;
+    economyApi.pendencies
+      .mockResolvedValueOnce(NOTHING)                                        // mount, q=undefined
+      .mockImplementationOnce(() => new Promise((r) => { resolveA = r; }))   // q="a"  (slow)
+      .mockImplementationOnce(() => new Promise((r) => { resolveAb = r; })); // q="ab" (fast)
+
+    const { container, root } = await mount();
+    const input = byId(container, "pendientes-search");
+
+    await typeInto(input, "a");
+    await act(async () => { jest.advanceTimersByTime(300); });
+    await act(async () => { await Promise.resolve(); });
+    await typeInto(input, "ab");
+    await act(async () => { jest.advanceTimersByTime(300); });
+    await act(async () => { await Promise.resolve(); });
+
+    const mk = (amount) => ({
+      ok: true, generatedAt: "2026-09-02T12:00:00.000Z",
+      porCobrar: [{ ...COBRAR_MESA, orderUid: `uid-${amount}`, amount, customer: { name: null, phone: null } }],
+      porDevolver: [], requiereRevision: [],
+      counts: { porCobrar: 1, porDevolver: 0, requiereRevision: 0 },
+    });
+
+    // newer ("ab") resolves first…
+    await act(async () => { resolveAb(mk(40)); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(byId(container, "pendientes-summary-cobrar").textContent).toMatch(/40,00\s?€/);
+
+    // …then the stale ("a") resolves — it must NOT clobber the screen
+    await act(async () => { resolveA(mk(99)); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(byId(container, "pendientes-summary-cobrar").textContent).toMatch(/40,00\s?€/);
+    expect(byId(container, "pendientes-summary-cobrar").textContent).not.toMatch(/99,00\s?€/);
+
     unmount(container, root);
   } finally {
     jest.useRealTimers();
@@ -377,14 +435,24 @@ describe("integration · Pendientes lives inside the General tab", () => {
     unmount(container, root);
   });
 
-  test("S · General's Economía view still works, and returns intact after visiting Pendientes", async () => {
+  test("S · General's Economía view still works, and the chosen period survives a Pendientes round-trip", async () => {
     const { container, root } = await mount(EconomiaGeneral);
     expect(byId(container, "general-view-panel-economia")).toBeTruthy();
+    // pick a NON-default period first
+    await clickTestId(container, "general-scope-ayer");
+    expect(byId(container, "general-scope-ayer").getAttribute("aria-pressed")).toBe("true");
+    const snapshotCalls = economyApi.snapshot.mock.calls.length;
+
     await clickTestId(container, "general-view-pendientes");
     expect(byId(container, "general-view-panel-economia")).toBeNull();
+    expect(byId(container, "general-scope")).toBeNull();
+
     await clickTestId(container, "general-view-economia");
     expect(byId(container, "general-view-panel-economia")).toBeTruthy();
     expect(byId(container, "general-scope")).toBeTruthy();
+    // period selection was neither reset nor re-fetched by the detour
+    expect(byId(container, "general-scope-ayer").getAttribute("aria-pressed")).toBe("true");
+    expect(economyApi.snapshot.mock.calls.length).toBe(snapshotCalls);
     unmount(container, root);
   });
 

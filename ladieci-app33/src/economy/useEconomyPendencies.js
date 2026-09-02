@@ -19,15 +19,6 @@ import { economyApi, EconomyApiError } from './economyApi';
 // reload) so there is one hook idiom in Economía, not two.
 // ===============================================================
 
-// The three canonical directions the reader emits. POR_COBRAR / POR_DEVOLVER
-// are actionable groups (every item carries a stable orderUid);
-// REQUIERE_REVISION is NOT — it exists so real money is never silently lost
-// just because its target is unsafe to identify.
-export const PENDENCY_DIRECTION = Object.freeze({
-  POR_COBRAR: 'POR_COBRAR',
-  POR_DEVOLVER: 'POR_DEVOLVER',
-});
-
 const ERROR_COPY = {
   ECONOMY_UNAUTHENTICATED: 'Tu sesión ha caducado. Vuelve a entrar.',
   ECONOMY_SESSION_STALE: 'Tu sesión ha caducado. Vuelve a entrar.',
@@ -127,7 +118,6 @@ export default function useEconomyPendencies({ q } = {}) {
       },
       isEmpty:
         porCobrar.length === 0 && porDevolver.length === 0 && requiereRevision.length === 0,
-      generatedAt: (data && data.generatedAt) || null,
     };
   }, [data]);
 

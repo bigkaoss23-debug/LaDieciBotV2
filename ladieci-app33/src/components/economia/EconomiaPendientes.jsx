@@ -87,8 +87,7 @@ function identityOf(item) {
   const orderNo = d.orderNumber ? (String(d.orderNumber).startsWith('#') ? String(d.orderNumber) : `#${d.orderNumber}`) : null;
   if (item.channel === 'MESA') {
     const mesa = d.tableName || (d.tableNumber != null ? `Mesa ${d.tableNumber}` : 'Mesa');
-    const cmd = d.commandNumber != null ? ` · Pedido ${orderNo || `#${d.commandNumber}`}` : (orderNo ? ` · Pedido ${orderNo}` : '');
-    return `${mesa}${cmd}`;
+    return orderNo ? `${mesa} · Pedido ${orderNo}` : mesa;
   }
   const name = realName(item);
   if (name) return name;
@@ -141,46 +140,33 @@ const AmountItem = ({ item, tone, testId }) => (
   </div>
 );
 
+// REQUIERE_REVISIÓN row. No disclosure of raw backend vocabulary
+// (reasonCode / direction / channel enums): an operator cannot act on those,
+// and the mapped Spanish phrase already states, at the right altitude, that
+// the record needs a manual look. Deliberately zero interactive controls.
 function RevisionItem({ item, testId }) {
-  const [open, setOpen] = useState(false);
   const orderNo = item.orderDisplay
     ? (String(item.orderDisplay).startsWith('#') ? String(item.orderDisplay) : `#${item.orderDisplay}`)
     : null;
   const when = stamp(item.originalDate);
   return (
     <div data-testid={testId} style={{
+      display: 'flex', alignItems: 'flex-start', gap: 10,
       padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,.055)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        <span style={{ flex: '1 1 auto', minWidth: 0 }}>
-          <span style={{ display: 'block', color: LABEL, fontSize: 13, fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>
-            {orderNo || 'Sin pedido'}
-          </span>
-          <span style={{ display: 'block', color: MUTED, fontSize: 11, fontWeight: 600, marginTop: 3, lineHeight: 1.45 }}>
-            {describeRevisionReason(item.reasonCode)}
-            {when ? ` · ${when}` : ''}
-          </span>
+      <span style={{ flex: '1 1 auto', minWidth: 0 }}>
+        <span style={{ display: 'block', color: LABEL, fontSize: 13, fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>
+          {orderNo || 'Sin pedido'}
         </span>
-        {item.amount != null && (
-          <span style={{ flexShrink: 0, color: MUTED, fontWeight: 800, fontSize: 13.5, fontFamily: "'DM Mono',monospace" }}>
-            {eur(item.amount)}
-          </span>
-        )}
-      </div>
-      <button type="button" data-testid={`${testId}-details-toggle`}
-        aria-expanded={open} onClick={() => setOpen((v) => !v)}
-        style={{
-          background: 'transparent', border: 'none', padding: '4px 0 0', marginTop: 4,
-          color: MUTED, fontSize: 10.5, fontWeight: 700, cursor: 'pointer',
-        }}>
-        {open ? 'Ocultar detalles' : 'Detalles'}
-      </button>
-      {open && (
-        <div data-testid={`${testId}-details`} style={{ color: MUTED, fontSize: 10.5, marginTop: 4, lineHeight: 1.6, fontFamily: "'DM Mono',monospace" }}>
-          <div>reasonCode: {item.reasonCode || '—'}</div>
-          {item.channel && <div>canal: {item.channel}</div>}
-          {item.direction && <div>dirección: {item.direction}</div>}
-        </div>
+        <span style={{ display: 'block', color: MUTED, fontSize: 11, fontWeight: 600, marginTop: 3, lineHeight: 1.45 }}>
+          {describeRevisionReason(item.reasonCode)}
+          {when ? ` · ${when}` : ''}
+        </span>
+      </span>
+      {item.amount != null && (
+        <span style={{ flexShrink: 0, color: MUTED, fontWeight: 800, fontSize: 13.5, fontFamily: "'DM Mono',monospace" }}>
+          {eur(item.amount)}
+        </span>
       )}
     </div>
   );
