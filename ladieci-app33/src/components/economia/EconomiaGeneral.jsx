@@ -3,6 +3,10 @@ import { C } from '../../constants';
 import useEconomySnapshot, {
   ECONOMY_SCOPES, scopeIsReady, useServiceSessions,
 } from '../../economy/useEconomySnapshot';
+// PENDENCIAS ECONÓMICAS SLICE 1 — a third read-only view inside General:
+// unresolved economic exposures that outlived the operational UI. It is NOT
+// period-scoped, so the Período card above is hidden while it is showing.
+import EconomiaPendientes from './EconomiaPendientes';
 
 // ===============================================================
 // EconomiaGeneral — ONE SCOPE, TWO VIEWS.
@@ -188,7 +192,10 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
 
   return (
     <div data-testid="economia-general">
-      {/* ── SCOPE ─────────────────────────────────────────────────────── */}
+      {/* ── SCOPE ───────────────────────────────────────────────────────
+          Hidden under Pendientes: those exposures are not period-scoped, so a
+          Hoy/Ayer/Servicios selector above them would only mislead. */}
+      {view !== 'pendientes' && (
       <div style={{ ...card, padding: '11px 12px 12px' }} data-testid="general-scope">
         <h2 style={{ margin: '0 0 9px', color: CREAM, fontSize: 15, fontWeight: 900, letterSpacing: .2 }}>
           Situación económica
@@ -315,6 +322,7 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
           </div>
         )}
       </div>
+      )}
 
       {/* ── VIEWS ─────────────────────────────────────────────────────── */}
       <div role="tablist" aria-label="Vista" data-testid="general-view-tabs" style={{
@@ -322,7 +330,7 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
         border: '1px solid rgba(255,255,255,.07)', borderRadius: 11, padding: 3,
         background: 'rgba(255,255,255,.02)',
       }}>
-        {[{ id: 'economia', label: 'Economía' }, { id: 'ventas', label: 'Ventas' }].map((tb) => {
+        {[{ id: 'economia', label: 'Economía' }, { id: 'ventas', label: 'Ventas' }, { id: 'pendientes', label: 'Pendientes' }].map((tb) => {
           const active = view === tb.id;
           return (
             <button key={tb.id} type="button" role="tab" aria-selected={active}
@@ -426,6 +434,16 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
               sub={`${count(counts.obligations)} pedidos`} />
           </div>
           <SalesDetail rows={snapshot?.drillDown?.obligations} ready={ready} orderContext={orderContext} />
+        </div>
+      )}
+
+      {/* ── PENDIENTES — PENDENCIAS ECONÓMICAS SLICE 1 ─────────────────────
+          Read-only exposures that outlived the operational UI. Its own reader
+          (/api/economy/v1/pendencies), its own error/loading state: a failure
+          here never touches Economía or Ventas above. */}
+      {view === 'pendientes' && (
+        <div data-testid="general-view-panel-pendientes">
+          <EconomiaPendientes />
         </div>
       )}
     </div>

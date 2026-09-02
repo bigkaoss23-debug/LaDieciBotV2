@@ -84,6 +84,16 @@ export const economyApi = Object.freeze({
   listCashCounts({ from, to, limit } = {}) {
     return request("GET", `/cash-counts${qs({ from, to, limit })}`);
   },
+  // PENDENCIAS ECONÓMICAS SLICE 1 — the canonical read-only exposures reader.
+  // A GET, no body, nothing to confirm: it returns the unresolved economic
+  // exposures (POR_COBRAR / POR_DEVOLVER / REQUIERE_REVISION) as pure
+  // projections, recomputed on every read. The backend owns workspace scoping
+  // from the token; the only params it accepts are the ones below. This client
+  // performs NO write against a pendencia — a pendencia clears only when
+  // canonical backend economic truth changes.
+  pendencies({ direction, from, to, q } = {}) {
+    return request("GET", `/pendencies${qs({ direction, from, to, q })}`);
+  },
   // The ONLY write this client can perform. It appends one count; there is
   // deliberately no update and no delete method here, because the backend
   // and the database both refuse them.
