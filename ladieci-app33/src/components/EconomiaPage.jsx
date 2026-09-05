@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { C, LOGO_RED_SRC, calcTotale as calcTotaleHelper } from '../constants';
 import { api, sb } from '../api';
-import EconomiaSnapshotPanel from './economia/EconomiaSnapshotPanel';
 // ECONOMÍA V2 — the module shell. One page, one data layer, five tabs.
 import EconomiaBottomNav, { ECONOMIA_TABS } from './economia/EconomiaBottomNav';
 import EconomiaGeneral from './economia/EconomiaGeneral';
+// STEP 2 — Pendientes is a first-class destination now (it replaced Caja).
+import EconomiaPendientes from './economia/EconomiaPendientes';
+import useEconomyPendencies from '../economy/useEconomyPendencies';
 // N-9 — the reporting calendar. Never `new Date().setHours(0,0,0,0)`.
 import { madridBusinessDate, shiftBusinessDate, withinLastBusinessDays,
          REPORTING_TIMEZONE, BUSINESS_DAY_ROLLOVER_MIN } from '../economy/businessDay';
@@ -652,6 +654,37 @@ const EconomiaPage = ({onBack}) => {
   // re-run, and the selected period below is untouched. That is the whole point
   // of the shell — five destinations, not five mini-apps.
   const [tab, setTab] = useState("general");
+
+  // ── PENDIENTES ────────────────────────────────────────────────────────
+  // The dedicated destination has two faces: GLOBAL (a bare visit, and the
+  // bottom-nav badge) and SCOPED (arrived here from General's PENDIENTE, so it
+  // carries that exact period). `pendientesScope` holds the scoped one; null
+  // means GLOBAL / Todos.
+  const [pendientesScope, setPendientesScope] = useState(null);
+  const [pendientesScopeLabel, setPendientesScopeLabel] = useState(null);
+
+  // The GLOBAL badge. Its own bare Pendencias read — NEVER the scoped one — so
+  // it stays global while the page itself may be period-filtered. counts are
+  // the canonical `counts` contract.
+  const badgePend = useEconomyPendencies({});
+  const pendientesBadge = badgePend.status === 'ready'
+    ? ((badgePend.counts?.porCobrar || 0) + (badgePend.counts?.porDevolver || 0) + (badgePend.counts?.requiereRevision || 0))
+    : 0;
+
+  // Direct bottom-nav tap on Pendientes ALWAYS lands on GLOBAL / Todos: a
+  // previously-carried General filter is dropped. Only the PENDIENTE KPI path
+  // (navigateToScopedPendientes) sets a scope.
+  const handleTab = (id) => {
+    if (id === 'pendientes') { setPendientesScope(null); setPendientesScopeLabel(null); }
+    setTab(id);
+  };
+  const PENDIENTES_SCOPE_LABEL = { hoy: 'Hoy', ayer: 'Ayer', servicio: 'Servicio', personalizado: 'Personalizado' };
+  const navigateToScopedPendientes = (scope) => {
+    setPendientesScope(scope || null);
+    setPendientesScopeLabel(scope && scope.preset ? (PENDIENTES_SCOPE_LABEL[scope.preset] || null) : null);
+    setTab('pendientes');
+  };
+
   // VENTAS context — a label lookup, never a figure. The certified reader
   // carries each order's identity, amount and payment state but not its
   // channel, so "Mesa 2" / "Domicilio · Q2" is resolved from order rows keyed
@@ -1498,32 +1531,27 @@ const EconomiaPage = ({onBack}) => {
       <div style={{flex:1,padding:"14px 14px calc(86px + env(safe-area-inset-bottom, 0px))",overflowY:"auto"}}>
 
         {/* ═══ TAB: GENERAL — the V2 default ═══
-            Read-only economic truth. The two period groups, the N-8
-            divergence disclosure and the N-9 window statement live HERE and
-            nowhere else in the module — see the Caja mount below. */}
+            Read-only economic truth for the selected period: the KPIs (incl.
+            the canonical PENDIENTE that links to Pendientes), the read-only
+            Control Caja summary, Métodos de cobro, and the N-8 divergence
+            disclosure. */}
         {tab === "general" && (
-          <EconomiaGeneral lateAfterClose={lateAfterClose} orderContext={orderContext} />
+          <EconomiaGeneral lateAfterClose={lateAfterClose} orderContext={orderContext}
+            onNavigateToPendientes={navigateToScopedPendientes} />
         )}
 
-        {/* ═══ TAB: CAJA ═══
-            I-1 — the timestamp-windowed economic snapshot and the physical cash
-            count. It reads the backend's own /api/economy/v1 reader rather than
-            any figure this page derives, so the number an operator counts
-            against is the one the economic ledger actually holds. Its internals
-            are NOT redesigned in this slice.
-
-            Kept MOUNTED and merely hidden off-tab, on purpose: it owns its own
-            fetch, and unmounting it would make every visit to Caja re-request
-            the same window. A shell switches views, it does not reload them.
-
-            STEP 1.1 — `showEconomicWindow={false}`. The panel's read-only
-            economic half duplicated General's two groups, so Caja opened on a
-            second economic summary before reaching the thing it exists for.
-            Caja now renders only cash: the counting window, what the ledger
-            recorded in it, the physical count, the difference and the
-            append-only history. The cash-count contract is untouched. */}
-        <div style={{display: tab === "caja" ? "block" : "none"}} data-testid="economia-tab-panel-caja">
-          <EconomiaSnapshotPanel showEconomicWindow={false} />
+        {/* ═══ TAB: PENDIENTES ═══
+            The first-class destination. GLOBAL by default (and whenever the
+            operator taps the bottom-nav item directly); SCOPED only when
+            arrived here from General's PENDIENTE KPI, carrying that exact
+            canonical period. Kept MOUNTED and merely hidden off-tab: it owns
+            its own reader and a shell switches views, it does not reload them. */}
+        <div style={{display: tab === "pendientes" ? "block" : "none"}} data-testid="economia-tab-panel-pendientes">
+          <EconomiaPendientes
+            scope={pendientesScope}
+            scopeLabel={pendientesScopeLabel}
+            onClearScope={() => { setPendientesScope(null); setPendientesScopeLabel(null); }}
+          />
         </div>
 
         {/* ═══ TABS: HISTORIAL · ESTADÍSTICAS · CLIENTES ═══
@@ -2459,7 +2487,7 @@ const EconomiaPage = ({onBack}) => {
           normal scrolling of whichever tab is showing. Five destinations, vector
           icons, and deliberately NO lifecycle action: Finalizar servicio belongs
           to Servicio and stays there. */}
-      <EconomiaBottomNav tab={tab} onTab={setTab} />
+      <EconomiaBottomNav tab={tab} onTab={handleTab} badge={pendientesBadge} />
 
       {/* ═══ MODALS ═══ */}
       {modalAperto && vista && (() => {

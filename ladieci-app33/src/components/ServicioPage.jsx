@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { C, useWidth, blockedTels, MAX_PIZZE_ORA, LOGO_RED_SRC, genId, tot, calcTotale } from '../constants';
 import FinalizarReconciliationPanel from './servicio/FinalizarReconciliationPanel';
+import ContarCajaModal from './servicio/ContarCajaModal';
 import { economyApi } from '../economy/economyApi';
 import { sb, api, auth } from '../api';
 import { BACKEND_BASE_URL } from '../utils/backendBase';
@@ -147,6 +148,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const creationTransactionRef = useRef(new Map());
   const [aiForza, setAiForza] = useState("BASIC");
   const [chiudiModal, setChiudiModal] = useState(null); // null | { completati, attivi, loading, step }
+  const [contarCajaOpen, setContarCajaOpen] = useState(false); // physical cash snapshot — NOT a close
   const headerWidth = useWidth();
   const headerPhone = headerWidth < 520;
   // MESA_PHONE_SHELL_01 -- below this same width, Mesa gets its own dedicated
@@ -1751,6 +1753,18 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
             <span aria-hidden="true" style={{fontSize:15}}>🌙</span>
             <span>Finalizar servicio</span>
           </button>
+          {/* Contar caja — a physical cash snapshot of the CURRENT service,
+              taken now. Deliberately its own control, separate from Finalizar:
+              it does not close anything and can be repeated. The backend
+              resolves which service this belongs to. */}
+          <button data-testid="servicio-contar-caja-btn" onClick={()=>setContarCajaOpen(true)}
+            title="Contar caja" aria-label="Contar caja" style={{
+            flexShrink:0,background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.14)",
+            borderRadius:16,padding:"16px 12px",color:"rgba(255,255,255,0.62)",fontWeight:700,
+            fontSize:13,cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+            <span aria-hidden="true" style={{fontSize:14}}>🗄️</span>
+            <span>Contar caja</span>
+          </button>
           {onCloseout && (
             <button data-testid="servicio-closeout-btn" onClick={onCloseout}
               title="Resumen del servicio (solo lectura)" aria-label="Resumen del servicio (solo lectura)" style={{
@@ -1801,6 +1815,10 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           </div>
         </div>
       )}
+
+      {/* Contar caja — physical cash snapshot of the current service. Separate
+          from Finalizar, repeatable, and it closes nothing. */}
+      {contarCajaOpen && <ContarCajaModal onClose={()=>setContarCajaOpen(false)} />}
 
       {/* Modal Chiudi Servizio */}
       {chiudiModal && (

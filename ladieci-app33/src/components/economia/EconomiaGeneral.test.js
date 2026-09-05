@@ -15,11 +15,20 @@ jest.mock("../../economy/economyApi", () => ({
   EconomyApiError: class EconomyApiError extends Error {
     constructor(code, status = 0) { super(code); this.name = "EconomyApiError"; this.code = code; this.status = status; }
   },
-  economyApi: { snapshot: jest.fn() },
+  economyApi: { snapshot: jest.fn(), pendencies: jest.fn(), listCashCounts: jest.fn() },
 }));
 
 const EconomiaGeneral = require("./EconomiaGeneral").default;
 const { economyApi } = require("../../economy/economyApi");
+
+// PENDIENTE(scope) is `totals.porCobrar` from a scoped Pendencias read now, not
+// `obligation.unpaid`. Control Caja is a scoped cash-count read. Give both a
+// resolved-empty default; individual tests override `pendencies`.
+const PENDENCIES_EMPTY = Object.freeze({
+  ok: true, porCobrar: [], porDevolver: [], requiereRevision: [],
+  counts: { porCobrar: 0, porDevolver: 0, requiereRevision: 0 },
+  totals: { porCobrar: 0, porDevolver: 0 }, scope: null, window: null,
+});
 
 const WINDOW = Object.freeze({
   preset: "hoy", label: "Hoy",
@@ -54,7 +63,11 @@ async function mount() {
 }
 function unmount(container, root) { act(() => { root.unmount(); }); container.remove(); }
 
-beforeEach(() => { jest.clearAllMocks(); });
+beforeEach(() => {
+  jest.clearAllMocks();
+  economyApi.pendencies.mockResolvedValue(PENDENCIES_EMPTY);
+  economyApi.listCashCounts.mockResolvedValue({ ok: true, counts: [], scope: null, window: null });
+});
 
 test("balance.overCollected > 0: Cobrado de más KPI shows the exact figure", async () => {
   economyApi.snapshot.mockResolvedValue(baseSnapshot({ unpaid: 0, overCollected: 12.5, unresolvedOverCollected: 12.5 }));
@@ -73,19 +86,53 @@ test("balance.overCollected === 0: no KPI rendered (compact, no noise)", async (
   unmount(container, root);
 });
 
-test("unpaid and overCollected both non-zero at once: both KPIs shown, never netted", async () => {
-  // unpaid lives on BOTH `obligation.unpaid` (what EconomiaGeneral's own
-  // Pendiente KPI reads) and `balance.unpaid` (the dedicated section) in the
-  // real backend shape -- both set here, matching that duplication honestly.
+test("PENDIENTE and Cobrado de más both non-zero at once: both KPIs shown, never netted", async () => {
+  // PENDIENTE is canonical `totals.porCobrar` from Pendencias at this scope
+  // (10,00); Cobrado de más is the snapshot's own `balance.overCollected`
+  // (10,00). They are independent exposures and must never be netted.
   economyApi.snapshot.mockResolvedValue({
     ...baseSnapshot({ unpaid: 10, overCollected: 10, unresolvedOverCollected: 10 }),
     obligation: { gross: 30, unpaid: 10, voided: 0, refunded: 0 },
+  });
+  economyApi.pendencies.mockResolvedValue({
+    ...PENDENCIES_EMPTY,
+    counts: { porCobrar: 1, porDevolver: 0, requiereRevision: 0 },
+    totals: { porCobrar: 10, porDevolver: 0 },
   });
   const { container, root } = await mount();
   expect(byTestId(container, "general-kpi-pendiente").textContent).toMatch(/10,00\s?€/);
   const overKpi = byTestId(container, "general-kpi-cobrado-de-mas");
   expect(overKpi).toBeTruthy();
   expect(overKpi.textContent).toMatch(/10,00\s?€/);
+  unmount(container, root);
+});
+
+test("PENDIENTE reads totals.porCobrar, NEVER obligation.unpaid", async () => {
+  // The snapshot says unpaid 999; Pendencias says porCobrar 20. The KPI must
+  // show 20 — a different, canonical concept (still-active unpaid orders are
+  // not a pendency).
+  economyApi.snapshot.mockResolvedValue({
+    ...baseSnapshot({ unpaid: 999, overCollected: 0, unresolvedOverCollected: 0 }),
+    obligation: { gross: 1000, unpaid: 999, voided: 0, refunded: 0 },
+  });
+  economyApi.pendencies.mockResolvedValue({
+    ...PENDENCIES_EMPTY,
+    counts: { porCobrar: 1, porDevolver: 0, requiereRevision: 0 },
+    totals: { porCobrar: 20, porDevolver: 0 },
+  });
+  const { container, root } = await mount();
+  expect(byTestId(container, "general-kpi-pendiente").textContent).toMatch(/20,00\s?€/);
+  expect(byTestId(container, "general-kpi-pendiente").textContent).not.toMatch(/999/);
+  unmount(container, root);
+});
+
+test("a failed Pendencias read shows the KPI's own dash — never a fallback number", async () => {
+  economyApi.snapshot.mockResolvedValue(baseSnapshot({ unpaid: 42, overCollected: 0, unresolvedOverCollected: 0 }));
+  economyApi.pendencies.mockRejectedValue(new Error("boom"));
+  const { container, root } = await mount();
+  const txt = byTestId(container, "general-kpi-pendiente").textContent;
+  expect(txt).toMatch(/—|···/);
+  expect(txt).not.toMatch(/42/);
   unmount(container, root);
 });
 

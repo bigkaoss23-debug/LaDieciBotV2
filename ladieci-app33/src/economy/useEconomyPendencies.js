@@ -59,31 +59,62 @@ export const describeChannel = (channel) => CHANNEL_COPY[channel] || null;
 const EMPTY = Object.freeze({
   porCobrar: [], porDevolver: [], requiereRevision: [],
   counts: { porCobrar: 0, porDevolver: 0, requiereRevision: 0 },
+  totals: { porCobrar: null, porDevolver: null },
 });
 
-// Presentation-only totals: summed EXACTLY from the returned canonical items,
-// never merged into them and never altering an amount. A null total means the
-// group is empty (nothing to add), not "0,00 € owed".
-const sumAmounts = (items) => {
-  const list = Array.isArray(items) ? items : [];
-  if (list.length === 0) return null;
-  return Math.round(list.reduce((acc, it) => acc + (Number(it && it.amount) || 0), 0) * 100) / 100;
+// The four canonical scope presets the deployed backend resolves. `mediodia` /
+// `noche` are intentionally NOT offered. A scope is only sent once it is
+// COMPLETE (servicio needs an id, personalizado needs both instants) — an
+// incomplete scope is not a question the server can answer.
+const SCOPE_PRESETS = new Set(['hoy', 'ayer', 'servicio', 'personalizado']);
+export const pendenciesScopeIsReady = (scope) => {
+  if (!scope || !scope.preset) return true; // GLOBAL / Todos
+  if (!SCOPE_PRESETS.has(scope.preset)) return false;
+  if (scope.preset === 'servicio') return Boolean(scope.serviceSessionId);
+  if (scope.preset === 'personalizado') return Boolean(scope.from && scope.to);
+  return true;
 };
 
-export default function useEconomyPendencies({ q } = {}) {
+// useEconomyPendencies({ q, preset, serviceSessionId, from, to, businessDate })
+//
+// No scope params  → GLOBAL / Todos (the bottom-nav badge, the default page).
+// A canonical scope → the SAME question, restricted to that period/service,
+// resolved SERVER-SIDE. This hook computes no window; it forwards the scope.
+export default function useEconomyPendencies({
+  q, preset, serviceSessionId, from, to, businessDate,
+} = {}) {
   const [data, setData] = useState(null);
-  const [status, setStatus] = useState('loading'); // loading | ready | error
+  const [status, setStatus] = useState('loading'); // loading | ready | error | incomplete
   const [error, setError] = useState(null);
   const [reloadTick, setReloadTick] = useState(0);
   const reload = useCallback(() => setReloadTick((t) => t + 1), []);
 
   const query = typeof q === 'string' ? q.trim() : '';
+  const scope = { preset, serviceSessionId, from, to };
+  const ready = pendenciesScopeIsReady(scope);
+  // Primitive deps only, so a caller re-creating an equal scope object each
+  // render does not re-fire the request.
+  const scopeKey = `${preset || ''}|${serviceSessionId || ''}|${from || ''}|${to || ''}|${businessDate || ''}`;
 
   useEffect(() => {
+    // Drop the previous answer the moment the scope changes — an incomplete
+    // scope must not leave a stale filtered list on screen.
+    setData(null);
+    setError(null);
+    if (!ready) { setStatus('incomplete'); return undefined; }
     let cancelled = false;
     setStatus('loading');
-    setError(null);
-    economyApi.pendencies({ q: query || undefined })
+    // Promise.resolve wrapper: a synchronous throw (e.g. a missing token in
+    // economyApi.request) becomes a rejection this .catch handles, instead of
+    // an uncaught error in the effect body.
+    Promise.resolve().then(() => economyApi.pendencies({
+      q: query || undefined,
+      preset: preset || undefined,
+      serviceSessionId: preset === 'servicio' ? (serviceSessionId || undefined) : undefined,
+      from: preset === 'personalizado' ? (from || undefined) : undefined,
+      to: preset === 'personalizado' ? (to || undefined) : undefined,
+      businessDate: businessDate || undefined,
+    }))
       .then((payload) => {
         if (cancelled) return;
         setData(payload);
@@ -95,7 +126,9 @@ export default function useEconomyPendencies({ q } = {}) {
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, [query, reloadTick]);
+    // scopeKey folds the scope params into one primitive so an equal-but-new
+    // scope object each render does not re-fire the request.
+  }, [query, scopeKey, ready, reloadTick]);
 
   const view = useMemo(() => {
     const src = data && data.ok ? data : EMPTY;
@@ -107,15 +140,21 @@ export default function useEconomyPendencies({ q } = {}) {
       porDevolver: porDevolver.length,
       requiereRevision: requiereRevision.length,
     };
+    // CANONICAL TOTALS — taken from the backend response, NOT recomputed here.
+    // The deployed reader sums them from the exact same filtered population it
+    // returns, so General.PENDIENTE and this list cannot disagree. This client
+    // keeps no independent financial sum.
+    const totals = (src.totals && typeof src.totals === 'object')
+      ? { porCobrar: src.totals.porCobrar ?? null, porDevolver: src.totals.porDevolver ?? null }
+      : { porCobrar: null, porDevolver: null };
     return {
       porCobrar,
       porDevolver,
       requiereRevision,
       counts,
-      totals: {
-        porCobrar: sumAmounts(porCobrar),
-        porDevolver: sumAmounts(porDevolver),
-      },
+      totals,
+      scope: src.scope || null,
+      window: src.window || null,
       isEmpty:
         porCobrar.length === 0 && porDevolver.length === 0 && requiereRevision.length === 0,
     };

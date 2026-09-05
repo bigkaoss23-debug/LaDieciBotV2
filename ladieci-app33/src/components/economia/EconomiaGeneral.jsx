@@ -1,12 +1,31 @@
 import { useState, useMemo, useEffect } from 'react';
 import { C } from '../../constants';
 import useEconomySnapshot, {
-  ECONOMY_SCOPES, scopeIsReady, useServiceSessions,
+  ECONOMY_SCOPES, scopeIsReady, useServiceSessions, localWallClockToInstant,
 } from '../../economy/useEconomySnapshot';
-// PENDENCIAS ECONÓMICAS SLICE 1 — a third read-only view inside General:
-// unresolved economic exposures that outlived the operational UI. It is NOT
-// period-scoped, so the Período card above is hidden while it is showing.
-import EconomiaPendientes from './EconomiaPendientes';
+// PENDIENTES is no longer a view inside General — it is its own bottom-nav
+// destination. General only READS its canonical `totals.porCobrar` for the
+// selected period, to render (and link) the PENDIENTE KPI.
+import useEconomyPendencies from '../../economy/useEconomyPendencies';
+import EconomiaControlCaja from './EconomiaControlCaja';
+
+// The General period scope → the canonical params the Pendencias / cash-count
+// readers accept. NOTHING here computes a window: `hoy`/`ayer` are passed as
+// presets the server resolves; `servicio` carries the exact id; `personalizado`
+// forwards the two instants (wall-clock → ISO is done by the shared helper, the
+// SAME conversion the snapshot request uses, never a business-day boundary).
+export function scopeToCanonicalParams(scope) {
+  if (!scope || !scope.preset) return {};
+  if (scope.preset === 'servicio') {
+    return scope.serviceSessionId ? { preset: 'servicio', serviceSessionId: scope.serviceSessionId } : { preset: 'servicio' };
+  }
+  if (scope.preset === 'personalizado') {
+    return (scope.from && scope.to)
+      ? { preset: 'personalizado', from: localWallClockToInstant(scope.from), to: localWallClockToInstant(scope.to) }
+      : { preset: 'personalizado' };
+  }
+  return { preset: scope.preset }; // hoy | ayer
+}
 
 // ===============================================================
 // EconomiaGeneral — ONE SCOPE, TWO VIEWS.
@@ -138,7 +157,7 @@ const toLocalInput = (iso) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
+export default function EconomiaGeneral({ lateAfterClose, orderContext, onNavigateToPendientes }) {
   const [scope, setScope] = useState({ preset: 'hoy', from: '', to: '', serviceSessionId: null });
   const [view, setView] = useState('economia');
   const [n8Open, setN8Open] = useState(false);
@@ -146,6 +165,18 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
   const { snapshot, status, error, reload } = useEconomySnapshot(scope);
   const { sessions, businessDate: servicesDay, status: sessionsStatus } = useServiceSessions('hoy');
   const ready = status === 'ready' && snapshot;
+
+  // PENDIENTE(scope) is canonical: it is `totals.porCobrar` from a Pendencias
+  // request using the SAME selected scope — NEVER `snapshot.obligation.unpaid`
+  // (that counts still-active unpaid orders too; a different concept). One
+  // reader, one predicate, one amount; the KPI and the list it opens cannot
+  // disagree because they are the same number.
+  const pendScoped = useEconomyPendencies(scopeToCanonicalParams(scope));
+  const pendReady = pendScoped.status === 'ready';
+  const pendMoney = pendReady
+    ? eur(pendScoped.totals.porCobrar)
+    : pendScoped.status === 'error' ? '—' : '···';
+  const pendPositive = pendReady && (pendScoped.totals.porCobrar || 0) > 0;
 
   const win = snapshot?.window || null;
   const money = (n) => (ready ? eur(n) : status === 'error' ? '—' : '···');
@@ -192,10 +223,7 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
 
   return (
     <div data-testid="economia-general">
-      {/* ── SCOPE ───────────────────────────────────────────────────────
-          Hidden under Pendientes: those exposures are not period-scoped, so a
-          Hoy/Ayer/Servicios selector above them would only mislead. */}
-      {view !== 'pendientes' && (
+      {/* ── SCOPE — always visible now: General is period-scoped, both views. */}
       <div style={{ ...card, padding: '11px 12px 12px' }} data-testid="general-scope">
         <h2 style={{ margin: '0 0 9px', color: CREAM, fontSize: 15, fontWeight: 900, letterSpacing: .2 }}>
           Situación económica
@@ -322,7 +350,6 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
           </div>
         )}
       </div>
-      )}
 
       {/* ── VIEWS ─────────────────────────────────────────────────────── */}
       <div role="tablist" aria-label="Vista" data-testid="general-view-tabs" style={{
@@ -330,7 +357,7 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
         border: '1px solid rgba(255,255,255,.07)', borderRadius: 11, padding: 3,
         background: 'rgba(255,255,255,.02)',
       }}>
-        {[{ id: 'economia', label: 'Economía' }, { id: 'ventas', label: 'Ventas' }, { id: 'pendientes', label: 'Pendientes' }].map((tb) => {
+        {[{ id: 'economia', label: 'Resumen' }, { id: 'ventas', label: 'Ventas' }].map((tb) => {
           const active = view === tb.id;
           return (
             <button key={tb.id} type="button" role="tab" aria-selected={active}
@@ -365,8 +392,17 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
             <Kpi label="Cobrado" value={money(receipts.collected)} testId="general-kpi-cobrado" big tone={ready ? MONEY_IN : undefined} />
             <Kpi label="Ventas" value={money(obligation.gross)} testId="general-kpi-ventas"
               onClick={() => setView('ventas')} sub={`${count(counts.obligations)} pedidos`} />
-            <Kpi label="Pendiente" value={money(obligation.unpaid)} testId="general-kpi-pendiente"
-              tone={ready && (obligation.unpaid || 0) > 0 ? ACCENT : undefined} />
+            {/* CANONICAL — `totals.porCobrar` from Pendencias at this SAME
+                scope, never `obligation.unpaid`. Clickable only once that read
+                resolved: it opens the Pendientes destination carrying the
+                canonical params for this scope. No fallback to another number
+                if the Pendencias read fails — it shows its own ··· / — like
+                every other KPI. */}
+            <Kpi label="Pendiente" value={pendMoney} testId="general-kpi-pendiente"
+              tone={pendPositive ? ACCENT : undefined}
+              onClick={(onNavigateToPendientes && pendReady)
+                ? () => onNavigateToPendientes(scopeToCanonicalParams(scope))
+                : undefined} />
             {/* §5/§15 -- compact: only shown once it is genuinely non-zero, exactly
                 like Pendiente's own tone above never implies it replaces this. */}
             {ready && (balance.overCollected || 0) > 0 && (
@@ -387,6 +423,10 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
             <Kpi label="Devuelto" value={money(receipts.refunded)} testId="general-kpi-devuelto" />
             <Kpi label="Anulado" value={money(obligation.voided)} testId="general-kpi-anulado" />
           </div>
+
+          {/* CONTROL CAJA — read-only cash-count evidence for THIS scope,
+              compact by default. No write control. */}
+          <EconomiaControlCaja scope={scope} />
 
           <div style={card} data-testid="general-methods">
             <div style={{ ...eyebrow, marginBottom: 3 }}>Métodos de cobro</div>
@@ -434,16 +474,6 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext }) {
               sub={`${count(counts.obligations)} pedidos`} />
           </div>
           <SalesDetail rows={snapshot?.drillDown?.obligations} ready={ready} orderContext={orderContext} />
-        </div>
-      )}
-
-      {/* ── PENDIENTES — PENDENCIAS ECONÓMICAS SLICE 1 ─────────────────────
-          Read-only exposures that outlived the operational UI. Its own reader
-          (/api/economy/v1/pendencies), its own error/loading state: a failure
-          here never touches Economía or Ventas above. */}
-      {view === 'pendientes' && (
-        <div data-testid="general-view-panel-pendientes">
-          <EconomiaPendientes />
         </div>
       )}
     </div>

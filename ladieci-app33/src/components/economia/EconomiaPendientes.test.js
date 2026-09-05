@@ -25,7 +25,7 @@ jest.mock("../../economy/economyApi", () => ({
   EconomyApiError: class EconomyApiError extends Error {
     constructor(code, status = 0) { super(code); this.name = "EconomyApiError"; this.code = code; this.status = status; }
   },
-  economyApi: { pendencies: jest.fn(), snapshot: jest.fn() },
+  economyApi: { pendencies: jest.fn(), snapshot: jest.fn(), listCashCounts: jest.fn() },
 }));
 
 const EconomiaPendientes = require("./EconomiaPendientes").default;
@@ -67,11 +67,16 @@ const FULL = Object.freeze({
   ok: true, generatedAt: "2026-09-02T12:00:00.000Z",
   porCobrar: [COBRAR_MESA], porDevolver: [DEVOLVER_MESA, DEVOLVER_NAMED], requiereRevision: [REVISION],
   counts: { porCobrar: 1, porDevolver: 2, requiereRevision: 1 },
+  // CANONICAL totals — summed by the deployed backend from these same items.
+  totals: { porCobrar: 50, porDevolver: 25 },
+  scope: null, window: null,
 });
 const NOTHING = Object.freeze({
   ok: true, generatedAt: "2026-09-02T12:00:00.000Z",
   porCobrar: [], porDevolver: [], requiereRevision: [],
   counts: { porCobrar: 0, porDevolver: 0, requiereRevision: 0 },
+  totals: { porCobrar: null, porDevolver: null },
+  scope: null, window: null,
 });
 const snapshotStub = Object.freeze({
   ok: true,
@@ -111,6 +116,7 @@ function unmount(container, root) { act(() => { root.unmount(); }); container.re
 beforeEach(() => {
   economyApi.pendencies.mockResolvedValue(FULL);
   economyApi.snapshot.mockResolvedValue(snapshotStub);
+  economyApi.listCashCounts.mockResolvedValue({ ok: true, counts: [], scope: null, window: null });
 });
 
 // ── B · POR_COBRAR ───────────────────────────────────────────────────────
@@ -325,14 +331,14 @@ test("O · typing in the search box re-queries the reader with q after a short p
   jest.useFakeTimers();
   try {
     const { container, root } = await mount();
-    expect(economyApi.pendencies).toHaveBeenCalledWith({ q: undefined });
+    expect(economyApi.pendencies).toHaveBeenCalledWith(expect.objectContaining({ q: undefined }));
     const input = byId(container, "pendientes-search");
     await typeInto(input, "juan");
     // not yet — the debounce has not elapsed
     expect(economyApi.pendencies).toHaveBeenCalledTimes(1);
     await act(async () => { jest.advanceTimersByTime(300); });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(economyApi.pendencies).toHaveBeenCalledWith({ q: "juan" });
+    expect(economyApi.pendencies).toHaveBeenCalledWith(expect.objectContaining({ q: "juan" }));
     unmount(container, root);
   } finally {
     jest.useRealTimers();
@@ -365,6 +371,7 @@ test("O2 · when an earlier search resolves after a newer one, the newer result 
       porCobrar: [{ ...COBRAR_MESA, orderUid: `uid-${amount}`, amount, customer: { name: null, phone: null } }],
       porDevolver: [], requiereRevision: [],
       counts: { porCobrar: 1, porDevolver: 0, requiereRevision: 0 },
+      totals: { porCobrar: amount, porDevolver: null }, scope: null, window: null,
     });
 
     // newer ("ab") resolves first…
@@ -406,63 +413,59 @@ test("T · economyApi.pendencies goes through the shared request helper, no besp
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// INTEGRATION — Pendientes as a third view inside Economía → General
+// GENERAL — Pendientes is NO LONGER a view here; it is its own destination.
+// General only READS totals.porCobrar for the selected scope, and links out.
 // ═══════════════════════════════════════════════════════════════════════════
-describe("integration · Pendientes lives inside the General tab", () => {
+describe("General · Pendientes left the internal tabs", () => {
   const clickTestId = async (c, id) => {
     await act(async () => { byId(c, id).dispatchEvent(new MouseEvent("click", { bubbles: true })); });
     await flush();
   };
 
-  test("A · a Pendientes segment appears in General and opens the read-only view", async () => {
+  test("the internal selector is exactly Resumen / Ventas — no Pendientes segment", async () => {
     const { container, root } = await mount(EconomiaGeneral);
-    const seg = byId(container, "general-view-pendientes");
-    expect(seg).toBeTruthy();
-    expect(seg.textContent).toBe("Pendientes");
-    await clickTestId(container, "general-view-pendientes");
-    expect(byId(container, "general-view-panel-pendientes")).toBeTruthy();
-    expect(byId(container, "economia-pendientes")).toBeTruthy();
-    expect(byId(container, "pendientes-group-cobrar")).toBeTruthy();
+    const tabs = Array.from(container.querySelectorAll('[data-testid^="general-view-"]'))
+      .filter((el) => el.getAttribute("role") === "tab");
+    expect(tabs.map((el) => el.textContent.trim())).toEqual(["Resumen", "Ventas"]);
+    expect(byId(container, "general-view-pendientes")).toBeNull();
+    expect(byId(container, "general-view-panel-pendientes")).toBeNull();
     unmount(container, root);
   });
 
-  test("no período selector is shown under Pendientes (it is not period-scoped)", async () => {
+  test("the period scope card is always visible (both Resumen and Ventas are period-scoped)", async () => {
     const { container, root } = await mount(EconomiaGeneral);
-    expect(byId(container, "general-scope")).toBeTruthy(); // visible under Economía
-    await clickTestId(container, "general-view-pendientes");
-    expect(byId(container, "general-scope")).toBeNull();
-    expect(container.querySelector('[data-testid="general-scope-hoy"]')).toBeNull();
-    unmount(container, root);
-  });
-
-  test("S · General's Economía view still works, and the chosen period survives a Pendientes round-trip", async () => {
-    const { container, root } = await mount(EconomiaGeneral);
-    expect(byId(container, "general-view-panel-economia")).toBeTruthy();
-    // pick a NON-default period first
-    await clickTestId(container, "general-scope-ayer");
-    expect(byId(container, "general-scope-ayer").getAttribute("aria-pressed")).toBe("true");
-    const snapshotCalls = economyApi.snapshot.mock.calls.length;
-
-    await clickTestId(container, "general-view-pendientes");
-    expect(byId(container, "general-view-panel-economia")).toBeNull();
-    expect(byId(container, "general-scope")).toBeNull();
-
-    await clickTestId(container, "general-view-economia");
-    expect(byId(container, "general-view-panel-economia")).toBeTruthy();
     expect(byId(container, "general-scope")).toBeTruthy();
-    // period selection was neither reset nor re-fetched by the detour
-    expect(byId(container, "general-scope-ayer").getAttribute("aria-pressed")).toBe("true");
-    expect(economyApi.snapshot.mock.calls.length).toBe(snapshotCalls);
+    await clickTestId(container, "general-view-ventas");
+    expect(byId(container, "general-scope")).toBeTruthy();
     unmount(container, root);
   });
 
-  test("no lifecycle / close action is introduced by the Pendientes view", async () => {
+  test("PENDIENTE is sourced from a scoped Pendencias read (totals.porCobrar), not obligation.unpaid", async () => {
+    economyApi.snapshot.mockResolvedValue({ ...snapshotStub, obligation: { gross: 500, unpaid: 500, voided: 0, refunded: 0 } });
+    economyApi.pendencies.mockResolvedValue({
+      ...NOTHING,
+      counts: { porCobrar: 1, porDevolver: 0, requiereRevision: 0 },
+      totals: { porCobrar: 20, porDevolver: null },
+    });
     const { container, root } = await mount(EconomiaGeneral);
-    await clickTestId(container, "general-view-pendientes");
-    const controls = Array.from(container.querySelectorAll("button, a, [role='button']"));
-    for (const el of controls) {
-      expect(el.textContent).not.toMatch(/finalizar\s+servicio|cerrar\s+servicio|cierre\s+del\s+servicio/i);
-    }
+    expect(byId(container, "general-kpi-pendiente").textContent).toMatch(/20,00\s?€/);
+    // The scoped read went out with the canonical preset, no client window math.
+    expect(economyApi.pendencies).toHaveBeenCalledWith(expect.objectContaining({ preset: "hoy" }));
     unmount(container, root);
+  });
+
+  test("clicking PENDIENTE calls onNavigateToPendientes with the canonical scope params", async () => {
+    economyApi.pendencies.mockResolvedValue({
+      ...NOTHING, counts: { porCobrar: 1, porDevolver: 0, requiereRevision: 0 }, totals: { porCobrar: 20, porDevolver: null },
+    });
+    const onNav = jest.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(<EconomiaGeneral onNavigateToPendientes={onNav} />); });
+    await flush();
+    await clickTestId(container, "general-kpi-pendiente");
+    expect(onNav).toHaveBeenCalledWith(expect.objectContaining({ preset: "hoy" }));
+    act(() => { root.unmount(); }); container.remove();
   });
 });

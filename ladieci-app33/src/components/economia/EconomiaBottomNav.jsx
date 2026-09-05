@@ -37,8 +37,8 @@ const NavIcon = ({ d }) => (
 
 // A pie with one segment read out: the economic picture at a glance.
 const ICON_GENERAL = <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v8.5h8.5" /></>;
-// A cash drawer with its coin slot.
-const ICON_CAJA = <><rect x="2.5" y="6.5" width="19" height="12" rx="2.5" /><path d="M2.5 11h19" /><path d="M10 15h4" /></>;
+// An open envelope with an alert dot: unresolved economic issues waiting.
+const ICON_PENDIENTES = <><path d="M3.5 6.5h17v11h-17z" /><path d="M3.5 7l8.5 6 8.5-6" /><circle cx="19" cy="6" r="3" fill="currentColor" stroke="none" /></>;
 // A document with lines: the list of what already happened.
 const ICON_HISTORIAL = <><rect x="4.5" y="3" width="15" height="18" rx="2.5" /><path d="M8.5 8h7M8.5 12h7M8.5 16h4" /></>;
 // Bars.
@@ -46,15 +46,23 @@ const ICON_ESTADISTICAS = <><path d="M5 20v-6M12 20V4M19 20v-9" /><path d="M2.5 
 // Two people.
 const ICON_CLIENTES = <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" /><path d="M16.5 5.2a3.5 3.5 0 0 1 0 6.6M17.5 14.4c2.4.6 4 2.7 4 5.6" /></>;
 
+// STEP 2 — the second destination is Pendientes, not Caja. The physical
+// cash-count WRITE moved to the current-service area; its historical READ is a
+// compact row inside General. Economía navigates: it does not count the drawer.
 export const ECONOMIA_TABS = [
   { id: 'general',      label: 'General',      icon: ICON_GENERAL },
-  { id: 'caja',         label: 'Caja',         icon: ICON_CAJA },
+  { id: 'pendientes',   label: 'Pendientes',   icon: ICON_PENDIENTES },
   { id: 'historial',    label: 'Historial',    icon: ICON_HISTORIAL },
   { id: 'estadisticas', label: 'Estadísticas', icon: ICON_ESTADISTICAS },
   { id: 'clientes',     label: 'Clientes',     icon: ICON_CLIENTES },
 ];
 
-export default function EconomiaBottomNav({ tab, onTab }) {
+// `badge` is the GLOBAL unresolved count (porCobrar + porDevolver +
+// requiereRevision). It stays global regardless of any period filter the
+// Pendientes page itself is showing — the badge is the notification, not a
+// mirror of the current view. 0 → nothing; > 0 → a compact pill on Pendientes.
+export default function EconomiaBottomNav({ tab, onTab, badge = 0 }) {
+  const badgeCount = Number.isFinite(Number(badge)) ? Math.max(0, Math.trunc(Number(badge))) : 0;
   return (
     <nav data-testid="economia-bottom-nav" role="tablist" aria-label="Secciones de Economía"
       style={{
@@ -86,7 +94,21 @@ export default function EconomiaBottomNav({ tab, onTab }) {
               color: active ? ECONOMIA_ACCENT : MUTED,
               transition: 'color .15s, background .15s, border-color .15s',
             }}>
-            <NavIcon d={item.icon} />
+            <span style={{ position: 'relative', display: 'inline-flex' }}>
+              <NavIcon d={item.icon} />
+              {item.id === 'pendientes' && badgeCount > 0 && (
+                <span data-testid="economia-pendientes-badge" aria-label={`${badgeCount} pendientes`}
+                  style={{
+                    position: 'absolute', top: -6, right: -10, minWidth: 15, height: 15,
+                    padding: '0 3px', borderRadius: 999,
+                    background: ECONOMIA_ACCENT, color: '#1a0f06',
+                    fontSize: 9.5, fontWeight: 900, lineHeight: '15px', textAlign: 'center',
+                    boxShadow: '0 0 0 2px rgba(8,8,8,.99)',
+                  }}>
+                  {badgeCount > 99 ? '99+' : badgeCount}
+                </span>
+              )}
+            </span>
             <span style={{
               fontSize: 10.5, fontWeight: active ? 800 : 600, letterSpacing: .1,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',

@@ -40,7 +40,7 @@ jest.mock('../../economy/economyApi', () => ({
     constructor(code, status = 0) { super(code); this.name = 'EconomyApiError'; this.code = code; this.status = status; }
   },
   createEconomyRequestId: jest.fn(() => 'cash_testrequestid0001'),
-  economyApi: { snapshot: jest.fn(), listCashCounts: jest.fn(), createCashCount: jest.fn() },
+  economyApi: { snapshot: jest.fn(), listCashCounts: jest.fn(), createCashCount: jest.fn(), pendencies: jest.fn() },
 }));
 
 import EconomiaPage from '../EconomiaPage';
@@ -171,8 +171,19 @@ beforeEach(() => {
   api.getOrdenesArchivadosSesion.mockReset().mockResolvedValue({ ordenes: [] });
   createEconomyRequestId.mockImplementation(() => 'cash_testrequestid0001');
   economyApi.snapshot.mockResolvedValue(DIA);
-  economyApi.listCashCounts.mockResolvedValue({ ok: true, counts: [] });
+  economyApi.listCashCounts.mockResolvedValue({ ok: true, counts: [], scope: null, window: null });
   economyApi.createCashCount.mockResolvedValue({ ok: true, created: true, count: {} });
+  // PENDIENTE(scope) is `totals.porCobrar` from a scoped Pendencias read now.
+  // Mirror the matching snapshot's `unpaid` so the existing figure assertions
+  // hold under the canonical source (only Service C's 32,00 is asserted).
+  economyApi.pendencies.mockImplementation((p = {}) => {
+    const porCobrar = (p.preset === 'servicio' && p.serviceSessionId === SERVICE_C) ? 32 : 0;
+    return Promise.resolve({
+      ok: true, porCobrar: [], porDevolver: [], requiereRevision: [],
+      counts: { porCobrar: porCobrar > 0 ? 1 : 0, porDevolver: 0, requiereRevision: 0 },
+      totals: { porCobrar, porDevolver: null }, scope: null, window: null,
+    });
+  });
 });
 
 // ── 1-7 · THE SCOPE ACTUALLY CONTROLS THE WINDOW ───────────────────────────
@@ -588,68 +599,29 @@ describe('ventas · which sales compose this scope', () => {
   });
 });
 
-// ── 16-19 · CAJA ───────────────────────────────────────────────────────────
-describe('caja · its own window, its own append-only contract', () => {
-  test('16 · the counting window is still the certified `hoy` 04:00 → 04:00', async () => {
-    const c = await mount();
-    await clickTab(c, 'caja');
-    expect(t(c, 'preset-hoy')).toBeTruthy();
-    expect(t(c, 'window-range').textContent).toMatch(/25\/0?8/);
-    expect(t(c, 'window-range').textContent).toMatch(/26\/0?8/);
-  });
-
-  test('17-18 · counting appends, and touches no lifecycle', async () => {
-    const c = await mount();
-    await clickTab(c, 'caja');
-    await setInput(t(c, 'counted-cash-input'), '89,50');
-    await clickEl(t(c, 'confirm-cash-count'));
-    expect(economyApi.createCashCount).toHaveBeenCalledTimes(1);
-    // Append only: the client has no update and no delete to call.
-    expect(economyApi.createCashCount.mock.calls[0][0]).toHaveProperty('clientRequestId');
-    expect(Object.keys(economyApi)).not.toEqual(expect.arrayContaining(['updateCashCount', 'deleteCashCount']));
-    // And nothing in the module can close a service.
-    for (const el of Array.from(c.querySelectorAll('button'))) {
-      expect(el.textContent).not.toMatch(/finalizar\s+servicio|cerrar\s+servicio/i);
-    }
-  });
-
-  test('19 · cross-window receipts stay disclosed, compactly', async () => {
-    economyApi.snapshot.mockResolvedValue(snapshotFor(DIA_WINDOW, {
-      root: {
-        windowCrossing: {
-          obligationBeforeWindowReceiptInside: [{ orderId: '#999001' }, { orderId: '#999002' }],
-          obligationInsideWindowReceiptAfter: [],
-          receiptsSplitAcrossBoundary: [],
-        },
-      },
-    }));
-    const c = await mount();
-    await clickTab(c, 'caja');
-    const box = t(c, 'window-crossing');
-    expect(box).toBeTruthy();
-    expect(box.textContent).toContain('2 cobros a caballo del período');
-    expect(box.textContent).toContain('2 de pedidos anteriores al período');
-  });
-});
+// ── Caja is gone as an Economía destination. The physical cash-count WRITE
+//    moved to the current-service area (ContarCajaModal.test.js) and its
+//    historical READ is a compact Control Caja row inside General. ──────────
 
 // ── copy + boundaries that must survive ────────────────────────────────────
 describe('copy · the screen stopped reading like documentation', () => {
-  test('the removed paragraphs are gone from both tabs', async () => {
+  test('the removed paragraphs are gone from General', async () => {
     const c = await mount();
     expect(c.textContent).not.toMatch(/Solo consulta/i);
     expect(c.textContent).not.toMatch(/Elige el tramo que vas a contar/i);
     expect(c.textContent).not.toMatch(/no tienen por qué coincidir/i);
     expect(c.textContent).not.toMatch(/Europe\/Madrid/);
-    await clickTab(c, 'caja');
-    expect(c.textContent).not.toMatch(/Elige el tramo que vas a contar/i);
   });
 
-  test('the first tab is headed Situación económica, and never says "resumen"', async () => {
+  test('the first tab keeps its Situación económica heading and its Resumen/Ventas selector', async () => {
     const c = await mount();
     const general = t(c, 'economia-general');
     expect(general.textContent).toContain('Situación económica');
     expect(general.textContent).toMatch(/Período/);
-    expect(general.textContent).not.toMatch(/resumen/i);
+    // The internal selector is Resumen / Ventas (the approved labels).
+    expect(t(c, 'general-view-economia').textContent.trim()).toBe('Resumen');
+    expect(t(c, 'general-view-ventas').textContent.trim()).toBe('Ventas');
+    expect(t(c, 'general-view-pendientes')).toBeNull();
   });
 
   test('the header states no order count of its own', async () => {
@@ -677,15 +649,15 @@ describe('copy · the screen stopped reading like documentation', () => {
     expect(detail.textContent).toContain('139,50');
     expect(detail.textContent).toContain('57,50');
     expect(detail.textContent).toMatch(/no cambia/i);
-    // Not duplicated into Caja.
-    await clickTab(c, 'caja');
-    expect(t(c, 'economia-tab-panel-caja').querySelector('[data-testid="general-n8"]')).toBeNull();
+    // Not duplicated into the Pendientes destination.
+    await clickTab(c, 'pendientes');
+    expect(t(c, 'economia-tab-panel-pendientes').querySelector('[data-testid="general-n8"]')).toBeNull();
   });
 
-  test('the five destinations are unchanged', async () => {
+  test('the five destinations — Caja out, Pendientes in', async () => {
     const c = await mount();
     expect(Array.from(t(c, 'economia-bottom-nav').querySelectorAll('button')).map((b) => b.textContent.trim()))
-      .toEqual(['General', 'Caja', 'Historial', 'Estadísticas', 'Clientes']);
-    expect(ECONOMIA_TABS.map((x) => x.id)).toEqual(['general', 'caja', 'historial', 'estadisticas', 'clientes']);
+      .toEqual(['General', 'Pendientes', 'Historial', 'Estadísticas', 'Clientes']);
+    expect(ECONOMIA_TABS.map((x) => x.id)).toEqual(['general', 'pendientes', 'historial', 'estadisticas', 'clientes']);
   });
 });

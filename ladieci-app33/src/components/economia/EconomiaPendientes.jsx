@@ -190,7 +190,15 @@ function Group({ title, count, total, tone, icon, items, emptyText, testId, rend
   );
 }
 
-export default function EconomiaPendientes() {
+// EconomiaPendientes({ scope, scopeLabel, onClearScope })
+//
+//   scope        canonical params ({preset, serviceSessionId?, from?, to?}) or
+//                null / {} for GLOBAL / Todos. Passed straight to the reader —
+//                the server resolves it. This component computes no window.
+//   scopeLabel   short human label for the active filter chip ("Hoy", "Ayer",
+//                "Servicio", "Personalizado").
+//   onClearScope clears the filter → back to GLOBAL / Todos.
+export default function EconomiaPendientes({ scope = null, scopeLabel = null, onClearScope } = {}) {
   const [rawQuery, setRawQuery] = useState('');
   // The value that actually goes on the wire only changes when the operator
   // pauses typing, so the reader is not re-hit on every keystroke.
@@ -200,16 +208,39 @@ export default function EconomiaPendientes() {
     return () => clearTimeout(id);
   }, [rawQuery]);
 
+  const scopeParams = scope && scope.preset ? scope : {};
+  const filtered = Boolean(scopeParams.preset);
+
   const {
     porCobrar, porDevolver, requiereRevision, counts, totals,
     isEmpty, status, error, reload,
-  } = useEconomyPendencies({ q: committedQuery });
+  } = useEconomyPendencies({ ...scopeParams, q: committedQuery });
 
-  const loading = status === 'loading';
+  const loading = status === 'loading' || status === 'incomplete';
   const failed = status === 'error';
 
   return (
     <div data-testid="economia-pendientes">
+      {/* ── ACTIVE FILTER — only when a scope was carried in from General.
+          A bare visit to this destination has no chip. */}
+      {filtered && (
+        <div data-testid="pendientes-scope-chip" style={{
+          display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10,
+        }}>
+          <button type="button" data-testid="pendientes-scope-clear"
+            onClick={() => onClearScope && onClearScope()}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: 'rgba(249,115,22,.15)', border: `1px solid ${ACCENT}`,
+              color: '#ffd9b8', borderRadius: 999, padding: '5px 10px 5px 12px',
+              fontSize: 12, fontWeight: 800, cursor: 'pointer', minHeight: 30,
+            }}>
+            {scopeLabel || 'Filtrado'}
+            <span aria-hidden="true" style={{ fontSize: 13, opacity: .8 }}>×</span>
+          </button>
+        </div>
+      )}
+
       {/* ── SEARCH ─────────────────────────────────────────────────────── */}
       <div style={{ ...card, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 9 }}>
         <span style={{ color: MUTED, flexShrink: 0 }}><Glyph d={I_SEARCH} size={15} /></span>
@@ -218,7 +249,7 @@ export default function EconomiaPendientes() {
           type="search"
           value={rawQuery}
           onChange={(e) => setRawQuery(e.target.value)}
-          placeholder="Buscar por mesa, pedido o nombre…"
+          placeholder="Buscar mesa, pedido o cliente"
           aria-label="Buscar pendientes"
           style={{
             flex: '1 1 auto', minWidth: 0, background: 'transparent', border: 'none',

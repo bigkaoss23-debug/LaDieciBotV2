@@ -81,18 +81,25 @@ export const economyApi = Object.freeze({
   reconciliation({ serviceSessionId } = {}) {
     return request("GET", `/reconciliation${qs({ serviceSessionId })}`);
   },
-  listCashCounts({ from, to, limit } = {}) {
-    return request("GET", `/cash-counts${qs({ from, to, limit })}`);
+  // CANONICAL SCOPE (deployed backend c4d1a14) — a bare call keeps the old raw
+  // counted_at [from,to). `preset` (hoy | ayer | servicio | personalizado) is
+  // resolved SERVER-SIDE by economicWindow; `servicio` needs `serviceSessionId`
+  // and matches the count's own persisted service_session_id (never a time
+  // overlap). This client never computes a period boundary.
+  listCashCounts({ from, to, limit, preset, serviceSessionId, businessDate } = {}) {
+    return request("GET", `/cash-counts${qs({ from, to, limit, preset, serviceSessionId, businessDate })}`);
   },
-  // PENDENCIAS ECONÓMICAS SLICE 1 — the canonical read-only exposures reader.
+  // PENDENCIAS ECONÓMICAS — the canonical read-only exposures reader.
   // A GET, no body, nothing to confirm: it returns the unresolved economic
   // exposures (POR_COBRAR / POR_DEVOLVER / REQUIERE_REVISION) as pure
-  // projections, recomputed on every read. The backend owns workspace scoping
-  // from the token; the only params it accepts are the ones below. This client
-  // performs NO write against a pendencia — a pendencia clears only when
-  // canonical backend economic truth changes.
-  pendencies({ direction, from, to, q } = {}) {
-    return request("GET", `/pendencies${qs({ direction, from, to, q })}`);
+  // projections, recomputed on every read, plus canonical `totals` and the
+  // resolved `scope`/`window`. The backend owns workspace scoping from the
+  // token. CANONICAL SCOPE (deployed backend c4d1a14): a bare call is GLOBAL;
+  // `preset` (hoy | ayer | servicio | personalizado) is resolved SERVER-SIDE by
+  // the SAME economicWindow authority /snapshot uses — this client never
+  // reproduces the 04:00 rollover, DST or a service time window.
+  pendencies({ direction, from, to, q, preset, serviceSessionId, businessDate } = {}) {
+    return request("GET", `/pendencies${qs({ direction, from, to, q, preset, serviceSessionId, businessDate })}`);
   },
   // The ONLY write this client can perform. It appends one count; there is
   // deliberately no update and no delete method here, because the backend

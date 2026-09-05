@@ -23,8 +23,29 @@ jest.mock('../api', () => ({
   sb: { select: jest.fn(async () => []) },
 }));
 
+// The shell's Pendientes badge + General's canonical reads go through
+// economyApi; stub them resolved-empty so this suite stays about the ledger
+// gate on the LEGACY tabs, not the /api/economy/v1 readers.
+jest.mock('../economy/economyApi', () => ({
+  __esModule: true,
+  EconomyApiError: class EconomyApiError extends Error {
+    constructor(code, status = 0) { super(code); this.name = 'EconomyApiError'; this.code = code; this.status = status; }
+  },
+  createEconomyRequestId: jest.fn(() => 'cash_testrequestid0001'),
+  economyApi: { snapshot: jest.fn(), pendencies: jest.fn(), listCashCounts: jest.fn(), reconciliation: jest.fn() },
+}));
+
 import EconomiaPage from './EconomiaPage';
 import { api } from '../api';
+import { economyApi } from '../economy/economyApi';
+
+const EMPTY_SNAPSHOT = {
+  ok: true, window: {}, obligation: {}, receipts: { collected: 0, refunded: 0, byMethod: { efectivo: 0, tarjeta: 0, bizum: 0, other: 0 } },
+  balance: {}, counts: {},
+  windowCrossing: { obligationBeforeWindowReceiptInside: [], obligationInsideWindowReceiptAfter: [], receiptsSplitAcrossBoundary: [] },
+  drillDown: { obligations: [], receipts: [], legacyReceipts: [] }, serviceProvenance: [],
+};
+const EMPTY_PENDENCIES = { ok: true, porCobrar: [], porDevolver: [], requiereRevision: [], counts: { porCobrar: 0, porDevolver: 0, requiereRevision: 0 }, totals: { porCobrar: null, porDevolver: null }, scope: null, window: null };
 
 const todayIso = () => {
   const d = new Date();
@@ -87,6 +108,10 @@ async function flush() {
 }
 
 beforeEach(() => {
+  economyApi.snapshot.mockReset().mockResolvedValue(EMPTY_SNAPSHOT);
+  economyApi.pendencies.mockReset().mockResolvedValue(EMPTY_PENDENCIES);
+  economyApi.listCashCounts.mockReset().mockResolvedValue({ ok: true, counts: [], scope: null, window: null });
+  economyApi.reconciliation.mockReset().mockResolvedValue({ ok: true });
   api.getStorico.mockReset().mockResolvedValue({ righe: [] });
   api.getSerata.mockReset().mockResolvedValue(SERATA_WITH_UNPROVEN_CASH_ORDER);
   api.getEconomiaLedger.mockReset();
