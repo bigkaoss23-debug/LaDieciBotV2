@@ -127,7 +127,7 @@ test("a refused count is reported and nothing is claimed to have been saved", as
   unmount(container, root);
 });
 
-test("history is listed and declared immutable — no edit, no delete controls", async () => {
+test("history is listed and is immutable BY STRUCTURE — no edit, no delete control on any row", async () => {
   economyApi.listCashCounts.mockResolvedValue({
     ok: true, counts: [
       { id: "a", countedAt: "2026-09-05T13:35:00Z", actor: "laura", countedCash: 65, recordedCashReceipts: 65, variance: 0, note: null },
@@ -139,10 +139,15 @@ test("history is listed and declared immutable — no edit, no delete controls",
   expect(hist).toBeTruthy();
   expect(hist.textContent).toMatch(/laura/);
   expect(hist.textContent).toMatch(/mario/);
-  expect(container.textContent).toMatch(/no se editan ni se borran/i);
-  // No write control beyond the single append.
+  // Immutability is proven by the ABSENCE of any mutation control, not by a
+  // sentence saying so. The history region carries no buttons at all, and no
+  // button anywhere in the modal edits or deletes a count.
+  expect(hist.querySelectorAll("button")).toHaveLength(0);
   const buttons = Array.from(container.querySelectorAll("button")).map((b) => b.textContent.toLowerCase());
   expect(buttons.some((t) => /editar|borrar|eliminar/.test(t))).toBe(false);
+  // And the API client itself exposes no update/delete cash-count method.
+  const apiSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "..", "economy", "economyApi.js"), "utf8");
+  expect(apiSrc).not.toMatch(/updateCashCount|deleteCashCount|patchCashCount/);
   unmount(container, root);
 });
 
@@ -154,13 +159,37 @@ test("the read on open reads and writes nothing until Confirmar", async () => {
   unmount(container, root);
 });
 
-test("nothing on this modal can be read as finalizing a service", async () => {
+test("nothing on this modal can be read as finalizing a service — proven by structure, not by copy", async () => {
   const { container, root } = await mount();
-  expect(byId(container, "cash-count-not-a-close").textContent).toMatch(/no finaliza el servicio/i);
+  // No control here closes, finalizes or transitions anything. (There is no
+  // longer a helper sentence saying so — the absence of the control is the
+  // proof.)
   for (const el of Array.from(container.querySelectorAll("button"))) {
     expect(el.textContent).not.toMatch(/finalizar|cerrar\s+servicio|cierre|fin\s+de\s+servicio/i);
   }
+  // The one write it can do is a cash count; it never calls Finalizar or any
+  // lifecycle path (a static guard on the source covers that below).
+  expect(economyApi.createCashCount).not.toHaveBeenCalled();
   unmount(container, root);
+});
+
+test("the source invokes NO lifecycle / Finalizar path — cash count only", () => {
+  const src = require("fs").readFileSync(require("path").join(__dirname, "ContarCajaModal.jsx"), "utf8");
+  // Only economy reads + the single append; nothing that closes a service.
+  for (const forbidden of [
+    /reconciliation\s*\(/,
+    /close_service_session/, /complete_service_session/, /begin_service_session/,
+    /ensureCurrentServiceSession/, /serviceSessionLifecycle/, /serviceLifecycleEngine/,
+    /onFinalizar|closeService|cerrarServicio/,
+  ]) {
+    expect(src).not.toMatch(forbidden);
+  }
+  // …and it does not reach into the Servicio close handlers either.
+  expect(src).not.toMatch(/handleChiudi/); // language-guard: allow-legacy handleChiudi* is ServicioPage's existing close-handler name, asserted ABSENT here, not new vocabulary
+  expect(src).not.toMatch(/scanServizio/); // language-guard: allow-legacy scanServizio is ServicioPage's existing close-scan action name, asserted ABSENT here, not new vocabulary
+  // The write it does make is createCashCount, and only that.
+  expect(src).toMatch(/economyApi\.createCashCount\(/);
+  expect(src).not.toMatch(/economyApi\.(update|delete|patch)CashCount/);
 });
 
 test("the component source carries no historical window selector and no close vocabulary in rendered copy", () => {

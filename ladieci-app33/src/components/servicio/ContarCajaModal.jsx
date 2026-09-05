@@ -8,10 +8,11 @@ import { economyApi, createEconomyRequestId, EconomyApiError } from '../../econo
 // An operator opens the drawer, counts the notes and coins, and records what
 // was physically there RIGHT NOW. That is all it does.
 //
-// IT IS NOT A CLOSE. No "cierre", no "cerrar", no "finalizar", no "fin de
-// servicio" anywhere in this component, and a static test fails the build if
-// any of that vocabulary reappears. It lives in the current-service area, not
-// in Economía, precisely so the two never read as one action.
+// IT IS NOT A CLOSE, and the STRUCTURE says so — not a helper sentence: this
+// is its own control, separate from "Finalizar servicio", it exposes no
+// lifecycle transition, and its history rows expose no edit/delete. No
+// "cierre" / "cerrar" / "finalizar" / "fin de servicio" vocabulary appears
+// anywhere in this component, and a static test fails the build if it does.
 //
 // IT COUNTS NOW, ONLY NOW. There is deliberately no period/preset selector:
 // you cannot physically count yesterday's drawer. The request is always
@@ -120,11 +121,6 @@ export default function ContarCajaModal({ onClose }) {
           }}>×</button>
         </div>
 
-        {/* The one sentence that stops "contar" reading as "cierre". */}
-        <div data-testid="cash-count-not-a-close" style={{ color: C.grigio, fontSize: 11.5 }}>
-          Contar la caja <strong>no finaliza el servicio</strong>.
-        </div>
-
         {loadError && (
           <div data-testid="contar-caja-load-error" style={{ ...box, borderColor: C.rossoV, color: C.rosso, fontSize: 12.5 }}>
             {loadError}
@@ -210,9 +206,6 @@ export default function ContarCajaModal({ onClose }) {
                   {row.note ? <span style={{ color: C.grigio, fontSize: 11, fontStyle: 'italic' }}>{row.note}</span> : null}
                 </div>
               ))}
-            </div>
-            <div style={{ color: C.grigio, fontSize: 11, marginTop: 10 }}>
-              Los conteos no se editan ni se borran. Si uno fue erróneo, registra uno nuevo.
             </div>
           </div>
         )}
