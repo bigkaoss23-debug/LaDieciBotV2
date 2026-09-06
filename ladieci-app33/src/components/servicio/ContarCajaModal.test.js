@@ -198,7 +198,14 @@ test("the component source carries no historical window selector and no close vo
   const src = fs.readFileSync(path.join(__dirname, "ContarCajaModal.jsx"), "utf8");
   const rendered = src
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+    .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n")
+    // VISUAL CONSISTENCY PASS 1 — the ✕ control now carries the accessible
+    // name Mesa's own close button uses (aria-label="Cerrar"). That is the
+    // DISMISS affordance for this sheet, not service-close vocabulary, and it
+    // is an accessible name rather than visible copy — so it is stripped
+    // before the scan below. Everything the operator can actually READ still
+    // goes through the guard, "cerrar" included.
+    .replace(/aria-label="Cerrar"/g, "");
   // No preset/window picker: the request is fixed to 'hoy'.
   expect(rendered).not.toMatch(/mediodia|noche|datetime-local|PRESETS/);
   expect(rendered).toMatch(/preset:\s*'hoy'/);

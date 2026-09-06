@@ -256,8 +256,13 @@ test("K · per-group empty copy when one group is empty, global empty copy when 
 
   economyApi.pendencies.mockResolvedValue(NOTHING);
   const none = await mount();
+  // VISUAL CONSISTENCY PASS 1 — the marker survives (a consumer must still be
+  // able to tell "nothing pending" apart from "not loaded"), but it no longer
+  // carries a sentence: the three zero tiles directly above already say it,
+  // and "No hay pendientes. Todo cuadra." was only restating them.
   expect(byId(none.container, "pendientes-empty")).toBeTruthy();
-  expect(byId(none.container, "pendientes-empty").textContent).toMatch(/No hay pendientes/i);
+  expect(byId(none.container, "pendientes-empty").textContent).toBe("");
+  expect(none.container.textContent).not.toMatch(/todo cuadra/i);
   expect(byId(none.container, "pendientes-group-cobrar")).toBeNull();
   unmount(none.container, none.root);
 });

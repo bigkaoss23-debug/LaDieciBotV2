@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { C } from '../../constants';
 import { economyApi, createEconomyRequestId, EconomyApiError } from '../../economy/economyApi';
+// VISUAL CONSISTENCY PASS 1 — Mesa's shared surface tokens. Presentation
+// only: the request, the parsing and the append-only history are untouched.
+import * as MS from '../ui/mesaSurface';
 
 // ===============================================================
 // ContarCajaModal — the OPERATIONAL cash count.
@@ -52,7 +54,7 @@ const describeError = (error) => {
   return (code && ERROR_COPY[code]) || 'No se ha podido completar la operación. Inténtalo de nuevo.';
 };
 
-const varianceTone = (value) => (value === 0 ? C.verde : value > 0 ? C.blu : C.orange);
+const varianceTone = (value) => (value === 0 ? MS.ACCENT.positive : value > 0 ? MS.ACCENT.refund : MS.ACCENT.warn);
 
 export default function ContarCajaModal({ onClose }) {
   const [snapshot, setSnapshot] = useState(null);
@@ -100,115 +102,126 @@ export default function ContarCajaModal({ onClose }) {
     finally { setSaving(false); }
   };
 
-  const box = { background: C.carbone, border: `1px solid ${C.fumo}`, borderRadius: 14, padding: 16 };
+  // VISUAL CONSISTENCY PASS 1 — Mesa modal language. Every figure, request
+  // and validation below is unchanged; what changed is that the whole sheet
+  // used to sit at C.grigio (#666) on C.carbone (#0E0E0E) — grey on grey —
+  // with a disabled Confirmar rendered as C.fumo-on-C.grigio, which reads as
+  // broken rather than "not yet". Labels are now readable, the two amounts
+  // that matter carry real weight, and the disabled button has its own
+  // deliberate state.
+  const canConfirm = countedValid && !saving && !!snapshot;
+  const fieldLabel = { display: 'block', color: MS.TEXT.label, fontSize: 12, fontWeight: 800, marginBottom: 6 };
+  const input = {
+    width: '100%', boxSizing: 'border-box',
+    background: MS.SURFACE.inputBg, color: MS.TEXT.strong,
+    border: '1px solid rgba(208,184,145,.3)', borderRadius: 11,
+    padding: '12px 13px', font: 'inherit', outline: 'none',
+  };
 
   return (
-    <div data-testid="contar-caja-modal" style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', zIndex: 9999,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-    }}>
-      <div style={{
-        background: '#1a1a2e', border: '1.5px solid rgba(255,255,255,0.13)', borderRadius: 20,
-        padding: 22, maxWidth: 420, width: '100%', maxHeight: '92vh', overflowY: 'auto',
-        boxShadow: '0 8px 40px rgba(0,0,0,0.7)', display: 'grid', gap: 14,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ color: '#fff', fontSize: 18, fontWeight: 900, flex: 1 }}>Contar caja</div>
-          <button type="button" data-testid="contar-caja-close" onClick={onClose} style={{
-            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)',
-            color: 'rgba(255,255,255,0.6)', borderRadius: 10, width: 32, height: 32,
-            fontSize: 16, cursor: 'pointer',
-          }}>×</button>
+    <div data-testid="contar-caja-modal" style={MS.overlay}>
+      <div style={MS.sheet(420)}>
+        <div style={MS.sheetHead}>
+          <span style={MS.sheetTitle}>
+            <MS.MesaIcon d={MS.ICON_CASH_DRAWER} size={19} style={{ color: MS.ACCENT.gold }} />
+            Contar caja
+          </span>
+          <button type="button" data-testid="contar-caja-close" onClick={onClose}
+            aria-label="Cerrar" style={MS.closeButton}>×</button>
         </div>
 
-        {loadError && (
-          <div data-testid="contar-caja-load-error" style={{ ...box, borderColor: C.rossoV, color: C.rosso, fontSize: 12.5 }}>
-            {loadError}
-          </div>
-        )}
-
-        <div style={{ ...box, display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-          <div style={{ minWidth: 150, flex: '1 1 150px' }}>
-            <div style={{ color: C.grigio, fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
-              Efectivo registrado hoy
+        <div style={MS.sheetBody}>
+          {loadError && (
+            <div data-testid="contar-caja-load-error" style={{
+              ...MS.card(), borderColor: 'rgba(232,52,28,.5)', background: 'rgba(232,52,28,.1)',
+              color: MS.ACCENT.danger, fontSize: 12.5, lineHeight: 1.45,
+            }}>
+              {loadError}
             </div>
-            <div data-testid="contar-caja-recorded" style={{ color: C.bianco, fontSize: 20, fontWeight: 800 }}>{eur(cashRecorded)}</div>
-            <div style={{ color: C.grigio, fontSize: 11, marginTop: 3 }}>Cobros en efectivo del día operativo.</div>
-          </div>
-          {liveVariance !== null && (
-            <div style={{ minWidth: 110, flex: '1 1 110px' }}>
-              <div style={{ color: C.grigio, fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
-                Diferencia
+          )}
+
+          <div style={{ ...MS.card(true), display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ minWidth: 140, flex: '1 1 140px' }}>
+              <div style={{ ...MS.eyebrow(true), marginBottom: 5 }}>Efectivo registrado hoy</div>
+              <div data-testid="contar-caja-recorded" style={{
+                color: MS.TEXT.goldStrong, fontSize: 24, fontWeight: 950,
+                letterSpacing: '-.3px', fontVariantNumeric: 'tabular-nums',
+              }}>{eur(cashRecorded)}</div>
+              <div style={{ color: MS.TEXT.muted, fontSize: 11.5, marginTop: 4 }}>Cobros en efectivo del día operativo.</div>
+            </div>
+            {liveVariance !== null && (
+              <div style={{ minWidth: 110, flex: '1 1 110px' }}>
+                <div style={{ ...MS.eyebrow(false), marginBottom: 5 }}>Diferencia</div>
+                <div data-testid="contar-caja-variance-preview" style={{
+                  color: varianceTone(liveVariance), fontSize: 24, fontWeight: 950,
+                  letterSpacing: '-.3px', fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {eur(liveVariance)}
+                </div>
               </div>
-              <div data-testid="contar-caja-variance-preview" style={{ color: varianceTone(liveVariance), fontSize: 20, fontWeight: 800 }}>
-                {eur(liveVariance)}
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
+            <label style={{ flex: '0 0 138px' }}>
+              <span style={fieldLabel}>Efectivo contado</span>
+              <input
+                data-testid="contar-caja-input"
+                inputMode="decimal"
+                placeholder="0,00"
+                value={counted}
+                onChange={(e) => setCounted(e.target.value)}
+                style={{ ...input, fontSize: 17, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}
+              />
+            </label>
+            <label style={{ flex: '1 1 170px', minWidth: 0 }}>
+              <span style={fieldLabel}>Nota (opcional)</span>
+              <input
+                data-testid="contar-caja-note"
+                maxLength={500}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                style={input}
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            data-testid="contar-caja-confirm"
+            onClick={confirm}
+            disabled={!canConfirm}
+            style={MS.button({ tone: 'gold', size: 'lg', full: true, disabled: !canConfirm })}
+          >{saving ? 'Guardando…' : 'Registrar conteo'}</button>
+
+          {saveError && <div data-testid="contar-caja-error" style={{ color: MS.ACCENT.danger, fontSize: 12.5, lineHeight: 1.45 }}>{saveError}</div>}
+          {justSaved && (
+            <div data-testid="contar-caja-saved" style={{ color: MS.ACCENT.positive, fontSize: 12.5, lineHeight: 1.5 }}>
+              Conteo registrado: contado {eur(justSaved.countedCash)} · registrado {eur(justSaved.recordedCashReceipts)} · diferencia {eur(justSaved.variance)}.
+            </div>
+          )}
+
+          {history.length > 0 && (
+            <div style={MS.card()}>
+              <div style={{ ...MS.eyebrow(false), marginBottom: 9 }}>Conteos de hoy</div>
+              <div data-testid="contar-caja-history" style={{ display: 'grid' }}>
+                {history.map((row, i) => (
+                  <div key={row.id} style={{
+                    display: 'flex', flexWrap: 'wrap', gap: 9, alignItems: 'baseline',
+                    borderTop: i === 0 ? 'none' : MS.LINE.row, padding: '8px 0',
+                  }}>
+                    <span style={{ color: MS.TEXT.strong, fontSize: 12.5, fontWeight: 800 }}>{clock(row.countedAt)}</span>
+                    <span style={{ color: MS.TEXT.muted, fontSize: 12 }}>{row.actor}</span>
+                    <span style={{ color: MS.TEXT.value, fontSize: 12.5 }}>contado {eur(row.countedCash)}</span>
+                    <span style={{ color: MS.TEXT.muted, fontSize: 12 }}>registrado {eur(row.recordedCashReceipts)}</span>
+                    <span style={{ color: varianceTone(row.variance), fontSize: 12.5, fontWeight: 800, marginLeft: 'auto' }}>{eur(row.variance)}</span>
+                    {row.note ? <span style={{ color: MS.TEXT.muted, fontSize: 11.5, fontStyle: 'italic', flexBasis: '100%' }}>{row.note}</span> : null}
+                  </div>
+                ))}
               </div>
             </div>
           )}
         </div>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
-          <label style={{ color: C.grigio, fontSize: 11 }}>
-            Efectivo contado<br />
-            <input
-              data-testid="contar-caja-input"
-              inputMode="decimal"
-              placeholder="0,00"
-              value={counted}
-              onChange={(e) => setCounted(e.target.value)}
-              style={{ background: C.carbone2, color: C.bianco, border: `1px solid ${C.fumo}`, borderRadius: 8, padding: '9px 11px', marginTop: 4, width: 130, fontSize: 15, fontWeight: 700 }}
-            />
-          </label>
-          <label style={{ color: C.grigio, fontSize: 11, flex: '1 1 180px' }}>
-            Nota (opcional)<br />
-            <input
-              data-testid="contar-caja-note"
-              maxLength={500}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              style={{ background: C.carbone2, color: C.bianco, border: `1px solid ${C.fumo}`, borderRadius: 8, padding: '9px 11px', marginTop: 4, width: '100%' }}
-            />
-          </label>
-        </div>
-
-        <button
-          type="button"
-          data-testid="contar-caja-confirm"
-          onClick={confirm}
-          disabled={!countedValid || saving || !snapshot}
-          style={{
-            background: countedValid && !saving && snapshot ? C.avana : C.fumo,
-            color: countedValid && !saving && snapshot ? C.nero : C.grigio,
-            border: 'none', borderRadius: 12, padding: '13px 20px',
-            fontSize: 13.5, fontWeight: 800,
-            cursor: countedValid && !saving && snapshot ? 'pointer' : 'not-allowed',
-          }}
-        >{saving ? 'Guardando…' : 'Registrar conteo'}</button>
-
-        {saveError && <div data-testid="contar-caja-error" style={{ color: C.rosso, fontSize: 12 }}>{saveError}</div>}
-        {justSaved && (
-          <div data-testid="contar-caja-saved" style={{ color: C.verde, fontSize: 12 }}>
-            Conteo registrado: contado {eur(justSaved.countedCash)} · registrado {eur(justSaved.recordedCashReceipts)} · diferencia {eur(justSaved.variance)}.
-          </div>
-        )}
-
-        {history.length > 0 && (
-          <div style={box}>
-            <div style={{ color: C.grigio, fontSize: 11, letterSpacing: 1, marginBottom: 10 }}>CONTEOS DE HOY</div>
-            <div data-testid="contar-caja-history" style={{ display: 'grid', gap: 8 }}>
-              {history.map((row) => (
-                <div key={row.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline', borderTop: `1px solid ${C.fumo}`, paddingTop: 8 }}>
-                  <span style={{ color: C.bianco, fontSize: 12, fontWeight: 700 }}>{clock(row.countedAt)}</span>
-                  <span style={{ color: C.grigio, fontSize: 12 }}>{row.actor}</span>
-                  <span style={{ color: C.bianco, fontSize: 12 }}>contado {eur(row.countedCash)}</span>
-                  <span style={{ color: C.grigio, fontSize: 12 }}>registrado {eur(row.recordedCashReceipts)}</span>
-                  <span style={{ color: varianceTone(row.variance), fontSize: 12, fontWeight: 700 }}>{eur(row.variance)}</span>
-                  {row.note ? <span style={{ color: C.grigio, fontSize: 11, fontStyle: 'italic' }}>{row.note}</span> : null}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { C, useWidth, blockedTels, MAX_PIZZE_ORA, LOGO_RED_SRC, genId, tot, calcTotale } from '../constants';
 import FinalizarReconciliationPanel from './servicio/FinalizarReconciliationPanel';
 import ContarCajaModal from './servicio/ContarCajaModal';
+// VISUAL CONSISTENCY PASS 1 — Mesa's own surface tokens, shared. Presentation
+// only: no state, no money, no handlers.
+import * as MS from './ui/mesaSurface';
 import { economyApi } from '../economy/economyApi';
 import { sb, api, auth } from '../api';
 import { BACKEND_BASE_URL } from '../utils/backendBase';
@@ -39,6 +42,25 @@ import { mesaApi } from '../mesa/mesaApi';
 // Staging-only rollout gate. A production build (or any build without the exact
 // lowercase value) keeps the existing Barra surface and never calls Mesa APIs.
 const MESA_UI_ENABLED = process.env.REACT_APP_MESA_ENABLED === "true";
+
+// VISUAL CONSISTENCY PASS 1 — the service action bar.
+//
+// Four labelled controls cannot share one row on a 320px phone: measured,
+// "Finalizar servicio" + "Contar caja" + "Resumen" + the PIN key want ~430px
+// of intrinsic width against ~292px of usable space. The first attempt here
+// let the flexible one absorb all the shrink, which silently collapsed
+// FINALIZAR itself back to a bare glyph — precisely the failure FIN-01 exists
+// to prevent (and a source-only static test cannot see). So the composition
+// is explicit instead: end-of-service on its own line beside the PIN key,
+// the two read/count tools on the next. Every label stays whole at 320px,
+// every target is >= 44px, and nothing depends on a breakpoint.
+const SERVICIO_ACTIONS_CSS = `
+.svc-actions{display:flex;flex-direction:column;gap:8px;min-width:0}
+.svc-actions .svc-act-row{display:flex;gap:8px;min-width:0;align-items:stretch}
+.svc-actions .svc-act{flex:1 1 0;min-width:0}
+.svc-actions .svc-act span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.svc-actions .svc-act-icon{flex:0 0 48px;width:48px;padding:0}
+`;
 
 const LiveTime = () => {
   const [t, setT] = useState(new Date());
@@ -1695,13 +1717,25 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         {tabContent()}
       </div>
 
+      {/* Scoped presentation rule for the action bar. Same pattern the Mesa
+          surfaces already use (a component-local <style>): it exists only to
+          carry the one thing an inline style cannot — a width breakpoint. */}
+      <style>{SERVICIO_ACTIONS_CSS}</style>
+
       {/* Bottone NUEVO PEDIDO + Finalizar servicio fixed bottom */}
+      {/* VISUAL CONSISTENCY PASS 1 (Mesa) — the five controls used to sit in
+          ONE wrapping flex row, so on a 375px phone they piled into an
+          improvised block with no hierarchy and three of them at 40–62%
+          opacity. Same controls, same handlers, same order: now TWO explicit
+          rows — the primary creator, then the service actions — with Mesa
+          button geometry, vector icons instead of mixed emoji, and readable
+          secondary contrast. No lifecycle or behaviour change. */}
       <div style={{
         position:"fixed",bottom:0,left:0,right:0,
-        padding:"12px 14px 20px",
-        background:`linear-gradient(to top, ${C.nero} 55%, transparent)`,
+        padding:"12px 14px calc(16px + env(safe-area-inset-bottom, 4px))",
+        background:`linear-gradient(to top, ${C.nero} 62%, rgba(7,7,7,0.86) 84%, transparent)`,
         zIndex:150,
-        display:"flex",flexWrap:"wrap",gap:10,alignItems:"stretch"}}>
+        display:"flex",flexDirection:"column",gap:9}}>
         {/* Mesa has its own "＋ Nueva comanda" inside the table workspace --
             this generic creator is meaningless there (it used to relabel
             itself into a dead CTA whose only behavior was a toast telling
@@ -1709,15 +1743,15 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         {!(MESA_UI_ENABLED && tab === "banco") && <button onClick={()=>{
           setMesaCommandTarget(null); setPrefillCliente(null); setShowNuevo(true);
         }} style={{
-          flex:"1 1 190px",minWidth:0,background:C.rosso,color:"#fff",
-          border:"none",borderRadius:16,
-          padding:"16px 0",
+          width:"100%",minWidth:0,background:C.rosso,color:"#fff",
+          border:"none",borderRadius:MS.RADIUS.card,
+          minHeight:56,
           fontWeight:900,fontSize:15,letterSpacing:"1.2px",
           display:"flex",alignItems:"center",justifyContent:"center",gap:9,
           boxShadow:`0 4px 22px ${C.rosso}55, inset 0 1px 0 rgba(255,130,90,0.22)`,
-          textTransform:"uppercase",position:"relative",overflow:"hidden"}}>
-          <span style={{position:"relative",fontSize:18}}>＋</span>
-          <span style={{position:"relative"}}>NUEVO PEDIDO</span>
+          textTransform:"uppercase",cursor:"pointer"}}>
+          <MS.MesaIcon d={MS.ICON_PLUS} size={19} />
+          <span>NUEVO PEDIDO</span>
         </button>}
         {/* FIN-01 (2026-08-21 forensic audit) -- the end-of-service controls.
             Until now the TRUE Finalizar was a bare 🌙 glyph at 45% opacity and
@@ -1738,54 +1772,48 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
             This wires to the SAME handler as before -> pre-flight scan ->
             existing confirmation modal -> V3 close engine. No second Finalizar
             path is created, and no backend behaviour changes. */}
-        <div style={{display:"flex",gap:10,flex:"0 1 auto",minWidth:0,alignItems:"stretch"}}>
-          <button data-testid="servicio-finalizar-btn" onClick={handleChiudiServizio}
-            title="Finalizar servicio" aria-label="Finalizar servicio" style={{
-            flex:"1 1 auto",minWidth:0,
-            background:"rgba(249,115,22,.16)",
-            border:"1.5px solid rgba(249,115,22,.55)",
-            borderRadius:16,
-            padding:"16px 14px",
-            display:"flex",alignItems:"center",justifyContent:"center",gap:7,
-            color:"#fb923c",
-            fontWeight:800,fontSize:13,letterSpacing:".2px",
-            cursor:"pointer",whiteSpace:"nowrap",transition:"all .18s ease"}}>
-            <span aria-hidden="true" style={{fontSize:15}}>🌙</span>
-            <span>Finalizar servicio</span>
-          </button>
-          {/* Contar caja — a physical cash snapshot of the CURRENT service,
-              taken now. Deliberately its own control, separate from Finalizar:
-              it does not close anything and can be repeated. The backend
-              resolves which service this belongs to. */}
-          <button data-testid="servicio-contar-caja-btn" onClick={()=>setContarCajaOpen(true)}
-            title="Contar caja" aria-label="Contar caja" style={{
-            flexShrink:0,background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.14)",
-            borderRadius:16,padding:"16px 12px",color:"rgba(255,255,255,0.62)",fontWeight:700,
-            fontSize:13,cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
-            <span aria-hidden="true" style={{fontSize:14}}>🗄️</span>
-            <span>Contar caja</span>
-          </button>
-          {onCloseout && (
-            <button data-testid="servicio-closeout-btn" onClick={onCloseout}
-              title="Resumen del servicio (solo lectura)" aria-label="Resumen del servicio (solo lectura)" style={{
-              flexShrink:0,background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.14)",
-              borderRadius:16,padding:"16px 12px",color:"rgba(255,255,255,0.62)",fontWeight:700,
-              fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>
-              Resumen
+        {/* Secondary service actions, in two deliberate lines.
+            Line 1 — ending the service. Finalizar keeps the operational accent
+            and, per FIN-01 above, its FULL visible label at every width; the
+            PIN key sits beside it as an icon because it is not a service
+            action at all.
+            Line 2 — the two read/count tools, equal siblings, neutral outline.
+            Every handler and data-testid is unchanged. */}
+        <div className="svc-actions">
+          <div className="svc-act-row">
+            <button data-testid="servicio-finalizar-btn" onClick={handleChiudiServizio}
+              title="Finalizar servicio" aria-label="Finalizar servicio"
+              className="svc-act" style={MS.button({tone:"service"})}>
+              <MS.MesaIcon d={MS.ICON_MOON} size={17} />
+              <span>Finalizar servicio</span>
             </button>
-          )}
-          <button onClick={()=>{ setPinChange({tipo:"operador",step:1,viejo:"",nuevo:"",confirm:"",error:"",ok:false,loading:false}); setShowCambioPin(true); }} style={{
-            flexShrink:0,
-            background:"rgba(255,255,255,0.07)",
-            border:"1px solid rgba(255,255,255,0.12)",
-            borderRadius:16,
-            padding:"16px 14px",
-            display:"flex",alignItems:"center",justifyContent:"center",
-            color:"rgba(255,255,255,0.4)",
-            fontSize:18, cursor:"pointer", transition:"all .18s ease"}}
-            title="Cambiar PIN" aria-label="Cambiar PIN">
-            🔑
-          </button>
+            <button onClick={()=>{ setPinChange({tipo:"operador",step:1,viejo:"",nuevo:"",confirm:"",error:"",ok:false,loading:false}); setShowCambioPin(true); }}
+              className="svc-act svc-act-icon"
+              style={{...MS.button({tone:"neutral"}),color:MS.TEXT.muted}}
+              title="Cambiar PIN" aria-label="Cambiar PIN">
+              <MS.MesaIcon d={MS.ICON_KEY} size={18} />
+            </button>
+          </div>
+          <div className="svc-act-row">
+            {/* Contar caja — a physical cash snapshot of the CURRENT service,
+                taken now. Deliberately its own control, separate from Finalizar:
+                it does not close anything and can be repeated. The backend
+                resolves which service this belongs to. */}
+            <button data-testid="servicio-contar-caja-btn" onClick={()=>setContarCajaOpen(true)}
+              title="Contar caja" aria-label="Contar caja"
+              className="svc-act" style={MS.button({tone:"neutral"})}>
+              <MS.MesaIcon d={MS.ICON_CASH_DRAWER} size={17} />
+              <span>Contar caja</span>
+            </button>
+            {onCloseout && (
+              <button data-testid="servicio-closeout-btn" onClick={onCloseout}
+                title="Resumen del servicio (solo lectura)" aria-label="Resumen del servicio (solo lectura)"
+                className="svc-act" style={MS.button({tone:"neutral"})}>
+                <MS.MesaIcon d={MS.ICON_REPORT} size={17} />
+                <span>Resumen</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
       </>}
@@ -1822,17 +1850,23 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
 
       {/* Modal Chiudi Servizio */}
       {chiudiModal && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div style={{background:"#1a1a2e",border:"1.5px solid rgba(255,255,255,0.13)",borderRadius:20,padding:28,maxWidth:420,width:"100%",boxShadow:"0 8px 40px rgba(0,0,0,0.7)"}}>
+        <div style={MS.overlay}>
+          <div style={MS.sheet(440)}>
             {/* FIN-01 -- the confirmation names the same action as the button
                 that opened it, so the operator can see the flow through. */}
-            <div style={{fontSize:22,fontWeight:900,color:"#fff",marginBottom:20}}>🌙 Finalizar servicio</div>
+            <div style={MS.sheetHead}>
+              <span style={MS.sheetTitle}>
+                <MS.MesaIcon d={MS.ICON_MOON} size={19} style={{color:MS.ACCENT.service}} />
+                Finalizar servicio
+              </span>
+            </div>
+            <div style={MS.sheetBody}>
 
             {chiudiModal.loading ? (
-              <div style={{color:"rgba(255,255,255,0.5)",textAlign:"center",padding:"24px 0"}}>Escaneando...</div>
+              <div style={{color:MS.TEXT.muted,textAlign:"center",padding:"24px 0",fontSize:13.5}}>Escaneando...</div>
             ) : (<>
               {/* Completati — sempre archiviati */}
-              <div style={{background:"rgba(46,213,115,0.1)",border:"1px solid rgba(46,213,115,0.25)",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
+              <div style={{...MS.card(),borderColor:"rgba(34,197,94,.3)",background:"rgba(34,197,94,.07)"}}>
                 {/* J-1 — this used to read "Se archivarán y eliminarán", which
                     the V3 close does NOT do. It closes the Operational Service;
                     orders, financial events and cash counts all survive it
@@ -1842,12 +1876,15 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
                     deletion on the one screen that also shows the economy would
                     tell an operator their records are about to disappear.
                     language-guard: allow-legacy chiudiModal is the existing Finalizar modal state identifier, referenced verbatim, not new vocabulary */}
-                <div data-testid="close-scope-note" style={{color:"#2ed573",fontWeight:700,fontSize:13,marginBottom:4}}>✅ Se cierra el servicio operativo</div>
-                <div style={{color:"rgba(255,255,255,0.7)",fontSize:13}}>
+                <div data-testid="close-scope-note" style={{display:"flex",alignItems:"center",gap:7,color:MS.ACCENT.positive,fontWeight:800,fontSize:13.5,marginBottom:5}}>
+                  <MS.MesaIcon d={MS.ICON_CHECK} size={16} />
+                  Se cierra el servicio operativo
+                </div>
+                <div style={{color:MS.TEXT.body,fontSize:13}}>
                   {(chiudiModal.completati?.ordini || 0)} órdenes completados
                   {chiudiModal.completati?.conv > 0 ? ` · ${chiudiModal.completati.conv} conversaciones cerradas` : ""}
                 </div>
-                <div data-testid="records-preserved-note" style={{color:"rgba(255,255,255,0.45)",fontSize:11,marginTop:5,lineHeight:1.45}}>
+                <div data-testid="records-preserved-note" style={{color:MS.TEXT.muted,fontSize:11.5,marginTop:5,lineHeight:1.45}}>
                   Los registros económicos y los conteos de caja se conservan.
                 </div>
               </div>
@@ -1864,22 +1901,23 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
 
               {/* Attivi — operatore decide */}
               {chiudiModal.attivi.length > 0 ? (
-                <div style={{background:"rgba(255,171,0,0.1)",border:"1px solid rgba(255,171,0,0.3)",borderRadius:12,padding:"12px 16px",marginBottom:20}}>
-                  <div style={{color:"#ffab00",fontWeight:700,fontSize:13,marginBottom:8}}>
-                    ⚠️ {chiudiModal.attivi.length} elemento{chiudiModal.attivi.length>1?"s pendientes":" pendiente"}
+                <div style={{...MS.card(),borderColor:"rgba(240,169,60,.36)",background:"rgba(240,169,60,.08)"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7,color:MS.ACCENT.warn,fontWeight:900,fontSize:11,letterSpacing:".6px",textTransform:"uppercase",marginBottom:9}}>
+                    <MS.MesaIcon d={MS.ICON_WARN} size={15} />
+                    {chiudiModal.attivi.length} elemento{chiudiModal.attivi.length>1?"s pendientes":" pendiente"}
                   </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:150,overflowY:"auto"}}>
+                  <div style={{display:"flex",flexDirection:"column",maxHeight:150,overflowY:"auto"}}>
                     {chiudiModal.attivi.map((a,i) => (
-                      <div key={i} style={{display:"flex",alignItems:"center",gap:8,color:"rgba(255,255,255,0.8)",fontSize:12}}>
-                        <span style={{background:"rgba(255,171,0,0.2)",borderRadius:6,padding:"2px 7px",fontWeight:700,color:"#ffab00",flexShrink:0}}>
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:8,color:MS.TEXT.value,fontSize:12.5,padding:"6px 0",borderTop:i===0?"none":MS.LINE.row}}>
+                        <span style={{background:"rgba(240,169,60,.16)",border:"1px solid rgba(240,169,60,.34)",borderRadius:6,padding:"2px 7px",fontWeight:800,fontSize:10.5,letterSpacing:".3px",color:MS.ACCENT.warn,flexShrink:0}}>
                           {a.stato || "activo"}
                         </span>
-                        <span style={{fontWeight:600}}>{a.nombre}</span>
-                        {a.hora ? <span style={{color:"rgba(255,255,255,0.4)"}}>· {a.hora}</span> : null}
+                        <span style={{fontWeight:700,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre}</span>
+                        {a.hora ? <span style={{color:MS.TEXT.muted,marginLeft:"auto",flexShrink:0}}>{a.hora}</span> : null}
                       </div>
                     ))}
                   </div>
-                  <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,marginTop:8}}>
+                  <div style={{color:MS.TEXT.muted,fontSize:11.5,marginTop:9,lineHeight:1.45}}>
                     {chiudiModal.blocking?.tables > 0
                       ? "Hay mesas con cuenta abierta: cóbralas antes de cerrar el servicio."
                       : chiudiModal.blocking?.orders > 0
@@ -1894,28 +1932,26 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
                   </div>
                 </div>
               ) : (
-                <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:"10px 16px",marginBottom:20}}>
-                  <div style={{color:"rgba(255,255,255,0.45)",fontSize:13}}>No hay mensajes activos pendientes.</div>
+                <div style={{...MS.card(),padding:"11px 14px"}}>
+                  <div style={{color:MS.TEXT.muted,fontSize:13}}>No hay mensajes activos pendientes.</div>
                 </div>
               )}
 
               {/* Errore di chiusura — fallimento applicativo (success:false), persistente.
                   Il servizio resta aperto; l'operatore vede il motivo e può riprovare. */}
               {chiudiModal.error && (
-                <div data-testid="close-error" style={{background:"rgba(192,57,43,0.14)",border:"1px solid rgba(192,57,43,0.5)",borderRadius:12,padding:"12px 16px",marginBottom:16}}>
-                  <div style={{color:"#ff6b6b",fontWeight:800,fontSize:13,marginBottom:4}}>❌ No se cerró el servicio</div>
-                  <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>{chiudiModal.error}</div>
-                  <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,marginTop:6}}>El servicio sigue abierto.</div>
+                <div data-testid="close-error" style={{...MS.card(),borderColor:"rgba(232,52,28,.5)",background:"rgba(232,52,28,.1)"}}>
+                  <div style={{color:MS.ACCENT.danger,fontWeight:900,fontSize:11,letterSpacing:".6px",textTransform:"uppercase",marginBottom:5}}>No se cerró el servicio</div>
+                  <div style={{color:MS.TEXT.strong,fontSize:13,lineHeight:1.45}}>{chiudiModal.error}</div>
+                  <div style={{color:MS.TEXT.muted,fontSize:11.5,marginTop:6}}>El servicio sigue abierto.</div>
                 </div>
               )}
 
               {/* Bottoni */}
-              <div style={{display:"flex",flexDirection:"column",gap:8,opacity:chiudiModal.submitting?0.6:1,pointerEvents:chiudiModal.submitting?"none":"auto"}}>
+              <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:2,opacity:chiudiModal.submitting?0.6:1,pointerEvents:chiudiModal.submitting?"none":"auto"}}>
                 {chiudiModal.blocking?.tables === 0 && chiudiModal.blocking?.orders > 0 && (
-                  <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma()} style={{
-                    background:"rgba(192,57,43,0.85)",border:"1.5px solid rgba(192,57,43,0.8)",
-                    borderRadius:12,padding:"13px 16px",color:"#fff",fontWeight:800,
-                    fontSize:13,cursor:"pointer",width:"100%"}}>
+                  <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma()}
+                    style={{...MS.button({tone:"danger",size:"lg",full:true}),boxShadow:"0 4px 18px rgba(192,57,43,.28)"}}>
                     {/* UAT-P2-D -- this used to read "Cerrar y anular pedidos
                         activos", which the backend deliberately does NOT do:
                         the V3 close never invents a cancellation, it closes the
@@ -1924,26 +1960,25 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
                         #999008 stayed POR_CONFIRMAR and produced
                         ORDER_UNCONFIRMED_AT_CLOSE + UNPAID_BALANCE_AT_CLOSE).
                         The copy now describes what actually happens. */}
-                    ⚠️ Finalizar servicio con pendientes
+                    <MS.MesaIcon d={MS.ICON_WARN} size={17} />
+                    Finalizar servicio con pendientes
                   </button>
                 )}
-                {chiudiModal.blocking?.tables === 0 && chiudiModal.blocking?.orders === 0 && <button disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma()} style={{
-                  background: chiudiModal.attivi.length > 0 ? "rgba(46,213,115,0.15)" : "rgba(192,57,43,0.85)",
-                  border: chiudiModal.attivi.length > 0 ? "1.5px solid rgba(46,213,115,0.4)" : "1.5px solid rgba(192,57,43,0.8)",
-                  borderRadius:12,padding:"13px 16px",
-                  color: chiudiModal.attivi.length > 0 ? "#2ed573" : "#fff",
-                  fontWeight:800,fontSize:13,cursor:"pointer",width:"100%"}}>
-                  {chiudiModal.submitting ? "Cerrando…" : (chiudiModal.attivi.length > 0 ? "✅ Cerrar servicio (dejar mensajes activos)" : "✅ Confirmar — cerrar servicio")}
+                {chiudiModal.blocking?.tables === 0 && chiudiModal.blocking?.orders === 0 && <button
+                  disabled={chiudiModal.submitting} onClick={()=>handleChiudiConferma()}
+                  style={{...MS.button({tone: chiudiModal.attivi.length > 0 ? "positive" : "danger",size:"lg",full:true}),
+                    ...(chiudiModal.attivi.length > 0 ? {} : {boxShadow:"0 4px 18px rgba(192,57,43,.28)"})}}>
+                  <MS.MesaIcon d={MS.ICON_CHECK} size={17} />
+                  {chiudiModal.submitting ? "Cerrando…" : (chiudiModal.attivi.length > 0 ? "Cerrar servicio (dejar mensajes activos)" : "Confirmar — cerrar servicio")}
                 </button>}
-                <button disabled={chiudiModal.submitting} onClick={()=>setChiudiModal(null)} style={{
-                  background:"transparent",border:"1px solid rgba(255,255,255,0.12)",
-                  borderRadius:12,padding:"11px 16px",color:"rgba(255,255,255,0.4)",
-                  fontWeight:600,fontSize:13,cursor:"pointer",width:"100%"}}>
+                <button disabled={chiudiModal.submitting} onClick={()=>setChiudiModal(null)}
+                  style={{...MS.button({tone:"neutral",full:true}),background:"transparent",color:MS.TEXT.label,fontWeight:700}}>
                   {/* UAT-P3 -- "Annulla" was leftover Italian on a Spanish surface. */}
                   {chiudiModal.error ? "Cerrar aviso" : "Cancelar"}
                 </button>
               </div>
             </>)}
+            </div>
           </div>
         </div>
       )}

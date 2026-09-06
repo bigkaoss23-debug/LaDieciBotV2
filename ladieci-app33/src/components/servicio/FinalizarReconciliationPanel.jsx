@@ -1,4 +1,8 @@
-import { C } from '../../constants';
+// VISUAL CONSISTENCY PASS 1 — Mesa's shared surface tokens (they replaced
+// the ad-hoc rgba() literals and the generic C palette this panel used to
+// reach for). Presentation only: every figure still comes exclusively from
+// `data`, and this file still performs no economic arithmetic.
+import * as MS from '../ui/mesaSurface';
 
 // ===============================================================
 // FinalizarReconciliationPanel — J-1
@@ -50,13 +54,23 @@ const shortWindow = (iso) => {
   }).format(d).replace(',', '');
 };
 
+// VISUAL CONSISTENCY PASS 1 — Mesa card/row grammar with a deliberate
+// contrast lift. Labels were rgba(255,255,255,.5) at 12px and values .9 at
+// the SAME size and near the same weight, so every line of a money card had
+// identical visual weight and nothing could be scanned. Now: the label is
+// subordinate but readable, the value is bigger and heavier, and `strong`
+// rows (the figures the operator is actually looking for) step up again.
 function Row({ label, value, tone, testId, strong = false }) {
   return (
-    <div data-testid={testId} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '3px 0' }}>
-      <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>{label}</span>
-      <span style={{ color: tone || (strong ? '#fff' : 'rgba(255,255,255,0.9)'), fontSize: 12, fontWeight: strong ? 800 : 600 }}>
-        {value}
-      </span>
+    <div data-testid={testId} style={{ ...MS.rowStyle, padding: strong ? '6px 0' : '5px 0' }}>
+      <span style={{ color: MS.TEXT.label, fontSize: 12.5, fontWeight: 600 }}>{label}</span>
+      <span style={{
+        color: tone || (strong ? MS.TEXT.strong : MS.TEXT.value),
+        fontSize: strong ? 16 : 13.5,
+        fontWeight: strong ? 900 : 700,
+        fontVariantNumeric: 'tabular-nums',
+        whiteSpace: 'nowrap',
+      }}>{value}</span>
     </div>
   );
 }
@@ -64,9 +78,9 @@ function Row({ label, value, tone, testId, strong = false }) {
 function ScopeBadge({ children }) {
   return (
     <span style={{
-      background: 'rgba(196,168,122,0.14)', border: '1px solid rgba(196,168,122,0.35)',
-      color: C.avana, borderRadius: 999, padding: '2px 9px',
-      fontSize: 10, fontWeight: 800, letterSpacing: 0.4, whiteSpace: 'nowrap',
+      background: 'rgba(196,168,122,0.16)', border: '1px solid rgba(196,168,122,0.42)',
+      color: MS.TEXT.goldStrong, borderRadius: MS.RADIUS.chip, padding: '3px 9px',
+      fontSize: 10, fontWeight: 900, letterSpacing: 0.4, whiteSpace: 'nowrap',
     }}>{children}</span>
   );
 }
@@ -74,7 +88,7 @@ function ScopeBadge({ children }) {
 export default function FinalizarReconciliationPanel({ data, loading, error }) {
   if (loading) {
     return (
-      <div data-testid="reconciliation-loading" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, marginBottom: 16 }}>
+      <div data-testid="reconciliation-loading" style={{ color: MS.TEXT.muted, fontSize: 13, padding: '6px 0' }}>
         Cargando resumen económico…
       </div>
     );
@@ -84,11 +98,10 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
     // depend on this panel, and saying so is more useful than hiding it.
     return (
       <div data-testid="reconciliation-error" style={{
-        background: 'rgba(255,171,0,0.08)', border: '1px solid rgba(255,171,0,0.28)',
-        borderRadius: 12, padding: '10px 14px', marginBottom: 16,
+        ...MS.card(), borderColor: 'rgba(240,169,60,.36)', background: 'rgba(240,169,60,.08)',
       }}>
-        <div style={{ color: '#ffab00', fontSize: 12, fontWeight: 700 }}>No se pudo cargar el resumen económico</div>
-        <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, marginTop: 3 }}>{error}</div>
+        <div style={{ color: MS.ACCENT.warn, fontSize: 12.5, fontWeight: 800 }}>No se pudo cargar el resumen económico</div>
+        <div style={{ color: MS.TEXT.muted, fontSize: 12, marginTop: 4, lineHeight: 1.45 }}>{error}</div>
       </div>
     );
   }
@@ -112,7 +125,7 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
   const count = status === 'current' ? (data.cashCount || latest) : null;
   const variance = count ? data.variance : null;
   const varianceTone = variance === null || variance === undefined
-    ? 'rgba(255,255,255,0.5)' : variance === 0 ? C.verde : variance > 0 ? C.blu : C.orange;
+    ? MS.TEXT.muted : variance === 0 ? MS.ACCENT.positive : variance > 0 ? MS.ACCENT.refund : MS.ACCENT.warn;
 
   // K1 — over-collected is a backend fact (data.service.overCollected), taken
   // as-is. It is NOT `s.gross - s.collected` and NOT `something - s.unpaid`:
@@ -130,56 +143,68 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
   const scopesComparable = data.scopeRelation && data.scopeRelation.cashCountComparable === true;
   const scopesCrossing = data.scopeRelation && data.scopeRelation.cashCountComparable === false;
 
-  const box = {
-    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)',
-    borderRadius: 12, padding: '12px 14px', marginBottom: 10,
-  };
+  // SERVICE is the card the operator reads first, so it takes Mesa's gold
+  // "live surface" treatment; the Business Day card stays a neutral sibling.
+  const headRow = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 9 };
 
   return (
-    <div data-testid="finalizar-reconciliation" style={{ marginBottom: 18 }}>
+    <div data-testid="finalizar-reconciliation" style={{ display: 'grid', gap: 10 }}>
 
       {/* ── SCOPE 1: the service actually being closed ─────────────────── */}
-      <div data-testid="scope-service" style={box}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
-          <span style={{ color: '#fff', fontSize: 12, fontWeight: 800, letterSpacing: 0.6 }}>SERVICIO</span>
+      <div data-testid="scope-service" style={MS.card(true)}>
+        <div style={headRow}>
+          <span style={MS.eyebrow(true)}>Servicio</span>
           <ScopeBadge>Este servicio</ScopeBadge>
         </div>
         <Row testId="svc-tickets" label="Pedidos" value={String(s.orderCount)} />
         <Row testId="svc-gross" label="Total" value={eur(s.gross)} strong />
-        <Row testId="svc-collected" label="Cobrado" value={eur(s.collected)} tone={C.verde} strong />
-        <Row testId="svc-unpaid" label="Saldo pendiente" value={eur(s.unpaid)} tone={s.unpaid > 0 ? C.orange : undefined} />
+        <Row testId="svc-collected" label="Cobrado" value={eur(s.collected)} tone={MS.ACCENT.positive} strong />
+        {/* Saldo pendiente and Cobrado de más stay visually DISTINCT — two
+            independent exposures, two different semantic accents, never one
+            merged figure. */}
+        <Row testId="svc-unpaid" label="Saldo pendiente" value={eur(s.unpaid)} strong
+          tone={s.unpaid > 0 ? MS.ACCENT.warn : undefined} />
         {hasOverCollected && (
-          <Row testId="svc-overcollected" label="Cobrado de más" value={eur(overCollected)} tone={C.blu} />
+          <Row testId="svc-overcollected" label="Cobrado de más" value={eur(overCollected)} strong tone={MS.ACCENT.refund} />
         )}
-        <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '7px 0' }} />
+        <div style={{ height: 1, background: 'rgba(215,168,75,.28)', margin: '9px 0 3px' }} />
         <Row testId="svc-cash" label="Efectivo" value={eur(s.byMethod.efectivo)} />
         <Row testId="svc-card" label="Tarjeta" value={eur(s.byMethod.tarjeta)} />
         <Row testId="svc-bizum" label="Bizum" value={eur(s.byMethod.bizum)} />
       </div>
 
       {/* ── SCOPE 2: the Business Day it belongs to ────────────────────── */}
-      <div data-testid="scope-day" style={{ ...box, borderColor: 'rgba(196,168,122,0.28)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
-          <span style={{ color: '#fff', fontSize: 12, fontWeight: 800, letterSpacing: 0.6 }}>RECONCILIACIÓN ECONÓMICA</span>
+      <div data-testid="scope-day" style={MS.card()}>
+        <div style={{ ...headRow, marginBottom: 5 }}>
+          <span style={MS.eyebrow(false)}>Reconciliación económica</span>
           <ScopeBadge>Día operativo {r.businessDate ? r.businessDate.slice(8, 10) + '/' + r.businessDate.slice(5, 7) : ''}</ScopeBadge>
         </div>
-        <div data-testid="day-window" style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginBottom: 8 }}>
+        <div data-testid="day-window" style={{ display: 'flex', alignItems: 'center', gap: 6, color: MS.TEXT.muted, fontSize: 11.5, marginBottom: 9 }}>
+          <MS.MesaIcon d={MS.ICON_SCOPE} size={13} />
           {shortWindow(r.window.from)} → {shortWindow(r.window.to)} · hora de Madrid
         </div>
         {/* K3 — when the backend reports the service window is NOT inside this
             Business Day window (a service left open across days), the figures
             and any cash count below describe the DAY, not this service. Said
             once, only on an explicit backend crossing, so "Diferencia 0,00 €"
-            cannot be read as "this service reconciles". */}
+            cannot be read as "this service reconciles". Presentation only:
+            same sentence, same backend gate — it now reads as a marked note
+            instead of a dim grey line. */}
         {scopesCrossing && (
-          <div data-testid="scope-crossing-note" style={{ color: '#ffab00', fontSize: 10.5, marginBottom: 8, lineHeight: 1.45 }}>
-            Este servicio abarca un período distinto del día operativo: el conteo y las cifras
-            de abajo describen el día, no solo este servicio.
+          <div data-testid="scope-crossing-note" style={{
+            display: 'flex', gap: 8, alignItems: 'flex-start',
+            border: '1px solid rgba(240,169,60,.34)', background: 'rgba(240,169,60,.09)',
+            borderRadius: 10, padding: '8px 10px', marginBottom: 10,
+            color: MS.ACCENT.warn, fontSize: 11.5, lineHeight: 1.5, fontWeight: 600,
+          }}>
+            <MS.MesaIcon d={MS.ICON_WARN} size={14} style={{ marginTop: 2 }} />
+            <span>Este servicio abarca un período distinto del día operativo: el conteo y las cifras
+            de abajo describen el día, no solo este servicio.</span>
           </div>
         )}
         <Row testId="day-tickets" label="Pedidos del período" value={String(r.orderCount)} />
         <Row testId="day-gross" label="Ingresos del período" value={eur(r.gross)} strong />
-        <Row testId="day-collected" label="Cobrado" value={eur(r.collected)} tone={C.verde} strong />
+        <Row testId="day-collected" label="Cobrado" value={eur(r.collected)} tone={MS.ACCENT.positive} strong />
         <Row testId="day-cash" label="Efectivo registrado" value={eur(r.cashReceipts)} />
 
         {count && (
@@ -192,7 +217,7 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
               tone={varianceTone}
               strong
             />
-            <div data-testid="variance-note" style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10.5, marginTop: 6, lineHeight: 1.45 }}>
+            <div data-testid="variance-note" style={{ color: MS.TEXT.muted, fontSize: 11, marginTop: 7, lineHeight: 1.45 }}>
               El sistema todavía no incluye fondo inicial ni movimientos manuales de caja.
             </div>
           </>
@@ -202,18 +227,19 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
             historical fact it is — never subtracted from a later total. */}
         {status === 'stale' && latest && (
           <div data-testid="stale-cash-count" style={{
-            background: 'rgba(255,171,0,0.07)', border: '1px solid rgba(255,171,0,0.24)',
-            borderRadius: 10, padding: '9px 11px', marginTop: 9,
+            background: 'rgba(240,169,60,.08)', border: '1px solid rgba(240,169,60,.3)',
+            borderRadius: 10, padding: '10px 11px', marginTop: 10,
           }}>
-            <div style={{ color: '#ffab00', fontSize: 11.5, fontWeight: 700 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: MS.ACCENT.warn, fontSize: 11, fontWeight: 900, letterSpacing: '.5px', textTransform: 'uppercase' }}>
+              <MS.MesaIcon d={MS.ICON_WARN} size={14} />
               No hay un conteo de caja actual
             </div>
-            <div data-testid="stale-cash-count-detail" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 4, lineHeight: 1.5 }}>
+            <div data-testid="stale-cash-count-detail" style={{ color: MS.TEXT.body, fontSize: 11.5, marginTop: 6, lineHeight: 1.5 }}>
               El último conteo fue de {eur(latest.countedCash)} a las {shortWindow(latest.countedAt)},
               cuando el efectivo registrado era {eur(latest.recordedCashReceiptsAtCount)}. Después
               hubo movimientos en efectivo, y ahora el registrado es {eur(r.cashReceipts)}.
             </div>
-            <div data-testid="stale-cash-count-guidance" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10.5, marginTop: 5, lineHeight: 1.45 }}>
+            <div data-testid="stale-cash-count-guidance" style={{ color: MS.TEXT.muted, fontSize: 11, marginTop: 6, lineHeight: 1.45 }}>
               Ese conteo sigue siendo válido para su momento, por eso no se compara con el total
               actual. Para ver una diferencia, registra un conteo nuevo. También puedes finalizar
               el servicio sin conteo.
@@ -222,7 +248,7 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
         )}
 
         {status === 'none' && (
-          <div data-testid="no-cash-count" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11.5, marginTop: 7 }}>
+          <div data-testid="no-cash-count" style={{ color: MS.TEXT.muted, fontSize: 12, marginTop: 8 }}>
             No hay conteo de caja compatible para este período.
           </div>
         )}
@@ -245,7 +271,7 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
           silence, never a comparison the backend did not sanction. */}
       {scopesComparable
         && Math.round(((Number(r.cashReceipts) || 0) - (Number(s.byMethod.efectivo) || 0)) * 100) !== 0 && (
-        <div data-testid="scope-explainer" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, lineHeight: 1.5 }}>
+        <div data-testid="scope-explainer" style={{ color: MS.TEXT.muted, fontSize: 11.5, lineHeight: 1.5, padding: '0 2px' }}>
           Hoy se cobraron {eur(r.cashReceipts)} en efectivo. De este servicio: {eur(s.byMethod.efectivo)}.
         </div>
       )}

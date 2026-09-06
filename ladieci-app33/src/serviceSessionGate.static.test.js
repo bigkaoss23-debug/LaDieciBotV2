@@ -344,8 +344,15 @@ describe('closeout routing (Phase 6)', () => {
     expect(SERVICIO_C).toMatch(/data-testid="servicio-finalizar-btn"/);
     expect(SERVICIO).toMatch(/<span>Finalizar servicio<\/span>/);
     expect(SERVICIO).toMatch(/aria-label="Finalizar servicio"/);
-    // the moon survives as decoration only, explicitly hidden from the a11y tree
-    expect(SERVICIO).toMatch(/aria-hidden="true"[^>]*>🌙</);
+    // VISUAL CONSISTENCY PASS 1 — the moon survives as decoration only, and is
+    // still explicitly hidden from the a11y tree; it is now the shared Mesa
+    // vector marker instead of the 🌙 emoji (the action bar no longer mixes
+    // emoji with vector icons). The visible label and the accessible name —
+    // the two things FIN-01 actually depends on — are asserted above.
+    expect(SERVICIO).toMatch(/<MS\.MesaIcon d=\{MS\.ICON_MOON\}/);
+    const MESA_SURFACE = fs.readFileSync(
+      path.join(__dirname, 'components', 'ui', 'mesaSurface.jsx'), 'utf8');
+    expect(MESA_SURFACE).toMatch(/export const MesaIcon[\s\S]{0,400}aria-hidden="true"/);
   });
 
   test('Finalizar routes to the existing confirmation flow, and no second close path exists', () => {
@@ -433,7 +440,7 @@ describe('NO_OPEN_SERVICE_SESSION guidance (Phase 8)', () => {
   test('the refusal is detected and normalized to the single submission error', () => {
     expect(SERVICIO_C).toMatch(/isNoOpenServiceSession\(err\)/);
     expect(SERVICIO_C).toMatch(/new Error\("No se pudo confirmar el pedido\."\)/);
-    expect(SERVICIO_C).not.toMatch(/NO_OPEN_SERVICE_SESSION_MESSAGE/);
+    expect(SERVICIO_C).not.toMatch(/NO_OPEN_SERVICE_SESSION_MESAGE/);
   });
 
   test('order submission never opens or ensures the service by itself', () => {

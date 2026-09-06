@@ -292,10 +292,14 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
               tone={counts.requiereRevision > 0 ? '#c9a8e6' : undefined} />
           </div>
 
+          {/* VISUAL CONSISTENCY PASS 1 — the empty state used to add a sentence
+              ("No hay pendientes. Todo cuadra.") restating what the three zero
+              tiles directly above already say unambiguously. The zeros ARE the
+              statement; the sentence was redundant chrome. The marker element
+              stays so a consumer can still tell "nothing pending" apart from
+              "not loaded" — it is simply silent now. */}
           {isEmpty ? (
-            <div data-testid="pendientes-empty" style={{ ...card, color: LABEL, fontSize: 12.5 }}>
-              No hay pendientes. Todo cuadra.
-            </div>
+            <div data-testid="pendientes-empty" />
           ) : (
             <>
               <Group testId="pendientes-group-cobrar" title="Por cobrar"
