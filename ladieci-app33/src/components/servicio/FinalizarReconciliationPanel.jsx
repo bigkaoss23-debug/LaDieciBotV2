@@ -114,6 +114,21 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
   const varianceTone = variance === null || variance === undefined
     ? 'rgba(255,255,255,0.5)' : variance === 0 ? C.verde : variance > 0 ? C.blu : C.orange;
 
+  // K1 — over-collected is a backend fact (data.service.overCollected), taken
+  // as-is. It is NOT `s.gross - s.collected` and NOT `something - s.unpaid`:
+  // this panel does no economic arithmetic. Shown only when there is one.
+  const overCollected = Number(s && s.overCollected) || 0;
+  const hasOverCollected = overCollected > 0;
+
+  // K2/K3 — the backend says whether the SERVICE window and the BUSINESS-DAY /
+  // cash-count window are comparable. When they are not ("crossing"), the
+  // day's cash figures and this service's cash are different populations, so
+  // the "de este servicio" sentence would be a false subset claim and the
+  // cash-count difference does not describe this service. A payload with no
+  // scopeRelation (older backend) is treated as comparable — unchanged
+  // behaviour for the deploy window.
+  const scopesComparable = !data.scopeRelation || data.scopeRelation.cashCountComparable !== false;
+
   const box = {
     background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)',
     borderRadius: 12, padding: '12px 14px', marginBottom: 10,
@@ -131,7 +146,10 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
         <Row testId="svc-tickets" label="Pedidos" value={String(s.orderCount)} />
         <Row testId="svc-gross" label="Total" value={eur(s.gross)} strong />
         <Row testId="svc-collected" label="Cobrado" value={eur(s.collected)} tone={C.verde} strong />
-        <Row testId="svc-unpaid" label="Pendiente" value={eur(s.unpaid)} tone={s.unpaid > 0 ? C.orange : undefined} />
+        <Row testId="svc-unpaid" label="Saldo pendiente" value={eur(s.unpaid)} tone={s.unpaid > 0 ? C.orange : undefined} />
+        {hasOverCollected && (
+          <Row testId="svc-overcollected" label="Cobrado de más" value={eur(overCollected)} tone={C.blu} />
+        )}
         <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '7px 0' }} />
         <Row testId="svc-cash" label="Efectivo" value={eur(s.byMethod.efectivo)} />
         <Row testId="svc-card" label="Tarjeta" value={eur(s.byMethod.tarjeta)} />
@@ -147,6 +165,17 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
         <div data-testid="day-window" style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginBottom: 8 }}>
           {shortWindow(r.window.from)} → {shortWindow(r.window.to)} · hora de Madrid
         </div>
+        {/* K3 — when the service window is not inside this Business Day window
+            (a service left open across days), the figures and any cash count
+            below describe the DAY, not this service. Said once, from the
+            backend's scopeRelation, so "Diferencia 0,00 €" cannot be read as
+            "this service reconciles". */}
+        {!scopesComparable && (
+          <div data-testid="scope-crossing-note" style={{ color: '#ffab00', fontSize: 10.5, marginBottom: 8, lineHeight: 1.45 }}>
+            Este servicio abarca un período distinto del día operativo: el conteo y las cifras
+            de abajo describen el día, no solo este servicio.
+          </div>
+        )}
         <Row testId="day-tickets" label="Pedidos del período" value={String(r.orderCount)} />
         <Row testId="day-gross" label="Ingresos del período" value={eur(r.gross)} strong />
         <Row testId="day-collected" label="Cobrado" value={eur(r.collected)} tone={C.verde} strong />
@@ -205,9 +234,15 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
           extra money was a payment received today for an OLDER service. Money
           received today is a RECEIPT fact, not evidence about how many services
           the day contains, so the line now states only what it can see — the
-          day's cash, and this service's share of it — and shows whenever the
-          two genuinely differ rather than when a count happens to exceed one. */}
-      {Math.round(((Number(r.cashReceipts) || 0) - (Number(s.byMethod.efectivo) || 0)) * 100) !== 0 && (
+          day's cash, and this service's share of it.
+          K2 — and it renders ONLY when the backend says the two windows are
+          comparable (scopeRelation.cashCountComparable). On the audited fixture
+          the service window sat entirely outside its Business Day window, so
+          "De este servicio: 70,00 €" inside "Hoy se cobraron 89,50 €" was a
+          false subset claim (the service's real share of that 89,50 € was 0).
+          When the scopes cross, silence beats a misleading sentence. */}
+      {scopesComparable
+        && Math.round(((Number(r.cashReceipts) || 0) - (Number(s.byMethod.efectivo) || 0)) * 100) !== 0 && (
         <div data-testid="scope-explainer" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, lineHeight: 1.5 }}>
           Hoy se cobraron {eur(r.cashReceipts)} en efectivo. De este servicio: {eur(s.byMethod.efectivo)}.
         </div>

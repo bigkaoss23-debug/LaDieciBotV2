@@ -329,3 +329,129 @@ test("J-2 · a backend that predates the field cannot make the panel print a fal
   expect(byTestId(container, "stale-cash-count")).not.toBeNull();
   unmount(container, root);
 });
+
+// ===============================================================
+// FINALIZAR CLOSEOUT CONTRACT HARDENING — 2026-09-06
+//
+// The audited service 42af1de9 showed Total 161 / Cobrado 139 / Pendiente 32,
+// with no way to see that the missing 10 was an over-collection on one order
+// (obligation 60, net collected 70). And its window sat entirely OUTSIDE its
+// Business Day window, so "hoy se cobraron 89,50 €. De este servicio: 70,00 €"
+// was a false subset claim — the service's real share of that 89,50 € was 0.
+// The backend now publishes service.overCollected and scopeRelation; this
+// panel renders them and NEVER does the arithmetic itself.
+// ===============================================================
+
+// The audited shape, as the hardened backend now sends it.
+const AUDITED = Object.freeze({
+  ...DATA,
+  service: {
+    scope: "service", orderCount: 4,
+    gross: 161, collected: 139, unpaid: 32, voided: 0, refunded: 0,
+    overCollected: 10, unresolvedOverCollected: 10,
+    byMethod: { efectivo: 70, tarjeta: 69, bizum: 0, other: 0 },
+  },
+  reconciliation: {
+    ...DATA.reconciliation,
+    businessDate: "2026-08-25",
+    window: { from: "2026-08-25T02:00:00.000Z", to: "2026-08-26T02:00:00.000Z", timezone: "Europe/Madrid", preset: "hoy" },
+    orderCount: 5, gross: 215.5, collected: 158.5, unpaid: 32, voided: 0, refunded: 0,
+    overCollected: 10, unresolvedOverCollected: 10,
+    byMethod: { efectivo: 89.5, tarjeta: 69, bizum: 0, other: 0 },
+    cashReceipts: 89.5, serviceCount: 1, serviceProvenance: [],
+  },
+  cashCount: null, latestCashCount: null, cashCountStatus: "none",
+  cashCountCandidates: 0, variance: null,
+  scopeRelation: {
+    kind: "crossing", serviceWithinDay: false, cashCountComparable: false,
+    serviceWindow: { from: "2026-08-25T17:02:59.058Z", to: "2026-09-06T10:00:00.000Z" },
+    dayWindow: { from: "2026-08-25T02:00:00.000Z", to: "2026-08-26T02:00:00.000Z" },
+  },
+});
+
+test("K5 · the service outstanding row is labelled 'Saldo pendiente', not the generic 'Pendiente'", async () => {
+  const { container, root } = await mount({ data: AUDITED });
+  const row = byTestId(container, "svc-unpaid");
+  expect(row.textContent).toMatch(/saldo pendiente/i);
+  expect(row.textContent).toMatch(/32,00\s?€/);
+  unmount(container, root);
+});
+
+test("K1 · when the backend reports overCollected > 0 the panel shows 'Cobrado de más' with that exact figure", async () => {
+  const { container, root } = await mount({ data: AUDITED });
+  const over = byTestId(container, "svc-overcollected");
+  expect(over).not.toBeNull();
+  expect(over.textContent).toMatch(/cobrado de más/i);
+  expect(over.textContent).toMatch(/10,00\s?€/);
+  // The two exposures are shown side by side, never netted into one number.
+  expect(byTestId(container, "svc-unpaid").textContent).toMatch(/32,00\s?€/);
+  // 22,00 (= 161 - 139) is NOT printed as any figure: the panel does no such
+  // subtraction.
+  expect(byTestId(container, "scope-service").textContent).not.toMatch(/22,00\s?€/);
+  unmount(container, root);
+});
+
+test("K1 · overCollected 0 (or absent) shows no 'Cobrado de más' row at all", async () => {
+  for (const svc of [{ ...AUDITED.service, overCollected: 0 }, { ...AUDITED.service, overCollected: undefined }]) {
+    const { container, root } = await mount({ data: { ...AUDITED, service: svc } });
+    expect(byTestId(container, "svc-overcollected")).toBeNull();
+    unmount(container, root);
+  }
+});
+
+test("K2 · when the scopes cross, the 'de este servicio' sentence is NOT rendered", async () => {
+  const { container, root } = await mount({ data: AUDITED });
+  // 89,50 ≠ 70,00, so the OLD gate would have shown the sentence.
+  expect(byTestId(container, "scope-explainer")).toBeNull();
+  expect(container.textContent).not.toMatch(/De este servicio/i);
+  unmount(container, root);
+});
+
+test("K3 · a crossing service is stated once, so 'Diferencia' cannot read as 'this service reconciles'", async () => {
+  const { container, root } = await mount({ data: AUDITED });
+  const note = byTestId(container, "scope-crossing-note");
+  expect(note).not.toBeNull();
+  expect(note.textContent).toMatch(/per[íi]odo distinto/i);
+  unmount(container, root);
+});
+
+test("K2 · when the backend says the scopes ARE comparable, the sentence still renders", async () => {
+  const nested = {
+    ...AUDITED,
+    scopeRelation: { ...AUDITED.scopeRelation, kind: "nested", serviceWithinDay: true, cashCountComparable: true },
+  };
+  const { container, root } = await mount({ data: nested });
+  expect(byTestId(container, "scope-crossing-note")).toBeNull();
+  const note = byTestId(container, "scope-explainer");
+  expect(note).not.toBeNull();
+  expect(note.textContent).toMatch(/89,50\s?€/);
+  expect(note.textContent).toMatch(/70,00\s?€/);
+  unmount(container, root);
+});
+
+test("a payload with NO scopeRelation (older backend) keeps the pre-hardening behaviour", async () => {
+  // DATA has no scopeRelation and service efectivo 85 ≠ day cash 157,5.
+  const { container, root } = await mount({ data: DATA });
+  expect(byTestId(container, "scope-crossing-note")).toBeNull();
+  expect(byTestId(container, "scope-explainer")).not.toBeNull();
+  unmount(container, root);
+});
+
+test("ANTI-PATCH · the panel source does no economic arithmetic on the service figures", () => {
+  const raw = require("fs").readFileSync(require("path").join(__dirname, "FinalizarReconciliationPanel.jsx"), "utf8");
+  // Only executable code counts — the comments necessarily NAME the forbidden
+  // formulas to explain why they are forbidden, so strip block + line comments
+  // (and JSX {/* */}) before asserting, exactly like finalizarConfirmationCopy.
+  const src = raw
+    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  // No reconstruction of the exposures, no netting, no window comparison.
+  expect(src).not.toMatch(/s\.gross\s*-\s*s\.collected/);
+  expect(src).not.toMatch(/s\.unpaid\s*-\s*[a-zA-Z]/);
+  expect(src).not.toMatch(/overCollected\s*[-+]\s*s\.unpaid|s\.unpaid\s*[-+]\s*overCollected/);
+  expect(src).not.toMatch(/new Date\([^)]*window[^)]*\)\s*[<>]/i);
+  // overCollected and scopesComparable are READ from data, not computed.
+  expect(src).toMatch(/s && s\.overCollected/);
+  expect(src).toMatch(/data\.scopeRelation/);
+});
