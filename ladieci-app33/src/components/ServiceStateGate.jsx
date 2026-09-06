@@ -47,7 +47,7 @@ import PreviousCloseoutIncidentsBanner from './service/PreviousCloseoutIncidents
 
 export default function ServiceStateGate({ role, actor, onCloseout, children, hideStatusChrome = false }) {
   const ensure = useSilentServiceEnsure({ role });
-  const { phase, session, exception, previousCloseoutIncidents, retry, recheckSilently } = ensure;
+  const { phase, session, exception, previousCloseoutIncidents, autoRecovery, retry, recheckSilently } = ensure;
   const recheckRef = useRef(recheckSilently);
   recheckRef.current = recheckSilently;
 
@@ -99,6 +99,16 @@ export default function ServiceStateGate({ role, actor, onCloseout, children, hi
             modal. Renders nothing when there is nothing actionable to report
             (see PreviousCloseoutIncidentsBanner/describePreviousCloseoutIncidents). */}
         {!hideStatusChrome && <PreviousCloseoutIncidentsBanner summary={previousCloseoutIncidents} />}
+        {/* STALE SERVICE PROTECTION V1 — the backend safely auto-finalized a
+            stale (past-Business-Day) service on this same ensure call and
+            already re-ran the resolver. Nothing to do here but say so: a
+            compact, non-blocking note that never covers controls and never
+            replaces {children}. The frontend triggered nothing. */}
+        {!hideStatusChrome && autoRecovery && (
+          <div data-testid="service-auto-recovery-note" style={autoRecoveryNote}>
+            Servicio anterior finalizado automáticamente
+          </div>
+        )}
         {children}
       </>
     );
@@ -136,3 +146,11 @@ const shell = {
 };
 const panel = { background: '#141414', border: '1px solid #2c2c2c', borderRadius: 16, padding: 22 };
 const eyebrow = { color: '#f97316', fontWeight: 800, letterSpacing: 2, fontSize: 11, margin: 0 };
+// STALE SERVICE PROTECTION V1 — the auto-recovery advisory pill. Fixed, below
+// the status pill, non-interactive: informational only, never covers controls.
+const autoRecoveryNote = {
+  position: 'fixed', top: 34, left: '50%', transform: 'translateX(-50%)', zIndex: 139,
+  background: 'rgba(46,213,115,0.10)', border: '1px solid rgba(46,213,115,0.28)',
+  borderRadius: 999, padding: '3px 12px', color: 'rgba(120,231,168,0.9)',
+  fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, pointerEvents: 'none', whiteSpace: 'nowrap',
+};

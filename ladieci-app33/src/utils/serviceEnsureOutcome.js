@@ -28,7 +28,14 @@ export const ENSURE_OUTCOME = Object.freeze({
   OTHER_SERVICE_STILL_ACTIVE: 'OTHER_SERVICE_STILL_ACTIVE',
   SERVICE_SESSION_CLOSING: 'SERVICE_SESSION_CLOSING',
   INVALID_ACTOR: 'INVALID_ACTOR',
-  STALE_SERVICE_SESSION: 'STALE_SERVICE_SESSION', // an open session belongs to an earlier businessDate
+  // STALE SERVICE PROTECTION V1 (2026-09-06) — the open Operational Service
+  // belongs to a PAST Business Day. Migration 120 makes the SQL resolvers fail
+  // closed with exactly this code, and staleServiceRecovery.js returns it when
+  // a stale service cannot be safely auto-finalized. The frontend NEVER
+  // computes staleness — it only projects this backend verdict. Replaces the
+  // dead STALE_SERVICE_SESSION code that R-DAY3 / S-A removed from the backend
+  // (serviceEnsureOutcome.js was its last remaining reference).
+  PREVIOUS_SERVICE_PENDING: 'PREVIOUS_SERVICE_PENDING',
   // F-7 (migration row 92) — the two read-only answers ensure_service_session
   // gives once it became READ/REUSE ONLY and can no longer create anything.
   // They are NOT symmetric to an operator (see the POST F-10 UX correction
@@ -56,7 +63,7 @@ const SCHEDULE_OR_SESSION_CODES = new Set([
   ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE,
   ENSURE_OUTCOME.SERVICE_SESSION_CLOSING,
   ENSURE_OUTCOME.INVALID_ACTOR,
-  ENSURE_OUTCOME.STALE_SERVICE_SESSION,
+  ENSURE_OUTCOME.PREVIOUS_SERVICE_PENDING,
   ENSURE_OUTCOME.REOPEN_REQUIRED,
   // NO_OPEN_SERVICE is deliberately NOT in this set — see classifyEnsureAttempt's
   // early intercept below. It never reaches this generic fallback.
@@ -76,7 +83,7 @@ export const EXCEPTION_TITLE = Object.freeze({
   [ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE]: 'El servicio anterior se está cerrando',
   [ENSURE_OUTCOME.SERVICE_SESSION_CLOSING]: 'El servicio se está cerrando',
   [ENSURE_OUTCOME.INVALID_ACTOR]: 'Usuario no verificado',
-  [ENSURE_OUTCOME.STALE_SERVICE_SESSION]: 'Servicio anterior pendiente',
+  [ENSURE_OUTCOME.PREVIOUS_SERVICE_PENDING]: 'Servicio anterior pendiente',
   [ENSURE_OUTCOME.REOPEN_REQUIRED]: 'No hay ningún servicio abierto',
   // No NO_OPEN_SERVICE entry — classifyEnsureAttempt intercepts that code
   // before it ever reaches EXCEPTION_TITLE (see the intercept below).
@@ -94,7 +101,7 @@ export const EXCEPTION_MESSAGE = Object.freeze({
   [ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE]: 'Espera unos segundos a que termine el cierre e inténtalo de nuevo.',
   [ENSURE_OUTCOME.SERVICE_SESSION_CLOSING]: 'Espera a que termine el cierre en curso e inténtalo de nuevo.',
   [ENSURE_OUTCOME.INVALID_ACTOR]: 'Tu usuario no se pudo verificar para abrir el servicio. Contacta con el administrador.',
-  [ENSURE_OUTCOME.STALE_SERVICE_SESSION]: 'El servicio activo pertenece a otra fecha operativa. Ciérralo antes de recibir nuevos pedidos.',
+  [ENSURE_OUTCOME.PREVIOUS_SERVICE_PENDING]: 'El servicio activo pertenece a otra fecha operativa. Ciérralo antes de recibir nuevos pedidos.',
   [ENSURE_OUTCOME.REOPEN_REQUIRED]: 'El servicio anterior ya se cerró. Vuelve a abrirlo desde el cierre del servicio para recibir pedidos.',
   [ENSURE_OUTCOME.DENIED]: 'No tienes permiso para acceder al servicio.',
   [ENSURE_OUTCOME.NETWORK]: 'No se pudo contactar con el servidor. Comprueba la conexión e inténtalo de nuevo.',
@@ -115,10 +122,18 @@ export function exceptionAllowsRetry(kind) {
 export function exceptionShowsCloseoutLink(kind) {
   return kind === ENSURE_OUTCOME.LUNCH_SESSION_STILL_ACTIVE
     || kind === ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE
-    || kind === ENSURE_OUTCOME.STALE_SERVICE_SESSION
+    || kind === ENSURE_OUTCOME.PREVIOUS_SERVICE_PENDING
     || kind === ENSURE_OUTCOME.REOPEN_REQUIRED
     || kind === ENSURE_OUTCOME.NETWORK
     || kind === ENSURE_OUTCOME.UNKNOWN;
+}
+
+// STALE SERVICE PROTECTION V1 — the ONE recovery affordance: reuse the
+// EXISTING Finalizar flow to close the stale service. True only for
+// PREVIOUS_SERVICE_PENDING; every other exception either waits out a clock
+// window or is resolved from the closeout page, never by finalizing here.
+export function exceptionShowsStaleFinalize(kind) {
+  return kind === ENSURE_OUTCOME.PREVIOUS_SERVICE_PENDING;
 }
 
 function domainOutcome(kind, res) {
@@ -130,6 +145,14 @@ function domainOutcome(kind, res) {
     session: (res && res.session) || null,
     scheduleState: (res && res.scheduleState) || null,
     businessDate: (res && res.businessDate) || null,
+    // STALE SERVICE PROTECTION V1 — the backend-supplied facts for the
+    // PREVIOUS_SERVICE_PENDING recovery surface. Passed straight through from
+    // migration 120 / staleServiceRecovery; never derived here (the frontend
+    // does not compare dates). Null for every other outcome.
+    staleServiceSessionId: (res && res.staleServiceSessionId) || null,
+    staleBusinessDate: (res && res.staleBusinessDate) || null,
+    currentBusinessDate: (res && res.currentBusinessDate) || null,
+    blockers: (res && res.blockers) || null,
   });
 }
 
@@ -148,6 +171,13 @@ export function classifyEnsureAttempt(res) {
       // there is nothing to report; never invented here, never re-fetched
       // separately.
       previousCloseoutIncidents: res.previousCloseoutIncidents || null,
+      // STALE SERVICE PROTECTION V1 — present only when the backend already
+      // safely auto-finalized a stale service on this same call and re-ran
+      // the resolver (index.js attaches `autoRecovery`). The frontend does
+      // not trigger anything; it may surface it and refresh. Null otherwise.
+      autoRecovery: (res.autoRecovery && res.autoRecovery.code === 'AUTO_RECOVERY_PERFORMED')
+        ? res.autoRecovery
+        : null,
     });
   }
 
@@ -202,6 +232,13 @@ export function classifyEnsureAttempt(res) {
       code,
       session: null,
       previousCloseoutIncidents: null,
+      // STALE SERVICE PROTECTION V1 — after a safe auto-finalize the backend
+      // re-runs the resolver, which usually lands here (the stale service is
+      // gone, the current-day one is not open yet). Carry the advisory so the
+      // gate can note it; the restaurant is simply idle until the first order.
+      autoRecovery: (res.autoRecovery && res.autoRecovery.code === 'AUTO_RECOVERY_PERFORMED')
+        ? res.autoRecovery
+        : null,
     });
   }
 

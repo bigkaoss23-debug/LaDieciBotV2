@@ -48,6 +48,11 @@ export function useSilentServiceEnsure({ role } = {}) {
   // request. null whenever absent (backend read-model degrade, or nothing
   // to report) — never an error state on its own.
   const [previousCloseoutIncidents, setPreviousCloseoutIncidents] = useState(null);
+  // STALE SERVICE PROTECTION V1 — non-null only when the backend safely
+  // auto-finalized a stale service on this same ensure call and re-ran the
+  // resolver (index.js attaches `autoRecovery`). The frontend never triggers
+  // recovery; it may surface this note. Cleared on every non-recovery settle.
+  const [autoRecovery, setAutoRecovery] = useState(null);
   const liveRef = useRef(true);
 
   const settle = useCallback((outcome) => {
@@ -55,11 +60,13 @@ export function useSilentServiceEnsure({ role } = {}) {
     if (outcome.kind === ENSURE_OUTCOME.ALLOWED) {
       setSession(outcome.session);
       setPreviousCloseoutIncidents(outcome.previousCloseoutIncidents || null);
+      setAutoRecovery(outcome.autoRecovery || null);
       setException(null);
       setPhase(ENSURE_PHASE.READY);
       return;
     }
     setPreviousCloseoutIncidents(null);
+    setAutoRecovery(null);
     setException(outcome);
     setPhase(ENSURE_PHASE.EXCEPTION);
   }, []);
@@ -79,5 +86,5 @@ export function useSilentServiceEnsure({ role } = {}) {
   const retry = useCallback(() => { run(ENSURE_PHASE.RETRYING); }, [run]);
   const recheckSilently = useCallback(() => { run(null); }, [run]);
 
-  return { phase, session, exception, previousCloseoutIncidents, retry, recheckSilently };
+  return { phase, session, exception, previousCloseoutIncidents, autoRecovery, retry, recheckSilently };
 }

@@ -12,6 +12,10 @@ const path = require("path");
 
 const read = (p) => fs.readFileSync(path.join(__dirname, p), "utf8");
 const SERVICIO = read("ServicioPage.jsx");
+// STALE SERVICE PROTECTION V1 (2026-09-06) — the Finalizar confirmation modal
+// moved verbatim into this shared component (also mounted by
+// ServiceExceptionPanel). TEST H's copy-truth assertions follow it here.
+const FINALIZAR_MODAL = read("servicio/FinalizarServicioModal.jsx");
 const TAB_BANCO = read("ordenes/TabBanco.jsx");
 const TAB_LISTOS = read("ordenes/TabListos.jsx");
 const TAB_MESA = read("mesa/TabMesa.jsx");
@@ -26,6 +30,7 @@ const codeOnly = (source) => source
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/^\s*\/\/.*$/gm, "");
 const SERVICIO_CODE = codeOnly(SERVICIO);
+const FINALIZAR_MODAL_CODE = codeOnly(FINALIZAR_MODAL);
 const TAB_MESA_CODE = codeOnly(TAB_MESA);
 const TAB_LISTOS_CODE = codeOnly(TAB_LISTOS);
 
@@ -140,12 +145,13 @@ describe("TEST F/G: pickup lateness belongs to takeaway, never to dine-in", () =
 describe("TEST H: Finalizar copy never promises a cancellation", () => {
   test("the pending-orders action no longer claims to anular them", () => {
     expect(SERVICIO_CODE).not.toContain("Cerrar y anular pedidos activos");
-    expect(SERVICIO).toContain("Finalizar servicio con pendientes");
+    expect(FINALIZAR_MODAL_CODE).not.toContain("Cerrar y anular pedidos activos");
+    expect(FINALIZAR_MODAL).toContain("Finalizar servicio con pendientes");
   });
 
   test("the explanatory line describes incidents, not cancellation", () => {
-    expect(SERVICIO_CODE).not.toContain("ciérralos expresamente como anulados");
-    expect(SERVICIO).toMatch(/[Ss]e registrarán como incidencias del cierre/);
+    expect(FINALIZAR_MODAL_CODE).not.toContain("ciérralos expresamente como anulados");
+    expect(FINALIZAR_MODAL).toMatch(/[Ss]e registrarán como incidencias del cierre/);
   });
 
   test("SMOKE FIX — an unresolved order is not described as money owed unless it is", () => {
@@ -153,21 +159,24 @@ describe("TEST H: Finalizar copy never promises a cancellation", () => {
     // that as an operational incident with financial exposure null, so the old
     // blanket "con su importe pendiente" was false for it. Operational pending
     // and financial exposure are two different claims.
-    // SERVICIO_CODE, not SERVICIO: the comment above the fixed line quotes the
-    // old wording verbatim to explain why it was wrong, and a prose mention is
-    // not a UI string. This is the same reason SERVICIO_CODE exists.
-    expect(SERVICIO_CODE).not.toContain("con su importe pendiente");
-    expect(SERVICIO_CODE).toContain("Las que estén cobradas no dejan importe pendiente");
+    // *_CODE, not raw: the comment above the fixed line quotes the old wording
+    // verbatim to explain why it was wrong, and a prose mention is not a UI
+    // string. This is the same reason the comment-stripped copy exists.
+    expect(FINALIZAR_MODAL_CODE).not.toContain("con su importe pendiente");
+    expect(FINALIZAR_MODAL_CODE).toContain("Las que estén cobradas no dejan importe pendiente");
   });
 
   test("no surviving UI string promises automatic cancellation on close", () => {
     expect(SERVICIO_CODE).not.toMatch(/anular pedidos/i);
+    expect(FINALIZAR_MODAL_CODE).not.toMatch(/anular pedidos/i);
   });
 
   test("the Finalizar action is nameable, and Cancelar is Spanish", () => {
+    // The bottom-bar button that opens the flow stays in ServicioPage…
     expect(SERVICIO).toContain('aria-label="Finalizar servicio"');
-    expect(SERVICIO_CODE).not.toContain('"Annulla"');
-    expect(SERVICIO).toContain('"Cancelar"');
+    // …the modal it opens lives in the shared component now.
+    expect(FINALIZAR_MODAL_CODE).not.toContain('"Annulla"');
+    expect(FINALIZAR_MODAL).toContain('"Cancelar"');
   });
 
   test("paying a table no longer claims the table was closed", () => {

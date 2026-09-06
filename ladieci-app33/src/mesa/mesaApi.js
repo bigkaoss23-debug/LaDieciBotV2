@@ -189,6 +189,11 @@ const ERROR_MESSAGES = Object.freeze({
   MESA_NETWORK_ERROR: "Sin conexión con el sistema de mesas. Inténtalo de nuevo.",
   MESA_SERVER_ERROR: "No se pudo completar la operación.",
   MESA_SERVICE_NOT_OPEN: "Primero hay que abrir el servicio.",
+  // STALE SERVICE PROTECTION V1 — mesaService.seatWithStaleServiceRecovery
+  // maps both its own stale-recovery verdict and the resolver's
+  // PREVIOUS_SERVICE_PENDING to this code (409). The full recovery surface
+  // lives on the Servicio screen; here the waiter just needs a clear reason.
+  MESA_PREVIOUS_SERVICE_PENDING: "El servicio anterior pertenece a otra fecha operativa. Finalízalo desde Servicio antes de sentar mesas.",
   MESA_TABLE_NOT_RELEASED: "Esta mesa tiene una cuenta abierta.",
   MESA_TABLE_ACCOUNT_OPEN: "Esta mesa ya tiene una cuenta abierta.",
   MESA_TABLE_UNAVAILABLE: "Esta mesa no está disponible.",

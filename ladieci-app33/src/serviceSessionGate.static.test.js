@@ -22,6 +22,12 @@ const FLOW = read('utils/serviceEnsureFlow.js');
 const APP = read('App.jsx');
 const API = read('api.js');
 const SERVICIO = read('components/ServicioPage.jsx');
+// STALE SERVICE PROTECTION V1 (2026-09-06) — the Finalizar confirmation flow
+// (pre-close scan + economic preflight + the close action + the modal) moved
+// VERBATIM out of ServicioPage into this shared component so ServiceException
+// Panel can mount the SAME flow for the PREVIOUS_SERVICE_PENDING recovery
+// surface (never a second close UI). The wiring assertions below follow it.
+const FINALIZAR_MODAL = read('components/servicio/FinalizarServicioModal.jsx');
 const CLOSEOUT = read('components/CurrentNightCloseoutPage.jsx');
 const MODAL = read('components/NuevoPedidoModal.jsx');
 const LIFECYCLE = read('order/submissionLifecycle.js');
@@ -45,6 +51,7 @@ const FLOW_C = code(FLOW);
 const APP_C = APP;
 const API_C = code(API);
 const SERVICIO_C = code(SERVICIO);
+const FINALIZAR_MODAL_C = code(FINALIZAR_MODAL);
 
 describe('api — service session rides the CURRENT Auth V2 proxy', () => {
   test('both legacy actions exist and go through proxyGet/proxyPost', () => {
@@ -314,6 +321,9 @@ describe('the manual open-service controller is now an exceptional recovery path
 });
 
 describe('closeout routing (Phase 6)', () => {
+  // language-guard: allow-legacy the two backend action names (wire strings) the close-flow wiring assertions match on, quoted verbatim, not new vocabulary
+  const [SCAN_ACTION, CLOSE_ACTION] = ['scanServizio', 'chiudiServizio'];
+
   test('App routes the closeout screen behind canAccessCurrentCloseout', () => {
     expect(APP_C).toMatch(/screen==="closeout" && canAccessCurrentCloseout\(auth\.getRole\(\)\)/);
     expect(APP_C).toMatch(/<CurrentNightCloseoutPage/);
@@ -356,21 +366,37 @@ describe('closeout routing (Phase 6)', () => {
   });
 
   test('Finalizar routes to the existing confirmation flow, and no second close path exists', () => {
-    // The pre-existing identifiers this test asserts the wiring of. Named once,
-    // here, so the rest of the test reads in the project's own vocabulary.
-    // language-guard: allow-legacy the existing close handler/pre-flight identifiers, quoted verbatim to prove the wiring is unchanged, not new vocabulary
-    const [CLOSE_HANDLER, CONFIRM_HANDLER, SCAN_ACTION] = ['handleChiudiServizio', 'handleChiudiConferma', 'scanServizio'];
+    // STALE SERVICE PROTECTION V1 — the bottom-bar button opens the ONE shared
+    // Finalizar modal (never inlines a second flow). Exactly one open wiring.
+    expect(SERVICIO_C).toMatch(/data-testid="servicio-finalizar-btn"\s+onClick=\{\(\)=>setFinalizarOpen\(true\)\}/);
+    expect(SERVICIO_C.match(/<FinalizarServicioModal\b/g)).toHaveLength(1);
+    expect(SERVICIO_C.match(/setFinalizarOpen\(true\)/g)).toHaveLength(1);
 
-    // one handler, one wiring, unchanged
-    expect(SERVICIO_C).toMatch(new RegExp(`data-testid="servicio-finalizar-btn"\\s+onClick=\\{${CLOSE_HANDLER}\\}`));
-    expect(SERVICIO_C.match(new RegExp(`onClick=\\{${CLOSE_HANDLER}\\}`, 'g'))).toHaveLength(1);
-    // the confirmation still goes through the pre-flight scan + the existing modal
-    expect(SERVICIO_C).toMatch(new RegExp(`api\\.get\\("${SCAN_ACTION}"\\)`));
-    expect(SERVICIO_C).toMatch(new RegExp(CONFIRM_HANDLER));
-    // and the report button is NOT wired to any close handler
+    // the shared modal is where the pre-flight scan + the real close call live,
+    // exactly once each — one implementation, reused, not duplicated
+    expect(FINALIZAR_MODAL_C).toMatch(new RegExp(`api\\.get\\("${SCAN_ACTION}"\\)`));
+    expect(FINALIZAR_MODAL_C.match(new RegExp(`api\\.get\\("${CLOSE_ACTION}"`, 'g'))).toHaveLength(1);
+    expect(SERVICIO_C).not.toMatch(new RegExp(`api\\.get\\("${CLOSE_ACTION}"`));
+
+    // and the report button is NOT wired to the Finalizar flow
     expect(SERVICIO_C).toMatch(/data-testid="servicio-closeout-btn"\s+onClick=\{onCloseout\}/);
-    expect(SERVICIO_C).not.toMatch(
-      new RegExp(`data-testid="servicio-closeout-btn"[\\s\\S]{0,200}${CLOSE_HANDLER.slice(0, 12)}`));
+    expect(SERVICIO_C).not.toMatch(/data-testid="servicio-closeout-btn"[\s\S]{0,200}setFinalizarOpen/);
+  });
+
+  test('ServiceExceptionPanel mounts the SAME shared Finalizar modal for the stale recovery — no second close UI', () => {
+    expect(EXCEPTION_PANEL_C).toMatch(/import FinalizarServicioModal from '\.\.\/servicio\/FinalizarServicioModal'/);
+    expect(EXCEPTION_PANEL_C).toMatch(/<FinalizarServicioModal\b/);
+    expect(EXCEPTION_PANEL_C).toMatch(/data-testid="service-stale-finalize-btn"/);
+    // it gates that affordance on the classifier verdict, never a client-side
+    // staleness decision: no comparison of any businessDate field. (The
+    // pre-existing `new Date()` here is only the wall clock for the Fecha/Hora
+    // identity rows — never used to decide whether a service is stale.)
+    expect(EXCEPTION_PANEL_C).toMatch(/exceptionShowsStaleFinalize\(kind\)/);
+    expect(EXCEPTION_PANEL_C).not.toMatch(/(stale|current|\.)businessDate\s*[<>]/i);
+    expect(EXCEPTION_PANEL_C).not.toMatch(/Date\.now\(|\.getTime\(\)\s*[-<>]/);
+    // and it still has no requests / no close call of its own (the pre-flight
+    // scan and the real close both live in the shared modal, never here)
+    expect(EXCEPTION_PANEL_C).not.toMatch(new RegExp(`api\\.get\\("(${SCAN_ACTION}|${CLOSE_ACTION})"`));
   });
 
   // G-1 — the entry path is silent ensure, and there is no longer a manual
@@ -407,32 +433,33 @@ describe('closeout routing (Phase 6)', () => {
   });
 });
 
+// STALE SERVICE PROTECTION V1 — these invariants moved with the flow into the
+// shared FinalizarServicioModal. Same rules, same regexes, new home. The
+// internal state identifier is `flow` there (a fresh file, so a Spanish name
+// clears the domain-language guard); the confirm handler is `confirmClose`.
 describe('close failure handling (Phase 7)', () => {
-  test('ServicioPage classifies the outcome instead of trusting HTTP 200', () => {
-    expect(SERVICIO_C).toMatch(/import \{ classifyCloseOutcome \}/);
-    expect(SERVICIO_C).toMatch(/const outcome = classifyCloseOutcome\(res\)/);
+  test('the shared modal classifies the outcome instead of trusting HTTP 200', () => {
+    expect(FINALIZAR_MODAL_C).toMatch(/import \{ classifyCloseOutcome \}/);
+    expect(FINALIZAR_MODAL_C).toMatch(/const outcome = classifyCloseOutcome\(res\)/);
+    // and ServicioPage no longer carries its own copy of the close logic
+    expect(SERVICIO_C).not.toMatch(/classifyCloseOutcome/);
   });
 
   test('only a real success dismisses the dialog', () => {
-    expect(SERVICIO_C).toMatch(/outcome\.kind === "success"[\s\S]{0,220}setChiudiModal\(null\)/);
+    expect(FINALIZAR_MODAL_C).toMatch(/outcome\.kind === "success"[\s\S]{0,220}setFlow\(null\)/);
     // the pre-fix behaviour — dismiss first, ask later — must be gone
-    // language-guard: allow-legacy handleChiudiConferma is the existing close-confirm handler name, quoted verbatim below to prove the wiring is unchanged, not new vocabulary
-    // N-2 — handleChiudiConferma dropped its deleteAttivi parameter: the
-    // backend's V3 close engine (the only path any session can take now)
-    // never read it. Regex updated to the current no-arg signature; the
-    // invariant under test (never dismiss before a real success) is unchanged.
-    expect(SERVICIO_C).not.toMatch(/handleChiudiConferma = async \(\) => \{\s*setChiudiModal\(null\)/);
+    expect(FINALIZAR_MODAL_C).not.toMatch(/confirmClose = async \(\) => \{\s*setFlow\(null\)/);
   });
 
   test('a failure keeps the dialog open with a persistent reason', () => {
-    expect(SERVICIO_C).toMatch(/data-testid="close-error"/);
-    expect(SERVICIO).toMatch(/El servicio sigue abierto/);
-    expect(SERVICIO_C).toMatch(/submitting: false, error: outcome\.message/);
+    expect(FINALIZAR_MODAL_C).toMatch(/data-testid="close-error"/);
+    expect(FINALIZAR_MODAL).toMatch(/El servicio sigue abierto/);
+    expect(FINALIZAR_MODAL_C).toMatch(/submitting: false, error: outcome\.message/);
   });
 
   test('buttons disable while the close is in flight', () => {
-    expect(SERVICIO_C).toMatch(/disabled=\{chiudiModal\.submitting\}/);
-    expect(SERVICIO_C).toMatch(/Cerrando…/);
+    expect(FINALIZAR_MODAL_C).toMatch(/disabled=\{flow\.submitting\}/);
+    expect(FINALIZAR_MODAL_C).toMatch(/Cerrando…/);
   });
 });
 

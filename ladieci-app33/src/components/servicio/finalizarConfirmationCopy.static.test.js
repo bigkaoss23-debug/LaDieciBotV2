@@ -14,8 +14,13 @@
 const fs = require("fs");
 const path = require("path");
 
+// STALE SERVICE PROTECTION V1 (2026-09-06) — the Finalizar confirmation modal
+// moved VERBATIM out of ServicioPage.jsx into this shared component so it can
+// also be mounted by ServiceExceptionPanel for the PREVIOUS_SERVICE_PENDING
+// recovery surface. The promise this file pins is unchanged; only its home
+// moved.
 const SOURCE = fs.readFileSync(
-  path.join(__dirname, "..", "ServicioPage.jsx"), "utf8",
+  path.join(__dirname, "FinalizarServicioModal.jsx"), "utf8",
 );
 // Only RENDERED copy counts. The source necessarily quotes the wording these
 // rules forbid — inside the JSX comment that explains why it was removed — so

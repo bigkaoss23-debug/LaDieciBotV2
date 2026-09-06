@@ -1,5 +1,6 @@
 import {
-  ENSURE_OUTCOME, classifyEnsureAttempt, exceptionAllowsRetry, exceptionShowsCloseoutLink, ensuredStatusLabel,
+  ENSURE_OUTCOME, classifyEnsureAttempt, exceptionAllowsRetry, exceptionShowsCloseoutLink,
+  exceptionShowsStaleFinalize, ensuredStatusLabel,
 } from './serviceEnsureOutcome';
 
 // No trailing "Z": these are parsed as LOCAL time by `new Date(...)`, so
@@ -40,7 +41,7 @@ describe('classifyEnsureAttempt — every documented typed non-success code', ()
     'BETWEEN_SERVICES', 'AFTER_ORDER_CUTOFF', 'OUTSIDE_WINDOWS',
     'SERVICE_ALREADY_COMPLETED_TODAY', 'LUNCH_SESSION_STILL_ACTIVE',
     'OTHER_SERVICE_STILL_ACTIVE', 'SERVICE_SESSION_CLOSING', 'INVALID_ACTOR',
-    'STALE_SERVICE_SESSION',
+    'PREVIOUS_SERVICE_PENDING',
   ];
   test.each(cases)('%s maps to itself, with a title and a Spanish message, never invented locally', (code) => {
     const res = { success: false, code, session: null, scheduleState: 'X', businessDate: '2026-07-26', _status: code === 'LUNCH_SESSION_STILL_ACTIVE' || code === 'OTHER_SERVICE_STILL_ACTIVE' || code === 'SERVICE_SESSION_CLOSING' ? 409 : 200, _ok: false };
@@ -59,16 +60,25 @@ describe('classifyEnsureAttempt — every documented typed non-success code', ()
   });
 });
 
-describe('classifyEnsureAttempt — STALE_SERVICE_SESSION (an open session belongs to an earlier businessDate)', () => {
+// STALE SERVICE PROTECTION V1 (2026-09-06) — migration 120 / staleServiceRecovery
+// fail closed with the canonical code PREVIOUS_SERVICE_PENDING when the open
+// Operational Service belongs to a PAST Business Day. (Replaces the dead
+// STALE_SERVICE_SESSION code R-DAY3 / S-A removed from the backend.) The
+// frontend only projects this verdict — it never compares dates.
+describe('classifyEnsureAttempt — PREVIOUS_SERVICE_PENDING (the open service belongs to an earlier Business Day)', () => {
   const res = {
-    success: false, created: false, code: 'STALE_SERVICE_SESSION',
+    success: false, created: false, code: 'PREVIOUS_SERVICE_PENDING',
     session: { id: 'uuid-6', serviceKind: 'PRANZO', businessDate: '2026-08-02', status: 'open', openedAt: '2026-08-02T09:36:55.359195+00:00' },
-    scheduleState: 'PRANZO_WINDOW', businessDate: '2026-08-05', _status: 200, _ok: true,
+    staleServiceSessionId: '42af1de9-8981-4d01-b331-554566bec60a',
+    staleBusinessDate: '2026-08-25',
+    currentBusinessDate: '2026-09-06',
+    blockers: { orders: 2, tables: 0, unpaid: 32, overCollected: 10, reconciliationError: null },
+    scheduleState: 'PRANZO_WINDOW', businessDate: '2026-08-05', _status: 409, _ok: false,
   };
 
   test('classifies as its own kind, not UNKNOWN', () => {
     const o = classifyEnsureAttempt(res);
-    expect(o.kind).toBe(ENSURE_OUTCOME.STALE_SERVICE_SESSION);
+    expect(o.kind).toBe(ENSURE_OUTCOME.PREVIOUS_SERVICE_PENDING);
     expect(o.kind).not.toBe(ENSURE_OUTCOME.UNKNOWN);
   });
 
@@ -82,9 +92,65 @@ describe('classifyEnsureAttempt — STALE_SERVICE_SESSION (an open session belon
     );
   });
 
-  test('offers both Reintentar and Ver cierre del servicio', () => {
-    expect(exceptionAllowsRetry(ENSURE_OUTCOME.STALE_SERVICE_SESSION)).toBe(true);
-    expect(exceptionShowsCloseoutLink(ENSURE_OUTCOME.STALE_SERVICE_SESSION)).toBe(true);
+  test('passes the backend stale facts straight through — never derived here', () => {
+    const o = classifyEnsureAttempt(res);
+    expect(o.staleServiceSessionId).toBe('42af1de9-8981-4d01-b331-554566bec60a');
+    expect(o.staleBusinessDate).toBe('2026-08-25');
+    expect(o.currentBusinessDate).toBe('2026-09-06');
+    expect(o.blockers).toEqual({ orders: 2, tables: 0, unpaid: 32, overCollected: 10, reconciliationError: null });
+  });
+
+  test('every other outcome carries the stale fields as null (no leakage)', () => {
+    const o = classifyEnsureAttempt(SERA_REUSED);
+    expect(o.staleServiceSessionId ?? null).toBeNull();
+    const x = classifyEnsureAttempt({ success: false, code: 'BETWEEN_SERVICES', _status: 200, _ok: false });
+    expect(x.staleServiceSessionId).toBeNull();
+    expect(x.staleBusinessDate).toBeNull();
+    expect(x.blockers).toBeNull();
+  });
+
+  test('offers Reintentar, the stale Finalizar action, and the read-only resumen link', () => {
+    expect(exceptionAllowsRetry(ENSURE_OUTCOME.PREVIOUS_SERVICE_PENDING)).toBe(true);
+    expect(exceptionShowsStaleFinalize(ENSURE_OUTCOME.PREVIOUS_SERVICE_PENDING)).toBe(true);
+    expect(exceptionShowsCloseoutLink(ENSURE_OUTCOME.PREVIOUS_SERVICE_PENDING)).toBe(true);
+  });
+
+  test('exceptionShowsStaleFinalize is true for NOTHING else — the recovery affordance is unique to this code', () => {
+    for (const k of ['BETWEEN_SERVICES', 'LUNCH_SESSION_STILL_ACTIVE', 'OTHER_SERVICE_STILL_ACTIVE',
+      'SERVICE_SESSION_CLOSING', 'REOPEN_REQUIRED', 'NO_OPEN_SERVICE', 'NETWORK', 'UNKNOWN', 'DENIED', 'ALLOWED']) {
+      expect(exceptionShowsStaleFinalize(k)).toBe(false);
+    }
+  });
+});
+
+// STALE SERVICE PROTECTION V1 — AUTO_RECOVERY_PERFORMED rides a success body
+// (index.js re-ran the resolver after a safe auto-finalize). The frontend
+// surfaces it; it triggers nothing.
+describe('classifyEnsureAttempt — AUTO_RECOVERY_PERFORMED advisory passthrough', () => {
+  const autoRecovery = {
+    performed: true, code: 'AUTO_RECOVERY_PERFORMED',
+    recoveredServiceSessionId: 'old-1', staleBusinessDate: '2026-08-25',
+    currentBusinessDate: '2026-09-06', idempotent: false,
+  };
+
+  test('carried on a normal success (a fresh service is already open)', () => {
+    const o = classifyEnsureAttempt({ ...SERA_REUSED, autoRecovery });
+    expect(o.kind).toBe(ENSURE_OUTCOME.ALLOWED);
+    expect(o.autoRecovery).toEqual(autoRecovery);
+  });
+
+  test('carried on the common post-recovery idle (NO_OPEN_SERVICE)', () => {
+    const o = classifyEnsureAttempt({
+      success: false, code: 'NO_OPEN_SERVICE', session: null,
+      businessDate: '2026-09-06', autoRecovery, _status: 200, _ok: true,
+    });
+    expect(o.kind).toBe(ENSURE_OUTCOME.ALLOWED);
+    expect(o.autoRecovery).toEqual(autoRecovery);
+  });
+
+  test('null whenever the backend did not attach it, or attached the wrong shape', () => {
+    expect(classifyEnsureAttempt(SERA_REUSED).autoRecovery).toBeNull();
+    expect(classifyEnsureAttempt({ ...SERA_REUSED, autoRecovery: { code: 'SOMETHING_ELSE' } }).autoRecovery).toBeNull();
   });
 });
 
