@@ -110,13 +110,18 @@ test("the two scopes are never presented as one number", async () => {
   unmount(container, root);
 });
 
+// The backend certifies comparability; these fixtures add that certification
+// so the SHAPE of the copy (receipt figures, never "N servicios") is what is
+// under test here — the fail-safe gate itself has its own FAIL-SAFE A–D tests.
+const COMPARABLE = Object.freeze({ kind: "nested", serviceWithinDay: true, cashCountComparable: true });
+
 test("differing cash figures are explained by RECEIPTS, never by a claimed number of services", async () => {
   // SMOKE FIX — this line used to assert "este día operativo tuvo 2 servicios".
   // On 2026-08-25 it said exactly that while ONE service_session belonged to
   // the business date: the extra cash was a payment taken today for an older
   // service. Money received today is a receipt fact and says nothing about how
   // many services the day holds, so the copy now states only the two figures.
-  const { container, root } = await mount({ data: DATA });
+  const { container, root } = await mount({ data: { ...DATA, scopeRelation: COMPARABLE } });
   const note = byTestId(container, "scope-explainer");
   expect(note.textContent).toMatch(/157,50\s?€/);
   expect(note.textContent).toMatch(/85,00\s?€/);
@@ -127,7 +132,7 @@ test("differing cash figures are explained by RECEIPTS, never by a claimed numbe
 test("the explainer follows the figures, not serviceCount: one service can still differ", async () => {
   // The real 25/08 shape: a single service on the business date, and day cash
   // larger than this service's because of a receipt for an older one.
-  const single = { ...DATA, reconciliation: { ...DATA.reconciliation, serviceCount: 1 } };
+  const single = { ...DATA, scopeRelation: COMPARABLE, reconciliation: { ...DATA.reconciliation, serviceCount: 1 } };
   const { container, root } = await mount({ data: single });
   const note = byTestId(container, "scope-explainer");
   expect(note).not.toBeNull();
@@ -429,12 +434,46 @@ test("K2 · when the backend says the scopes ARE comparable, the sentence still 
   unmount(container, root);
 });
 
-test("a payload with NO scopeRelation (older backend) keeps the pre-hardening behaviour", async () => {
-  // DATA has no scopeRelation and service efectivo 85 ≠ day cash 157,5.
-  const { container, root } = await mount({ data: DATA });
-  expect(byTestId(container, "scope-crossing-note")).toBeNull();
+// ── FAIL-SAFE: comparability must be EXPLICITLY certified by the backend ────
+// scopesComparable is `scopeRelation.cashCountComparable === true` and nothing
+// else. Missing / null / undefined metadata is NOT permission to compare — the
+// frontend never assumes two scopes line up just because the backend was
+// silent. (BACKEND REASONS. FRONTEND PRESENTS.)
+
+test("FAIL-SAFE A · cashCountComparable === true → the comparison sentence IS rendered", async () => {
+  const ok = { ...AUDITED, scopeRelation: { ...AUDITED.scopeRelation, cashCountComparable: true, serviceWithinDay: true, kind: "nested" } };
+  const { container, root } = await mount({ data: ok });
   expect(byTestId(container, "scope-explainer")).not.toBeNull();
+  expect(byTestId(container, "scope-crossing-note")).toBeNull();
   unmount(container, root);
+});
+
+test("FAIL-SAFE B · cashCountComparable === false → NO comparison sentence, crossing note instead", async () => {
+  const { container, root } = await mount({ data: AUDITED }); // cashCountComparable: false
+  expect(byTestId(container, "scope-explainer")).toBeNull();
+  expect(container.textContent).not.toMatch(/De este servicio/i);
+  expect(byTestId(container, "scope-crossing-note")).not.toBeNull();
+  unmount(container, root);
+});
+
+test("FAIL-SAFE C · scopeRelation entirely missing → NO comparison sentence AND NO crossing note", async () => {
+  // DATA has no scopeRelation and service efectivo 85 ≠ day cash 157,5, so the
+  // permissive gate would have shown the sentence. Fail-safe: silence.
+  const { container, root } = await mount({ data: DATA });
+  expect(byTestId(container, "scope-explainer")).toBeNull();
+  expect(container.textContent).not.toMatch(/De este servicio/i);
+  expect(byTestId(container, "scope-crossing-note")).toBeNull();
+  unmount(container, root);
+});
+
+test("FAIL-SAFE D · cashCountComparable null / undefined → NO comparison sentence AND NO crossing note", async () => {
+  for (const value of [null, undefined]) {
+    const partial = { ...AUDITED, scopeRelation: { ...AUDITED.scopeRelation, cashCountComparable: value } };
+    const { container, root } = await mount({ data: partial });
+    expect(byTestId(container, "scope-explainer")).toBeNull();
+    expect(byTestId(container, "scope-crossing-note")).toBeNull();
+    unmount(container, root);
+  }
 });
 
 test("ANTI-PATCH · the panel source does no economic arithmetic on the service figures", () => {
@@ -450,8 +489,15 @@ test("ANTI-PATCH · the panel source does no economic arithmetic on the service 
   expect(src).not.toMatch(/s\.gross\s*-\s*s\.collected/);
   expect(src).not.toMatch(/s\.unpaid\s*-\s*[a-zA-Z]/);
   expect(src).not.toMatch(/overCollected\s*[-+]\s*s\.unpaid|s\.unpaid\s*[-+]\s*overCollected/);
+  // No client-side comparison of the two windows to decide comparability.
   expect(src).not.toMatch(/new Date\([^)]*window[^)]*\)\s*[<>]/i);
-  // overCollected and scopesComparable are READ from data, not computed.
+  expect(src).not.toMatch(/serviceWindow[\s\S]{0,40}dayWindow|dayWindow[\s\S]{0,40}serviceWindow/);
+  // overCollected and comparability are READ from data, not computed.
   expect(src).toMatch(/s && s\.overCollected/);
   expect(src).toMatch(/data\.scopeRelation/);
+  // FAIL SAFE: comparability requires an EXPLICIT backend `=== true`. A
+  // permissive `!== false` (which would treat missing metadata as permission)
+  // must not reappear.
+  expect(src).toMatch(/cashCountComparable === true/);
+  expect(src).not.toMatch(/cashCountComparable !== false/);
 });

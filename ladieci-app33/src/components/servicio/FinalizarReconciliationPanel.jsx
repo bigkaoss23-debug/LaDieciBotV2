@@ -120,14 +120,15 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
   const overCollected = Number(s && s.overCollected) || 0;
   const hasOverCollected = overCollected > 0;
 
-  // K2/K3 — the backend says whether the SERVICE window and the BUSINESS-DAY /
-  // cash-count window are comparable. When they are not ("crossing"), the
-  // day's cash figures and this service's cash are different populations, so
-  // the "de este servicio" sentence would be a false subset claim and the
-  // cash-count difference does not describe this service. A payload with no
-  // scopeRelation (older backend) is treated as comparable — unchanged
-  // behaviour for the deploy window.
-  const scopesComparable = !data.scopeRelation || data.scopeRelation.cashCountComparable !== false;
+  // K2/K3 — ONLY the backend decides whether the SERVICE window and the
+  // BUSINESS-DAY / cash-count window are comparable. FAIL SAFE: the comparative
+  // copy renders only when the backend EXPLICITLY certifies comparability
+  // (cashCountComparable === true); the crossing note renders only when the
+  // backend EXPLICITLY reports a crossing (cashCountComparable === false).
+  // scopeRelation missing / null / undefined → neither: silence, never a claim
+  // the backend did not make, and never a client-side window comparison.
+  const scopesComparable = data.scopeRelation && data.scopeRelation.cashCountComparable === true;
+  const scopesCrossing = data.scopeRelation && data.scopeRelation.cashCountComparable === false;
 
   const box = {
     background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)',
@@ -165,12 +166,12 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
         <div data-testid="day-window" style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginBottom: 8 }}>
           {shortWindow(r.window.from)} → {shortWindow(r.window.to)} · hora de Madrid
         </div>
-        {/* K3 — when the service window is not inside this Business Day window
-            (a service left open across days), the figures and any cash count
-            below describe the DAY, not this service. Said once, from the
-            backend's scopeRelation, so "Diferencia 0,00 €" cannot be read as
-            "this service reconciles". */}
-        {!scopesComparable && (
+        {/* K3 — when the backend reports the service window is NOT inside this
+            Business Day window (a service left open across days), the figures
+            and any cash count below describe the DAY, not this service. Said
+            once, only on an explicit backend crossing, so "Diferencia 0,00 €"
+            cannot be read as "this service reconciles". */}
+        {scopesCrossing && (
           <div data-testid="scope-crossing-note" style={{ color: '#ffab00', fontSize: 10.5, marginBottom: 8, lineHeight: 1.45 }}>
             Este servicio abarca un período distinto del día operativo: el conteo y las cifras
             de abajo describen el día, no solo este servicio.
@@ -235,12 +236,13 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
           received today is a RECEIPT fact, not evidence about how many services
           the day contains, so the line now states only what it can see — the
           day's cash, and this service's share of it.
-          K2 — and it renders ONLY when the backend says the two windows are
-          comparable (scopeRelation.cashCountComparable). On the audited fixture
-          the service window sat entirely outside its Business Day window, so
-          "De este servicio: 70,00 €" inside "Hoy se cobraron 89,50 €" was a
-          false subset claim (the service's real share of that 89,50 € was 0).
-          When the scopes cross, silence beats a misleading sentence. */}
+          K2 — and it renders ONLY when the backend EXPLICITLY certifies the two
+          windows are comparable (scopeRelation.cashCountComparable === true).
+          On the audited fixture the service window sat entirely outside its
+          Business Day window, so "De este servicio: 70,00 €" inside "Hoy se
+          cobraron 89,50 €" was a false subset claim (the service's real share
+          of that 89,50 € was 0). Crossing — or no scopeRelation at all — means
+          silence, never a comparison the backend did not sanction. */}
       {scopesComparable
         && Math.round(((Number(r.cashReceipts) || 0) - (Number(s.byMethod.efectivo) || 0)) * 100) !== 0 && (
         <div data-testid="scope-explainer" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, lineHeight: 1.5 }}>
