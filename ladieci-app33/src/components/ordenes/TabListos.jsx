@@ -35,6 +35,11 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,onOpenCash,l
   const [pendingCambioPago, setPendingCambioPago] = useState(null); // id ordine in modifica
   // "Ya pagado" fast path only (legacy or canonical — both set ya_pagado):
   // no cash surface needed, the order is already settled, just transition it.
+  // CHECK-CENTRIC UNIVERSAL CASH V1 fast-follow -- called with NO metodo (see
+  // the button below), so this is a pure lifecycle transition: sending the
+  // order's own metodo_pago here used to make the backend treat it as a NEW
+  // collection, which fails for a canonically-paid order (its ledger row uses
+  // a different idempotency key than the legacy replay check expects).
   const handleRetirado = (o, metodo, descuento) => {
     onRetirado(o.id, metodo, descuento);
   };
@@ -317,7 +322,7 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,onOpenCash,l
                     <TicketQuickAction order={o} onOpenTicket={onOpenTicket} variant="compact" />
                     {(() => { const busy = loadingIds.has(o.id); return (
                     <button
-                      onClick={e=>{ e.stopPropagation(); if (busy) return; handleRetirado(o, o.metodo_pago); }}
+                      onClick={e=>{ e.stopPropagation(); if (busy) return; handleRetirado(o); }}
                       disabled={busy}
                       style={{
                         background: busy ? `${C.verde}55` : C.verde, color:"#fff", border:"none",

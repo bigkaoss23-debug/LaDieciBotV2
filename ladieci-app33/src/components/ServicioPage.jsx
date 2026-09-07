@@ -970,7 +970,15 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     logTransition(intent);
 
     try {
-      const res = await api.updateEstado(id, ORDER_STATES.RETIRADO, metodo_pago || "", descuento);
+      // CHECK-CENTRIC UNIVERSAL CASH V1 fast-follow -- an absent metodo_pago
+      // must reach the API as `undefined` (field omitted), not `""`. `api.js`
+      // only omits `metodo_pago` from the request when it is `undefined`; an
+      // empty string is still a defined value, and the backend's cambiaStato
+      // writes any defined metodo_pago verbatim (including "") over the
+      // order's existing one. Sending "" here would both wrongly register as
+      // a collection attempt server-side and blank the order's real payment
+      // method mirror.
+      const res = await api.updateEstado(id, ORDER_STATES.RETIRADO, metodo_pago || undefined, descuento);
       // S2-7D6E — a collection that did not reach the ledger must NEVER read as success.
       // The old check (`!res || res.error`) missed the case that actually bit us: proxyPost
       // never throws and returns {_ok:false} on a non-2xx, so an HTTP error with an empty
@@ -986,7 +994,9 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       // solo dopo la cascade in cambiaStato("RETIRADO") aggiorna estado + hora_entrega +
       // eventuale descuento (totale ricalcolato), e marca conv→ritirata + wa_msgs→COMPLETATO.
       // Update ottimistico: il backend è autoritativo sul totale finale — il polling lo riallinea.
-      setOrdenes(prev => prev.map(o => o.id === id ? {...o, estado:ORDER_STATES.RETIRADO, metodo_pago} : o));
+      // Same reasoning as above: an absent metodo_pago must not blank the
+      // order's own existing method in local state either.
+      setOrdenes(prev => prev.map(o => o.id === id ? {...o, estado:ORDER_STATES.RETIRADO, metodo_pago: metodo_pago || o.metodo_pago} : o));
       if (orden && orden.canal === "WA" && telNorm) {
         setWaMsgs(prev => prev.map(m => {
           const mTel = String(m.tel||"").replace("+","");

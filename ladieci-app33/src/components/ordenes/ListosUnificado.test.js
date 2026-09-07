@@ -375,7 +375,14 @@ test("Recogida pickup order still reaches Retirado via Takeaway filter", async (
   const btn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes("Retirado"));
   click(btn);
   await flush();
-  expect(onRetirado).toHaveBeenCalledWith("P1", "efectivo", undefined);
+  // FAST-FOLLOW -- reachability is what this test guards, and it is unchanged.
+  // The ARGUMENTS changed: an already-paid order now transitions lifecycle-only,
+  // so no payment method rides along (it used to resend "efectivo", which the
+  // backend read as a NEW collection and refused with 409 for canonically-paid
+  // orders). See TabListosCashWiring.test.js + alreadyPaidRetiradoLifecycleOnly.test.js.
+  expect(onRetirado).toHaveBeenCalledTimes(1);
+  expect(onRetirado.mock.calls[0][0]).toBe("P1");
+  expect(onRetirado.mock.calls[0][1]).toBeUndefined();
   act(() => { root.unmount(); });
   container.remove();
 });
