@@ -141,3 +141,57 @@ describe("the ServicioPage seam that joins the two behavioral layers", () => {
     expect(src()).toContain("onRetirado={setRetirado}");
   });
 });
+
+// ── MICRO FAST-FOLLOW: confirmEntregaFromCash mirror preservation ─────────
+// confirmEntregaFromCash is the ONLY caller CheckCashPanel.onDelivered ever
+// reaches (both "Confirmar entrega" on a settled check and "Entregar sin
+// cobrar" on an unpaid one wire to the SAME prop — see CheckCashPanel.test.js
+// "Confirmar entrega calls onDelivered" / "'Entregar sin cobrar' ... calls
+// onDelivered directly"). It used to call
+// `api.updateEstado(order.id, ORDER_STATES.RETIRADO, "", null)` — an explicit
+// "" survives api.js's `!== undefined` check and gets serialized. Concretely:
+// an operator opens an unpaid Servicio order's check, pays it (the canonical
+// writer correctly sets the compatibility mirror to "efectivo"/"tarjeta"/…),
+// then confirms delivery — and THAT request would blank the mirror the
+// payment had just written, one write later. Same "" vs undefined trap as
+// setRetirado, different call site.
+describe("confirmEntregaFromCash (the CheckCashPanel delivery handover) is lifecycle-only", () => {
+  test("the request omits metodo_pago — a just-written payment mirror cannot be blanked", async () => {
+    const api = loadApi();
+    // Exactly what confirmEntregaFromCash calls today (order.id, RETIRADO, undefined, null).
+    await api.updateEstado(ORDER_ID, "RETIRADO", undefined, null);
+
+    const body = proxyBodies()[0];
+    expect(body.action).toBe("updateEstado");
+    expect(body.estado).toBe("RETIRADO");
+    expect("metodo_pago" in body).toBe(false);
+    expect(Object.keys(body).sort()).toEqual(["action", "estado", "id"]);
+  });
+
+  test("REGRESSION GUARD: the old \"\" call shape is what would have blanked the mirror", async () => {
+    // Documents the exact defect fixed here — same guard shape as setRetirado's
+    // equivalent test above, pinned to confirmEntregaFromCash's own former call.
+    const api = loadApi();
+    await api.updateEstado(ORDER_ID, "RETIRADO", "", null);
+    const body = proxyBodies()[0];
+    expect("metodo_pago" in body).toBe(true);
+    expect(body.metodo_pago).toBe("");
+  });
+});
+
+describe("the ServicioPage seam for confirmEntregaFromCash", () => {
+  const src = () =>
+    require("fs").readFileSync(
+      require("path").join(__dirname, "..", "ServicioPage.jsx"), "utf8");
+
+  test("confirmEntregaFromCash calls updateEstado with an omitted method, not an empty string", () => {
+    expect(src()).toContain(
+      'api.updateEstado(order.id, ORDER_STATES.RETIRADO, undefined, null)');
+    expect(src()).not.toContain(
+      'api.updateEstado(order.id, ORDER_STATES.RETIRADO, "", null)');
+  });
+
+  test("onDelivered is wired to confirmEntregaFromCash — the sole caller CheckCashPanel reaches", () => {
+    expect(src()).toContain("await confirmEntregaFromCash(cashOrder.order)");
+  });
+});

@@ -1026,7 +1026,13 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       component: "ServicioPage", action: "confirmEntregaFromCash", metadata: {},
     });
     logTransition(intent);
-    const res = await api.updateEstado(order.id, ORDER_STATES.RETIRADO, "", null);
+    // MICRO FAST-FOLLOW -- same reasoning as setRetirado above: `undefined`
+    // (not `""`) is what makes api.js omit metodo_pago from the request. A
+    // canonical cash payment may have JUST corrected the compatibility
+    // mirror before this call runs (CheckCashPanel.onDelivered fires after
+    // payment); sending "" here would let cambiaStato blank that mirror
+    // right back to empty on the very next write.
+    const res = await api.updateEstado(order.id, ORDER_STATES.RETIRADO, undefined, null);
     if (isPaymentFailure(res)) {
       const { message } = describePaymentFailure(res);
       throw new Error(message);
