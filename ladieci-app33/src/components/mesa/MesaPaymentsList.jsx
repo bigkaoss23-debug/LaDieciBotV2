@@ -95,7 +95,16 @@ function RefundForm({
   );
 }
 
-export default function MesaPaymentsList({ sessionId, payments, canRefund, onRefunded }) {
+// CHECK-CENTRIC UNIVERSAL CASH V1 — `api`/`describeError` are injectable,
+// defaulting to Mesa's own mesaApi/describeMesaError so every EXISTING Mesa
+// caller (VerCuentaBody, UltimasCuentasModal) is byte-identical with zero
+// changes. The check-centric cash surface passes a `cashApi`-backed adapter
+// instead — same component, a different target, not a second implementation
+// (contract report §O: "generalizzare sessionId -> target").
+export default function MesaPaymentsList({
+  sessionId, payments, canRefund, onRefunded,
+  api = mesaApi, describeError = describeMesaError,
+}) {
   const grouped = groupPaymentsWithRefunds(payments);
   const [openId, setOpenId] = useState(null);
   const [amount, setAmount] = useState("");
@@ -145,7 +154,7 @@ export default function MesaPaymentsList({ sessionId, payments, canRefund, onRef
     }
     setBusy(true); setError("");
     try {
-      const result = await mesaApi.refund(sessionId, {
+      const result = await api.refund(sessionId, {
         originalTransactionId: original.id,
         amount: amountValue,
         reason,
@@ -159,11 +168,14 @@ export default function MesaPaymentsList({ sessionId, payments, canRefund, onRef
       await onRefunded();
     } catch (err) {
       setBusy(false);
-      setError(describeMesaError(err));
+      setError(describeError(err));
       // §23 -- another device may have refunded this same transaction
       // concurrently. The FE's displayed availability is not authoritative;
       // refresh from the server rather than keep showing what went stale.
-      if (err?.code === "MESA_REFUND_EXCEEDS_REMAINING" || err?.code === "MESA_REFUND_ALREADY_FULL") {
+      // Both vocabularies are recognised here (Mesa's MESA_REFUND_* and the
+      // check-centric adapter's ORDER_REFUND_*) — same condition, same fix.
+      if (["MESA_REFUND_EXCEEDS_REMAINING", "ORDER_REFUND_EXCEEDS_REMAINING",
+           "MESA_REFUND_ALREADY_FULL", "ORDER_REFUND_ALREADY_FULL"].includes(err?.code)) {
         await onRefunded();
       }
     }

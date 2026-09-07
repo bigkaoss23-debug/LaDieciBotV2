@@ -57,3 +57,29 @@ test("zero archived items renders a count of 0, no crash", () => {
   act(() => { root.unmount(); });
   container.remove();
 });
+
+// CHECK-CENTRIC UNIVERSAL CASH V1 §24 -- this row IS the reachable terminal
+// re-entry surface for Recogida/Delivery in the live app (ListosUnificado
+// always passes TabListos hideRetirados, so TabListos' own isDone branch
+// never renders there).
+test("without onOpenCash, no 'Abrir en caja' button renders (backward compatible)", () => {
+  const { container, root } = render({ retiradosTakeaway: [recogidaOrder, deliveryOrder], servedSala: [] });
+  click(container.querySelector("button")); // expand
+  expect(container.querySelector('[data-testid="archivados-abrir-caja"]')).toBeFalsy();
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
+test("with onOpenCash, Recogida and Delivery rows each get 'Abrir en caja', calling onOpenCash(order, {allowDelivery:false})", () => {
+  const onOpenCash = jest.fn();
+  const { container, root } = render({ retiradosTakeaway: [recogidaOrder, deliveryOrder], servedSala: [], onOpenCash });
+  click(container.querySelector("button")); // expand
+  const buttons = Array.from(container.querySelectorAll('[data-testid="archivados-abrir-caja"]'));
+  expect(buttons.length).toBe(2);
+  click(buttons[0]);
+  expect(onOpenCash).toHaveBeenCalledWith(recogidaOrder, { allowDelivery: false });
+  click(buttons[1]);
+  expect(onOpenCash).toHaveBeenCalledWith(deliveryOrder, { allowDelivery: false });
+  act(() => { root.unmount(); });
+  container.remove();
+});

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { C, tot, MAX_PIZZE_ORA, MENU, calcTotale, aplicarDescuento } from '../../constants';
 import Chip from '../ui/Chip';
 import Badge from '../ui/Badge';
-import DescuentoInput from '../ui/DescuentoInput';
 import TicketQuickAction from '../ui/TicketQuickAction';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
@@ -25,16 +24,17 @@ const isPizzaItem = (it) => {
   return true;
 };
 
-const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds,hideRetirados=false}) => {
-  const [pendingPago,      setPendingPago]      = useState(null);
+// CHECK-CENTRIC UNIVERSAL CASH V1 — `onOpenCash(order, { allowDelivery })`
+// opens the shared cash surface (CheckCashPanel) that the parent (ServicioPage)
+// owns, same pattern as `onOpenTicket`/`setTicketOrder` already uses. Payment
+// now happens ONLY inside that surface; the inline "¿Cómo paga?" popup that
+// used to live here is retired (contract report §T/§R: TabListos.jsx's popup
+// is DEPRECATE_AFTER_INTEGRATION).
+const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,onOpenCash,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds,hideRetirados=false}) => {
   const [filterPago,       setFilterPago]       = useState("todos");
   const [pendingCambioPago, setPendingCambioPago] = useState(null); // id ordine in modifica
-  // Descuento applicato durante il flow RETIRADO, per-ordine. Reset alla chiusura del popup.
-  const [descuentoPago,    setDescuentoPago]    = useState({}); // { [ordenId]: {tipo, valor} }
-  const setDescuentoFor = (id, tipo, valor) => {
-    setDescuentoPago(prev => ({ ...prev, [id]: { tipo, valor } }));
-  };
-  const getDescuentoFor = (id) => descuentoPago[id] || { tipo: null, valor: 0 };
+  // "Ya pagado" fast path only (legacy or canonical — both set ya_pagado):
+  // no cash surface needed, the order is already settled, just transition it.
   const handleRetirado = (o, metodo, descuento) => {
     onRetirado(o.id, metodo, descuento);
   };
@@ -239,6 +239,23 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                   );
                 })()
               )}
+              {/* CHECK-CENTRIC UNIVERSAL CASH V1 §24 -- terminal economic
+                  re-entry. Opens the SAME cash surface in read-only-delivery
+                  mode (allowDelivery=false): payment/refund/adjust remain
+                  available, RETIRADO is never touched, `estado` never
+                  changes merely by opening it. */}
+              {isDone && onOpenCash && (
+                <button
+                  onClick={e=>{ e.stopPropagation(); onOpenCash(o, { allowDelivery: false }); }}
+                  style={{
+                    background:"rgba(255,255,255,0.08)", color:"#fff",
+                    border:"1.5px solid rgba(255,255,255,0.22)",
+                    borderRadius:10, padding:"9px 13px", fontWeight:800, fontSize:12,
+                    cursor:"pointer", flexShrink:0,
+                  }}>
+                  💰 Abrir en caja
+                </button>
+              )}
               {!isDone && (
                 o.tipo_consegna === "DOMICILIO" ? (
                   /* Delivery — completamento gestito dal driver su RepartidorPage */
@@ -314,65 +331,6 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                     ); })()}
                     </div>
                   </div>
-                ) : pendingPago === o.id ? (
-                  (() => {
-                    const desc = getDescuentoFor(o.id);
-                    const totaleBaseOrd = Number(o.totale) || calcTotale((o.items||[]).filter(it=>it.n!=="Entrega a domicilio"), o.tipo_consegna || "RITIRO");
-                    const descPayload = desc.tipo ? { tipo: desc.tipo, valor: desc.valor } : null;
-                    const finalizar = (metodo) => {
-                      handleRetirado(o, metodo, descPayload);
-                      setPendingPago(null);
-                      setDescuentoPago(prev => { const p = {...prev}; delete p[o.id]; return p; });
-                    };
-                    return (
-                  <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,alignItems:"stretch",minWidth:240}}>
-                    <div style={{maxWidth:280}}>
-                      <DescuentoInput
-                        tipo={desc.tipo}
-                        valor={desc.valor}
-                        onChange={(t, v) => setDescuentoFor(o.id, t, v)}
-                        totaleBase={totaleBaseOrd}
-                        compact
-                      />
-                    </div>
-                    <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textAlign:"center"}}>¿Cómo paga?</div>
-                    {(() => { const pagoBusy = loadingIds.has(o.id); return (
-                    <div style={{display:"flex",gap:6,justifyContent:"center"}}>
-                      <button
-                        onClick={e=>{ e.stopPropagation(); if (pagoBusy) return; finalizar("efectivo"); }}
-                        disabled={pagoBusy}
-                        style={{background: pagoBusy ? "#16A34A55" : "#16A34A", color:"#fff", border:"none",
-                          borderRadius:10,padding:"10px 12px",fontWeight:800,fontSize:12,
-                          cursor: pagoBusy ? "wait" : "pointer", opacity: pagoBusy ? 0.7 : 1}}>
-                        💵 Efectivo
-                      </button>
-                      <button
-                        onClick={e=>{ e.stopPropagation(); if (pagoBusy) return; finalizar("tarjeta"); }}
-                        disabled={pagoBusy}
-                        style={{background: pagoBusy ? "#2563EB55" : "#2563EB", color:"#fff", border:"none",
-                          borderRadius:10,padding:"10px 12px",fontWeight:800,fontSize:12,
-                          cursor: pagoBusy ? "wait" : "pointer", opacity: pagoBusy ? 0.7 : 1}}>
-                        💳 Tarjeta
-                      </button>
-                      <button
-                        onClick={e=>{ e.stopPropagation(); if (pagoBusy) return; finalizar("bizum"); }}
-                        disabled={pagoBusy}
-                        style={{background: pagoBusy ? "#0EA5E955" : "#0EA5E9", color:"#fff", border:"none",
-                          borderRadius:10,padding:"10px 12px",fontWeight:800,fontSize:12,
-                          cursor: pagoBusy ? "wait" : "pointer", opacity: pagoBusy ? 0.7 : 1}}>
-                        📱 Bizum
-                      </button>
-                    </div>
-                    ); })()}
-                    <button
-                      onClick={e=>{e.stopPropagation();setPendingPago(null);setDescuentoPago(prev => { const p = {...prev}; delete p[o.id]; return p; });}}
-                      style={{background:"transparent",color:"rgba(255,255,255,0.4)",border:"none",
-                        fontSize:11,cursor:"pointer",padding:"2px 0"}}>
-                      cancelar
-                    </button>
-                  </div>
-                    );
-                  })()
                 ) : (
                   <div style={{display:"flex",flexDirection:"column",gap:8,flex:"1 1 220px",minWidth:0,maxWidth:"100%",alignItems:"stretch"}}>
                     {o.estado === ORDER_STATES.LISTO && onVolverACocina && (() => { const vBusy = loadingIds.has(o.id); return (
@@ -392,8 +350,12 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                     ); })()}
                     <div style={{display:"flex",gap:8,alignItems:"center",justifyContent:"flex-end",flexWrap:"wrap",width:"100%"}}>
                       <TicketQuickAction order={o} onOpenTicket={onOpenTicket} variant="compact" />
+                      {/* CHECK-CENTRIC UNIVERSAL CASH V1 -- opens the shared cash
+                          surface instead of the old inline "¿Cómo paga?" popup.
+                          Payment and the RETIRADO transition are separate calls
+                          from there on (§20/§21 of the brief). */}
                       <button
-                        onClick={e=>{e.stopPropagation();setPendingPago(o.id);}}
+                        onClick={e=>{ e.stopPropagation(); onOpenCash && onOpenCash(o); }}
                         style={{
                           background:C.verde,color:"#fff",border:"none",
                           borderRadius:11,padding:"13px 20px",minHeight:44,fontWeight:800,fontSize:14,

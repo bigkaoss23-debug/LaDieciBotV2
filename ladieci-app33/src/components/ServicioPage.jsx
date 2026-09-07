@@ -40,6 +40,7 @@ import { isPaymentFailure, describePaymentFailure } from '../utils/paymentOutcom
 import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
 import { runOperationalTransaction } from '../order/operationalTransaction';
 import { mesaApi } from '../mesa/mesaApi';
+import CheckCashPanel from './cash/CheckCashPanel';
 
 // Staging-only rollout gate. A production build (or any build without the exact
 // lowercase value) keeps the existing Barra surface and never calls Mesa APIs.
@@ -167,6 +168,9 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   const [goToPreguntasSignal, setGoToPreguntasSignal] = useState(0);
   const [ordenModifica, setOrdenModifica] = useState(null);
   const [ticketOrder, setTicketOrder] = useState(null);
+  // CHECK-CENTRIC UNIVERSAL CASH V1 -- { order, allowDelivery } | null. Same
+  // ownership pattern as ticketOrder above.
+  const [cashOrder, setCashOrder] = useState(null);
   const [successSplash, setSuccessSplash] = useState(null);
   const creationQueue = useOrderCreationQueue(ordenes);
   const creationTransactionRef = useRef(new Map());
@@ -998,6 +1002,51 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     }
   };
 
+  // CHECK-CENTRIC UNIVERSAL CASH V1 §20/§21 -- the ONLY delivery-transition
+  // path reached from the cash surface (CheckCashPanel.onDelivered). Payment
+  // already happened (or was explicitly skipped) through the canonical cash
+  // writer BEFORE this is ever called, so no metodo_pago is sent: updateEstado
+  // stays a pure transition (`collecting` is false server-side — Option A of
+  // the frozen brief, zero backend change needed). Unlike setRetirado above,
+  // this RE-THROWS on failure rather than swallowing it, so CheckCashPanel's
+  // own §20 case E/F handling (stay open, show a retry) actually has a
+  // rejection to catch.
+  const confirmEntregaFromCash = async (order) => {
+    const intent = buildRetiradoTransition(order, {
+      component: "ServicioPage", action: "confirmEntregaFromCash", metadata: {},
+    });
+    logTransition(intent);
+    const res = await api.updateEstado(order.id, ORDER_STATES.RETIRADO, "", null);
+    if (isPaymentFailure(res)) {
+      const { message } = describePaymentFailure(res);
+      throw new Error(message);
+    }
+    setOrdenes(prev => prev.map(o => o.id === order.id ? {...o, estado: ORDER_STATES.RETIRADO} : o));
+    if (order.canal === "WA" && order.tel) {
+      const telNorm = String(order.tel||"").replace("+","");
+      setWaMsgs(prev => prev.map(m => {
+        const mTel = String(m.tel||"").replace("+","");
+        // language-guard: allow-legacy COMPLETATO is the existing wa_msgs stato wire value, reused verbatim exactly as setRetirado already does above, not new vocabulary
+        return mTel === telNorm ? {...m, stato:"COMPLETATO"} : m;
+      }));
+    }
+    notify("🛍 Retirado — Buon appetito!", C.verde);
+  };
+
+  // CHECK-CENTRIC UNIVERSAL CASH V1 -- opens the shared cash surface (same
+  // ownership pattern as ticketOrder/setTicketOrder below). Refuses silently
+  // to open for an order with no permanent identity (order_uid) rather than
+  // opening a panel that could never resolve a check -- this only affects
+  // orders old enough to predate the R-DAY2 identity anchor, out of scope
+  // for this slice's backfill-free contract.
+  const onOpenCash = (order, opts = {}) => {
+    if (!order?.order_uid) {
+      notify("❌ Este pedido no tiene identidad permanente para la caja.", C.rosso);
+      return;
+    }
+    setCashOrder({ order, allowDelivery: opts.allowDelivery !== false });
+  };
+
   const eliminaOrdine = async (id) => {
     try {
       // api.eliminaOrdine ora è STRICT (lancia se il backend non conferma).
@@ -1068,7 +1117,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
   // MESA_PHONE_SHELL_01 -- pulled out of tabContent() so MesaPhoneShell can
   // render the exact same authoritative Listos surface (not a reimplementation)
   // without a second, drifting copy of this prop list.
-  const listosElement = <ListosUnificado ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} loadingIds={loadingIds}
+  const listosElement = <ListosUnificado ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} onOpenCash={onOpenCash} loadingIds={loadingIds}
     vipIds={vipIds}
     waMsgs={waMsgs}
     notify={notify}
@@ -1802,6 +1851,18 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       }}
         onClose={()=>setOrdenModifica(null)} onSave={modificaOrden}/>}
       {ticketOrder&&<CustomerTicketPrintModal order={ticketOrder} onClose={()=>setTicketOrder(null)}/>}
+      {cashOrder&&<CheckCashPanel
+        orderUid={cashOrder.order.order_uid}
+        displayOrderId={cashOrder.order.id}
+        allowDelivery={cashOrder.allowDelivery}
+        canRefund={auth.getRole() === "admin" || auth.getRole() === "owner"}
+        canAdjust={auth.getRole() === "admin" || auth.getRole() === "owner"}
+        onClose={()=>setCashOrder(null)}
+        onDelivered={cashOrder.allowDelivery ? async () => {
+          await confirmEntregaFromCash(cashOrder.order);
+          setCashOrder(null);
+        } : undefined}
+      />}
       {successSplash&&<OperationalSuccessSplash
         phase={successSplash.phase}
         title={successSplash.title}

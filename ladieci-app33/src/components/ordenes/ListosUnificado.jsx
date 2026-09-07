@@ -36,7 +36,7 @@ const sectionLabelStyle = {
 // "Todo" is not a third data source -- it is just both of the above shown
 // together; Sala and Takeaway stay logically independent underneath.
 const ListosUnificado = ({
-  ordenes, onRetirado, onVolverACocina, onOpenTicket, loadingIds, waMsgs, onViewChat, onCambiaPago, vipIds,
+  ordenes, onRetirado, onVolverACocina, onOpenTicket, onOpenCash, loadingIds, waMsgs, onViewChat, onCambiaPago, vipIds,
   notify, refreshKey, onSalaCountChange, listosN,
 }) => {
   const { readyRows, servedRows, loading, error, busyId, markServed } = useMesaReadyCommands({ notify, refreshKey });
@@ -71,7 +71,7 @@ const ListosUnificado = ({
 
   const takeawayColumn = <TabListos
     ordenes={ordenes} onRetirado={onRetirado} onVolverACocina={onVolverACocina}
-    onOpenTicket={onOpenTicket} loadingIds={loadingIds} waMsgs={waMsgs}
+    onOpenTicket={onOpenTicket} onOpenCash={onOpenCash} loadingIds={loadingIds} waMsgs={waMsgs}
     onViewChat={onViewChat} onCambiaPago={onCambiaPago} vipIds={vipIds}
     hideRetirados
   />;
@@ -136,7 +136,7 @@ const ListosUnificado = ({
     <div>
       {filterBar}
       {body}
-      <ListosArchivados retiradosTakeaway={retiradosTakeaway} servedSala={servedRows} />
+      <ListosArchivados retiradosTakeaway={retiradosTakeaway} servedSala={servedRows} onOpenCash={onOpenCash} />
     </div>
   );
 };

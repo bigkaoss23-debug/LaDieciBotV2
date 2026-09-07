@@ -99,7 +99,14 @@ function AdjustForm({
   );
 }
 
-export default function MesaCommercialAdjustments({ sessionId, account, canAdjust, onAdjusted }) {
+// CHECK-CENTRIC UNIVERSAL CASH V1 — `api`/`describeError` are injectable,
+// defaulting to Mesa's own mesaApi/describeMesaError so every EXISTING Mesa
+// caller is byte-identical with zero changes. The check-centric cash surface
+// passes a `cashApi`-backed adapter instead (contract report §O).
+export default function MesaCommercialAdjustments({
+  sessionId, account, canAdjust, onAdjusted,
+  api = mesaApi, describeError = describeMesaError,
+}) {
   const commands = adjustableCommands(account?.commands);
   const obligationTotal = accountObligationTotal(account?.commands);
   const accountPaid = Number(account?.paid) || 0;
@@ -152,7 +159,7 @@ export default function MesaCommercialAdjustments({ sessionId, account, canAdjus
 
     setBusy(true); setError("");
     try {
-      const result = await mesaApi.adjust(sessionId, {
+      const result = await api.adjust(sessionId, {
         orderUid: command.financial.orderUid,
         newGross,
         reason: reasonText,
@@ -174,10 +181,13 @@ export default function MesaCommercialAdjustments({ sessionId, account, canAdjus
       await onAdjusted();
     } catch (err) {
       setBusy(false);
-      setError(describeMesaError(err));
+      setError(describeError(err));
       // §17 — the obligation changed under the operator (another device, a
       // cancellation). The FE's displayed figure is not authoritative: refresh
       // from the server so the operator re-decides against the real number.
+      // The shared core (order_obligation_apply_adjustment_v1) raises these
+      // same MESA_ADJUSTMENT_* codes for the check-centric adapter too (§15
+      // of the brief: reuse, not renamed) — no ORDER_ variant to add here.
       if (err?.code === "MESA_ADJUSTMENT_STALE_OBLIGATION" || err?.code === "MESA_ADJUSTMENT_ORDER_NOT_FOUND") {
         await onAdjusted();
       }

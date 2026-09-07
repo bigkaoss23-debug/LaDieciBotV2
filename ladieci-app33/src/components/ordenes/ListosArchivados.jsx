@@ -12,7 +12,14 @@ import { resolveItemProductNames } from '../../menu/itemDisplay';
 // so they stay distinguishable by type without duplicating a second big
 // archive per queue -- the whole point is maximizing space for what's
 // still active above this row.
-const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [] }) => {
+// CHECK-CENTRIC UNIVERSAL CASH V1 §24 -- `onOpenCash(order, { allowDelivery: false })`
+// opens the shared cash surface on a terminal Recogida/Delivery order (this
+// row IS the reachable archive surface for those orders in the unified
+// Listos page -- TabListos.jsx's own terminal-card affordances never render
+// here since ListosUnificado always passes it hideRetirados). Sala rows are
+// Mesa-owned and out of scope; they keep their own re-entry surface
+// (UltimasCuentasModal) untouched.
+const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [], onOpenCash }) => {
   const [open, setOpen] = useState(false);
   // language-guard: allow-legacy existing backend field name (tipo_consegna), not new vocabulary
   const recogida = retiradosTakeaway.filter(o => o.tipo_consegna !== "DOMICILIO");
@@ -67,7 +74,20 @@ const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [] }) => {
             ? <div style={{ ...rowStyle, opacity: 0.6 }}>Nada todavía.</div>
             : recogida.map((o) => (
               <div key={o.id} style={rowStyle}>
-                <strong>{resolveVisibleOrderLabel(o, orderLabels)} · {o.nombre}</strong>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <strong>{resolveVisibleOrderLabel(o, orderLabels)} · {o.nombre}</strong>
+                  {onOpenCash && (
+                    <button type="button" data-testid="archivados-abrir-caja"
+                      onClick={() => onOpenCash(o, { allowDelivery: false })}
+                      style={{
+                        background: "rgba(255,255,255,0.08)", color: "#fff",
+                        border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8,
+                        padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+                      }}>
+                      💰 Abrir en caja
+                    </button>
+                  )}
+                </div>
                 <div style={{ marginTop: 2, opacity: 0.8 }}>
                   {(Array.isArray(o.items) ? o.items : []).map((item) => resolveItemProductNames(item).primary).filter(Boolean).join(", ") || "—"}
                 </div>
@@ -79,7 +99,20 @@ const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [] }) => {
             ? <div style={{ ...rowStyle, opacity: 0.6 }}>Nada todavía.</div>
             : delivery.map((o) => (
               <div key={o.id} style={rowStyle}>
-                <strong>{resolveVisibleOrderLabel(o, orderLabels)} · {o.nombre}</strong>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <strong>{resolveVisibleOrderLabel(o, orderLabels)} · {o.nombre}</strong>
+                  {onOpenCash && (
+                    <button type="button" data-testid="archivados-abrir-caja"
+                      onClick={() => onOpenCash(o, { allowDelivery: false })}
+                      style={{
+                        background: "rgba(255,255,255,0.08)", color: "#fff",
+                        border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8,
+                        padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+                      }}>
+                      💰 Abrir en caja
+                    </button>
+                  )}
+                </div>
                 <div style={{ marginTop: 2, opacity: 0.8 }}>
                   {(Array.isArray(o.items) ? o.items : []).map((item) => resolveItemProductNames(item).primary).filter(Boolean).join(", ") || "—"}
                 </div>
