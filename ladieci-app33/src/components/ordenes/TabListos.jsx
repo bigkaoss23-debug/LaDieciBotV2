@@ -93,12 +93,15 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,onOpenCash,l
         :tutti.map(o=>{
           const isDone = o.estado===ORDER_STATES.RETIRADO;
           const cardStyle = isDone ? glassRetirado : glassListo;
-          // UNIFIED_CASH_UI_SURFACE_V1 — canonical current obligation
-          // (backend-projected `financial`); stored legacy `totale` next; an
-          // items-only estimate only for a deep-legacy row, as legacy compat.
           const cleanItems = (Array.isArray(o.items) ? o.items : []).filter(i => i.n !== "Entrega a domicilio");
-          const totaleNum = canonicalOrderAmount(o) ?? calcTotale(cleanItems, o.tipo_consegna);
-          const totale = totaleNum.toFixed(2);
+          // UNIFIED_CASH_UI_SURFACE_V1 — these rows are LISTO/EN_ENTREGA/RETIRADO,
+          // i.e. always persisted: show the canonical current obligation
+          // (backend-projected `financial`), then the stored legacy `totale`, and
+          // nothing else — never an items-sum reconstruction. Fails closed ("—")
+          // when neither figure is present. `calcTotale` is not a read authority
+          // for a persisted sale (it stays below only for the shift summary).
+          const totaleNum = canonicalOrderAmount(o);
+          const totale = totaleNum != null ? totaleNum.toFixed(2) : null;
           return (
             <div key={o.id}
               onClick={isDone && onViewChat ? () => onViewChat(o.wa_id||o.tel) : undefined}
@@ -182,7 +185,7 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,onOpenCash,l
                   {o.tel&&<span style={{color:"rgba(255,255,255,0.80)",fontSize:12}}>📞 {o.tel}</span>}
                   {o.hora&&<span style={{color:"rgba(255,255,255,0.80)",fontSize:12}}>🕐 {o.hora}</span>}
                   <span style={{color:"#FFFFFF",fontWeight:800,fontFamily:"'DM Mono',monospace",fontSize:15}}>
-                    {totale}€
+                    {totale != null ? `${totale}€` : "—"}
                   </span>
                 </div>
               </div>

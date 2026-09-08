@@ -33,13 +33,19 @@ const OrdenCard = ({o, label, onModifica, accentColor, hasAlert, onElimina, onCo
   const isListo    = estado === ORDER_STATES.LISTO;
   const isRetirado = estado === ORDER_STATES.RETIRADO;
   const isCocina   = estado === ORDER_STATES.EN_COCINA;
-  // UNIFIED_CASH_UI_SURFACE_V1 — canonical current obligation (backend-projected
-  // `financial`) so this card and the cash panel agree after a commercial
-  // adjustment. Falls back to the stored legacy `totale`, then — only for a
-  // deep-legacy row with neither — to an items-only estimate, explicitly as
-  // legacy compatibility, never as authority.
-  const totaleNum = canonicalOrderAmount(o) ?? calcTotale(safeItems, o.tipo_consegna);
-  const totale = totaleNum.toFixed(2);
+  // UNIFIED_CASH_UI_SURFACE_V1 — a PERSISTED sale shows the canonical current
+  // obligation (backend-projected `financial`), then the stored legacy `totale`,
+  // and nothing else: never an items-sum reconstruction — immutable lines /
+  // obligation revisions / a commercial adjustment / cancellation semantics can
+  // all make an items sum diverge from what is owed. When neither figure is
+  // present it fails closed ("—"). `calcTotale` is a preview for a NOT-yet-
+  // persisted order (optimistic create, still composing) only, and only there.
+  const isPersisted = !!o.id && !o._temp && !isSaving;
+  const persistedAmount = canonicalOrderAmount(o);
+  const totaleNum = persistedAmount != null
+    ? persistedAmount
+    : (isPersisted ? null : calcTotale(safeItems, o.tipo_consegna));
+  const totale = totaleNum != null ? totaleNum.toFixed(2) : null;
 
   // Scala blu: POR_CONFIRMAR=turchese → EN_COCINA=blu medio → LISTO=blu dimmer → RETIRADO=notte
   const styles = {
@@ -195,7 +201,7 @@ const OrdenCard = ({o, label, onModifica, accentColor, hasAlert, onElimina, onCo
           borderRadius:6, padding:"2px 6px", fontFamily:"'DM Mono',monospace"
         }}>-{Number(o.descuento_importe).toFixed(2)}€ desc</span>
       )}
-      <span style={{color:s.price,fontWeight:800,fontFamily:"'DM Mono',monospace",fontSize:14,marginLeft:"auto"}}>{totale}€</span>
+      <span style={{color:s.price,fontWeight:800,fontFamily:"'DM Mono',monospace",fontSize:14,marginLeft:"auto"}}>{totale != null ? `${totale}€` : "—"}</span>
     </div>
     {/* Riga indirizzo — solo se è una consegna a domicilio */}
     {o.tipo_consegna==="DOMICILIO" && o.direccion && (
