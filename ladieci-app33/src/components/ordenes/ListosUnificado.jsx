@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { C, useWidth } from '../../constants';
 import { ORDER_STATES } from '../../core/orders';
 import TabListos from './TabListos';
 import ListosArchivados from './ListosArchivados';
 import { useTakeawayArchivedOrders } from './useTakeawayArchivedOrders';
+import useEconomyPendencies from '../../economy/useEconomyPendencies';
 import { WaiterListosView } from '../../waiter/WaiterListos';
 import { useMesaReadyCommands } from '../../waiter/useMesaReadyCommands';
 
@@ -41,6 +42,19 @@ const ListosUnificado = ({
 }) => {
   const { readyRows, servedRows, loading, error, busyId, markServed } = useMesaReadyCommands({ notify, refreshKey });
   const { archivedOrdenes } = useTakeawayArchivedOrders({ refreshKey });
+  // UNIFIED_CASH_UI_SURFACE_V1 — GLOBAL /pendencies (no scope), the canonical
+  // read-only exposure list. We only ever light up an archived row whose
+  // order_uid the backend already put in porCobrar/porDevolver; requiereRevision
+  // is deliberately NOT surfaced here (it has no safe target). Zero economic
+  // math in this component — it forwards the backend's own set + amounts.
+  const pend = useEconomyPendencies({});
+  const pendingByOrderUid = useMemo(() => {
+    const map = new Map();
+    for (const it of [...(pend.porCobrar || []), ...(pend.porDevolver || [])]) {
+      if (it && it.orderUid) map.set(String(it.orderUid), { direction: it.direction, amount: it.amount });
+    }
+    return map;
+  }, [pend.porCobrar, pend.porDevolver]);
   const width = useWidth();
   const isPhone = width < SALA_COLUMN_BREAKPOINT;
   const [filter, setFilter] = useState('todo'); // 'todo' | 'sala' | 'takeaway'
@@ -136,7 +150,7 @@ const ListosUnificado = ({
     <div>
       {filterBar}
       {body}
-      <ListosArchivados retiradosTakeaway={retiradosTakeaway} servedSala={servedRows} onOpenCash={onOpenCash} />
+      <ListosArchivados retiradosTakeaway={retiradosTakeaway} servedSala={servedRows} onOpenCash={onOpenCash} pendingByOrderUid={pendingByOrderUid} />
     </div>
   );
 };

@@ -290,8 +290,13 @@ describe("Mesa room selector", () => {
 
 describe("Mesa button color semantics", () => {
   test("primary (non-destructive operational) actions use blue, not the old red-orange", () => {
-    expect(source).toContain(".mesa-btn.primary{background:#2563EB;border-color:#2563EB;color:#fff}");
+    // UNIFIED_CASH_UI_SURFACE_V1 — the shared .mesa-btn* base rules moved to
+    // ui/cashSurfaceCss.js (one home for the cash sub-surface). The invariant is
+    // unchanged; assert it where the rule now lives.
+    const cashCss = fs.readFileSync(path.join(__dirname, "..", "ui", "cashSurfaceCss.js"), "utf8");
+    expect(cashCss).toContain(".mesa-btn.primary{background:#2563EB;border-color:#2563EB;color:#fff}");
     expect(source).not.toContain("#E8341C");
+    expect(cashCss).not.toContain("#E8341C");
   });
 
   test("red is reserved for destructive/irreversible actions only: Eliminar mesa", () => {

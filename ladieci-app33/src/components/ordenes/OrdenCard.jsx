@@ -12,6 +12,7 @@ import {
   resolveItemProductNames,
 } from '../../menu/itemDisplay';
 import { formatOrderNumber } from '../../utils/orderNumber';
+import { canonicalOrderAmount } from '../../order/canonicalOrderAmount';
 
 const OrdenCard = ({o, label, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, onOpenTicket, vipIds, loadingIds = new Set()}) => {
   const busy = loadingIds.has(o.id);
@@ -32,10 +33,12 @@ const OrdenCard = ({o, label, onModifica, accentColor, hasAlert, onElimina, onCo
   const isListo    = estado === ORDER_STATES.LISTO;
   const isRetirado = estado === ORDER_STATES.RETIRADO;
   const isCocina   = estado === ORDER_STATES.EN_COCINA;
-  // Totale: prima sorgente è o.totale (calcolato dal backend). Fallback se manca (ordini legacy).
-  const totaleNum = (Number(o.totale) > 0)
-    ? Number(o.totale)
-    : calcTotale(safeItems, o.tipo_consegna);
+  // UNIFIED_CASH_UI_SURFACE_V1 — canonical current obligation (backend-projected
+  // `financial`) so this card and the cash panel agree after a commercial
+  // adjustment. Falls back to the stored legacy `totale`, then — only for a
+  // deep-legacy row with neither — to an items-only estimate, explicitly as
+  // legacy compatibility, never as authority.
+  const totaleNum = canonicalOrderAmount(o) ?? calcTotale(safeItems, o.tipo_consegna);
   const totale = totaleNum.toFixed(2);
 
   // Scala blu: POR_CONFIRMAR=turchese → EN_COCINA=blu medio → LISTO=blu dimmer → RETIRADO=notte

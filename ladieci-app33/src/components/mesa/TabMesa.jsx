@@ -12,6 +12,11 @@ import { MADRID_TIMEZONE, euro, madridFields, formatClockTime } from "./mesaForm
 import MesaPaymentsList from "./MesaPaymentsList";
 import MesaAccountBalance from "./MesaAccountBalance";
 import MesaCommercialAdjustments from "./MesaCommercialAdjustments";
+// UNIFIED_CASH_UI_SURFACE_V1 — the cash sub-surface rules (the mesa-* classes the
+// three shared components emit) now live in ONE module. Prepended to `css` below
+// so this stylesheet's effect is unchanged; CheckCashPanel injects the same
+// string without pulling in this file.
+import { CASH_SURFACE_CSS } from "../ui/cashSurfaceCss";
 
 // MESA_HYBRID_3D — renderer selection only, never a domain switch. Off, this
 // file behaves byte-identically to before: same markup, same CSS, same drag
@@ -302,6 +307,11 @@ function hasReadyOrder(table) {
 
 const css = `
 .mesa-root{color:#f7f0df;font-family:'Satoshi',Inter,system-ui,sans-serif}
+/* UNIFIED_CASH_UI_SURFACE_V1 — shared cash sub-surface rules, extracted verbatim
+   (mesa-btn/.small/.primary/.green/.gold/.danger, mesa-input, mesa-banner/-error,
+   mesa-hub-mode*, mesa-hub-total*, mesa-hub-field*, mesa-payhist*). Same rules,
+   one home. Every deletion below points here. */
+${CASH_SURFACE_CSS}
 /* compact (waiter shell) only: the shell around this component already
    provides a real 100dvh flex column (header/tabs natural height, this
    root gets the rest) -- here the board itself becomes the one flexing
@@ -528,8 +538,7 @@ const css = `
   .mesa-dock .mesa-btn{flex:1 1 0;min-width:0;padding:13px 10px;text-align:center}
   .mesa-dock .mesa-btn.icon{flex:0 0 auto;padding:13px 14px}
 }
-.mesa-btn{border:1px solid rgba(208,184,145,.25);border-radius:12px;background:rgba(255,255,255,.05);color:#f9f2e5;padding:10px 14px;font-weight:850;cursor:pointer}.mesa-btn:hover{background:rgba(255,255,255,.09)}.mesa-btn:disabled{opacity:.4;cursor:wait}
-.mesa-btn.primary{background:#2563EB;border-color:#2563EB;color:#fff}.mesa-btn.gold{background:#d7a84b;border-color:#d7a84b;color:#211707}.mesa-btn.green{background:#178447;border-color:#20a85d}.mesa-btn.danger{color:#ff8f80;border-color:rgba(232,52,28,.55)}
+/* .mesa-btn (base + .primary/.gold/.green/.danger) → ui/cashSurfaceCss.js */
 /* Capacity picker. Chips sized for a thumb (44px minimum touch target) and
    laid out on a fluid grid so five options fit a 375px phone without wrapping
    awkwardly, while the "Otra" field keeps every value 1..99 reachable. */
@@ -549,7 +558,7 @@ const css = `
 .mesa-shape-icon.round{width:26px;height:26px;border-radius:999px}
 .mesa-shape-icon.square{width:26px;height:26px;border-radius:6px}
 .mesa-shape-icon.rectangle{width:38px;height:22px;border-radius:6px}
-.mesa-btn.small.active{border-color:#d7a84b;background:rgba(215,168,75,.14);color:#f8ecd2}
+/* .mesa-btn.small.active → ui/cashSurfaceCss.js */
 /* Lighter than a flat black-out on purpose -- enough to focus attention on
    the sheet without reading as "half the screen just went dead". The
    selected table's own glow ring (.mesa-table.selected) stays faintly
@@ -606,27 +615,14 @@ const css = `
 .mesa-hub-line.selectable.selected{background:rgba(215,168,75,.12);border-bottom-color:rgba(215,168,75,.3)}
 /* The three ways to pay a part of the bill. */
 .mesa-hub-modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
-.mesa-hub-mode{padding:10px 6px;border:1px solid rgba(255,255,255,.10);border-radius:11px;background:rgba(255,255,255,.03);color:#efe6d5;font:inherit;font-size:12.5px;font-weight:820;cursor:pointer;line-height:1.2}
-.mesa-hub-mode:hover:not(:disabled){background:rgba(255,255,255,.07)}
-.mesa-hub-mode:disabled{opacity:.35;cursor:not-allowed}
-.mesa-hub-mode.active{border-color:#d7a84b;background:rgba(215,168,75,.13);color:#f8ecd2}
+/* .mesa-hub-mode* → ui/cashSurfaceCss.js */
 .mesa-hub-selected{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px;padding:11px 12px;border-radius:11px;background:rgba(255,255,255,.04);color:#cfc4b0;font-size:13px}
 .mesa-hub-selected strong{color:#f8ecd2;font-size:20px;font-weight:950}
 .mesa-hub-persons{display:flex;flex-wrap:wrap;gap:8px}
 .mesa-hub-person{min-width:52px;min-height:48px;flex:1 1 52px;border:1px solid rgba(255,255,255,.12);border-radius:11px;background:rgba(255,255,255,.035);color:#efe6d5;font:inherit;font-size:16px;font-weight:900;cursor:pointer}
 .mesa-hub-person:hover{background:rgba(255,255,255,.07)}
 .mesa-hub-person.active{border-color:#d7a84b;background:rgba(215,168,75,.15);color:#f8ecd2}
-.mesa-hub-totals{border-top:1px dashed rgba(255,255,255,.14);margin-top:8px;padding-top:10px}
-.mesa-hub-total-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:4px 0;font-size:14px;color:#e6dcc9}
-.mesa-hub-total-row strong{font-weight:800}
-.mesa-hub-total-row.outstanding{margin-top:6px;padding-top:10px;border-top:1px solid rgba(255,255,255,.10);color:#d7a84b;font-size:17px}
-.mesa-hub-total-row.outstanding strong{color:#d7a84b;font-size:22px;font-weight:950}
-/* OVER-COLLECTED / AJUSTE COMERCIAL V1 SLICE C — same amber warning language
-   as .mesa-payhist-warning below, not a new color vocabulary: this row is a
-   different DIRECTION of the same "needs attention" state as .outstanding
-   (owed TO the customer instead of BY them), and the label already says which. */
-.mesa-hub-total-row.overcollected{margin-top:6px;padding-top:10px;border-top:1px solid rgba(215,168,75,.25);color:#d7a84b;font-size:15px}
-.mesa-hub-total-row.overcollected strong{color:#d7a84b;font-weight:900}
+/* .mesa-hub-totals / .mesa-hub-total-row(.outstanding|.overcollected) → ui/cashSurfaceCss.js */
 /* Exactly three, always the same three, always equal width. */
 .mesa-hub-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0 0}
 .mesa-hub-action{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:78px;padding:12px 6px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(255,255,255,.03);color:#efe6d5;font:inherit;font-size:13px;font-weight:850;cursor:pointer;text-align:center;line-height:1.2}
@@ -637,9 +633,7 @@ const css = `
 .mesa-hub-print .mesa-hub-icon{color:inherit}
 /* One drawer, visually tethered to the row of actions above it. */
 .mesa-hub-drawer{position:relative;margin-top:12px;border:1px solid rgba(215,168,75,.34);border-radius:16px;background:rgba(215,168,75,.045);padding:14px 14px 16px}
-.mesa-hub-field{margin-bottom:14px}
-.mesa-hub-field:last-child{margin-bottom:0}
-.mesa-hub-field-label{color:#a99d89;font-size:12px;font-weight:800;margin-bottom:8px}
+/* .mesa-hub-field / :last-child / -label → ui/cashSurfaceCss.js */
 .mesa-hub-bigamount{font-size:28px;font-weight:950;color:#f8ecd2}
 .mesa-hub-choices{display:grid;gap:10px;margin-bottom:14px}
 @media(min-width:520px){.mesa-hub-choices{grid-template-columns:1fr 1fr}}
@@ -675,39 +669,8 @@ const css = `
 .mesa-hub-dup-actions{display:grid;grid-template-columns:1fr;gap:10px}
 @media(min-width:420px){.mesa-hub-dup-actions{grid-template-columns:1fr 1fr}}
 .mesa-hub-dup-btn{min-height:48px;font-size:15px}
-/* REFUND V1 -- MesaPaymentsList. Same visual language as the payment hub
-   above (mesa-hub-* tokens), compact by design: mobile is first-class here
-   (§24) and this list can carry several payments/refunds per table. */
-.mesa-payhist{margin-top:16px;border-top:1px dashed rgba(255,255,255,.14);padding-top:14px}
-.mesa-payhist-title{margin:0 0 8px;color:#d9c8aa;font-size:13px;font-weight:900;letter-spacing:.4px}
-.mesa-payhist-item{border-bottom:1px solid rgba(255,255,255,.065);padding:8px 0}
-.mesa-payhist-item:last-child{border-bottom:0}
-.mesa-payhist-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:13.5px;padding:2px 0}
-.mesa-payhist-meta{color:#cfc4b0}
-.mesa-payhist-amount{color:#f4ecdd;font-weight:850}
-.mesa-payhist-amount.refund{color:#ff8f80}
-/* The nested refund child is visually subordinate to its original (§9/§25:
-   "refund children clearly subordinate to original transaction") -- indent
-   plus a slightly smaller, muted meta label, never a competing row. */
-.mesa-payhist-child{padding-left:16px;font-size:12.5px}
-.mesa-payhist-child .mesa-payhist-meta{color:#a99d89}
-.mesa-payhist-full{margin-top:4px;color:#65d995;font-size:11.5px;font-weight:800}
-.mesa-payhist-remaining{margin-top:4px;color:#d7a84b;font-size:11.5px;font-weight:800}
-.mesa-payhist-refund-btn{margin-top:8px;min-height:40px;padding:8px 14px;font-size:13px}
-.mesa-payhist-success{margin-bottom:10px;border:1px solid rgba(101,217,149,.34);border-radius:12px;background:rgba(101,217,149,.08);color:#65d995;padding:10px 12px;font-size:13px;font-weight:800}
-.mesa-payhist-form{position:relative;margin-top:10px;border:1px solid rgba(215,168,75,.34);border-radius:14px;background:rgba(215,168,75,.045);padding:12px 12px 14px}
-.mesa-payhist-form-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:3px 0;font-size:13px;color:#cfc4b0}
-.mesa-payhist-form-row strong{color:#f4ecdd;font-weight:800}
-.mesa-payhist-reasons{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-@media(min-width:420px){.mesa-payhist-reasons{grid-template-columns:repeat(3,1fr)}}
-/* §16 -- load-bearing economic-effect copy: prominent but compact, never a
-   full-width banner that would crowd out the amount/reason fields above it. */
-.mesa-payhist-warning{margin-top:12px;border:1px solid rgba(215,168,75,.4);border-radius:11px;background:rgba(215,168,75,.10);color:#f2dfb8;font-size:12.5px;font-weight:750;line-height:1.5;padding:9px 11px}
-/* §17 -- external-settlement (tarjeta/bizum) recording notice, visually
-   secondary to the economic warning above it. */
-.mesa-payhist-external{margin-top:8px;color:#a99d89;font-size:11.5px;line-height:1.5}
-.mesa-payhist-form-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
-.mesa-payhist-form-actions .mesa-btn{min-height:46px}
+/* .mesa-payhist* (whole REFUND V1 / MesaPaymentsList + MesaCommercialAdjustments
+   block) → ui/cashSurfaceCss.js */
 /* Secondary, and it reads as secondary. */
 .mesa-hub-print{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;margin-top:12px;min-height:50px;padding:12px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(255,255,255,.025);color:#cfc4b0;font:inherit;font-size:14px;font-weight:800;cursor:pointer}
 .mesa-hub-print:hover{background:rgba(255,255,255,.06);color:#efe6d5}
@@ -738,10 +701,10 @@ const css = `
 .mesa-command-card{border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.02)}
 .mesa-command-card+.mesa-command-card{margin-top:8px}
 .mesa-command-note{margin-top:6px;font-size:12px;color:#d9c8aa;font-style:italic}
-.mesa-input{width:100%;box-sizing:border-box;border:1px solid rgba(208,184,145,.28);border-radius:11px;background:#0b0b0a;color:#fff;padding:12px 13px;font:inherit;outline:none}.mesa-input:focus{border-color:#d7a84b}
+/* .mesa-input / :focus → ui/cashSurfaceCss.js */
 .mesa-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mesa-label{display:block;color:#b9ad99;font-size:12px;font-weight:800;margin-bottom:6px}.mesa-methods{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.mesa-method{border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:11px 7px;background:rgba(255,255,255,.035);color:#fff;font-weight:850;cursor:pointer}.mesa-method.active{border-color:var(--mc);box-shadow:inset 0 0 0 1px var(--mc);background:color-mix(in srgb,var(--mc) 18%,transparent)}
 .mesa-lines{max-height:260px;overflow:auto;border:1px solid rgba(208,184,145,.15);border-radius:12px;padding:4px 11px}.mesa-line-check{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer}.mesa-line-check:last-child{border-bottom:0}.mesa-line-check input{width:18px;height:18px;accent-color:#d7a84b}
-.mesa-banner{border:1px solid rgba(56,189,248,.35);border-radius:13px;padding:12px 14px;background:rgba(56,189,248,.09);color:#b9eaff;font-size:13px;line-height:1.45}.mesa-error{border-color:rgba(232,52,28,.5);background:rgba(232,52,28,.1);color:#ffaaa0}
+/* .mesa-banner / .mesa-error → ui/cashSurfaceCss.js */
 /* MESA_PHONE_VISUAL_PARITY_V2 -- reservation-agenda rows (ReservationAgendaRow).
    .mesa-row (existing) still supplies the flex/gap layout; these add the
    elevated-card depth + the conflict-tinted variant. Declared after
@@ -758,7 +721,7 @@ const css = `
 .mesa-reservation-row.conflict{background:rgba(239,68,68,.11);border-color:rgba(239,68,68,.4)}
 .mesa-reservation-time{font-size:17px;font-weight:900;font-variant-numeric:tabular-nums;flex-shrink:0;min-width:46px}
 .mesa-reservation-row.conflict .mesa-reservation-time{color:#ff9c90}
-.mesa-reservation{border:1px solid rgba(239,68,68,.38);border-radius:14px;padding:12px;background:rgba(239,68,68,.09);margin-top:9px}.mesa-reservation-main{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.mesa-reservation-name{font-size:15px;font-weight:950}.mesa-reservation-time{color:#ff8d83;font-size:16px;font-weight:950;white-space:nowrap}.mesa-reservation-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.mesa-btn.small{padding:7px 10px;border-radius:10px;font-size:12px}.mesa-btn.red{background:#C62828;border-color:#EF4444;color:#fff}.mesa-textarea{min-height:88px;resize:vertical}.mesa-menu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.mesa-menu-action{min-height:72px;text-align:left;display:flex;flex-direction:column;justify-content:center}.mesa-menu-action strong{font-size:14px}.mesa-menu-action span{font-size:11px;color:#a99d89;margin-top:3px}
+.mesa-reservation{border:1px solid rgba(239,68,68,.38);border-radius:14px;padding:12px;background:rgba(239,68,68,.09);margin-top:9px}.mesa-reservation-main{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.mesa-reservation-name{font-size:15px;font-weight:950}.mesa-reservation-time{color:#ff8d83;font-size:16px;font-weight:950;white-space:nowrap}.mesa-reservation-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}/* .mesa-btn.small → ui/cashSurfaceCss.js */.mesa-btn.red{background:#C62828;border-color:#EF4444;color:#fff}.mesa-textarea{min-height:88px;resize:vertical}.mesa-menu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.mesa-menu-action{min-height:72px;text-align:left;display:flex;flex-direction:column;justify-content:center}.mesa-menu-action strong{font-size:14px}.mesa-menu-action span{font-size:11px;color:#a99d89;margin-top:3px}
 /* P1_D_TABLE_FIRST_01 -- MesaWorkspace's compactCard presentation (phone
    shell only, compact prop -- see the compactCard branch below). A dedicated
    overlay/card pair, NOT a variant of .mesa-overlay/.mesa-modal, so nothing

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as MS from '../ui/mesaSurface';
+import { CASH_SURFACE_CSS } from '../ui/cashSurfaceCss';
 import { cashApi, createCashRequestId, describeCashError, CASH_DUPLICATE_PAYMENT_CODE } from '../../cash/cashApi';
 import MesaAccountBalance from '../mesa/MesaAccountBalance';
 import MesaPaymentsList from '../mesa/MesaPaymentsList';
@@ -112,6 +113,12 @@ export default function CheckCashPanel({
 
   return (
     <div data-testid="check-cash-panel" style={MS.overlay}>
+      {/* UNIFIED_CASH_UI_SURFACE_V1 — the shared cash sub-surface stylesheet.
+          MesaAccountBalance / MesaPaymentsList / MesaCommercialAdjustments below
+          emit mesa-* classes whose rules used to live only inside TabMesa's
+          <style>; TabMesa is not mounted here, so without this they render
+          unstyled. Same string TabMesa prepends to its own css. */}
+      <style>{CASH_SURFACE_CSS}</style>
       <div style={MS.sheet(460)}>
         <div style={MS.sheetHead}>
           <span style={MS.sheetTitle}>

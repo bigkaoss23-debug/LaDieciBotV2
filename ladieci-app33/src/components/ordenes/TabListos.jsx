@@ -8,6 +8,7 @@ import { ORDER_STATES } from '../../core/orders';
 import { buildVisibleOrderLabels, resolveVisibleOrderLabel } from '../../utils/orderNumber';
 import { orarioToMs } from '../../utils/serviceClock';
 import { describePaymentMethod } from '../../utils/paymentMethodDisplay';
+import { canonicalOrderAmount } from '../../order/canonicalOrderAmount';
 import {
   formatItemExtrasLabel,
   formatItemRemovedLabel,
@@ -92,9 +93,11 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,onOpenCash,l
         :tutti.map(o=>{
           const isDone = o.estado===ORDER_STATES.RETIRADO;
           const cardStyle = isDone ? glassRetirado : glassListo;
-          // Sorgente di verità: o.totale salvato dal backend. Fallback per ordini legacy.
+          // UNIFIED_CASH_UI_SURFACE_V1 — canonical current obligation
+          // (backend-projected `financial`); stored legacy `totale` next; an
+          // items-only estimate only for a deep-legacy row, as legacy compat.
           const cleanItems = (Array.isArray(o.items) ? o.items : []).filter(i => i.n !== "Entrega a domicilio");
-          const totaleNum = (Number(o.totale) > 0) ? Number(o.totale) : calcTotale(cleanItems, o.tipo_consegna);
+          const totaleNum = canonicalOrderAmount(o) ?? calcTotale(cleanItems, o.tipo_consegna);
           const totale = totaleNum.toFixed(2);
           return (
             <div key={o.id}

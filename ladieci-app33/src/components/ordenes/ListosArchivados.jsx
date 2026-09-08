@@ -19,13 +19,25 @@ import { resolveItemProductNames } from '../../menu/itemDisplay';
 // here since ListosUnificado always passes it hideRetirados). Sala rows are
 // Mesa-owned and out of scope; they keep their own re-entry surface
 // (UltimasCuentasModal) untouched.
-const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [], onOpenCash }) => {
+//
+// UNIFIED_CASH_UI_SURFACE_V1 -- `pendingByOrderUid` is a Map<orderUid,{direction,
+// amount}> the parent builds from GET /api/economy/v1/pendencies. This component
+// NEVER computes unpaid / overCollected / a direction: an archived order shows
+// "Pendiente" iff its permanent order_uid is a key in that map (the backend has
+// already excluded a settled-but-still-refundable order). The amount rendered is
+// the backend's canonical figure, verbatim.
+const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [], onOpenCash, pendingByOrderUid }) => {
   const [open, setOpen] = useState(false);
+  const pending = pendingByOrderUid instanceof Map ? pendingByOrderUid : new Map();
+  const pendFor = (o) => (o && o.order_uid ? pending.get(String(o.order_uid)) || null : null);
   // language-guard: allow-legacy existing backend field name (tipo_consegna), not new vocabulary
   const recogida = retiradosTakeaway.filter(o => o.tipo_consegna !== "DOMICILIO");
   // language-guard: allow-legacy existing backend field name (tipo_consegna), not new vocabulary
   const delivery = retiradosTakeaway.filter(o => o.tipo_consegna === "DOMICILIO");
   const total = servedSala.length + recogida.length + delivery.length;
+  // Presentation count only: how many of THESE archived takeaway rows the
+  // backend flagged as an open exposure. Same class of `.length` as `total`.
+  const pendingCount = [...recogida, ...delivery].filter(o => pendFor(o)).length;
   // P1-A -- one collision pass across both sections together (they render in
   // the same expanded view at once).
   const orderLabels = buildVisibleOrderLabels(retiradosTakeaway);
@@ -38,6 +50,21 @@ const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [], onOpenCash 
     padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.03)",
     border: `1px solid ${C.fumo}`, marginBottom: 6, fontSize: 13, color: "rgba(255,255,255,0.75)",
   };
+  // A settled row is neutral. Only a real, backend-flagged open exposure gets
+  // the amber attention chip -- "Pendiente" (the frozen operator term) plus the
+  // canonical amount from the /pendencies payload. Never derived here.
+  const PendienteChip = ({ pend }) => pend ? (
+    <span data-testid="archivados-pendiente" style={{
+      flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5,
+      background: "rgba(215,168,75,0.14)", border: "1px solid rgba(215,168,75,0.45)",
+      color: "#f2dfb8", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 800,
+    }}>
+      Pendiente
+      {Number.isFinite(Number(pend.amount)) && Number(pend.amount) > 0 && (
+        <strong style={{ fontWeight: 900 }}>{Number(pend.amount).toFixed(2)}€</strong>
+      )}
+    </span>
+  ) : null;
 
   return (
     <div style={{ marginTop: 16 }}>
@@ -52,6 +79,12 @@ const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [], onOpenCash 
         <span style={{
           background: "rgba(255,255,255,0.10)", borderRadius: 20, padding: "1px 9px", fontSize: 12,
         }}>{total}</span>
+        {pendingCount > 0 && (
+          <span data-testid="archivados-pendiente-count" style={{
+            background: "rgba(215,168,75,0.16)", border: "1px solid rgba(215,168,75,0.45)",
+            color: "#f2dfb8", borderRadius: 20, padding: "1px 9px", fontSize: 12, fontWeight: 800,
+          }}>{pendingCount} Pendiente</span>
+        )}
         <span style={{ marginLeft: "auto", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>⌄</span>
       </button>
 
@@ -76,17 +109,20 @@ const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [], onOpenCash 
               <div key={o.id} style={rowStyle}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                   <strong>{resolveVisibleOrderLabel(o, orderLabels)} · {o.nombre}</strong>
-                  {onOpenCash && (
-                    <button type="button" data-testid="archivados-abrir-caja"
-                      onClick={() => onOpenCash(o, { allowDelivery: false })}
-                      style={{
-                        background: "rgba(255,255,255,0.08)", color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8,
-                        padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-                      }}>
-                      💰 Abrir en caja
-                    </button>
-                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                    <PendienteChip pend={pendFor(o)} />
+                    {onOpenCash && (
+                      <button type="button" data-testid="archivados-abrir-caja"
+                        onClick={() => onOpenCash(o, { allowDelivery: false })}
+                        style={{
+                          background: "rgba(255,255,255,0.08)", color: "#fff",
+                          border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8,
+                          padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+                        }}>
+                        💰 Abrir en caja
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div style={{ marginTop: 2, opacity: 0.8 }}>
                   {(Array.isArray(o.items) ? o.items : []).map((item) => resolveItemProductNames(item).primary).filter(Boolean).join(", ") || "—"}
@@ -101,17 +137,20 @@ const ListosArchivados = ({ retiradosTakeaway = [], servedSala = [], onOpenCash 
               <div key={o.id} style={rowStyle}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                   <strong>{resolveVisibleOrderLabel(o, orderLabels)} · {o.nombre}</strong>
-                  {onOpenCash && (
-                    <button type="button" data-testid="archivados-abrir-caja"
-                      onClick={() => onOpenCash(o, { allowDelivery: false })}
-                      style={{
-                        background: "rgba(255,255,255,0.08)", color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8,
-                        padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-                      }}>
-                      💰 Abrir en caja
-                    </button>
-                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                    <PendienteChip pend={pendFor(o)} />
+                    {onOpenCash && (
+                      <button type="button" data-testid="archivados-abrir-caja"
+                        onClick={() => onOpenCash(o, { allowDelivery: false })}
+                        style={{
+                          background: "rgba(255,255,255,0.08)", color: "#fff",
+                          border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8,
+                          padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+                        }}>
+                        💰 Abrir en caja
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div style={{ marginTop: 2, opacity: 0.8 }}>
                   {(Array.isArray(o.items) ? o.items : []).map((item) => resolveItemProductNames(item).primary).filter(Boolean).join(", ") || "—"}
