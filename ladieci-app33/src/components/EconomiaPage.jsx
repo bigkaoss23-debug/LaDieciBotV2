@@ -476,6 +476,8 @@ const EconomiaPage = ({onBack}) => {
       .catch(e => { setSerataError("Error: " + e.toString()); setSerataLoad(false); });
   }, [periodo, refresh]);
 
+  // Storico completo: caricato una volta (e su ⟳ via `refresh`). Il cambio
+  // periodo NON rifà fetch — periodRows/periodAgg filtrano rawData localmente.
   useEffect(()=>{
     setLoading(true);
     setError(null);
@@ -525,7 +527,7 @@ const EconomiaPage = ({onBack}) => {
         setError("Error de conexión: " + e.toString());
         setLoading(false);
       });
-  }, [periodo, refresh]);
+  }, [refresh]);
 
   // Aggrega — se già pre-aggregato dal backend usa direttamente
   const a = useMemo(() => {
