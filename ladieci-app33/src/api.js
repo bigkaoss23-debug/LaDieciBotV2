@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { calcTotale } from "./constants";
+import { madridDayKey } from "./utils/calendarPeriods";
 
 const PROXY_URL = "/api/proxy";
 const AUTH_URL = "/api/auth";
@@ -463,7 +464,33 @@ const api = {
 
   // ── Storico/serata: letture pesanti aggregate ──────────────────
   getStorico: async function() {
-    const rows = await sb.select("storico", "order=ts.desc&limit=500");
+    // "Todo" = TUTTO lo storico. Paginazione keyset deterministica su ts
+    // (ordinamento stabile ts.desc + tiebreak id.desc), pagine da 1000.
+    // Guard: max 20 pagine (20 000 righe). Dedup difensivo per id per bordi
+    // pagina / scritture concorrenti (chiusura serata). Se una pagina fallisce
+    // (PostgREST → oggetto, non array) si interrompe restituendo il parziale.
+    const PAGE = 1000, MAX_PAGES = 20;
+    let rows = [];
+    let cursor = null;
+    for (let p = 0; p < MAX_PAGES; p++) {
+      const q = (cursor == null ? "" : `ts=lt.${cursor}&`) +
+        `order=ts.desc,id.desc&limit=${PAGE}`;
+      const page = await sb.select("storico", q);
+      if (!Array.isArray(page) || page.length === 0) break;
+      rows = rows.concat(page);
+      if (page.length < PAGE) break;
+      cursor = Number(page[page.length - 1].ts) || null;
+      if (cursor == null) break;
+    }
+    if (rows.length) {
+      const seen = new Set();
+      rows = rows.filter(r => {
+        const k = r.id != null ? `#${r.id}` : `${r.orden_id}|${r.fecha}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+    }
     const now = new Date(); const oggi = new Date(now); oggi.setHours(0,0,0,0);
     const iniSett = new Date(oggi); iniSett.setDate(oggi.getDate()-oggi.getDay());
     const iniMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1);
@@ -563,15 +590,17 @@ const api = {
   },
 
   getSerata: async function() {
-    const oggiDate = new Date();
-    const oggiIso  = oggiDate.toISOString().slice(0, 10);
+    // "oggi" = giorno di calendario Europe/Madrid (non UTC). Nessun filtro per
+    // orario: la caja del giorno corrente deve includere tutti gli ordini del
+    // giorno, coerente con i giorni passati (letti da `storico`) e con
+    // Semana/Mes/Todo.
+    const oggiIso  = madridDayKey();
     const toMs = (ts) => { const n = Number(ts); if (!n) return null; return n < 1e12 ? n * 1000 : n; };
     const rowsOrdenes = await sb.select("ordenes", `estado=in.(COMPLETADO,RETIRADO)&order=ts.desc&limit=500`);
     const ordineLive = (Array.isArray(rowsOrdenes) ? rowsOrdenes : []).filter(r => {
       const ms = toMs(r.ts);
       if (!ms) return false;
-      const d = new Date(ms);
-      return d.toISOString().slice(0,10) === oggiIso && d.getHours() >= 19 && d.getHours() < 23;
+      return madridDayKey(new Date(ms)) === oggiIso;
     }).map(r => ({ ...r, _src: "live" }));
     const rowsStorico = await sb.select("storico", `fecha=eq.${oggiIso}&order=ts.desc&limit=200`);
     const ordiniStorico = (Array.isArray(rowsStorico) ? rowsStorico : []).map(r => ({

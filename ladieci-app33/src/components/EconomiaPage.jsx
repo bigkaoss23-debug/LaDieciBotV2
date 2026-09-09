@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, memo } from 'react';
 import { C, LOGO_RED_SRC, calcTotale as calcTotaleHelper } from '../constants';
 import { api, sb } from '../api';
+import { periodRange, rowInPeriod, madridDayKey, addDaysKey } from '../utils/calendarPeriods';
 
 // Legge il primo campo non-null tra le chiavi fornite — compatibilità multi-formato
 const getField = (obj, ...keys) => {
@@ -119,11 +120,11 @@ const aggrega = (righe) => {
       else if(fechaStr.includes("/")) { try { const [dd,mm,yy]=fechaStr.split("/").map(Number); refDate=new Date(yy,mm-1,dd); } catch(e){} }
     }
 
-    // Filtra solo orari di apertura (19:50–23:00) — escludi test/dati fuori servizio
-    if(refMs) {
-      const hm = new Date(refMs).getHours() * 60 + new Date(refMs).getMinutes();
-      if(hm < 19 * 60 + 50 || hm >= 23 * 60) return;
-    }
+    // Nessun filtro per orario. Un audit read-only sull'intero storico produzione
+    // ha mostrato che l'ex finestra 19:50–23:00 escludeva 97 ordini reali
+    // (RETIRADO/CHIUSO_FORZATO, ~2 625 €, 176 pizze) e rompeva la coerenza con
+    // "Caja del día". I periodi sono ora di sola competenza del calendario
+    // (Europe/Madrid) — vedi utils/calendarPeriods.js.
 
     incassoTot += totale;
     countOrdini++;
@@ -534,6 +535,22 @@ const EconomiaPage = ({onBack}) => {
   }, [rawData]);
 
   const oggiIso = isoLocal();
+  const hoyKey  = madridDayKey(); // "oggi" come giorno di calendario Europe/Madrid
+
+  // ── Periodo di CALENDARIO (Semana lun→lun / Mes 1→1 / Todo) ──────────
+  // Un solo set di righe filtrate per il periodo attivo; da qui derivano
+  // TUTTI i KPI aggregati e il popup Pizzas/Bebidas (nessun secondo filtro).
+  // Día ("serata") e giorno singolo hanno il loro percorso (buildCajaStats/aGiorno).
+  const periodRows = useMemo(() => {
+    if (!Array.isArray(rawData)) return [];
+    if (periodo !== "sett" && periodo !== "mese" && periodo !== "tutto") return [];
+    const range = periodRange(periodo, hoyKey);
+    return rawData.filter(r => rowInPeriod(r, range));
+  }, [rawData, periodo, hoyKey]);
+
+  // Stesso motore di "Caja del día": Fix A (postres esclusi), payment buckets,
+  // consegne, prodotti con categoria normalizzata.
+  const periodAgg = useMemo(() => buildCajaStats(periodRows), [periodRows]);
 
   const diasCaja = useMemo(() => {
     const byData = {};
@@ -637,37 +654,37 @@ const EconomiaPage = ({onBack}) => {
     };
   }, [giornoFiltro, rawData]);
 
-  const incasso = !a ? 0
-    : periodo==="sett" ? a.incassoSett
-    : periodo==="mese" ? a.incassoMese
-    : a.incassoTot;
+  // Ventas del periodo attivo. Semana/Mes/Todo → dataset di calendario
+  // (periodAgg); Caja/giorno hanno il loro percorso dedicato.
+  const incasso = (periodo === "sett" || periodo === "mese" || periodo === "tutto")
+    ? (periodAgg ? periodAgg.incasso : 0)
+    : (a ? a.incassoTot : 0);
 
-  // Delta vs periodo precedente — solo per Semana e Mese (Hoy/Todo non hanno baseline)
+  // Delta vs periodo di calendario PRECEDENTE — solo Semana e Mes
+  // (settimana precedente lun→lun / mese precedente 1→1). Todo non ha baseline.
   const delta = useMemo(() => {
     if (!a || !a.giorniDettaglio || a.giorniDettaglio.length === 0) return null;
-    const giorniN = periodo === "sett" ? 7 : periodo === "mese" ? 30 : null;
-    if (!giorniN) return null;
-    const now = new Date(); now.setHours(0,0,0,0);
-    const dayMs = 24 * 3600 * 1000;
-    const cutOggi = now.getTime() - giorniN * dayMs;
-    const cutPrev = now.getTime() - 2 * giorniN * dayMs;
-    let actVen = 0, actOrd = 0, prevVen = 0, prevOrd = 0;
-    a.giorniDettaglio.forEach(d => {
-      const dt = parseDataKey(d.data);
-      if (!dt) return;
-      const t = dt.getTime();
-      if (t >= cutOggi)      { actVen  += d.incasso || 0; actOrd  += d.ordini || 0; }
-      else if (t >= cutPrev) { prevVen += d.incasso || 0; prevOrd += d.ordini || 0; }
-    });
-    const pct = (a, p) => (p > 0 ? Math.round(((a - p) / p) * 100) : null);
-    const actTicket  = actOrd  > 0 ? actVen  / actOrd  : 0;
-    const prevTicket = prevOrd > 0 ? prevVen / prevOrd : 0;
+    if (periodo !== "sett" && periodo !== "mese") return null;
+    const cur  = periodRange(periodo, hoyKey);
+    const prev = periodRange(periodo, addDaysKey(cur.start, -1));
+    const sums = (range) => {
+      let ven = 0, ord = 0;
+      a.giorniDettaglio.forEach(d => {
+        const k = String(d.data).slice(0, 10);
+        if (k >= range.start && k < range.end) { ven += d.incasso || 0; ord += d.ordini || 0; }
+      });
+      return { ven, ord };
+    };
+    const act = sums(cur), pr = sums(prev);
+    const pct = (x, p) => (p > 0 ? Math.round(((x - p) / p) * 100) : null);
+    const actTicket  = act.ord > 0 ? act.ven / act.ord : 0;
+    const prevTicket = pr.ord  > 0 ? pr.ven  / pr.ord  : 0;
     return {
-      ventas:  pct(actVen, prevVen),
-      ordini:  pct(actOrd, prevOrd),
+      ventas:  pct(act.ven, pr.ven),
+      ordini:  pct(act.ord, pr.ord),
       ticket:  pct(actTicket, prevTicket),
     };
-  }, [a, periodo]);
+  }, [a, periodo, hoyKey]);
 
   // Messaggio contestuale quando il periodo selezionato non ha dati
   const periodoVuoto = a && incasso === 0 && a.incassoTot > 0;
@@ -714,33 +731,32 @@ const EconomiaPage = ({onBack}) => {
         canali:    aGiorno.canali || {},
       };
     }
-    // 3) Aggregata (Semana/Mes/Todo)
+    // 3) Aggregata di CALENDARIO (Semana lun→lun / Mes 1→1 / Todo)
+    //    Tutti i KPI + il popup Pizzas/Bebidas derivano da periodAgg, cioè
+    //    dallo STESSO set di righe filtrate per il periodo attivo (stesso
+    //    motore di "Caja del día": Fix A applicato, payment buckets, consegne).
     if (a) {
-      const pizze   = (a.topProdotti||[]).filter(p => p.cat === "Pizzas");
-      const bevande = (a.topProdotti||[]).filter(p => p.cat === "Bebidas");
-      const pag = periodo==="sett" ? a.pagamentiSett
-                : periodo==="mese" ? a.pagamentiMese
-                : a.pagamenti;
+      const prodotti = periodAgg.prodotti || [];
       return {
         contesto: "aggregata",
         etichetta: periodo==="sett" ? "de la semana"
                  : periodo==="mese" ? "del mes"
                  : "total",
-        ventas:    incasso || 0,
-        ticket:    a.ticketMedio || 0,
-        pedidos:   a.countOrdini || 0,
-        pizzas:    pizze.reduce((s,p)=>s+p.q,0),
-        bebidas:   bevande.reduce((s,p)=>s+p.q,0),
-        delivery:  a.consegne?.DOMICILIO || 0,
-        local:     a.consegne?.RITIRO    || 0,
-        pagamenti: pag,
-        prodottiPizzas:  pizze,
-        prodottiBebidas: bevande,
-        canali:    a.canali || {},
+        ventas:    periodAgg.incasso || 0,
+        ticket:    periodAgg.ticketMedio || 0,
+        pedidos:   periodAgg.countOrdini || 0,
+        pizzas:    periodAgg.pizzeTot || 0,
+        bebidas:   periodAgg.bevandeTot || 0,
+        delivery:  periodAgg.consegne?.DOMICILIO || 0,
+        local:     periodAgg.consegne?.RITIRO    || 0,
+        pagamenti: periodAgg.pagamenti,
+        prodottiPizzas:  prodotti.filter(p => p.cat === "Pizzas"),
+        prodottiBebidas: prodotti.filter(p => p.cat === "Bebidas"),
+        canali:    periodAgg.canali || {},
       };
     }
     return null;
-  }, [periodo, cajaDiaData, cajaFechaLabel, giornoFiltro, aGiorno, a, incasso]);
+  }, [periodo, cajaDiaData, cajaFechaLabel, giornoFiltro, aGiorno, a, periodAgg]);
 
   const CANAL_COLOR = {WA:C.wa, TEL:C.blu, BANCO:C.rosso, MANUAL:"#F97316"};
   const CANAL_LABEL = {WA:"💬 WhatsApp", TEL:"📞 Teléfono", BANCO:"🏪 Barra", MANUAL:"✍️ Manual"};
@@ -2037,13 +2053,13 @@ const EconomiaPage = ({onBack}) => {
 
         // ── TICKET MEDIO ──
         if (modalAperto === "ticket") {
-          // Calcola distribuzione da rawData filtrato per contesto
+          // Calcola distribuzione dallo STESSO set di righe del KPI Ticket medio.
           const allOrds = (() => {
             if (vista.contesto === "caja") return ordenesCajaDia;
             if (vista.contesto === "giorno" && rawData) {
               return (Array.isArray(rawData)?rawData:[]).filter(r => String(r.fecha||"").slice(0,10) === giornoFiltro);
             }
-            return Array.isArray(rawData) ? rawData : [];
+            return periodRows; // aggregata → righe del periodo di calendario attivo
           })();
           const totals = allOrds.map(r => {
             let t = Number(r.totale)||0;
@@ -2142,25 +2158,20 @@ const EconomiaPage = ({onBack}) => {
           const costoTot = vista.delivery * COSTO_PER_CONSEGNA;
           // Stima km da delivery_logs (se caricati) — 30 km/h città → km ≈ min/2
           const logs = (deliveryLogs||[]).filter(l => {
-            const ts = l.partito_alle ? new Date(l.partito_alle).getTime() : 0;
-            if (!ts) return false;
-            const now = Date.now();
+            if (!l.partito_alle) return false;
+            const d = new Date(l.partito_alle);
+            if (isNaN(d.getTime())) return false;
+            const k = madridDayKey(d); // giorno di calendario Europe/Madrid del giro
             if (vista.contesto === "caja") {
-              const dia = diaCajaSeleccionado || diasCaja[0]?.data || oggiIso;
-              const [yy,mm,dd] = dia.split("-").map(Number);
-              const g0 = new Date(yy,mm-1,dd).getTime();
-              const g1 = g0 + 24*3600*1000;
-              return ts >= g0 && ts < g1;
+              return k === (diaCajaSeleccionado || diasCaja[0]?.data || oggiIso);
             }
             if (vista.contesto === "giorno") {
-              const [yy,mm,dd] = giornoFiltro.split("-").map(Number);
-              const g0 = new Date(yy,mm-1,dd).getTime();
-              const g1 = g0 + 24*3600*1000;
-              return ts >= g0 && ts < g1;
+              return k === giornoFiltro;
             }
-            // aggregata
-            const giorniN = periodo==="sett"?7 : periodo==="mese"?30 : 9999;
-            return (now - ts) < giorniN * 24 * 3600 * 1000;
+            // aggregata → stesso periodo di calendario dei KPI
+            const range = periodRange(periodo, hoyKey);
+            if (!range.start && !range.end) return true; // Todo
+            return k >= range.start && k < range.end;
           });
           const giri = logs.length;
           const tempoTot = logs.reduce((s,l)=>s+(Number(l.tempo_andata_min)||0),0);
