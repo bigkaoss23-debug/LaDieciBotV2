@@ -83,6 +83,18 @@ const addDaysKey = (key, n) => {
   );
 };
 
+// Sposta una chiave "YYYY-MM-DD" di n mesi (anche negativi) e ancora al giorno 1
+// del mese risultante. Usata dalla navigazione MES (i periodi mese sono
+// [gg-01, mese+1 gg-01) — il giorno di partenza è irrilevante).
+const addMonthsKey = (key, n) => {
+  const p = parseKey(key);
+  if (!p) return null;
+  const total = p[0] * 12 + (p[1] - 1) + Number(n || 0);
+  const y = Math.floor(total / 12);
+  const m = ((total % 12) + 12) % 12; // resto sempre 0..11 anche per total negativi
+  return y + "-" + String(m + 1).padStart(2, "0") + "-01";
+};
+
 // Giorno della settimana ISO per una chiave "YYYY-MM-DD": 1 = lunedì … 7 = domenica.
 const isoWeekdayOfKey = (key) => {
   const p = parseKey(key);
@@ -141,6 +153,7 @@ module.exports = {
   MADRID_TZ,
   madridDayKey,
   addDaysKey,
+  addMonthsKey,
   isoWeekdayOfKey,
   periodRange,
   rowDayKey,

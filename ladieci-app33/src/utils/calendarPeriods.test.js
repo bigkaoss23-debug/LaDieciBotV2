@@ -8,6 +8,7 @@
 const {
   madridDayKey,
   addDaysKey,
+  addMonthsKey,
   isoWeekdayOfKey,
   periodRange,
   rowDayKey,
@@ -171,6 +172,40 @@ check(
 eq("periodRange refKey invalido → cade su oggi, forma valida (sett)", typeof periodRange("sett", "boh").start, "string");
 check("rowInPeriod range null → true", rowInPeriod({ fecha: "2026-01-01" }, null));
 check("rowInPeriod riga null in periodo con bordi → false", !rowInPeriod(null, sem));
+
+// ── addMonthsKey — navigazione MES (ancora sempre al giorno 01) ──
+eq("addMonthsKey -1 da settembre", addMonthsKey("2026-09-01", -1), "2026-08-01");
+eq("addMonthsKey -1 ancora al 01 anche da metà mese", addMonthsKey("2026-09-15", -1), "2026-08-01");
+eq("addMonthsKey +1 da settembre", addMonthsKey("2026-09-01", 1), "2026-10-01");
+eq("addMonthsKey -1 rollover anno indietro", addMonthsKey("2026-01-01", -1), "2025-12-01");
+eq("addMonthsKey +1 rollover anno avanti", addMonthsKey("2026-12-01", 1), "2027-01-01");
+eq("addMonthsKey -4 da settembre → maggio (primo mese storico)", addMonthsKey("2026-09-01", -4), "2026-05-01");
+eq("addMonthsKey -13 (oltre l'anno)", addMonthsKey("2026-09-01", -13), "2025-08-01");
+eq("addMonthsKey chiave invalida → null", addMonthsKey("boh", 1), null);
+
+// ── Navigazione SEMANA: reference-key → range, avanti/indietro con addDaysKey(±7) ──
+eq(
+  "SEMANA nav: reference 2026-09-06 (domenica) → settimana [2026-08-31, 2026-09-07)",
+  periodRange("sett", "2026-09-06"),
+  { start: "2026-08-31", end: "2026-09-07" }
+);
+eq(
+  "SEMANA nav: settimana precedente = start - 7",
+  periodRange("sett", addDaysKey("2026-08-31", -7)),
+  { start: "2026-08-24", end: "2026-08-31" }
+);
+eq(
+  "SEMANA nav: settimana successiva = start + 7 → settimana corrente",
+  periodRange("sett", addDaysKey("2026-08-31", 7)),
+  { start: "2026-09-07", end: "2026-09-14" }
+);
+
+// ── Navigazione MES: mesi realmente presenti nello storico produzione ──
+eq("MES nav: Mayo 2026",      periodRange("mese", "2026-05-10"), { start: "2026-05-01", end: "2026-06-01" });
+eq("MES nav: Junio 2026",     periodRange("mese", "2026-06-15"), { start: "2026-06-01", end: "2026-07-01" });
+eq("MES nav: Julio 2026",     periodRange("mese", "2026-07-20"), { start: "2026-07-01", end: "2026-08-01" });
+eq("MES nav: Agosto 2026",    periodRange("mese", "2026-08-05"), { start: "2026-08-01", end: "2026-09-01" });
+eq("MES nav: Septiembre 2026",periodRange("mese", "2026-09-01"), { start: "2026-09-01", end: "2026-10-01" });
 
 console.log("");
 console.log("Totale: " + (pass + fail) + " | PASS: " + pass + " | FAIL: " + fail);

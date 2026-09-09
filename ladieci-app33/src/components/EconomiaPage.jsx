@@ -1,7 +1,16 @@
 import { useState, useEffect, useMemo, memo } from 'react';
 import { C, LOGO_RED_SRC, calcTotale as calcTotaleHelper } from '../constants';
 import { api, sb } from '../api';
-import { periodRange, rowInPeriod, madridDayKey, addDaysKey } from '../utils/calendarPeriods';
+import { periodRange, rowInPeriod, madridDayKey, addDaysKey, addMonthsKey } from '../utils/calendarPeriods';
+
+// Nomi mesi in spagnolo — coerenti con la UI (DIAS spagnoli in fmtFechaLarga).
+const MESES_ES       = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const MESES_ES_SHORT = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+// "31 ago" da una chiave "YYYY-MM-DD"
+const fmtDiaMesCorto = (key) => {
+  const p = String(key || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return p ? `${Number(p[3])} ${MESES_ES_SHORT[Number(p[2]) - 1]}` : (key || "");
+};
 
 // Legge il primo campo non-null tra le chiavi fornite — compatibilità multi-formato
 const getField = (obj, ...keys) => {
@@ -450,6 +459,11 @@ const EconomiaPage = ({onBack}) => {
   const [serataLoad,   setSerataLoad]   = useState(true);
   const [serataError,  setSerataError]  = useState(null);
   const [diaCajaSeleccionado, setDiaCajaSeleccionado] = useState(null);
+  // Giorno di riferimento per la navigazione storica di Semana/Mes.
+  // Semana = settimana di calendario che CONTIENE periodRef; Mes = mese che lo contiene.
+  // Default: oggi (Madrid) → settimana/mese correnti, come prima. Cambiare pillola periodo
+  // riporta a oggi. Le frecce ‹ › spostano SOLO questa chiave locale: nessun fetch.
+  const [periodRef,    setPeriodRef]    = useState(() => madridDayKey());
   const [prodTab,      setProdTab]      = useState("pizze"); // "pizze" | "bevande"
   const [giornoFiltro, setGiornoFiltro] = useState(null);   // YYYY-MM-DD o null
   const [subTab,       setSubTab]       = useState("dinero"); // legacy, non più usato
@@ -537,7 +551,6 @@ const EconomiaPage = ({onBack}) => {
   }, [rawData]);
 
   const oggiIso = isoLocal();
-  const hoyKey  = madridDayKey(); // "oggi" come giorno di calendario Europe/Madrid
 
   // ── Periodo di CALENDARIO (Semana lun→lun / Mes 1→1 / Todo) ──────────
   // Un solo set di righe filtrate per il periodo attivo; da qui derivano
@@ -546,9 +559,10 @@ const EconomiaPage = ({onBack}) => {
   const periodRows = useMemo(() => {
     if (!Array.isArray(rawData)) return [];
     if (periodo !== "sett" && periodo !== "mese" && periodo !== "tutto") return [];
-    const range = periodRange(periodo, hoyKey);
+    // periodRef = giorno di riferimento navigabile (default oggi). "tutto" lo ignora.
+    const range = periodRange(periodo, periodRef);
     return rawData.filter(r => rowInPeriod(r, range));
-  }, [rawData, periodo, hoyKey]);
+  }, [rawData, periodo, periodRef]);
 
   // Stesso motore di "Caja del día": Fix A (postres esclusi), payment buckets,
   // consegne, prodotti con categoria normalizzata.
@@ -577,15 +591,73 @@ const EconomiaPage = ({onBack}) => {
       .slice(0,7);
   }, [a, serataData, oggiIso]);
 
+  // ── Navigazione storica (Día / Semana / Mes) ────────────────────────
+  // Nessun fetch: le frecce spostano SOLO una chiave locale; rawData ha già
+  // tutto lo storico e periodRows/ordenesCajaDia filtrano in locale.
+  // Limiti derivati DAI DATI: primo giorno presente in storico … oggi.
+  const navBounds = useMemo(() => {
+    const keys = (a?.giorniDettaglio || [])
+      .map(d => String(d?.data || "").slice(0, 10))
+      .filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k))
+      .sort();
+    return {
+      minData: keys[0] || null,
+      maxData: keys[keys.length - 1] || null,
+      today:   oggiIso,
+    };
+  }, [a, oggiIso]);
+
+  // DÍA/CAJA — passo di ±1 giorno di calendario, clamp [primo dato … oggi].
+  const diaSel = diaCajaSeleccionado || diasCaja[0]?.data || oggiIso;
+  const diaMin = navBounds.minData;
+  const diaMax = oggiIso; // oggi resta raggiungibile per la serata live in corso
+  const diaPrevDisabled = !diaMin || diaSel <= diaMin;
+  const diaNextDisabled = diaSel >= diaMax;
+  const goDiaPrev = () => { const k = addDaysKey(diaSel, -1); if (k && (!diaMin || k >= diaMin)) setDiaCajaSeleccionado(k); };
+  const goDiaNext = () => { const k = addDaysKey(diaSel,  1); if (k && k <= diaMax) setDiaCajaSeleccionado(k); };
+
+  // SEMANA — settimana di calendario che contiene periodRef; ‹ › = ∓7 giorni.
+  const semRange = periodRange("sett", periodRef);
+  const semPrevDisabled = !navBounds.minData || semRange.start <= navBounds.minData;
+  const semNextDisabled = semRange.end > navBounds.today; // la settimana dopo inizia oltre oggi
+  const goSemPrev = () => setPeriodRef(addDaysKey(semRange.start, -7));
+  const goSemNext = () => setPeriodRef(addDaysKey(semRange.start,  7));
+  const semLabel  = `${fmtDiaMesCorto(semRange.start)} – ${fmtDiaMesCorto(addDaysKey(semRange.end, -1))}`;
+
+  // MES — mese di calendario che contiene periodRef; ‹ › = ∓1 mese.
+  const mesRange = periodRange("mese", periodRef);
+  const mesPrevDisabled = !navBounds.minData || mesRange.start <= navBounds.minData;
+  const mesNextDisabled = mesRange.end > navBounds.today;  // il mese dopo inizia oltre oggi
+  const goMesPrev = () => setPeriodRef(addMonthsKey(mesRange.start, -1));
+  const goMesNext = () => setPeriodRef(addMonthsKey(mesRange.start,  1));
+  const mesLabel  = (() => {
+    const p = mesRange.start.split("-").map(Number);
+    return `${MESES_ES[p[1] - 1]} ${p[0]}`;
+  })();
+
+  // Stile freccia navigazione (riusa il pattern del vecchio selettore giorni).
+  const navArrowStyle = (disabled) => ({
+    background: "none", border: "none",
+    color: disabled ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.55)",
+    fontSize: 22, lineHeight: 1, padding: "2px 12px",
+    cursor: disabled ? "default" : "pointer", flexShrink: 0,
+  });
+
   useEffect(() => {
     if(periodo !== "serata") return;
-    if(diasCaja.length === 0) {
-      if(!diaCajaSeleccionado) setDiaCajaSeleccionado(oggiIso);
+    // Default alla prima apertura.
+    if(!diaCajaSeleccionado) {
+      setDiaCajaSeleccionado(diasCaja[0]?.data || oggiIso);
       return;
     }
-    const exists = diasCaja.some(d => d.data === diaCajaSeleccionado);
-    if(!exists) setDiaCajaSeleccionado(diasCaja[0].data);
-  }, [periodo, diasCaja, diaCajaSeleccionado, oggiIso]);
+    // Recupera SOLO da uno stato davvero invalido (chiave malformata o fuori dal
+    // range storico raggiungibile). Una data storica scelta con le frecce ‹ › che
+    // non è tra i 7 tile recenti è LEGITTIMA e va lasciata stare.
+    const k = String(diaCajaSeleccionado).slice(0, 10);
+    const valida = /^\d{4}-\d{2}-\d{2}$/.test(k);
+    const fuoriRange = (navBounds.minData && k < navBounds.minData) || k > oggiIso;
+    if(!valida || fuoriRange) setDiaCajaSeleccionado(diasCaja[0]?.data || oggiIso);
+  }, [periodo, diasCaja, diaCajaSeleccionado, oggiIso, navBounds.minData]);
 
   const ordenesCajaDia = useMemo(() => {
     const dia = diaCajaSeleccionado || diasCaja[0]?.data || oggiIso;
@@ -667,7 +739,9 @@ const EconomiaPage = ({onBack}) => {
   const delta = useMemo(() => {
     if (!a || !a.giorniDettaglio || a.giorniDettaglio.length === 0) return null;
     if (periodo !== "sett" && periodo !== "mese") return null;
-    const cur  = periodRange(periodo, hoyKey);
+    // Confronto vs il periodo di calendario immediatamente PRECEDENTE a quello
+    // mostrato (segue la navigazione: se guardo agosto, confronto con luglio).
+    const cur  = periodRange(periodo, periodRef);
     const prev = periodRange(periodo, addDaysKey(cur.start, -1));
     const sums = (range) => {
       let ven = 0, ord = 0;
@@ -686,7 +760,7 @@ const EconomiaPage = ({onBack}) => {
       ordini:  pct(act.ord, pr.ord),
       ticket:  pct(actTicket, prevTicket),
     };
-  }, [a, periodo, hoyKey]);
+  }, [a, periodo, periodRef]);
 
   // Messaggio contestuale quando il periodo selezionato non ha dati
   const periodoVuoto = a && incasso === 0 && a.incassoTot > 0;
@@ -1163,7 +1237,7 @@ const EconomiaPage = ({onBack}) => {
           {PERIODI.map(p=>{
             const attivo = periodo===p.id;
             return (
-              <button key={p.id} onClick={()=>{ setPeriodo(p.id); setGiornoFiltro(null); }} style={{
+              <button key={p.id} onClick={()=>{ setPeriodo(p.id); setGiornoFiltro(null); setPeriodRef(madridDayKey()); }} style={{
                 background: attivo
                   ? "linear-gradient(145deg,rgba(232,52,28,0.9),rgba(160,20,8,0.95))"
                   : "rgba(255,255,255,0.055)",
@@ -1178,6 +1252,32 @@ const EconomiaPage = ({onBack}) => {
           })}
         </div>
 
+        {/* Navigazione storica — Semana / Mes (Todo non ha frecce) */}
+        {(periodo === "sett" || periodo === "mese") && (
+          <div style={{
+            display:"flex", alignItems:"center", gap:6, marginBottom:14,
+            background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)",
+            borderRadius:14, padding:"6px 8px"
+          }}>
+            <button
+              aria-label="Período anterior"
+              onClick={periodo==="sett" ? goSemPrev : goMesPrev}
+              disabled={periodo==="sett" ? semPrevDisabled : mesPrevDisabled}
+              style={navArrowStyle(periodo==="sett" ? semPrevDisabled : mesPrevDisabled)}>‹</button>
+            <div style={{
+              flex:1, textAlign:"center", color:"#fff", fontSize:13, fontWeight:800,
+              letterSpacing:.2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"
+            }}>
+              {periodo==="sett" ? semLabel : mesLabel}
+            </div>
+            <button
+              aria-label="Período siguiente"
+              onClick={periodo==="sett" ? goSemNext : goMesNext}
+              disabled={periodo==="sett" ? semNextDisabled : mesNextDisabled}
+              style={navArrowStyle(periodo==="sett" ? semNextDisabled : mesNextDisabled)}>›</button>
+          </div>
+        )}
+
         {/* Selettore giorni — Caja del día */}
         {periodo === "serata" && (
           <div style={{
@@ -1185,11 +1285,20 @@ const EconomiaPage = ({onBack}) => {
             border:"1px solid rgba(255,255,255,0.08)",
             borderRadius:14, padding:"10px 12px", marginBottom:14
           }}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-              <div style={{color:"#fff",fontSize:14,fontWeight:900,flex:1}}>
+            <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:8}}>
+              <button
+                aria-label="Día anterior"
+                onClick={goDiaPrev} disabled={diaPrevDisabled}
+                style={navArrowStyle(diaPrevDisabled)}>‹</button>
+              <div style={{color:"#fff",fontSize:13,fontWeight:900,flex:1,textAlign:"center",
+                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                 Caja del día — {cajaFechaLabel}
               </div>
-              <div style={{color:"rgba(255,255,255,0.35)",fontSize:11,
+              <button
+                aria-label="Día siguiente"
+                onClick={goDiaNext} disabled={diaNextDisabled}
+                style={navArrowStyle(diaNextDisabled)}>›</button>
+              <div style={{color:"rgba(255,255,255,0.35)",fontSize:11,marginLeft:2,flexShrink:0,
                 fontFamily:"'DM Mono',monospace"}}>
                 {cajaDiaData.countOrdini || 0} ped.
               </div>
@@ -2170,8 +2279,8 @@ const EconomiaPage = ({onBack}) => {
             if (vista.contesto === "giorno") {
               return k === giornoFiltro;
             }
-            // aggregata → stesso periodo di calendario dei KPI
-            const range = periodRange(periodo, hoyKey);
+            // aggregata → stesso periodo di calendario (navigabile) dei KPI
+            const range = periodRange(periodo, periodRef);
             if (!range.start && !range.end) return true; // Todo
             return k >= range.start && k < range.end;
           });
