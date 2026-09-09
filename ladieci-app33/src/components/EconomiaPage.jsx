@@ -357,7 +357,7 @@ const buildCajaStats = (rows) => {
       if(!prodMap[it.n]) prodMap[it.n]={n:it.n,e:it.e||"🍕",q:0,incasso:0,cat:it.cat||"Pizzas"};
       prodMap[it.n].q+=q;
       prodMap[it.n].incasso+=p*q;
-      if(it.cat==="Bebidas") bevandeTot+=q; else pizzeTot+=q;
+      if(it.cat==="Bebidas") bevandeTot+=q; else if((it.cat||"Pizzas")==="Pizzas") pizzeTot+=q;
     });
   });
   Object.keys(pagamenti).forEach(k => { pagamenti[k].incasso = Math.round(pagamenti[k].incasso*100)/100; });
@@ -624,7 +624,7 @@ const EconomiaPage = ({onBack}) => {
         const q=parseInt(it.q)||1, p=parseFloat(it.p)||0;
         if(!prodMap[it.n]) prodMap[it.n]={n:it.n,e:it.e||"🍕",q:0,incasso:0,cat:it.cat||"Pizzas"};
         prodMap[it.n].q+=q; prodMap[it.n].incasso+=p*q;
-        if(it.cat==="Bebidas") bevandeTot+=q; else pizzeTot+=q;
+        if(it.cat==="Bebidas") bevandeTot+=q; else if((it.cat||"Pizzas")==="Pizzas") pizzeTot+=q;
       });
     });
     const prodotti=Object.values(prodMap).sort((a,b)=>b.q-a.q);
@@ -690,7 +690,7 @@ const EconomiaPage = ({onBack}) => {
         delivery:  cajaDiaData.consegne?.DOMICILIO || 0,
         local:     cajaDiaData.consegne?.RITIRO    || 0,
         pagamenti: cajaDiaData.pagamenti,
-        prodottiPizzas:  prodotti.filter(p => p.cat !== "Bebidas"),
+        prodottiPizzas:  prodotti.filter(p => p.cat === "Pizzas"),
         prodottiBebidas: prodotti.filter(p => p.cat === "Bebidas"),
         canali:    cajaDiaData.canali || {},
       };
@@ -709,14 +709,14 @@ const EconomiaPage = ({onBack}) => {
         delivery:  aGiorno.consegne?.DOMICILIO || 0,
         local:     aGiorno.consegne?.RITIRO    || 0,
         pagamenti: aGiorno.pagamenti,
-        prodottiPizzas:  prodotti.filter(p => p.cat !== "Bebidas"),
+        prodottiPizzas:  prodotti.filter(p => p.cat === "Pizzas"),
         prodottiBebidas: prodotti.filter(p => p.cat === "Bebidas"),
         canali:    aGiorno.canali || {},
       };
     }
     // 3) Aggregata (Semana/Mes/Todo)
     if (a) {
-      const pizze   = (a.topProdotti||[]).filter(p => p.cat !== "Bebidas");
+      const pizze   = (a.topProdotti||[]).filter(p => p.cat === "Pizzas");
       const bevande = (a.topProdotti||[]).filter(p => p.cat === "Bebidas");
       const pag = periodo==="sett" ? a.pagamentiSett
                 : periodo==="mese" ? a.pagamentiMese
