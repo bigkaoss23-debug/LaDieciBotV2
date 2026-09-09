@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, memo } from 'react';
+import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import { C, LOGO_RED_SRC, calcTotale as calcTotaleHelper } from '../constants';
 import { api, sb } from '../api';
 import { periodRange, rowInPeriod, madridDayKey, addDaysKey, addMonthsKey } from '../utils/calendarPeriods';
@@ -459,6 +459,10 @@ const EconomiaPage = ({onBack}) => {
   const [serataLoad,   setSerataLoad]   = useState(true);
   const [serataError,  setSerataError]  = useState(null);
   const [diaCajaSeleccionado, setDiaCajaSeleccionado] = useState(null);
+  // Risoluzione iniziale del giorno di Caja: eseguita UNA sola volta per montaggio,
+  // appena Economía ha storico + risposta serata. Dopo, l'utente naviga libero e
+  // nessun re-render / cambio periodo / update rawData la rifà.
+  const initialResolved = useRef(false);
   // Giorno di riferimento per la navigazione storica di Semana/Mes.
   // Semana = settimana di calendario che CONTIENE periodRef; Mes = mese che lo contiene.
   // Default: oggi (Madrid) → settimana/mese correnti, come prima. Cambiare pillola periodo
@@ -645,19 +649,32 @@ const EconomiaPage = ({onBack}) => {
 
   useEffect(() => {
     if(periodo !== "serata") return;
-    // Default alla prima apertura.
-    if(!diaCajaSeleccionado) {
-      setDiaCajaSeleccionado(diasCaja[0]?.data || oggiIso);
+    const ultimoConDati = navBounds.maxData || diasCaja[0]?.data || oggiIso;
+
+    // ── Risoluzione iniziale — UNA SOLA VOLTA, appena i dati ci sono ──────
+    // Se oggi ha già un servizio reale → apri su oggi; altrimenti apri
+    // sull'ultimo giorno storico con ordini (es. dataset: 09/09 vuoto → 06/09).
+    // Nessun popup, nessun messaggio, nessun cambio di Semana/Mes/Todo.
+    if(!initialResolved.current) {
+      if(!rawData || serataLoad) return; // aspetta storico + risposta serata (anche vuota)
+      const righe = Array.isArray(rawData) ? rawData : [];
+      const oggiHaDati =
+        righe.some(r => fechaKeyOf(r) === oggiIso) ||
+        (Array.isArray(serataData?.ordini) && serataData.ordini.length > 0);
+      initialResolved.current = true;
+      setDiaCajaSeleccionado(oggiHaDati ? oggiIso : ultimoConDati);
       return;
     }
-    // Recupera SOLO da uno stato davvero invalido (chiave malformata o fuori dal
-    // range storico raggiungibile). Una data storica scelta con le frecce ‹ › che
-    // non è tra i 7 tile recenti è LEGITTIMA e va lasciata stare.
-    const k = String(diaCajaSeleccionado).slice(0, 10);
+
+    // ── Dopo la risoluzione: recupera SOLO da uno stato davvero invalido ──
+    // (chiave malformata o fuori dal range storico raggiungibile). Una data
+    // storica scelta con le frecce ‹ › che non è tra i 7 tile recenti è
+    // LEGITTIMA e va lasciata stare — niente re-snap.
+    const k = String(diaCajaSeleccionado || "").slice(0, 10);
     const valida = /^\d{4}-\d{2}-\d{2}$/.test(k);
     const fuoriRange = (navBounds.minData && k < navBounds.minData) || k > oggiIso;
-    if(!valida || fuoriRange) setDiaCajaSeleccionado(diasCaja[0]?.data || oggiIso);
-  }, [periodo, diasCaja, diaCajaSeleccionado, oggiIso, navBounds.minData]);
+    if(!valida || fuoriRange) setDiaCajaSeleccionado(ultimoConDati);
+  }, [periodo, rawData, serataLoad, serataData, diasCaja, diaCajaSeleccionado, oggiIso, navBounds.minData, navBounds.maxData]);
 
   const ordenesCajaDia = useMemo(() => {
     const dia = diaCajaSeleccionado || diasCaja[0]?.data || oggiIso;
