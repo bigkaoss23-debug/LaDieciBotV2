@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { C, LOGO_RED_SRC, calcTotale as calcTotaleHelper } from '../constants';
 import { api, sb } from '../api';
 
@@ -2402,4 +2402,15 @@ const EconomiaPage = ({onBack}) => {
 
 // ─── ROOT ─────────────────────────────────────────────
 
-export default EconomiaPage;
+// FIX FLICKER ECONOMIA — memo.
+// EconomiaPage definisce al proprio interno i sotto-componenti di presentazione
+// (Modal, RigaDato, ModalSection, BloccoCaja, TicketList, StatCard, KpiCard):
+// ad ogni render ne nascono nuove identita' di funzione, quindi React considera
+// gli elementi di tipo diverso e SMONTA/RIMONTA il loro sottoalbero DOM.
+// App re-renderizza ad ogni loadAll() (realtime + safety poll ogni ~10s) e
+// Economia, che da App riceve solo onBack, veniva ridisegnata da zero: nodi DOM
+// sostituiti e animazione "fadeIn" riavviata = flicker periodico.
+// memo + onBack stabile (useCallback in App.jsx) disaccoppiano Economia dai
+// re-render di App. I dati di Economia restano invariati: non arrivano da App
+// ma dai suoi fetch (getStorico/getSerata) e dal bottone di refresh.
+export default memo(EconomiaPage);

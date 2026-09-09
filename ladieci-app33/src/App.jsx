@@ -64,6 +64,10 @@ export default function App() {
     }
   }, []);
 
+  // Identita' stabile: EconomiaPage e' memo-izzata e onBack e' la sua unica prop.
+  // Una arrow inline qui la renderebbe nuova ad ogni render di App, annullando memo.
+  const goHome = useCallback(() => setScreen("home"), []);
+
   const withPin = (action) => {
     if (pinUnlocked && auth.isAuthenticated()) { action(); return; }
     setPendingAction(() => action);
@@ -382,7 +386,7 @@ export default function App() {
           waMsgs={waMsgs} setWaMsgs={setWaMsgs} notify={notify} syncStatus={syncStatus}
           convConfermata={convConfermata}
           pendingPatches={pendingPatches}/>}
-      {screen==="economia" && <EconomiaPage onBack={()=>setScreen("home")}/>}
+      {screen==="economia" && <EconomiaPage onBack={goHome}/>}
       {screen==="repartidor" && <RepartidorPage
           ordenes={ordenes}
           onBack={startedAtRepartidor.current ? null : ()=>setScreen("home")}
