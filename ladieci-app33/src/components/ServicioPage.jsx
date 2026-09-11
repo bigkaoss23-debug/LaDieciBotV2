@@ -14,6 +14,7 @@ import { BACKEND_BASE_URL } from '../utils/backendBase';
 // N-5 — an order write can now be refused for two independent reasons (terminal state,
 // or a paid order whose economic basis this edit would move). One resolver, one message.
 import { parseOrderWriteRefusal } from '../utils/orderModifyError';
+import { mergeAddedLines } from '../menu/canonicalLineEdit';
 import { isNoOpenServiceSession, NO_OPEN_SERVICE_SESSION_CODE } from '../utils/serviceSessionError';
 import Suoni from '../sounds';
 import TabWA from './wa/TabWA';
@@ -789,15 +790,9 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       const itemsEsistenti = ordenAttuale.items || [];
       // replace=true (modifica_complessa): sostituisce l'ordine
       // replace=false (aggiunta): merge classico
-      const merged = replace ? [...(itemsNuevos||[])] : (() => {
-        const m = [...itemsEsistenti];
-        (itemsNuevos||[]).forEach(ni => {
-          const ex = m.find(x => x.n === ni.n);
-          if (ex) ex.q = (Number(ex.q)||1) + (Number(ni.q)||1);
-          else m.push(ni);
-        });
-        return m;
-      })();
+      // NF-1 — an addition bumps the canonical quantity of an identical plain row (never an
+      // in-place `q` on the saved row, never a row with different extras/notes/price).
+      const merged = replace ? [...(itemsNuevos||[])] : mergeAddedLines(itemsEsistenti, itemsNuevos);
       const res = await api.post({ action:"updateOrden", id:ordenRef, items:merged, nota:ordenAttuale.nota||"", hora:ordenAttuale.hora||"" });
       if (res && res.success !== false) {
         setOrdenes(prev => prev.map(o => o.id === ordenRef ? {...o, items: merged} : o));

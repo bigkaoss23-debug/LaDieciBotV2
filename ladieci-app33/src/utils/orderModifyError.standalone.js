@@ -251,6 +251,76 @@ check("combined: the three messages are pairwise distinct (no copy collision)",
     parseOrderWriteRefusal({ success: false, error: ORDER_ECONOMIC_BASIS_LOCKED }).message,
   ]).size === 3);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// NF-1 / NF-2 — parseOrderItemPayloadRefusal + its wiring into the combined resolver.
+// Same discipline and shape as the N-5 / E-1 sections above.
+// ═══════════════════════════════════════════════════════════════════════════
+const {
+  parseOrderItemPayloadRefusal,
+  ORDER_ITEM_PAYLOAD_INCONSISTENT,
+  ORDER_ITEM_PAYLOAD_INCONSISTENT_MESSAGE,
+} = require("./orderModifyError");
+
+console.log("");
+console.log("── NF item-payload refusal ──");
+
+check("NF: null → not blocked",      eqEco(parseOrderItemPayloadRefusal(null), NO_ECO));
+check("NF: undefined → not blocked", eqEco(parseOrderItemPayloadRefusal(undefined), NO_ECO));
+check("NF: string → not blocked",    eqEco(parseOrderItemPayloadRefusal(ORDER_ITEM_PAYLOAD_INCONSISTENT), NO_ECO));
+check("NF: array → not blocked",     eqEco(parseOrderItemPayloadRefusal([{ error: ORDER_ITEM_PAYLOAD_INCONSISTENT }]), NO_ECO));
+check("NF: {} → not blocked",        eqEco(parseOrderItemPayloadRefusal({}), NO_ECO));
+check("NF: `code` alone is enough → local Spanish copy",
+  eqEco(parseOrderItemPayloadRefusal({ code: ORDER_ITEM_PAYLOAD_INCONSISTENT }),
+        { blocked: true, message: ORDER_ITEM_PAYLOAD_INCONSISTENT_MESSAGE }));
+check("NF: blank backend message falls back rather than showing nothing",
+  eqEco(parseOrderItemPayloadRefusal({ error: ORDER_ITEM_PAYLOAD_INCONSISTENT, message: "  " }),
+        { blocked: true, message: ORDER_ITEM_PAYLOAD_INCONSISTENT_MESSAGE }));
+check("NF: success:true is never a refusal",
+  eqEco(parseOrderItemPayloadRefusal({ success: true, code: ORDER_ITEM_PAYLOAD_INCONSISTENT }), NO_ECO));
+check("NF: an E-1 refusal is NOT an item-payload refusal",
+  eqEco(parseOrderItemPayloadRefusal({ success: false, error: ORDER_ECONOMIC_BASIS_LOCKED }), NO_ECO));
+check("NF: an unrelated error is not a refusal",
+  eqEco(parseOrderItemPayloadRefusal({ success: false, error: "otro" }), NO_ECO));
+{
+  const input = { success: false, code: ORDER_ITEM_PAYLOAD_INCONSISTENT, message: "x" };
+  const snapshot = JSON.stringify(input);
+  parseOrderItemPayloadRefusal(input);
+  check("NF: non muta input object", JSON.stringify(input) === snapshot);
+}
+
+console.log("");
+console.log("── NF item-payload refusal wired into the combined resolver ──");
+{
+  // Byte-for-byte the object the backend's orderItemPayloadInconsistentRefusal returns.
+  const realBackendRefusal = {
+    success: false, error: ORDER_ITEM_PAYLOAD_INCONSISTENT, code: ORDER_ITEM_PAYLOAD_INCONSISTENT, id: "#999008",
+    field: "p", detail: "item #1 ('Il Tulipano Nero'): p: 15 != 14.5 (baseUnitPrice 14.5 + extras 0)",
+    message: "No se ha podido actualizar el pedido. Revisa los productos y extras.",
+  };
+  const parsed = parseOrderWriteRefusal(realBackendRefusal);
+  check("false-success regression: an inconsistent line refusal is never reported as '✏️ Pedido actualizado'",
+    parsed.blocked === true && parsed.message === "No se ha podido actualizar el pedido. Revisa los productos y extras.");
+  check("combined: an item-payload refusal has no estado", parsed.estado === null);
+}
+check("combined: N-5 unaffected by the fourth parser",
+  eqEco(parseOrderWriteRefusal({ success: false, error: PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN }),
+        { blocked: true, message: PAID_ORDER_ECONOMIC_MESSAGE }));
+check("combined: E-1 unaffected by the fourth parser",
+  eqEco(parseOrderWriteRefusal({ success: false, error: ORDER_ECONOMIC_BASIS_LOCKED }),
+        { blocked: true, message: ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE }));
+check("combined: terminal state unaffected by the fourth parser",
+  eqEco(parseOrderWriteRefusal({ success: false, error: "estado_terminal", estado: "RETIRADO" }),
+        { blocked: true, message: "Pedido en RETIRADO — no se puede modificar" }));
+check("combined: {success:true} still passes through unblocked",
+  eqEco(parseOrderWriteRefusal({ success: true }), NO_ECO));
+check("combined: the four messages are pairwise distinct (no copy collision)",
+  new Set([
+    parseOrderWriteRefusal({ success: false, error: "estado_terminal", estado: "RETIRADO" }).message,
+    parseOrderWriteRefusal({ success: false, error: PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN }).message,
+    parseOrderWriteRefusal({ success: false, error: ORDER_ECONOMIC_BASIS_LOCKED }).message,
+    parseOrderWriteRefusal({ success: false, error: ORDER_ITEM_PAYLOAD_INCONSISTENT }).message,
+  ]).size === 4);
+
 console.log("");
 console.log("Totale: " + (pass + fail) + " | PASS: " + pass + " | FAIL: " + fail);
 process.exit(fail === 0 ? 0 : 1);

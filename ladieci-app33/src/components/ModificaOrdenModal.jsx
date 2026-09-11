@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef, useReducer } from 'react';
 import { C, tot, useWidth, EXTRAS_DULCES, calcTotale, pizzaLabel, esDulce, findExtra } from '../constants';
 import { useMenuData } from '../menu/useMenuData';
+// NF-1 / NF-2 — rows are edited through the canonical line helpers (quantity, structured
+// extras and price move together), never by changing only the q/p/sub mirrors.
+import { applyLineQuantity, itemSignature } from '../menu/itemSignature';
+import { lineQuantity, lineExtras, addLineExtra, removeLineExtra, setLineSub } from '../menu/canonicalLineEdit';
+import { bareItemOf } from '../order/useOrderCart';
 // NB: canEditExtras is deliberately NOT used here. This modal has never gated the
 // extras button by product type (it renders for every item), and introducing that gate
 // would be a behaviour change beyond this port's scope.
@@ -20,11 +25,15 @@ import { formatOrderNumber } from '../utils/orderNumber';
 
 const ModificaOrdenModal = ({orden, onClose, onSave}) => {
   // Normalizza items: può essere array, stringa JSON, o undefined
+  // NF-1 — every row starts with q, quantity and lineTotal in step, through the single
+  // canonical quantity updater (same contract as menu/__tests__/modifyOrderContract.test.mjs).
+  const toEditableLine = (i) =>
+    applyLineQuantity({...i, p:parseFloat(i.p||0)}, parseInt(i.q)||parseInt(i.quantity)||1);
   const parseItems = (raw) => {
     if(!raw) return [];
-    if(Array.isArray(raw)) return raw.map(i=>({...i, p:parseFloat(i.p||0), q:parseInt(i.q)||1}));
+    if(Array.isArray(raw)) return raw.map(toEditableLine);
     if(typeof raw === "string") {
-      try { const arr = JSON.parse(raw); return Array.isArray(arr) ? arr.map(i=>({...i, p:parseFloat(i.p||0), q:parseInt(i.q)||1})) : []; }
+      try { const arr = JSON.parse(raw); return Array.isArray(arr) ? arr.map(toEditableLine) : []; }
       catch(e){ return []; }
     }
     return [];
@@ -150,13 +159,22 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
   const w = useWidth();
   const cols = w >= 768 ? 4 : 2;
 
+  // NF-1 — a catalogue tap adds one unit to the row with the SAME complete configuration
+  // as a bare catalogue line (menu/itemSignature.js, the rule the order pickers use); a
+  // configured row of the same product is left untouched and a new row is added instead.
   const tap = (p) => setItems(prev => {
-    const ex = prev.find(i=>i.id===p.id);
-    if(ex) return prev.map(i=>i.id===p.id?{...i,q:i.q+1}:i);
-    return [...prev,{...p,q:1}];
+    const bare = bareItemOf(p);
+    const sig = itemSignature(bare);
+    const at = prev.findIndex(i => itemSignature(i) === sig);
+    if (at >= 0) return prev.map((i, j) => j === at ? applyLineQuantity(i, lineQuantity(i) + 1) : i);
+    return [...prev, applyLineQuantity(bare, 1)];
   });
-  const adj = (id,d) => setItems(prev=>
-    prev.map(i=>i.id===id?{...i,q:Math.max(0,i.q+d)}:i).filter(i=>i.q>0));
+  // NF-1 — rows are addressed by position, like every other row control in this modal:
+  // two rows of the same product stay two rows, and a row without a product id stays
+  // editable. The quantity moves through the canonical updater (q, quantity, lineTotal).
+  const adj = (idx, d) => setItems(prev =>
+    prev.map((i, j) => j === idx ? applyLineQuantity(i, lineQuantity(i) + d) : i)
+      .filter(i => lineQuantity(i) > 0));
   // Totale = sum(items) + delivery_fee (per DOMICILIO). Sorgente unica: calcTotale.
   const total = calcTotale(items, orden.tipo_consegna).toFixed(2);
 
@@ -249,22 +267,21 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                 {items.map((it,idx)=>{
                   const itEmoji = (it.e && String(it.e).length<=4) ? it.e : "🍕";
                   const itP = parseFloat(it.p)||0;
-                  const itQ = parseInt(it.q)||1;
-                  const itId = it.id ?? idx;
+                  const itQ = lineQuantity(it);
                   return (
-                  <div key={itId} style={{marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${C.fumo}`}}>
+                  <div key={`${idx}:${it.id ?? ""}`} style={{marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${C.fumo}`}}>
                     {/* Riga qty */}
                     <div style={{display:"flex",alignItems:"center",gap:7}}>
                       <span style={{fontSize:15}}>{itEmoji}</span>
                       <span style={{color:C.bianco,fontSize:13,flex:1,
                         overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.n}</span>
-                      <button onClick={()=>adj(itId,-1)} style={{background:C.fumo,
+                      <button onClick={()=>adj(idx,-1)} style={{background:C.fumo,
                         color:C.bianco,border:"none",borderRadius:6,width:26,height:26,
                         fontSize:15,fontWeight:700,display:"flex",alignItems:"center",
                         justifyContent:"center"}}>−</button>
                       <span style={{color:C.bianco,fontWeight:800,minWidth:18,
                         textAlign:"center",fontFamily:"'DM Mono',monospace"}}>{itQ}</span>
-                      <button onClick={()=>adj(itId,+1)} style={{background:C.fumo,
+                      <button onClick={()=>adj(idx,+1)} style={{background:C.fumo,
                         color:C.bianco,border:"none",borderRadius:6,width:26,height:26,
                         fontSize:15,fontWeight:700,display:"flex",alignItems:"center",
                         justifyContent:"center"}}>+</button>
@@ -274,7 +291,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                     {/* Campo variazioni */}
                     <input
                       value={it.sub||""}
-                      onChange={e=>setItems(prev=>prev.map((x,j)=>j===idx?{...x,sub:e.target.value}:x))}
+                      onChange={e=>setItems(prev=>prev.map((x,j)=>j===idx?setLineSub(x, e.target.value, resolveExtra):x))}
                       placeholder="Variaciones (sin cebolla, extra picante...)"
                       style={{width:"100%",marginTop:5,background:"rgba(232,52,28,0.08)",
                         border:`1px solid ${it.sub?"#E8341C88":C.fumo}`,
@@ -284,13 +301,12 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                     />
                     {/* Riepilogo extras */}
                     {(()=>{
-                      const matches=(it.sub||"").match(/\+[^,]+/g)||[];
-                      const counts={};
-                      matches.forEach(m=>{const name=m.replace(/^\+/,"").trim();counts[name]=(counts[name]||0)+1;});
-                      const extras=Object.entries(counts).map(([name,qty])=>{
-                        const ing=resolveExtra(name);
-                        return{name,qty,prezzo:ing?Math.round(ing.prezzo*qty*100)/100:0,e:ing?ing.e:"➕"};
-                      });
+                      // NF-2 — the summary lists the STRUCTURED extras the line is charged for.
+                      const extras=lineExtras(it, resolveExtra).map(ex=>({
+                        name:ex.name, qty:ex.quantity,
+                        prezzo:Math.round(ex.price*ex.quantity*100)/100,
+                        e:ex.emoji||resolveExtra(ex.name)?.e||"➕"
+                      }));
                       if(!extras.length) return null;
                       return(
                         <div style={{marginTop:4,background:"rgba(168,85,247,0.08)",borderRadius:7,
@@ -302,18 +318,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                               <span style={{color:"#ccc",flex:1}}>{ex.e} {ex.qty}× {ex.name}</span>
                               <span style={{color:"#a855f7",fontWeight:700,fontFamily:"'DM Mono',monospace"}}>+{ex.prezzo.toFixed(2)}€</span>
                               <button onClick={()=>{
-                                const ing=resolveExtra(ex.name);
-                                setItems(prev=>prev.map((x,j)=>{
-                                  if(j!==idx) return x;
-                                  const parts=(x.sub||"").split(",").map(s=>s.trim()).filter(Boolean);
-                                  let rimosso=false;
-                                  const newParts=parts.filter(p=>{
-                                    if(!rimosso&&p==="+"+ex.name){rimosso=true;return false;}
-                                    return true;
-                                  });
-                                  const newP=ing?Math.round((x.p-ing.prezzo)*100)/100:x.p;
-                                  return{...x,sub:newParts.join(", "),p:Math.max(0,newP)};
-                                }));
+                                setItems(prev=>prev.map((x,j)=>j===idx?removeLineExtra(x, ex.name, resolveExtra):x));
                               }} style={{background:"rgba(232,52,28,0.15)",border:"1px solid rgba(232,52,28,0.4)",
                                 borderRadius:5,color:"#E8341C",fontSize:10,fontWeight:800,
                                 padding:"2px 6px",cursor:"pointer",flexShrink:0}}>✕</button>
@@ -341,11 +346,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                           ).filter(ing=>ing.prezzo>0).map(ing=>(
                           <button key={ing.id}
                             onClick={()=>{
-                              setItems(prev=>prev.map((x,j)=>j===idx?{
-                                ...x,
-                                p:Math.round((x.p+ing.prezzo)*100)/100,
-                                sub:[x.sub,`+${ing.n}`].filter(Boolean).join(", ")
-                              }:x));
+                              setItems(prev=>prev.map((x,j)=>j===idx?addLineExtra(x, ing, resolveExtra):x));
                               setShowIngPanel(null);
                             }}
                             style={{background:"rgba(168,85,247,0.1)",border:"1px solid rgba(168,85,247,0.35)",

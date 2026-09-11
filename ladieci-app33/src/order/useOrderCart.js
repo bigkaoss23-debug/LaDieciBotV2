@@ -8,6 +8,19 @@ import { itemSignature, consolidateCart } from '../menu/itemSignature';
 // emitted draft) uses the exact same rule addRaw's own callers rely on.
 export const isCustomRawItem = (item) => typeof item?.id === "string" && item.id.startsWith("custom_");
 
+// The unconfigured (no extras/removals/note) working-shape item a bare
+// catalogue tap produces -- shared by increment/decrementBare so both sides
+// of the catalogue card's +/- always target the exact same line via its
+// itemSignature, never a hand-rolled "no sub" heuristic that could drift
+// from the one true signature rule (menu/itemSignature.js). Module-level so the
+// order editor (ModificaOrdenModal) targets a catalogue tap by the same rule.
+export const bareItemOf = (p) => ({
+  ...p, q: 1, sub: "",
+  classicName: p.sub || "",
+  fantasyName: p.n || "",
+  baseUnitPrice: Number(p.p) || 0,
+});
+
 /**
  * useOrderCart — cart logic extracted from ItemPickerModal (S2-7D4C/D era), so
  * it can be shared by any consumer that needs the same uid-keyed working cart
@@ -30,18 +43,6 @@ export function useOrderCart({ MENU, INGREDIENTI }) {
     (INGREDIENTI || []).find(g => g.n === name) || findExtra(name);
 
   const descrizioneDi = (item) => (MENU.find(m => String(m.id) === String(item.id)) || {}).sub || "";
-
-  // The unconfigured (no extras/removals/note) working-shape item a bare
-  // catalogue tap produces -- shared by increment/decrementBare so both sides
-  // of the catalogue card's +/- always target the exact same line via its
-  // itemSignature, never a hand-rolled "no sub" heuristic that could drift
-  // from the one true signature rule (menu/itemSignature.js).
-  const bareItemOf = (p) => ({
-    ...p, q: 1, sub: "",
-    classicName: p.sub || "",
-    fantasyName: p.n || "",
-    baseUnitPrice: Number(p.p) || 0,
-  });
 
   // CANONICAL_MANUAL_PICKER_FINAL_CORRECTION — Goal 5: a tap merges into the
   // existing line with the SAME complete signature (same product, same

@@ -84,10 +84,33 @@ function parseEconomicBasisLockRefusal(res) {
   return { blocked: true, message };
 }
 
-// The one resolver the UI calls after an order write. There are now THREE independent
+// NF-1 / NF-2 — a FOURTH independent reason, sibling of the three above and built on the
+// same pattern. The backend refuses an edited line whose working mirrors (q / p / sub) and
+// saved canonical fields (quantity / finalUnitPrice / extras[]) cannot be reconciled,
+// instead of silently keeping one of them. Nothing economic is locked here — the line is
+// just inconsistent — so it gets its own sentence.
+const ORDER_ITEM_PAYLOAD_INCONSISTENT = "ORDER_ITEM_PAYLOAD_INCONSISTENT";
+const ORDER_ITEM_PAYLOAD_INCONSISTENT_MESSAGE =
+  "No se ha podido actualizar el pedido. Revisa los productos y extras.";
+
+function parseOrderItemPayloadRefusal(res) {
+  if (res == null || typeof res !== "object" || Array.isArray(res)) {
+    return { blocked: false, message: "" };
+  }
+  if (res.success === true) return { blocked: false, message: "" };
+  const hit = res.error === ORDER_ITEM_PAYLOAD_INCONSISTENT
+    || res.code === ORDER_ITEM_PAYLOAD_INCONSISTENT;
+  if (!hit) return { blocked: false, message: "" };
+  const message = typeof res.message === "string" && res.message.trim()
+    ? res.message.trim()
+    : ORDER_ITEM_PAYLOAD_INCONSISTENT_MESSAGE;
+  return { blocked: true, message };
+}
+
+// The one resolver the UI calls after an order write. There are now FOUR independent
 // reasons the backend can refuse, and every call site wants the same thing: "was it
 // refused, and what do I tell the operator?". Terminal state is checked first only because
-// it is the older, broadest refusal; none of the three can both be true for a single
+// it is the older, broadest refusal; no two of them can both be true for a single
 // response.
 function parseOrderWriteRefusal(res) {
   const terminal = parseEstadoTerminalError(res);
@@ -96,6 +119,8 @@ function parseOrderWriteRefusal(res) {
   if (economic.blocked) return { blocked: true, message: economic.message, estado: null };
   const basisLocked = parseEconomicBasisLockRefusal(res);
   if (basisLocked.blocked) return { blocked: true, message: basisLocked.message, estado: null };
+  const itemPayload = parseOrderItemPayloadRefusal(res);
+  if (itemPayload.blocked) return { blocked: true, message: itemPayload.message, estado: null };
   return { blocked: false, message: "", estado: null };
 }
 
@@ -103,9 +128,12 @@ module.exports = {
   parseEstadoTerminalError,
   parsePaidOrderEconomicRefusal,
   parseEconomicBasisLockRefusal,
+  parseOrderItemPayloadRefusal,
   parseOrderWriteRefusal,
   PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN,
   PAID_ORDER_ECONOMIC_MESSAGE,
   ORDER_ECONOMIC_BASIS_LOCKED,
   ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE,
+  ORDER_ITEM_PAYLOAD_INCONSISTENT,
+  ORDER_ITEM_PAYLOAD_INCONSISTENT_MESSAGE,
 };
