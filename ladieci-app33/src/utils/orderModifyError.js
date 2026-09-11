@@ -60,22 +60,52 @@ function parsePaidOrderEconomicRefusal(res) {
   return { blocked: true, message };
 }
 
-// The one resolver the UI calls after an order write. There are now two independent
+// E-1 (migration 126, Economic Writer Hardening V1) — a THIRD independent reason an edit
+// can be refused, a sibling of the N-5 check above and following the exact same pattern.
+// The DB refuses any edit that moves the economic basis (total, items, delivery fee,
+// discount) of a Mesa order, an order that already carries a commercial adjustment, or an
+// already cancelled/annulled order — none of which is "a payment already exists" (N-5), so
+// it gets its own sentence rather than reusing PAID_ORDER_ECONOMIC_MESSAGE.
+const ORDER_ECONOMIC_BASIS_LOCKED = "ORDER_ECONOMIC_BASIS_LOCKED";
+const ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE =
+  "No se puede modificar el importe de este pedido.";
+
+function parseEconomicBasisLockRefusal(res) {
+  if (res == null || typeof res !== "object" || Array.isArray(res)) {
+    return { blocked: false, message: "" };
+  }
+  if (res.success === true) return { blocked: false, message: "" };
+  const hit = res.error === ORDER_ECONOMIC_BASIS_LOCKED
+    || res.code === ORDER_ECONOMIC_BASIS_LOCKED;
+  if (!hit) return { blocked: false, message: "" };
+  const message = typeof res.message === "string" && res.message.trim()
+    ? res.message.trim()
+    : ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE;
+  return { blocked: true, message };
+}
+
+// The one resolver the UI calls after an order write. There are now THREE independent
 // reasons the backend can refuse, and every call site wants the same thing: "was it
 // refused, and what do I tell the operator?". Terminal state is checked first only because
-// it is the older, broader refusal; the two cannot both be true for a single response.
+// it is the older, broadest refusal; none of the three can both be true for a single
+// response.
 function parseOrderWriteRefusal(res) {
   const terminal = parseEstadoTerminalError(res);
   if (terminal.blocked) return { blocked: true, message: terminal.message, estado: terminal.estado };
   const economic = parsePaidOrderEconomicRefusal(res);
   if (economic.blocked) return { blocked: true, message: economic.message, estado: null };
+  const basisLocked = parseEconomicBasisLockRefusal(res);
+  if (basisLocked.blocked) return { blocked: true, message: basisLocked.message, estado: null };
   return { blocked: false, message: "", estado: null };
 }
 
 module.exports = {
   parseEstadoTerminalError,
   parsePaidOrderEconomicRefusal,
+  parseEconomicBasisLockRefusal,
   parseOrderWriteRefusal,
   PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN,
   PAID_ORDER_ECONOMIC_MESSAGE,
+  ORDER_ECONOMIC_BASIS_LOCKED,
+  ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE,
 };

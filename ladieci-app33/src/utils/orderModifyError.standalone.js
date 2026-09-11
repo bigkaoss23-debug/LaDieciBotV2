@@ -81,9 +81,12 @@ check("campi extra non disturbano il parse",
 // ═══════════════════════════════════════════════════════════════════════════
 const {
   parsePaidOrderEconomicRefusal,
+  parseEconomicBasisLockRefusal,
   parseOrderWriteRefusal,
   PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN,
   PAID_ORDER_ECONOMIC_MESSAGE,
+  ORDER_ECONOMIC_BASIS_LOCKED,
+  ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE,
 } = require("./orderModifyError");
 
 const eqEco = (got, want) => got && got.blocked === want.blocked && got.message === want.message;
@@ -149,6 +152,105 @@ check("combined: terminal-state result still exposes `estado` for existing calle
 check("combined: an economic refusal has no estado (it is not a state problem)",
   parseOrderWriteRefusal({ success: false, error: PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN }).estado === null);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// E-1 (migration 126, Economic Writer Hardening V1) — parseEconomicBasisLockRefusal +
+// its wiring into the combined parseOrderWriteRefusal. Same discipline, same shape as
+// the N-5 section above (this parser is a sibling of parsePaidOrderEconomicRefusal,
+// built on the identical pattern).
+// ═══════════════════════════════════════════════════════════════════════════
 console.log("");
-console.log("Totale N-5 incluso: " + (pass + fail) + " | PASS: " + pass + " | FAIL: " + fail);
+console.log("── E-1 economic-basis-lock refusal ──");
+
+// ---- 1) degenerate input --------------------------------------------------
+check("E1: null → not blocked",      eqEco(parseEconomicBasisLockRefusal(null), NO_ECO));
+check("E1: undefined → not blocked", eqEco(parseEconomicBasisLockRefusal(undefined), NO_ECO));
+check("E1: string → not blocked",    eqEco(parseEconomicBasisLockRefusal(ORDER_ECONOMIC_BASIS_LOCKED), NO_ECO));
+check("E1: array → not blocked",     eqEco(parseEconomicBasisLockRefusal([{ error: ORDER_ECONOMIC_BASIS_LOCKED }]), NO_ECO));
+check("E1: {} → not blocked",        eqEco(parseEconomicBasisLockRefusal({}), NO_ECO));
+
+// ---- 2) the real backend shapes -------------------------------------------
+check("E1: `error` carries the code → blocked, backend message wins",
+  eqEco(parseEconomicBasisLockRefusal({ success: false, error: ORDER_ECONOMIC_BASIS_LOCKED, message: "Mensaje del backend." }),
+        { blocked: true, message: "Mensaje del backend." }));
+check("E1: `code` alone is enough (both conventions accepted, same as N-5)",
+  eqEco(parseEconomicBasisLockRefusal({ code: ORDER_ECONOMIC_BASIS_LOCKED }),
+        { blocked: true, message: ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE }));
+check("E1: no message → local Spanish copy, never a raw code",
+  eqEco(parseEconomicBasisLockRefusal({ success: false, error: ORDER_ECONOMIC_BASIS_LOCKED }),
+        { blocked: true, message: ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE }));
+check("E1: blank backend message falls back rather than showing nothing",
+  eqEco(parseEconomicBasisLockRefusal({ code: ORDER_ECONOMIC_BASIS_LOCKED, message: "   " }),
+        { blocked: true, message: ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE }));
+// Realistic backend response shape, byte-for-byte the object
+// src/financial/paidOrderEconomicGuard.js's economicBasisLockRefusal(orderId) actually
+// returns (success/error/code/id/message) — not a synthetic minimal payload.
+check("E1: realistic economicBasisLockRefusal(orderId) backend response → blocked with its own message",
+  eqEco(parseEconomicBasisLockRefusal({
+    success: false, error: ORDER_ECONOMIC_BASIS_LOCKED, code: ORDER_ECONOMIC_BASIS_LOCKED, id: "#999046",
+    message: "No se puede modificar el importe de un pedido de Mesa, ya ajustado, o cancelado/anulado.",
+  }), { blocked: true, message: "No se puede modificar el importe de un pedido de Mesa, ya ajustado, o cancelado/anulado." }));
+
+// ---- 3) must not fire on successes or other errors -------------------------
+check("E1: success:true is never a refusal",
+  eqEco(parseEconomicBasisLockRefusal({ success: true, code: ORDER_ECONOMIC_BASIS_LOCKED }), NO_ECO));
+check("E1: a terminal-state refusal is NOT an economic-basis-lock refusal",
+  eqEco(parseEconomicBasisLockRefusal({ success: false, error: "estado_terminal", estado: "RETIRADO" }), NO_ECO));
+check("E1: a paid-order (N-5) refusal is NOT an economic-basis-lock refusal",
+  eqEco(parseEconomicBasisLockRefusal({ success: false, error: PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN }), NO_ECO));
+check("E1: an unrelated/unknown error is not a refusal (no blanket success:false rule)",
+  eqEco(parseEconomicBasisLockRefusal({ success: false, error: "otro" }), NO_ECO));
+
+// ---- 4) input is not mutated ------------------------------------------------
+{
+  const input = { success: false, code: ORDER_ECONOMIC_BASIS_LOCKED, message: "x" };
+  const snapshot = JSON.stringify(input);
+  parseEconomicBasisLockRefusal(input);
+  check("E1: non muta input object", JSON.stringify(input) === snapshot);
+}
+
+console.log("");
+console.log("── E-1 wired into the combined resolver (what the UI actually calls) ──");
+// Requirement 1/2: ORDER_ECONOMIC_BASIS_LOCKED → refusal, never the success branch.
+check("combined: ORDER_ECONOMIC_BASIS_LOCKED → blocked with its own economic sentence",
+  eqEco(parseOrderWriteRefusal({ success: false, error: ORDER_ECONOMIC_BASIS_LOCKED }),
+        { blocked: true, message: ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE }));
+check("combined: ORDER_ECONOMIC_BASIS_LOCKED has no estado (it is not a state problem)",
+  parseOrderWriteRefusal({ success: false, error: ORDER_ECONOMIC_BASIS_LOCKED }).estado === null);
+// The exact false-success scenario the review reported: the SAME response object the real
+// modal receives must never be read as "not blocked" by the SAME resolver ServicioPage.jsx
+// actually calls.
+{
+  const realBackendRefusal = {
+    success: false, error: ORDER_ECONOMIC_BASIS_LOCKED, code: ORDER_ECONOMIC_BASIS_LOCKED, id: "#999046",
+    message: "No se puede modificar el importe de un pedido de Mesa, ya ajustado, o cancelado/anulado.",
+  };
+  const parsed = parseOrderWriteRefusal(realBackendRefusal);
+  check("false-success regression: a refused Modificar write is never reported as success by the combined resolver",
+    parsed.blocked === true, "parsed.blocked was " + parsed.blocked + " — would show '✏️ Pedido actualizado' on a refused write");
+}
+// Requirement 3: N-5 continues to work identically.
+check("combined: PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN (N-5) unaffected by the new parser",
+  eqEco(parseOrderWriteRefusal({ success: false, error: PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN }),
+        { blocked: true, message: PAID_ORDER_ECONOMIC_MESSAGE }));
+// Requirement 4: terminal-state refusal continues to work identically.
+check("combined: estado_terminal (terminal state) unaffected by the new parser",
+  eqEco(parseOrderWriteRefusal({ success: false, error: "estado_terminal", estado: "RETIRADO" }),
+        { blocked: true, message: "Pedido en RETIRADO — no se puede modificar" }));
+// Requirement 5: a valid success response is never read as an error.
+check("combined: {success:true} is never interpreted as a refusal",
+  eqEco(parseOrderWriteRefusal({ success: true }), NO_ECO));
+// Requirement 6: an unknown/generic error keeps the previous fallback (not blocked here —
+// callers that want a generic error message handle the "not blocked" case themselves;
+// this resolver still does NOT turn every non-2xx into an economic message).
+check("combined: an unrelated/unknown error code keeps the previous fallback (not blocked)",
+  eqEco(parseOrderWriteRefusal({ success: false, error: "otro" }), NO_ECO));
+check("combined: the three messages are pairwise distinct (no copy collision)",
+  new Set([
+    parseOrderWriteRefusal({ success: false, error: "estado_terminal", estado: "RETIRADO" }).message,
+    parseOrderWriteRefusal({ success: false, error: PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN }).message,
+    parseOrderWriteRefusal({ success: false, error: ORDER_ECONOMIC_BASIS_LOCKED }).message,
+  ]).size === 3);
+
+console.log("");
+console.log("Totale: " + (pass + fail) + " | PASS: " + pass + " | FAIL: " + fail);
 process.exit(fail === 0 ? 0 : 1);
