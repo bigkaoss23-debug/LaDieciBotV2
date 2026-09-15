@@ -1,7 +1,9 @@
 // GIRO_INTENT (Opzione A / DELIVERY-MANUAL-GIRO-01): el botón "Confirmar giro
 // compatible" debe pasar a onApplyHora, además de la hora, el intent mínimo del
-// giro { giroId, anchorOrderId, salidaRef, entregaRef } de la proposal real. El
-// flujo legacy (directo/best, sin giro) pasa intent null/undefined.
+// giro { giroId, anchorOrderId, isGiro, salidaRef, entregaRef } de la proposal
+// real. El flujo legacy (directo/best, sin giro) pasa intent null/undefined.
+// S4-F01/F02: isGiro es transportado tal cual del backend (opportunity.isGiro,
+// previewStrategicOpportunities.js), nunca derivado aquí de giroId/anchorOrderId.
 //   CI=true npx react-scripts test --watchAll=false --testPathPattern=PremiumPlannerPopup.giroIntent
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -24,12 +26,18 @@ const RT_INSERTION = {
     { seq: 3, type: 'return', zone: null, label: 'Regreso pizzería', eta: '22:21' },
   ],
 };
-const dataReal = () => ({
+// isGiro: strict boolean as the real backend would send it (transport-only,
+// previewStrategicOpportunities.js) -- true when the anchor is an already
+// grouped, real giro (2+ orders sharing one manual_giro_id); false for a
+// standalone order anchor. Omit the param only to exercise "backend didn't
+// resolve it" (S4-I04 covers that ambiguity on the builder side; here we only
+// prove transport, so every real fixture below sets it explicitly).
+const dataReal = (isGiro) => ({
   contract: CONTRACT, mode: 'read_only',
   firstAvailable: { zone: 'Q2', eta: '21:45', status: 'compatible' },
   bestProposal: { id: 'cand-crear-q2', kind: 'crear', status: 'compatible', severity: 'ok', routeZones: ['Q2'], mapPath: ['Pizzería', 'Q2'], routeEtas: [{ zone: 'Q2', eta: '21:45', isNew: true }], title: 'Q2', blocked: false },
   opportunities: [
-    { id: 'cand-agregar-q2-q5-#001', kind: 'agregar', giroId: '#001', status: 'no_recomendado', blocked: false, routeZones: ['Q2', 'Q5'], mapPath: ['Pizzería', 'Q2', 'Q5'], warning: '', routeTimeline: RT_INSERTION },
+    { id: 'cand-agregar-q2-q5-#001', kind: 'agregar', giroId: '#001', isGiro, status: 'no_recomendado', blocked: false, routeZones: ['Q2', 'Q5'], mapPath: ['Pizzería', 'Q2', 'Q5'], warning: '', routeTimeline: RT_INSERTION },
   ],
   proposals: [
     { id: 'cand-crear-q2', kind: 'direct', label: 'Crear giro Q2', timeLabel: '21:45', zoneLabel: 'Q2 (sur)', status: 'compatible', rank: 1, recommended: true },
@@ -46,23 +54,35 @@ const click = (el) => act(() => { el.dispatchEvent(new MouseEvent('click', { bub
 const propBtns = () => [...container.querySelectorAll('.ppp-prop')];
 const applyBtn = () => container.querySelector('.ppp-apply');
 
-test('giro compatible: Confirmar → onApplyHora(hora, intent) con giroId/anchorOrderId reales', () => {
+test('S4-F01: giro real ya existente (isGiro:true del backend) → onApplyHora(hora, intent) con isGiro:true', () => {
   const calls = [];
   act(() => { root.render(React.createElement(PremiumPlannerPopup, {
-    data: dataReal(), nextGiroOpportunity: NEXT_GIRO, initialFocusOpportunity: true,
+    data: dataReal(true), nextGiroOpportunity: NEXT_GIRO, initialFocusOpportunity: true,
     onClose() {}, onApplyHora: (t, intent) => calls.push({ t, intent }),
   })); });
   expect(applyBtn().textContent).toBe('Confirmar giro compatible');
   click(applyBtn());
   expect(calls.length).toBe(1);
   expect(calls[0].t).toBe('21:52');
-  expect(calls[0].intent).toEqual({ giroId: '#001', anchorOrderId: '#001', salidaRef: null, entregaRef: '21:52' });
+  expect(calls[0].intent).toEqual({ giroId: '#001', anchorOrderId: '#001', isGiro: true, salidaRef: null, entregaRef: '21:52' });
 });
 
-test('legacy directo: Aplicar → onApplyHora sin intent (segundo arg null/undefined)', () => {
+test('S4-F02: anchor standalone (isGiro:false del backend) → onApplyHora(hora, intent) con isGiro:false', () => {
   const calls = [];
   act(() => { root.render(React.createElement(PremiumPlannerPopup, {
-    data: dataReal(), // sin nextGiroOpportunity → no hay chip giro; card = best/direct
+    data: dataReal(false), nextGiroOpportunity: NEXT_GIRO, initialFocusOpportunity: true,
+    onClose() {}, onApplyHora: (t, intent) => calls.push({ t, intent }),
+  })); });
+  expect(applyBtn().textContent).toBe('Confirmar giro compatible');
+  click(applyBtn());
+  expect(calls.length).toBe(1);
+  expect(calls[0].intent).toEqual({ giroId: '#001', anchorOrderId: '#001', isGiro: false, salidaRef: null, entregaRef: '21:52' });
+});
+
+test('S4-F04: legacy directo (Planner sin oportunidad aplicable) → onApplyHora sin intent (segundo arg null/undefined)', () => {
+  const calls = [];
+  act(() => { root.render(React.createElement(PremiumPlannerPopup, {
+    data: dataReal(true), // sin nextGiroOpportunity → no hay chip giro; card = best/direct
     onClose() {}, onApplyHora: (t, intent) => calls.push({ t, intent }),
   })); });
   // selecciono el directo (best) y aplico

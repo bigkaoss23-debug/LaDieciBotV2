@@ -218,6 +218,21 @@ const proposalGiroId = (proposal, view) => {
   return opp && opp.giroId != null ? String(opp.giroId) : null;
 };
 
+// S4 — isGiro trasportato da una proposta, stesso pattern di lookup di
+// proposalGiroId: diretto (proposal.isGiro) o dalla sua opp sorgente
+// (opp.isGiro). Boolean stretto già deciso dal backend (previewStrategic
+// Opportunities.js, transport-only da groupAnchorsByGiro/buildGiroAnchor) --
+// MAI derivato qui da giroId/anchorOrderId. null se non risolvibile, mai
+// forzato a false: un'ambiguità deve restare tale per il builder a valle
+// (src/delivery/pendingGiroIntent.js normalizza isGiro non-boolean a nessun
+// intento, non indovina).
+const proposalIsGiro = (proposal, view) => {
+  if (!proposal) return null;
+  if (typeof proposal.isGiro === "boolean") return proposal.isGiro;
+  const opp = resolveProposalOpp(proposal, view);
+  return opp && typeof opp.isGiro === "boolean" ? opp.isGiro : null;
+};
+
 // RIDER_SAVING_MIN (informativo, mai bloccante): copy del chip "Ahorra N min rider".
 // Legge SOLO riderSavingMin del backend (combinedDurationMin/separateDurationMin NON
 // si mostrano). null/undefined o <=0 → niente chip (no invenzione, no crash).
@@ -498,7 +513,8 @@ const PremiumPlannerPopup = ({
     const anchorOrderId = (nextGiroOpportunity && nextGiroOpportunity.anchorOrderId != null)
       ? String(nextGiroOpportunity.anchorOrderId)
       : giroId;
-    return { giroId, anchorOrderId, salidaRef: null, entregaRef: bestForCard.entrega || null };
+    const isGiro = proposalIsGiro(cardProposal, view);
+    return { giroId, anchorOrderId, isGiro, salidaRef: null, entregaRef: bestForCard.entrega || null };
   })();
 
   // Sin contract strategic válido → empty-state seguro. La fixture mock fue
