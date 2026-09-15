@@ -1205,7 +1205,6 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
       }
     }, 5000);
     return () => { cancelled = true; clearInterval(poll); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPlannerLabPopup]);
 
   // ── Ruta manual LAB — calcula la routeTimeline de una secuencia propuesta ────
