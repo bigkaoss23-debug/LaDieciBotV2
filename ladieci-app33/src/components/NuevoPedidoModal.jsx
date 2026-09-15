@@ -9,6 +9,7 @@ import { assegnaZonaDaKeyword, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, BUFFER_
 import ItemPickerModal from './ItemPickerModal';
 import { normalizeOrderLine } from '../menu/normalizeOrderLine';
 import PremiumPlannerPopup from './PremiumPlannerPopup';
+import { readGiroFactsSignalVersion } from '../api/giroFactsSignal';
 import DireccionInlinePanel from './DireccionInlinePanel';
 import { applyUiOffset } from '../utils/uiOffset';
 import DescuentoInput from './ui/DescuentoInput';
@@ -413,6 +414,14 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
   // (o apertura/chiusura) può aggiornare preview/warning/loading.
   const [strategicLoading, setStrategicLoading] = useState(false);
   const strategicReqIdRef = useRef(0);
+  // W5 Packet 01 — cross-tablet invalidation: while the popup is open, poll
+  // GIRO_FACTS_SIGNAL.version (config, read-only, same pattern as DRIVER_STATO
+  // polling elsewhere). On a change, silently recompute via the SAME canonical
+  // Planner endpoint (never a second truth channel — the signal only decides
+  // WHEN to ask again). strategicRefreshing disables the popup's action while
+  // the brief re-fetch is in flight; no UX redesign otherwise.
+  const [strategicRefreshing, setStrategicRefreshing] = useState(false);
+  const plannerSignalVersionRef = useRef(null);
   // Ruta manual LAB → previewManualGiroRoute (read-only). El operador propone la
   // secuencia de paradas en el popup; aquí guardamos la preview backend + warning +
   // loading con el MISMO guard anti-stale del strategic. Nada de esto se usa para
@@ -1098,22 +1107,21 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
   // creato/modificato. REGOLA V1: niente mock/LAB nel flusso operatore. Se manca
   // hora o il backend non risponde con un contract valido → stato di ERRORE sicuro
   // (mai dati finti). Il popup proposte si monta solo con strategicPreview valido.
-  const openPlannerLab = async (opts = {}) => {
-    // opts.focusOpportunity: true si se abrió desde la fila "Próximo giro". Nota:
-    // si el caller pasa el evento React (onClick directo), focusOpportunity es
-    // undefined → false (botón genérico abre en la best, sin regresión).
-    setPlannerFocusOpportunity(!!(opts && opts.focusOpportunity === true));
-    setShowPlannerLabPopup(true);
-    // Ogni apertura invalida le risposte in volo precedenti (anti-stale).
+  // Corpo del fetch riutilizzato sia dall'apertura esplicita sia dal refresh
+  // silenzioso innescato da GIRO_FACTS_SIGNAL (stesso endpoint canonico, MAI un
+  // secondo canale dati). silent=true usa strategicRefreshing (disabilita
+  // l'azione senza rimontare lo stato di loading pieno) invece di strategicLoading.
+  const fetchStrategicPreview = async ({ silent = false } = {}) => {
     const reqId = ++strategicReqIdRef.current;
-    setStrategicPreview(null);
     if (!hora) {
-      setStrategicLoading(false);
-      setStrategicError("Falta la hora de entrega · elígela y vuelve a abrir el planner.");
+      if (!silent) {
+        setStrategicLoading(false);
+        setStrategicError("Falta la hora de entrega · elígela y vuelve a abrir el planner.");
+      }
       return;
     }
-    setStrategicError("");
-    setStrategicLoading(true);
+    if (silent) setStrategicRefreshing(true);
+    else { setStrategicError(""); setStrategicLoading(true); }
     const pizzasCount = items.reduce((s, it) => s + (parseInt(it.q) || 1), 0);
     const input = {
       startTime: hora,
@@ -1147,8 +1155,19 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
       setStrategicError("Planner no disponible · usa la hora manual.");
       console.warn("[previewStrategicOpportunities] failed:", e?.message || e);
     } finally {
-      if (reqId === strategicReqIdRef.current) setStrategicLoading(false);
+      if (reqId === strategicReqIdRef.current) { setStrategicLoading(false); setStrategicRefreshing(false); }
     }
+  };
+
+  const openPlannerLab = async (opts = {}) => {
+    // opts.focusOpportunity: true si se abrió desde la fila "Próximo giro". Nota:
+    // si el caller pasa el evento React (onClick directo), focusOpportunity es
+    // undefined → false (botón genérico abre en la best, sin regresión).
+    setPlannerFocusOpportunity(!!(opts && opts.focusOpportunity === true));
+    setShowPlannerLabPopup(true);
+    setStrategicPreview(null);
+    plannerSignalVersionRef.current = await readGiroFactsSignalVersion(sb);
+    await fetchStrategicPreview();
   };
 
   // Chiusura popup: invalida eventuali risposte in volo (anti-stale) e azzera il
@@ -1165,6 +1184,29 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
     setManualRouteWarning("");
     setShowPlannerLabPopup(false);
   };
+
+  // W5 Packet 01 — cross-tablet invalidation: while the popup is open, poll
+  // GIRO_FACTS_SIGNAL every 5s (same cadence class as the existing DRIVER_STATO
+  // poll). On a version change, silently re-fetch via the SAME canonical
+  // Planner endpoint and replace the stale result — the signal itself is never
+  // read as a Giro fact, only as "should I ask again". A read failure is
+  // swallowed (existing popup state survives unchanged, keeps polling next tick).
+  useEffect(() => {
+    if (!showPlannerLabPopup) return undefined;
+    let cancelled = false;
+    const poll = setInterval(async () => {
+      const v = await readGiroFactsSignalVersion(sb);
+      if (cancelled || v == null) return;
+      if (plannerSignalVersionRef.current != null && v !== plannerSignalVersionRef.current) {
+        plannerSignalVersionRef.current = v;
+        fetchStrategicPreview({ silent: true });
+      } else if (plannerSignalVersionRef.current == null) {
+        plannerSignalVersionRef.current = v;
+      }
+    }, 5000);
+    return () => { cancelled = true; clearInterval(poll); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPlannerLabPopup]);
 
   // ── Ruta manual LAB — calcula la routeTimeline de una secuencia propuesta ────
   // `selectedStops` llega YA construido por el popup (pedido actual + anclas
@@ -2363,7 +2405,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
             onClose={closePlannerLab}
             data={strategicPreview}
             labWarning=""
-            loading={false}
+            loading={strategicRefreshing}
             manualCurrentZone={zonaInfo?.zona?.id || null}
             manualStartTime={hora || null}
             manualRoutePreview={manualRoutePreview}
