@@ -476,6 +476,144 @@ test("FAIL-SAFE D · cashCountComparable null / undefined → NO comparison sent
   }
 });
 
+// ===============================================================
+// REFUND DISCLOSURE — 2026-09-16
+//
+// `refunded` was always on the wire (RECEIPT-scoped, same scope as
+// `collected`: collected === collectedGross - refunded) but the panel never
+// rendered it, so a service whose net Cobrado already absorbed a refund read
+// as if simply less had ever come in — no way to tell "never paid" apart
+// from "paid, then returned". F1–F11 below are the required scenarios; the
+// row must come straight from the backend field, never a client subtraction.
+// ===============================================================
+
+test("F1 · a service with no refunds shows no Devuelto row, in either scope", async () => {
+  const { container, root } = await mount({ data: DATA }); // DATA: refunded 0 / 0
+  expect(byTestId(container, "svc-refunded")).toBeNull();
+  expect(byTestId(container, "day-refunded")).toBeNull();
+  unmount(container, root);
+});
+
+test("F2 · a service with one refund shows Devuelto with the exact backend figure", async () => {
+  const withRefund = { ...DATA, service: { ...DATA.service, refunded: 40 } };
+  const { container, root } = await mount({ data: withRefund });
+  const row = byTestId(container, "svc-refunded");
+  expect(row).not.toBeNull();
+  expect(row.textContent).toMatch(/devuelto/i);
+  expect(row.textContent).toMatch(/40,00\s?€/);
+  unmount(container, root);
+});
+
+test("F3 · payment 30 / refund 10 — collected and refunded are shown side by side, never merged", async () => {
+  const d = {
+    ...DATA,
+    service: { ...DATA.service, gross: 30, collected: 20, refunded: 10, unpaid: 0 },
+  };
+  const { container, root } = await mount({ data: d });
+  expect(byTestId(container, "svc-collected").textContent).toMatch(/20,00\s?€/);
+  expect(byTestId(container, "svc-refunded").textContent).toMatch(/10,00\s?€/);
+  // Never netted into a single "30,00 €" or "0,00 €" figure in the collected row.
+  expect(byTestId(container, "svc-collected").textContent).not.toMatch(/30,00\s?€/);
+  unmount(container, root);
+});
+
+test("F4 · mixed tender with a refund still reports refunded once, alongside the untouched byMethod split", async () => {
+  const d = {
+    ...DATA,
+    service: {
+      ...DATA.service, refunded: 15,
+      byMethod: { efectivo: 40, tarjeta: 30, bizum: 15, other: 0 },
+    },
+  };
+  const { container, root } = await mount({ data: d });
+  expect(byTestId(container, "svc-refunded").textContent).toMatch(/15,00\s?€/);
+  expect(byTestId(container, "svc-cash").textContent).toMatch(/40,00\s?€/);
+  expect(byTestId(container, "svc-card").textContent).toMatch(/30,00\s?€/);
+  expect(byTestId(container, "svc-bizum").textContent).toMatch(/15,00\s?€/);
+  unmount(container, root);
+});
+
+test("F5 · current obligation below grossPayments, with a refund present, shows refunded and overCollected as distinct rows", async () => {
+  const d = {
+    ...DATA,
+    service: { ...DATA.service, gross: 50, collected: 45, refunded: 15, overCollected: 10, unpaid: 0 },
+  };
+  const { container, root } = await mount({ data: d });
+  expect(byTestId(container, "svc-refunded").textContent).toMatch(/15,00\s?€/);
+  expect(byTestId(container, "svc-overcollected").textContent).toMatch(/10,00\s?€/);
+  unmount(container, root);
+});
+
+test("F6 · unpaid and refunded coexist as two independent exposures", async () => {
+  const d = { ...DATA, service: { ...DATA.service, unpaid: 32, refunded: 8 } };
+  const { container, root } = await mount({ data: d });
+  expect(byTestId(container, "svc-unpaid").textContent).toMatch(/32,00\s?€/);
+  expect(byTestId(container, "svc-refunded").textContent).toMatch(/8,00\s?€/);
+  unmount(container, root);
+});
+
+test("F7 · overCollected and refunded coexist as two independent exposures", async () => {
+  const d = { ...DATA, service: { ...DATA.service, overCollected: 10, unresolvedOverCollected: 10, refunded: 12 } };
+  const { container, root } = await mount({ data: d });
+  expect(byTestId(container, "svc-overcollected").textContent).toMatch(/10,00\s?€/);
+  expect(byTestId(container, "svc-refunded").textContent).toMatch(/12,00\s?€/);
+  unmount(container, root);
+});
+
+test("F8 · zero refund (explicit 0) still renders no Devuelto row", async () => {
+  const d = { ...DATA, service: { ...DATA.service, refunded: 0 }, reconciliation: { ...DATA.reconciliation, refunded: 0 } };
+  const { container, root } = await mount({ data: d });
+  expect(byTestId(container, "svc-refunded")).toBeNull();
+  expect(byTestId(container, "day-refunded")).toBeNull();
+  unmount(container, root);
+});
+
+test("F9 · service and day refund provenance are shown separately, never combined", async () => {
+  const d = {
+    ...DATA,
+    service: { ...DATA.service, refunded: 15 },
+    reconciliation: { ...DATA.reconciliation, refunded: 40 },
+  };
+  const { container, root } = await mount({ data: d });
+  expect(byTestId(container, "scope-service").textContent).toMatch(/15,00\s?€/);
+  expect(byTestId(container, "scope-service").textContent).not.toMatch(/40,00\s?€/);
+  expect(byTestId(container, "scope-day").textContent).toMatch(/40,00\s?€/);
+  expect(byTestId(container, "scope-day").textContent).not.toMatch(/15,00\s?€/);
+  // And never a merged 55,00 € anywhere.
+  expect(container.textContent).not.toContain("55,00");
+  unmount(container, root);
+});
+
+test("F10 · a day-scope refund never inflates the service-scope Devuelto row, and vice versa", async () => {
+  // Distinct, non-colliding figures: if either row read the wrong scope's
+  // field, its value would not match its own scope's fixture number.
+  const d = {
+    ...DATA,
+    service: { ...DATA.service, refunded: 22 },
+    reconciliation: { ...DATA.reconciliation, refunded: 61 },
+  };
+  const { container, root } = await mount({ data: d });
+  expect(byTestId(container, "svc-refunded").textContent).toMatch(/22,00\s?€/);
+  expect(byTestId(container, "day-refunded").textContent).toMatch(/61,00\s?€/);
+  expect(byTestId(container, "scope-service").textContent).not.toMatch(/61,00\s?€/);
+  expect(byTestId(container, "scope-day").textContent).not.toMatch(/22,00\s?€/);
+  unmount(container, root);
+});
+
+test("F11 · the refunded row is read verbatim from the backend field, never recomputed as grossPayments - netCollected", () => {
+  const raw = require("fs").readFileSync(require("path").join(__dirname, "FinalizarReconciliationPanel.jsx"), "utf8");
+  const src = raw
+    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  expect(src).toMatch(/s && s\.refunded/);
+  expect(src).toMatch(/r\.refunded/);
+  // No FE reconstruction: gross minus collected, or collected minus anything,
+  // standing in for the canonical refunded field.
+  expect(src).not.toMatch(/gross\s*-\s*.*collected/i);
+  expect(src).not.toMatch(/collected\s*-\s*.*refund/i);
+});
+
 test("ANTI-PATCH · the panel source does no economic arithmetic on the service figures", () => {
   const raw = require("fs").readFileSync(require("path").join(__dirname, "FinalizarReconciliationPanel.jsx"), "utf8");
   // Only executable code counts — the comments necessarily NAME the forbidden

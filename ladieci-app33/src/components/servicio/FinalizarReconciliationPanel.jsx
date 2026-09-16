@@ -133,6 +133,18 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
   const overCollected = Number(s && s.overCollected) || 0;
   const hasOverCollected = overCollected > 0;
 
+  // REFUND DISCLOSURE — `refunded` is RECEIPT-scoped, the same scope as
+  // `collected` (collected === collectedGross - refunded, per the backend
+  // contract), so it is shown beside `collected` in each card, never derived
+  // here. Without this row a service whose collected figure already nets out
+  // a refund read as if simply less had come in, with no way to tell "less
+  // was ever paid" apart from "some of it came back out". Shown only when
+  // there is one, same convention as `hasOverCollected` above.
+  const svcRefunded = Number(s && s.refunded) || 0;
+  const hasSvcRefunded = svcRefunded > 0;
+  const dayRefunded = Number(r.refunded) || 0;
+  const hasDayRefunded = dayRefunded > 0;
+
   // K2/K3 — ONLY the backend decides whether the SERVICE window and the
   // BUSINESS-DAY / cash-count window are comparable. FAIL SAFE: the comparative
   // copy renders only when the backend EXPLICITLY certifies comparability
@@ -159,6 +171,9 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
         <Row testId="svc-tickets" label="Pedidos" value={String(s.orderCount)} />
         <Row testId="svc-gross" label="Total" value={eur(s.gross)} strong />
         <Row testId="svc-collected" label="Cobrado" value={eur(s.collected)} tone={MS.ACCENT.positive} strong />
+        {hasSvcRefunded && (
+          <Row testId="svc-refunded" label="Devuelto" value={eur(svcRefunded)} strong tone={MS.ACCENT.refund} />
+        )}
         {/* Saldo pendiente and Cobrado de más stay visually DISTINCT — two
             independent exposures, two different semantic accents, never one
             merged figure. */}
@@ -205,6 +220,9 @@ export default function FinalizarReconciliationPanel({ data, loading, error }) {
         <Row testId="day-tickets" label="Pedidos del período" value={String(r.orderCount)} />
         <Row testId="day-gross" label="Ingresos del período" value={eur(r.gross)} strong />
         <Row testId="day-collected" label="Cobrado" value={eur(r.collected)} tone={MS.ACCENT.positive} strong />
+        {hasDayRefunded && (
+          <Row testId="day-refunded" label="Devuelto" value={eur(dayRefunded)} strong tone={MS.ACCENT.refund} />
+        )}
         <Row testId="day-cash" label="Efectivo registrado" value={eur(r.cashReceipts)} />
 
         {count && (
