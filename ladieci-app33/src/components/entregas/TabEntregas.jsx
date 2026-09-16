@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { calcTotale } from '../../constants';
 import { api } from '../../api';
-import { sb } from '../../api';
 import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
@@ -132,7 +131,7 @@ const buildManualGiroWarnings = (orders, manualGiroByOrderId = {}) => {
 
 // ─── Card ordine dentro un blocco zona ────────────────────────────────────
 const ZonaOrderRow = ({
-  o, zona, onSendRepartidor, loadingId, driverStato, tripState, onForzaSalida, onForzaEntregado,
+  o, zona, onSendRepartidor, loadingId, tripState, onForzaSalida, onForzaEntregado,
   manualGiro, manualGiroWarnings = [], isManualGiroSelected = false,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro,
   // DISPLAY-ONLY (Patch B): true cuando la fila se renderiza DENTRO de un
@@ -148,21 +147,29 @@ const ZonaOrderRow = ({
   const isCocina    = o.estado === ORDER_STATES.EN_COCINA;
   const selectableForManualGiro = isManualGiroSelectableOrder(o);
 
-  // Override: salida no registrada (ordine EN_ENTREGA ma partito_alle nullo).
-  // Planner W6.6 — tightened, additive only: the legacy DRIVER_STATO telemetry
-  // gap is suppressed when the canonical Trip Authority read already proves
-  // this exact order departed (real trip.departed_at + this order among the
-  // frozen members) -- never the other way around. DRIVER_STATO stays the
-  // fallback: once a trip formally CLOSES, Trip Authority no longer reports
-  // anything about it (by design, see tripProjectionPort.js), so a since-
-  // closed trip's departure fact has no canonical source left and this
-  // override must keep working from the legacy signal alone.
+  // Override: salida no registrada (ordine EN_ENTREGA ma la salida no fue
+  // confirmada por ninguna fuente canónica). Planner W6.6 final cleanup —
+  // DRIVER_STATO_CANONICAL_FRONTEND_READERS = 0: el último respaldo legacy
+  // (DRIVER_STATO.partito_alle) fue retirado. Dos hechos canónicos, cada uno
+  // fail-closed por su cuenta, prueban la salida:
+  //   - viaje ACTIVO: tripState.departed_at real + este pedido entre los
+  //     miembros congelados (trip_projection_v1 — solo reporta el viaje ACTIVO);
+  //   - viaje ya CERRADO formalmente: canonical_departed_order_ids, poblado
+  //     desde giro_projection_v1's salida_source==='DEPARTED' (derive_giros_v1,
+  //     migración 135) — ese hecho nunca revierte, ni siquiera tras el cierre.
+  // Sin giro (pedido suelto) y sin viaje activo: no hay fuente canónica
+  // todavía -- la incertidumbre falla cerrado, salidaMancante queda true,
+  // igual que un pedido que nunca salió.
   const canonicalDeparted = !!(
-    tripState && tripState.available && tripState.has_active_trip && tripState.departed_at &&
-    Array.isArray(tripState.members) &&
-    tripState.members.some(m => m && String(m.order_id) === String(o.id))
+    tripState && (
+      (tripState.available && tripState.has_active_trip && tripState.departed_at &&
+        Array.isArray(tripState.members) &&
+        tripState.members.some(m => m && String(m.order_id) === String(o.id))) ||
+      (Array.isArray(tripState.canonical_departed_order_ids) &&
+        tripState.canonical_departed_order_ids.some(id => String(id) === String(o.id)))
+    )
   );
-  const salidaMancante = isEnEntrega && !driverStato?.partito_alle && !canonicalDeparted;
+  const salidaMancante = isEnEntrega && !canonicalDeparted;
 
   const safeItems = (() => {
     if (!o.items) return [];
@@ -425,7 +432,7 @@ const ZonaOrderRow = ({
 
 // ─── Blocco giro (zona + ora consegna) ───────────────────────────────────
 const ZonaBlock = ({
-  zona, ordini, giroHora, onSendRepartidor, loadingId, driverStato, tripState, onForzaSalida, onForzaEntregado,
+  zona, ordini, giroHora, onSendRepartidor, loadingId, tripState, onForzaSalida, onForzaEntregado,
   manualGiroByOrderId, manualGiroWarningsById, selectedManualGiroOrderIds,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro
 }) => {
@@ -521,7 +528,7 @@ const ZonaBlock = ({
         {ordini.map(o => (
           <ZonaOrderRow key={o.id} o={o} zona={zona}
             onSendRepartidor={onSendRepartidor} loadingId={loadingId}
-            driverStato={driverStato} tripState={tripState} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado}
+            tripState={tripState} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado}
             manualGiro={manualGiroByOrderId[o.id] || null}
             manualGiroWarnings={manualGiroWarningsById[o.id] || []}
             isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
@@ -540,7 +547,7 @@ const ZonaBlock = ({
 // (hora_ref) + zone incluse + orari cliente individuali per card.
 const ManualGiroBlock = ({
   giro, ordini, zones, hora, warnings = [],
-  onSendRepartidor, loadingId, driverStato, tripState, onForzaSalida, onForzaEntregado,
+  onSendRepartidor, loadingId, tripState, onForzaSalida, onForzaEntregado,
   manualGiroByOrderId, manualGiroWarningsById, selectedManualGiroOrderIds,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro
 }) => {
@@ -632,7 +639,7 @@ const ManualGiroBlock = ({
         {ordini.map(o => (
           <ZonaOrderRow key={o.id} o={o} zona={ZONE_DELIVERY.find(z => z.id === o.zona)}
             onSendRepartidor={onSendRepartidor} loadingId={loadingId}
-            driverStato={driverStato} tripState={tripState} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado}
+            tripState={tripState} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado}
             manualGiro={manualGiroByOrderId[o.id] || null}
             manualGiroWarnings={manualGiroWarningsById[o.id] || []}
             isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
@@ -804,7 +811,6 @@ const GiroTimeModal = ({ orders, warnings = [], pending, onConfirm, onCancel }) 
 // ─── Tab principale Entregas ───────────────────────────────────────────────
 const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const [loadingId,    setLoadingId]    = useState(null);
-  const [driverStato,  setDriverStato]  = useState(null);
   const [apertoConsegnati, setApertoConsegnati] = useState(false);
   // DELIVERY-MANUAL-GIRO-01 P1C.1: manualGiros è backend-derived (api.getManualGiros).
   // selectedManualGiroOrderIds resta locale (selezione UI, mai persistita).
@@ -830,26 +836,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     };
     loadTrip();
     const poll = setInterval(loadTrip, 10000);
-    return () => { mounted = false; clearInterval(poll); };
-  }, []);
-
-  // Legge DRIVER_STATO da Supabase ogni 15s
-  useEffect(() => {
-    let mounted = true;
-    const loadDriver = async () => {
-      try {
-        const rows = await sb.select("config", "chiave=eq.DRIVER_STATO");
-        if (!mounted) return;
-        if (rows && rows.length > 0) {
-          const val = typeof rows[0].valore === "string"
-            ? JSON.parse(rows[0].valore)
-            : rows[0].valore;
-          setDriverStato(val);
-        }
-      } catch(e) {}
-    };
-    loadDriver();
-    const poll = setInterval(loadDriver, 15000);
     return () => { mounted = false; clearInterval(poll); };
   }, []);
 
@@ -1436,7 +1422,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
               warnings={block.warnings}
               onSendRepartidor={handleSendRepartidor}
               loadingId={loadingId}
-              driverStato={driverStato}
               tripState={tripState}
               onForzaSalida={handleForzaSalida}
               onForzaEntregado={handleForzaEntregado}
@@ -1459,7 +1444,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
             giroHora={block.hora}
             onSendRepartidor={handleSendRepartidor}
             loadingId={loadingId}
-            driverStato={driverStato}
             tripState={tripState}
             onForzaSalida={handleForzaSalida}
             onForzaEntregado={handleForzaEntregado}
@@ -1496,7 +1480,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
             {senzaZona.map(o => (
               <ZonaOrderRow key={o.id} o={o}
                 onSendRepartidor={handleSendRepartidor} loadingId={loadingId}
-                driverStato={driverStato} tripState={tripState} onForzaSalida={handleForzaSalida} onForzaEntregado={handleForzaEntregado}
+                tripState={tripState} onForzaSalida={handleForzaSalida} onForzaEntregado={handleForzaEntregado}
                 manualGiro={manualGiroByOrderId[o.id] || null}
                 manualGiroWarnings={manualGiroWarningsById[o.id] || []}
                 isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
