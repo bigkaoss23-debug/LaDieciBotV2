@@ -614,6 +614,45 @@ test("F11 · the refunded row is read verbatim from the backend field, never rec
   expect(src).not.toMatch(/collected\s*-\s*.*refund/i);
 });
 
+// ===============================================================
+// F12 — refund scope isolation, as a MUTATION-KILLING guard.
+//
+// NB-1 (review finding, non-blocking): the runtime today is correct —
+// `Number(s && s.refunded) || 0` for the service row, `Number(r.refunded)
+// || 0` for the day row, no cross-fallback — but nothing in the F1–F11
+// suite would catch a regression to a cross-scope OR fallback, because
+// every F1–F11 fixture sets a non-zero refund on at most one side at a
+// time coincidentally, and none isolates provenance when the OTHER
+// scope's refund is present and non-zero. F12-A and F12-B each give the
+// two scopes DIFFERENT non-zero-or-zero refund values and assert the
+// absent side stays absent, so a fallback that reaches across scopes
+// turns green here into red.
+// ===============================================================
+
+test("F12-A · day-only refund: svc-refunded is absent and 'Devuelto' never appears in scope-service", async () => {
+  const d = { ...DATA, service: { ...DATA.service, refunded: 0 }, reconciliation: { ...DATA.reconciliation, refunded: 20 } };
+  const { container, root } = await mount({ data: d });
+  expect(byTestId(container, "svc-refunded")).toBeNull();
+  expect(byTestId(container, "scope-service").textContent).not.toMatch(/devuelto/i);
+  const dayRow = byTestId(container, "day-refunded");
+  expect(dayRow).not.toBeNull();
+  expect(dayRow.textContent).toMatch(/20,00\s?€/);
+  expect(byTestId(container, "scope-day").textContent).toContain(dayRow.textContent);
+  unmount(container, root);
+});
+
+test("F12-B · service-only refund: day-refunded is absent and 'Devuelto' never appears in scope-day", async () => {
+  const d = { ...DATA, service: { ...DATA.service, refunded: 7 }, reconciliation: { ...DATA.reconciliation, refunded: 0 } };
+  const { container, root } = await mount({ data: d });
+  const svcRow = byTestId(container, "svc-refunded");
+  expect(svcRow).not.toBeNull();
+  expect(svcRow.textContent).toMatch(/7,00\s?€/);
+  expect(byTestId(container, "scope-service").textContent).toContain(svcRow.textContent);
+  expect(byTestId(container, "day-refunded")).toBeNull();
+  expect(byTestId(container, "scope-day").textContent).not.toMatch(/devuelto/i);
+  unmount(container, root);
+});
+
 test("ANTI-PATCH · the panel source does no economic arithmetic on the service figures", () => {
   const raw = require("fs").readFileSync(require("path").join(__dirname, "FinalizarReconciliationPanel.jsx"), "utf8");
   // Only executable code counts — the comments necessarily NAME the forbidden
