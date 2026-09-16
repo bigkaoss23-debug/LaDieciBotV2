@@ -281,9 +281,15 @@ const ERROR_MESSAGES = Object.freeze({
   AUTH_REFUND_TRANSACTION_BACKED: "Este pago no se puede reembolsar desde aquí.",
   // Not MESA_-prefixed: this one comes from the order-intake schedule
   // resolver (resolve_order_intake_context_v1 / orderIntakePolicy.js on the
-  // backend), reused as-is for addCommand's own rejection during the daily
-  // 17:30-18:00 buffer between lunch and dinner service.
-  ORDER_INTAKE_CLOSED: "Ahora no se pueden enviar nuevas comandas. El servicio vuelve a abrir a las 18:00.",
+  // backend), reused as-is for addCommand's own rejection. PRE_UAT_
+  // LIFECYCLE_HYGIENE (O-5): the wording used to hardcode "vuelve a abrir a
+  // las 18:00", a leftover from the 17:30-18:00 buffer O-1 already removed
+  // (2026-08-23) -- already wrong for the overnight floor that replaced it
+  // (which reopened at 08:00, not 18:00), and wrong again now that O-5
+  // narrowed that floor to 00:00-04:00. No hardcoded hour: the reopening
+  // time is backend authority (order_intake_policy_v1) and must not be
+  // duplicated here a third time.
+  ORDER_INTAKE_CLOSED: "No se pueden crear pedidos en este momento.",
 });
 
 export function describeMesaError(error) {

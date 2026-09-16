@@ -29,15 +29,21 @@ describe("Mesa client helpers", () => {
     expect(describeMesaError({ code: "MESA_TABLE_HAS_ORDERS" })).toContain("comandas");
   });
 
-  // Backend order-intake schedule gate (17:30-18:00 buffer between lunch and
-  // dinner service) -- this is NOT a Mesa-specific/balance guard, and must
-  // never render as the generic fallback (it used to, since
+  // Backend order-intake schedule gate (currently: the 00:00-04:00
+  // overnight floor, post-O-5) -- this is NOT a Mesa-specific/balance guard,
+  // and must never render as the generic fallback (it used to, since
   // ORDER_INTAKE_CLOSED had no ERROR_MESSAGES entry, which is exactly what
-  // made the buffer window look like a Mesa bug during real UAT).
-  test("explains the order-intake schedule buffer instead of the generic fallback", () => {
+  // made the schedule window look like a Mesa bug during real UAT). The
+  // copy carries no hardcoded reopening hour -- PRE_UAT_LIFECYCLE_HYGIENE
+  // (O-5) found the previous wording ("vuelve a abrir a las 18:00") already
+  // stale from an earlier removed buffer, wrong again after this slice's own
+  // change, and fragile by construction (a third place the hour could drift
+  // from backend authority).
+  test("explains the order-intake schedule gate instead of the generic fallback, without duplicating a backend-owned hour", () => {
     const message = describeMesaError({ code: "ORDER_INTAKE_CLOSED" });
-    expect(message).toBe("Ahora no se pueden enviar nuevas comandas. El servicio vuelve a abrir a las 18:00.");
+    expect(message).toBe("No se pueden crear pedidos en este momento.");
     expect(message).not.toBe("No se pudo completar la operación. Actualiza e inténtalo de nuevo.");
+    expect(message).not.toMatch(/\d{1,2}:\d{2}/);
   });
 });
 
