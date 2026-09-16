@@ -18,11 +18,16 @@
 
 import { canOpenService, isRider } from './adminRbac';
 
+// PRE_UAT_LIFECYCLE_HYGIENE — the schedule-window codes of the retired
+// clock-driven ensure contract are GONE: no backend emitter produces them any
+// more (ensure_service_session never consults the clock; the backend's
+// tests/deadScheduleSemanticResidueGuard.static.test.js derives the emitter
+// census from the real sources and fails if one comes back). Should one ever
+// arrive anyway it classifies as UNKNOWN — a blocking, retryable panel —
+// never as a friendly "come back later" message about a window that no
+// longer exists.
 export const ENSURE_OUTCOME = Object.freeze({
   ALLOWED: 'ALLOWED',
-  BETWEEN_SERVICES: 'BETWEEN_SERVICES',
-  AFTER_ORDER_CUTOFF: 'AFTER_ORDER_CUTOFF',
-  OUTSIDE_WINDOWS: 'OUTSIDE_WINDOWS',
   SERVICE_ALREADY_COMPLETED_TODAY: 'SERVICE_ALREADY_COMPLETED_TODAY',
   LUNCH_SESSION_STILL_ACTIVE: 'LUNCH_SESSION_STILL_ACTIVE',
   OTHER_SERVICE_STILL_ACTIVE: 'OTHER_SERVICE_STILL_ACTIVE',
@@ -55,9 +60,6 @@ export const ENSURE_OUTCOME = Object.freeze({
 
 // The backend-decided (never frontend-guessed) typed non-success codes.
 const SCHEDULE_OR_SESSION_CODES = new Set([
-  ENSURE_OUTCOME.BETWEEN_SERVICES,
-  ENSURE_OUTCOME.AFTER_ORDER_CUTOFF,
-  ENSURE_OUTCOME.OUTSIDE_WINDOWS,
   ENSURE_OUTCOME.SERVICE_ALREADY_COMPLETED_TODAY,
   ENSURE_OUTCOME.LUNCH_SESSION_STILL_ACTIVE,
   ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE,
@@ -70,9 +72,6 @@ const SCHEDULE_OR_SESSION_CODES = new Set([
 ]);
 
 export const EXCEPTION_TITLE = Object.freeze({
-  [ENSURE_OUTCOME.BETWEEN_SERVICES]: 'El próximo servicio todavía no está disponible',
-  [ENSURE_OUTCOME.AFTER_ORDER_CUTOFF]: 'No hay un servicio disponible ahora mismo',
-  [ENSURE_OUTCOME.OUTSIDE_WINDOWS]: 'No hay un servicio disponible ahora mismo',
   [ENSURE_OUTCOME.SERVICE_ALREADY_COMPLETED_TODAY]: 'El servicio de hoy ya se ha completado',
   // S2-7D6E — reached only in the residual sub-case where the still-open other-kind
   // session is itself mid-close (status 'closing'); a genuinely open one now resolves
@@ -93,9 +92,6 @@ export const EXCEPTION_TITLE = Object.freeze({
 });
 
 export const EXCEPTION_MESSAGE = Object.freeze({
-  [ENSURE_OUTCOME.BETWEEN_SERVICES]: 'El almuerzo ha terminado y la cena todavía no abre. Vuelve a intentarlo en unos minutos.',
-  [ENSURE_OUTCOME.AFTER_ORDER_CUTOFF]: 'Fuera del horario de servicio. Vuelve a intentarlo cuando abra el próximo servicio.',
-  [ENSURE_OUTCOME.OUTSIDE_WINDOWS]: 'Fuera del horario de servicio. Vuelve a intentarlo cuando abra el próximo servicio.',
   [ENSURE_OUTCOME.SERVICE_ALREADY_COMPLETED_TODAY]: 'Ya no se puede volver a abrir. Vuelve mañana.',
   [ENSURE_OUTCOME.LUNCH_SESSION_STILL_ACTIVE]: 'Espera unos segundos a que termine el cierre e inténtalo de nuevo.',
   [ENSURE_OUTCOME.OTHER_SERVICE_STILL_ACTIVE]: 'Espera unos segundos a que termine el cierre e inténtalo de nuevo.',
@@ -211,8 +207,9 @@ export function classifyEnsureAttempt(res) {
   // order-intake resolver does — it only trusts whatever business day the
   // stored canonical pointer currently names, and that pointer advances
   // ONLY on a real order (resolve_order_intake_context_v1 is its sole
-  // writer — O-5 dropped open_business_day_v1, the one other function that
-  // could ever touch this pointer, as a proven zero-caller second authority),
+  // writer — migration 136 (O-5) drops open_business_day_v1, the one other
+  // function that could ever touch this pointer, a proven zero-caller second
+  // authority),
   // never on a schedule. So a pointer
   // that is genuinely stale (nobody has ordered since a PAST business day
   // that pointer still names) makes REOPEN_REQUIRED indistinguishable, from

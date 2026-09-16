@@ -172,11 +172,17 @@ describe('serviceEnsureOutcome — every backend outcome is mapped, none invente
   const OUTCOME = read('utils/serviceEnsureOutcome.js');
   test('every documented typed code from the backend contract is present', () => {
     for (const c of [
-      'BETWEEN_SERVICES', 'AFTER_ORDER_CUTOFF', 'OUTSIDE_WINDOWS',
       'SERVICE_ALREADY_COMPLETED_TODAY', 'LUNCH_SESSION_STILL_ACTIVE',
       'OTHER_SERVICE_STILL_ACTIVE', 'SERVICE_SESSION_CLOSING', 'INVALID_ACTOR',
+      'PREVIOUS_SERVICE_PENDING', 'REOPEN_REQUIRED', 'NO_OPEN_SERVICE',
     ]) {
       expect(OUTCOME).toContain(`'${c}'`);
+    }
+  });
+  test('the retired schedule-window codes (zero backend emitters) are gone from the classifier source', () => {
+    for (const c of ['BETWEEN_SERVICES', 'AFTER_ORDER_CUTOFF', 'OUTSIDE_WINDOWS']) {
+      expect(OUTCOME).not.toContain(`'${c}'`);
+      expect(OUTCOME).not.toMatch(new RegExp(`ENSURE_OUTCOME\\.${c}\\b`));
     }
   });
   test('created:true and created:false both classify to the SAME ALLOWED kind', () => {

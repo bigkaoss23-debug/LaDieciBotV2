@@ -38,7 +38,6 @@ describe('classifyEnsureAttempt — success is identical whether created or reus
 
 describe('classifyEnsureAttempt — every documented typed non-success code', () => {
   const cases = [
-    'BETWEEN_SERVICES', 'AFTER_ORDER_CUTOFF', 'OUTSIDE_WINDOWS',
     'SERVICE_ALREADY_COMPLETED_TODAY', 'LUNCH_SESSION_STILL_ACTIVE',
     'OTHER_SERVICE_STILL_ACTIVE', 'SERVICE_SESSION_CLOSING', 'INVALID_ACTOR',
     'PREVIOUS_SERVICE_PENDING',
@@ -103,7 +102,7 @@ describe('classifyEnsureAttempt — PREVIOUS_SERVICE_PENDING (the open service b
   test('every other outcome carries the stale fields as null (no leakage)', () => {
     const o = classifyEnsureAttempt(SERA_REUSED);
     expect(o.staleServiceSessionId ?? null).toBeNull();
-    const x = classifyEnsureAttempt({ success: false, code: 'BETWEEN_SERVICES', _status: 200, _ok: false });
+    const x = classifyEnsureAttempt({ success: false, code: 'SERVICE_ALREADY_COMPLETED_TODAY', _status: 200, _ok: false });
     expect(x.staleServiceSessionId).toBeNull();
     expect(x.staleBusinessDate).toBeNull();
     expect(x.blockers).toBeNull();
@@ -116,7 +115,7 @@ describe('classifyEnsureAttempt — PREVIOUS_SERVICE_PENDING (the open service b
   });
 
   test('exceptionShowsStaleFinalize is true for NOTHING else — the recovery affordance is unique to this code', () => {
-    for (const k of ['BETWEEN_SERVICES', 'LUNCH_SESSION_STILL_ACTIVE', 'OTHER_SERVICE_STILL_ACTIVE',
+    for (const k of ['SERVICE_ALREADY_COMPLETED_TODAY', 'LUNCH_SESSION_STILL_ACTIVE', 'OTHER_SERVICE_STILL_ACTIVE',
       'SERVICE_SESSION_CLOSING', 'REOPEN_REQUIRED', 'NO_OPEN_SERVICE', 'NETWORK', 'UNKNOWN', 'DENIED', 'ALLOWED']) {
       expect(exceptionShowsStaleFinalize(k)).toBe(false);
     }
@@ -260,7 +259,7 @@ describe('exceptionAllowsRetry', () => {
     expect(exceptionAllowsRetry(ENSURE_OUTCOME.INVALID_ACTOR)).toBe(false);
   });
   test('every schedule/session/network reason is retryable', () => {
-    for (const k of ['BETWEEN_SERVICES', 'AFTER_ORDER_CUTOFF', 'OUTSIDE_WINDOWS', 'SERVICE_ALREADY_COMPLETED_TODAY', 'LUNCH_SESSION_STILL_ACTIVE', 'OTHER_SERVICE_STILL_ACTIVE', 'SERVICE_SESSION_CLOSING', 'NETWORK', 'UNKNOWN']) {
+    for (const k of ['SERVICE_ALREADY_COMPLETED_TODAY', 'LUNCH_SESSION_STILL_ACTIVE', 'OTHER_SERVICE_STILL_ACTIVE', 'SERVICE_SESSION_CLOSING', 'NETWORK', 'UNKNOWN']) {
       expect(exceptionAllowsRetry(k)).toBe(true);
     }
   });
@@ -268,7 +267,7 @@ describe('exceptionAllowsRetry', () => {
 
 describe('exceptionShowsCloseoutLink — only where a human action there could resolve it', () => {
   test('a pure clock-window wait never offers the closeout link', () => {
-    for (const k of ['BETWEEN_SERVICES', 'AFTER_ORDER_CUTOFF', 'OUTSIDE_WINDOWS', 'SERVICE_ALREADY_COMPLETED_TODAY', 'SERVICE_SESSION_CLOSING', 'DENIED', 'INVALID_ACTOR']) {
+    for (const k of ['SERVICE_ALREADY_COMPLETED_TODAY', 'SERVICE_SESSION_CLOSING', 'DENIED', 'INVALID_ACTOR']) {
       expect(exceptionShowsCloseoutLink(k)).toBe(false);
     }
   });
@@ -394,5 +393,38 @@ describe('ensuredStatusLabel — sourced ONLY from the backend session, never th
           .toBe(ENSURE_OUTCOME.UNKNOWN);
       }
     });
+  });
+});
+
+// PRE_UAT_LIFECYCLE_HYGIENE — PROVE ZERO EMITTER → DELETE → GUARD. The three
+// schedule-window codes of the retired clock-driven ensure contract have no
+// backend emitter (the backend's derived census in
+// tests/deadScheduleSemanticResidueGuard.static.test.js is the authority for
+// that half). This half guards the frontend: they must not come back as
+// mapped outcomes, and if one ever arrives it must fail closed as UNKNOWN,
+// never render a friendly clock-window message.
+describe('retired schedule-window ensure codes (tombstones)', () => {
+  const RETIRED = ['BETWEEN_SERVICES', 'AFTER_ORDER_CUTOFF', 'OUTSIDE_WINDOWS'];
+
+  test.each(RETIRED)('%s is no longer a mapped outcome', (code) => {
+    expect(Object.values(ENSURE_OUTCOME)).not.toContain(code);
+    expect(Object.keys(ENSURE_OUTCOME)).not.toContain(code);
+  });
+
+  test.each(RETIRED)('%s, if it ever arrives, fails closed as UNKNOWN (blocking, retryable)', (code) => {
+    const out = classifyEnsureAttempt({ success: false, code, _status: 200, _ok: false });
+    expect(out.kind).toBe(ENSURE_OUTCOME.UNKNOWN);
+    expect(out.code).toBe(code);
+    expect(out.title).toBe('Estado del servicio no disponible');
+    expect(exceptionAllowsRetry(out.kind)).toBe(true);
+  });
+
+  test('the outcomes the backend really emits are still mapped', () => {
+    for (const k of ['REOPEN_REQUIRED', 'NO_OPEN_SERVICE', 'SERVICE_SESSION_CLOSING', 'INVALID_ACTOR', 'PREVIOUS_SERVICE_PENDING']) {
+      expect(ENSURE_OUTCOME[k]).toBe(k);
+    }
+    expect(classifyEnsureAttempt({ success: true, code: 'REUSED', session: { id: 's', status: 'open' } }).kind).toBe(ENSURE_OUTCOME.ALLOWED);
+    expect(classifyEnsureAttempt({ success: false, code: 'NO_OPEN_SERVICE', _status: 200 }).kind).toBe(ENSURE_OUTCOME.ALLOWED);
+    expect(classifyEnsureAttempt({ success: false, code: 'ENSURE_FAILED', _status: 200 }).kind).toBe(ENSURE_OUTCOME.UNKNOWN);
   });
 });

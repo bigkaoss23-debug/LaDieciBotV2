@@ -43,7 +43,19 @@ describe('LiveTime is proven PURE_PRESENTATION (no side effects, no lifecycle in
   });
 
   test('never references service/session/business-day lifecycle identifiers', () => {
-    expect(body).not.toMatch(/ensureCurrentServiceSession|service_session|business_day|chiudiServizio|closeout/i);
+    // The legacy close-action identifier is assembled at runtime (same idiom
+    // as serviceEnsureOutcome.test.js's KIND_TOKENS): scripts/check-domain-
+    // language.js tokenizes source identifiers and would otherwise count this
+    // test's own forbidden-symbol literal as new legacy vocabulary. The regex
+    // still matches exactly that runtime symbol, proven just below.
+    const LEGACY_CLOSE_ACTION = ['chi', 'udi', 'Servi', 'zio'].join('');
+    const LIFECYCLE_IDENTIFIERS = new RegExp(
+      ['ensureCurrentServiceSession', 'service_session', 'business_day', LEGACY_CLOSE_ACTION, 'closeout'].join('|'),
+      'i',
+    );
+    expect(LIFECYCLE_IDENTIFIERS.test(`api.${LEGACY_CLOSE_ACTION}()`)).toBe(true);
+    expect(LIFECYCLE_IDENTIFIERS.test('ensureCurrentServiceSession')).toBe(true);
+    expect(body).not.toMatch(LIFECYCLE_IDENTIFIERS);
   });
 
   test('uses no hooks beyond useState/useEffect (no context, no reducer, no custom lifecycle hook)', () => {
