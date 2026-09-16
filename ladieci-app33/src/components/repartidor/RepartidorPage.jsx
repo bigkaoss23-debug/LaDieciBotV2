@@ -457,6 +457,18 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
     if (!gid) continue;
     (giroMembersById[gid] = giroMembersById[gid] || []).push(o);
   }
+  // Progreso stops del giro (total/entregadas/restantes): usa TODOS los pedidos
+  // DOMICILIO con el mismo manual_giro_id en ordLocal (cualquier estado), no solo
+  // los activos de `entregas` — así un giro con paradas ya entregadas muestra el
+  // progreso real en vez de perder esos stops del conteo.
+  const giroAllMembersById = {};
+  for (const o of ordLocal) {
+    // language-guard: allow-legacy tipo_consegna/DOMICILIO are the existing delivery-type field and enum value already used throughout this file (see `entregas`/`consegnati` above), not new vocabulary
+    if (o.tipo_consegna !== "DOMICILIO") continue;
+    const gid = o.manual_giro_id;
+    if (!gid) continue;
+    (giroAllMembersById[gid] = giroAllMembersById[gid] || []).push(o);
+  }
   const sharedOrderIds = new Set();
   const sharedGiros = Object.keys(giroMembersById)
     .filter(gid => giroMembersById[gid].length >= 2)
@@ -478,7 +490,11 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
       const meta = giroMetaById[gid];
       const salida = (meta && (meta.hora_ref || meta.salida_ref))
         || ordini.map(o => o.salida_driver_estimada).find(Boolean) || null;
-      return { id: gid, ordini, zones, route: zones.join(" → "), salida };
+      const allMembers = giroAllMembersById[gid] || membersList;
+      const stopsTotal = allMembers.length;
+      const stopsCompleted = allMembers.filter(o => isCompletedState(o.estado)).length;
+      const stopsRemaining = stopsTotal - stopsCompleted;
+      return { id: gid, ordini, zones, route: zones.join(" → "), salida, stopsTotal, stopsCompleted, stopsRemaining };
     })
     // giri più urgenti prima (min stop time), coerente con l'ordinamento zone.
     .sort((a, b) => {
@@ -739,7 +755,9 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
                       title="Salida del repartidor (giro)">🛵 Salida {g.salida}</span>
                   )}
                   <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: "#B45309" }}>
-                    {g.ordini.length} parada{g.ordini.length !== 1 ? "s" : ""}
+                    {g.stopsCompleted > 0
+                      ? `${g.stopsCompleted}/${g.stopsTotal} entregadas · ${g.stopsRemaining} restante${g.stopsRemaining !== 1 ? "s" : ""}`
+                      : `${g.ordini.length} parada${g.ordini.length !== 1 ? "s" : ""}`}
                   </span>
                 </div>
                 {/* Stop del giro — ognuno con la propria card/azione invariata */}

@@ -9,6 +9,11 @@
 //     sequenza, salida = prima salida_driver_estimada disponibile
 //   - partitionPerZona: esclude gli ordini già nel blocco giro (no duplicati);
 //     ordini senza manual_giro_id (o giro <2) restano legacy per zona.
+//   - W6.6: stopsTotal/stopsCompleted/stopsRemaining — conteggio progreso del
+//     giro sobre TODOS los pedidos del giro (ordLocal, cualquier estado), no
+//     solo los activos de `entregas`, así un stop ya entregado no desaparece
+//     del conteo (sigue siendo real: cuenta lo que el backend ya devolvió,
+//     nunca inventa trip_state/salida_source que la Rider DTO no expone).
 
 import assert from "node:assert";
 
@@ -22,7 +27,19 @@ const giroStopSortMin = (o) => {
   return null;
 };
 
-function buildSharedGiros(entregas) {
+// language-guard: allow-legacy RETIRADO/COMPLETATO are the existing order-state enum values (core/orders/stateMachine.js COMPLETED_ORDER_STATES), quoted verbatim, not new vocabulary
+const COMPLETED_STATES = ["RETIRADO", "COMPLETATO"];
+const isCompletedState = (s) => COMPLETED_STATES.includes(s);
+
+function buildSharedGiros(entregas, ordLocal = entregas) {
+  const giroAllMembersById = {};
+  for (const o of ordLocal) {
+    // language-guard: allow-legacy tipo_consegna/DOMICILIO are the existing delivery-type field and enum value, mirrored 1:1 from RepartidorPage.jsx, not new vocabulary
+    if (o.tipo_consegna !== "DOMICILIO") continue;
+    const gid = o.manual_giro_id;
+    if (!gid) continue;
+    (giroAllMembersById[gid] = giroAllMembersById[gid] || []).push(o);
+  }
   const giroMembersById = {};
   for (const o of entregas) {
     const gid = o.manual_giro_id;
@@ -44,7 +61,11 @@ function buildSharedGiros(entregas) {
       for (const o of ordini) sharedOrderIds.add(o.id);
       const zones = Array.from(new Set(ordini.map(o => o.zona).filter(Boolean)));
       const salida = ordini.map(o => o.salida_driver_estimada).find(Boolean) || null;
-      return { id: gid, ordini, zones, route: zones.join(" → "), salida };
+      const allMembers = giroAllMembersById[gid] || membersList;
+      const stopsTotal = allMembers.length;
+      const stopsCompleted = allMembers.filter(o => isCompletedState(o.estado)).length;
+      const stopsRemaining = stopsTotal - stopsCompleted;
+      return { id: gid, ordini, zones, route: zones.join(" → "), salida, stopsTotal, stopsCompleted, stopsRemaining };
     })
     .sort((a, b) => {
       const ma = Math.min(...a.ordini.map(o => giroStopSortMin(o) ?? 9999));
@@ -144,6 +165,49 @@ ck("7. salida null se assente, route '' se nessuna zona", () => {
   assert.equal(sharedGiros[0].salida, null);
   assert.equal(sharedGiros[0].route, "");
   assert.deepEqual(sharedGiros[0].ordini.map(o => o.id), ["x", "y"]); // fallback hora
+});
+
+// ── W6.6: stops progress (total/completed/remaining) ────────────────────────
+const GIRO2 = "mg_260916_3";
+// ordLocal = TODO el pedido (cualquier estado); entregasActivas = solo los no
+// completados (lo que RepartidorPage ya filtra en `entregas`).
+const ordLocalProgress = [
+  // language-guard: allow-legacy tipo_consegna/DOMICILIO are the existing delivery-type field and enum value, quoted verbatim in these fixtures, not new vocabulary
+  { id: "#a", manual_giro_id: GIRO2, tipo_consegna: "DOMICILIO", zona: "Q1", hora: "21:00", entrega_estimada: "21:00", estado: "RETIRADO" },
+  { id: "#b", manual_giro_id: GIRO2, tipo_consegna: "DOMICILIO", zona: "Q2", hora: "21:10", entrega_estimada: "21:10", estado: "EN_ENTREGA" }, // language-guard: allow-legacy tipo_consegna/DOMICILIO are the existing delivery-type field and enum value, not new vocabulary
+  { id: "#c", manual_giro_id: GIRO2, tipo_consegna: "DOMICILIO", zona: "Q3", hora: "21:20", entrega_estimada: "21:20", estado: "LISTO" },
+];
+const entregasActivas = ordLocalProgress.filter(o => o.estado !== "RETIRADO");
+
+ck("8. stopsTotal cuenta TODOS los miembros del giro (incl. ya entregados)", () => {
+  const { sharedGiros } = buildSharedGiros(entregasActivas, ordLocalProgress);
+  assert.equal(sharedGiros[0].stopsTotal, 3);
+});
+ck("9. stopsCompleted cuenta solo los pedidos ya entregados (estado RETIRADO)", () => {
+  const { sharedGiros } = buildSharedGiros(entregasActivas, ordLocalProgress);
+  assert.equal(sharedGiros[0].stopsCompleted, 1);
+});
+ck("10. stopsRemaining = total - completed (coincide con los stops activos mostrados)", () => {
+  const { sharedGiros } = buildSharedGiros(entregasActivas, ordLocalProgress);
+  assert.equal(sharedGiros[0].stopsRemaining, 2);
+  // language-guard: allow-legacy .ordini is the existing array field name mirrored 1:1 from RepartidorPage.jsx's real return shape, not new vocabulary
+  assert.equal(sharedGiros[0].stopsRemaining, sharedGiros[0].ordini.length);
+});
+ck("11. sin entregas aún (0 completados) → stopsCompleted=0, stopsTotal=stopsRemaining", () => {
+  const allActive = ordLocalProgress.map(o => o.id === "#a" ? { ...o, estado: "LISTO" } : o);
+  const activos = allActive.filter(o => o.estado !== "RETIRADO");
+  const { sharedGiros } = buildSharedGiros(activos, allActive);
+  assert.equal(sharedGiros[0].stopsCompleted, 0);
+  assert.equal(sharedGiros[0].stopsTotal, sharedGiros[0].stopsRemaining);
+});
+ck("12. ordLocal por defecto = entregas (compat retro con las fixtures 1-7 sin tipo de entrega)", () => {
+  const { sharedGiros } = buildSharedGiros(entregas);
+  // Las fixtures 1-7 no declaran el tipo de entrega -> excluidas de giroAllMembersById
+  // (filtro estricto === "DOMICILIO"), así que cae al fallback `|| membersList`:
+  // el conteo coincide con los stops activos ya visibles, sin romper nada.
+  // language-guard: allow-legacy .ordini is the existing array field name mirrored 1:1 from RepartidorPage.jsx's real return shape, not new vocabulary
+  assert.equal(sharedGiros[0].stopsTotal, sharedGiros[0].ordini.length);
+  assert.equal(sharedGiros[0].stopsCompleted, 0);
 });
 
 console.log(`\n═══ RESULT: ${pass} passed, ${fail} failed ═══`);

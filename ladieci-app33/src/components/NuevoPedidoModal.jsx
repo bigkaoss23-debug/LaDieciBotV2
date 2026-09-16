@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useReducer } from 'react';
 import { C, genId, MENU, INGREDIENTI, calcTotale, DELIVERY_FEE, aplicarDescuento } from '../constants';
-import { api, sb } from '../api';
+import { api } from '../api';
 import { assegnaZonaDaKeyword, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, BUFFER_OPS_DRIVER_MIN } from '../zones';
 // Migrazione planner-preview (2026-06-07): rimossi gli import di scheduling LOCALE
 // (proposeForNewOrder / suggerisciOrario / risolviTempoAndata / tempoAndata). Il
@@ -484,9 +484,6 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
   // { horaForno, slotOk, load, slotSuggerito, consegnaSuggerita,
   //   scenario: "A"|"B"|"C"|"D"|"E"|"F", driverRientro, stessaZona }
 
-  // ── Stato driver (fetch quando il modal si apre) ──────────────────────────
-  const [driverStato,    setDriverStato]    = useState(null);
-
   // ItemPickerModal state
   const [pickerVisible,   setPickerVisible]   = useState(false);
   const [editingItem,     setEditingItem]     = useState(null); // null = nuovo, item = modifica
@@ -868,25 +865,6 @@ const NuevoPedidoModal = ({ onClose, onConfirm, onTransactionStart, visible, pre
     setPreferito(true);
     setShowSugerencias(false);
   };
-
-  // ── Fetch driver state quando il modal è visibile ────────────────────────
-  useEffect(() => {
-    if (!visible) { setDriverStato(null); return; }
-    let mounted = true;
-    (async () => {
-      try {
-        const rows = await sb.select("config", "chiave=eq.DRIVER_STATO");
-        if (!mounted) return;
-        if (rows && rows.length > 0) {
-          const val = typeof rows[0].valore === "string"
-            ? JSON.parse(rows[0].valore)
-            : rows[0].valore;
-          setDriverStato(val);
-        }
-      } catch(e) {}
-    })();
-    return () => { mounted = false; };
-  }, [visible]);
 
   // Traccia se l'operatore ha toccato manualmente l'orario
   const horaCustom = useRef(false);
