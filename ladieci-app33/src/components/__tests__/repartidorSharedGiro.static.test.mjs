@@ -14,6 +14,13 @@
 //     solo los activos de `entregas`, así un stop ya entregado no desaparece
 //     del conteo (sigue siendo real: cuenta lo que el backend ya devolvió,
 //     nunca inventa trip_state/salida_source que la Rider DTO no expone).
+//   - Planner W6.6 wire bridge: buildSharedGiros now accepts an optional
+//     canonical `tripState` (api.getTripOperationalState()'s DTO). When it
+//     reports an ACTIVE trip for THIS giro_id, its real departed_at wins the
+//     salida priority (it actually happened, unlike the pre-departure
+//     hora_ref/salida_ref/salida_driver_estimada estimates it now outranks).
+//     Any other case (no tripState, unavailable, different giro, no active
+//     trip) falls through to the exact pre-existing chain, unchanged.
 
 import assert from "node:assert";
 
@@ -31,7 +38,17 @@ const giroStopSortMin = (o) => {
 const COMPLETED_STATES = ["RETIRADO", "COMPLETATO"];
 const isCompletedState = (s) => COMPLETED_STATES.includes(s);
 
-function buildSharedGiros(entregas, ordLocal = entregas) {
+// Minimal mirror of mesaFormat.formatClockTime's ISO->"HH:MM" contract (UTC,
+// not Madrid-adjusted -- this test only proves PRIORITY ordering, not real
+// timezone conversion, which mesaFormat's own tests already cover).
+const _isoToHHMM = (iso) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+};
+
+function buildSharedGiros(entregas, ordLocal = entregas, tripState = null) {
   const giroAllMembersById = {};
   for (const o of ordLocal) {
     // language-guard: allow-legacy tipo_consegna/DOMICILIO are the existing delivery-type field and enum value, mirrored 1:1 from RepartidorPage.jsx, not new vocabulary
@@ -60,7 +77,12 @@ function buildSharedGiros(entregas, ordLocal = entregas) {
       });
       for (const o of ordini) sharedOrderIds.add(o.id);
       const zones = Array.from(new Set(ordini.map(o => o.zona).filter(Boolean)));
-      const salida = ordini.map(o => o.salida_driver_estimada).find(Boolean) || null;
+      const canonicalDepartedAtHHMM = (
+        tripState && tripState.available && tripState.has_active_trip &&
+        String(tripState.giro_id) === String(gid) && tripState.departed_at
+      ) ? _isoToHHMM(tripState.departed_at) : null;
+      const salida = canonicalDepartedAtHHMM
+        || ordini.map(o => o.salida_driver_estimada).find(Boolean) || null;
       const allMembers = giroAllMembersById[gid] || membersList;
       const stopsTotal = allMembers.length;
       const stopsCompleted = allMembers.filter(o => isCompletedState(o.estado)).length;
@@ -208,6 +230,32 @@ ck("12. ordLocal por defecto = entregas (compat retro con las fixtures 1-7 sin t
   // language-guard: allow-legacy .ordini is the existing array field name mirrored 1:1 from RepartidorPage.jsx's real return shape, not new vocabulary
   assert.equal(sharedGiros[0].stopsTotal, sharedGiros[0].ordini.length);
   assert.equal(sharedGiros[0].stopsCompleted, 0);
+});
+
+// ── Planner W6.6: canonical trip.departed_at wins the salida priority ───────
+ck("13. active trip matching this giro_id -> salida = real departed_at (HH:MM), overrides salida_driver_estimada", () => {
+  const tripState = { available: true, has_active_trip: true, giro_id: GIRO, departed_at: "2026-09-16T21:50:00.000Z" };
+  const { sharedGiros } = buildSharedGiros(entregas, entregas, tripState);
+  assert.equal(sharedGiros[0].salida, "21:50");
+});
+ck("14. trip for a DIFFERENT giro_id -> falls through to salida_driver_estimada, never borrows another giro's departure", () => {
+  const tripState = { available: true, has_active_trip: true, giro_id: "mg_other", departed_at: "2026-09-16T21:50:00.000Z" };
+  const { sharedGiros } = buildSharedGiros(entregas, entregas, tripState);
+  assert.equal(sharedGiros[0].salida, "21:45");
+});
+ck("15. tripState unavailable (DEGRADED) -> falls through, never fabricates a departure", () => {
+  const tripState = { available: false, has_active_trip: null, giro_id: null, departed_at: null };
+  const { sharedGiros } = buildSharedGiros(entregas, entregas, tripState);
+  assert.equal(sharedGiros[0].salida, "21:45");
+});
+ck("16. tripState available but no active trip -> falls through unchanged", () => {
+  const tripState = { available: true, has_active_trip: false, giro_id: null, departed_at: null };
+  const { sharedGiros } = buildSharedGiros(entregas, entregas, tripState);
+  assert.equal(sharedGiros[0].salida, "21:45");
+});
+ck("17. no tripState passed at all (default null) -> exact pre-existing behavior, unchanged", () => {
+  const { sharedGiros } = buildSharedGiros(entregas);
+  assert.equal(sharedGiros[0].salida, "21:45");
 });
 
 console.log(`\n═══ RESULT: ${pass} passed, ${fail} failed ═══`);

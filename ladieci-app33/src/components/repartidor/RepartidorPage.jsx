@@ -7,6 +7,7 @@ import Suoni from '../../sounds';
 import { ORDER_STATES, isCompletedState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
 import { isPaymentFailure, describePaymentFailure } from '../../utils/paymentOutcome';
 import { formatOrderNumber, buildVisibleOrderLabels, resolveVisibleOrderLabel } from '../../utils/orderNumber';
+import { formatClockTime } from '../mesa/mesaFormat';
 
 const mapsUrl = (dir) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((dir || "") + " Roquetas de Mar")}`;
@@ -287,6 +288,10 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
   const [audioAttivato, setAudioAttivato] = useState(false);
   const [apertoConsegnati, setApertoConsegnati] = useState(false);
   const [manualGiros, setManualGiros] = useState([]);
+  // Planner W6.6 — canonical Trip Authority operational state, additive to the
+  // existing hora_ref/salida_ref proxy chain below (never replaces it): when
+  // available, it supplies the REAL trip.departed_at instead of an estimate.
+  const [tripState, setTripState] = useState(null);
   const prevIdsRef = useRef(null);
 
   // ─── PIN gate per Repartidor ───────────────────────────────────────────
@@ -344,6 +349,22 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
     };
     load();
     const poll = setInterval(load, 10000);
+    return () => { mounted = false; clearInterval(poll); };
+  }, []);
+
+  // Planner W6.6 — canonical Trip Authority poll (10s, same cadence as the
+  // manual-giros proxy above). Never crashes the rider view on failure; stays
+  // on the last known value so a transient hiccup doesn't flicker the banner.
+  useEffect(() => {
+    let mounted = true;
+    const loadTrip = async () => {
+      try {
+        const res = await api.getTripOperationalState();
+        if (mounted && res && typeof res === "object") setTripState(res);
+      } catch (e) { /* stays on last known value */ }
+    };
+    loadTrip();
+    const poll = setInterval(loadTrip, 10000);
     return () => { mounted = false; clearInterval(poll); };
   }, []);
 
@@ -484,11 +505,17 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
       });
       for (const o of ordini) sharedOrderIds.add(o.id);
       const zones = Array.from(new Set(ordini.map(o => o.zona).filter(Boolean)));
-      // salida unica del giro (ManualGiroSalidaRefProxy): hora_ref (operatore) >
-      // salida_ref (proxy backend-owned) > legacy prima salida_driver_estimada.
-      // Nessuna invenzione: se manca tutto → null.
+      // salida unica del giro (ManualGiroSalidaRefProxy), Planner W6.6 priority:
+      // real canonical trip.departed_at (this giro's trip actually departed) >
+      // hora_ref (operatore) > salida_ref (proxy backend-owned) > legacy prima
+      // salida_driver_estimada. Nessuna invenzione: se manca tutto → null.
       const meta = giroMetaById[gid];
-      const salida = (meta && (meta.hora_ref || meta.salida_ref))
+      const canonicalDepartedAtHHMM = (
+        tripState && tripState.available && tripState.has_active_trip &&
+        String(tripState.giro_id) === String(gid) && tripState.departed_at
+      ) ? formatClockTime(tripState.departed_at) : null;
+      const salida = (canonicalDepartedAtHHMM && canonicalDepartedAtHHMM !== "—" ? canonicalDepartedAtHHMM : null)
+        || (meta && (meta.hora_ref || meta.salida_ref))
         || ordini.map(o => o.salida_driver_estimada).find(Boolean) || null;
       const allMembers = giroAllMembersById[gid] || membersList;
       const stopsTotal = allMembers.length;
@@ -753,6 +780,16 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
                       border: "1px solid rgba(245,158,11,0.5)", borderRadius: 8, padding: "2px 9px",
                       fontSize: 12, fontWeight: 800, fontFamily: "'DM Mono',monospace" }}
                       title="Salida del repartidor (giro)">🛵 Salida {g.salida}</span>
+                  )}
+                  {/* Planner W6.6 — real elapsed time since departure (never an
+                      ETA: no arrival estimate provider exists on this backend). */}
+                  {tripState && tripState.available && tripState.has_active_trip &&
+                   String(tripState.giro_id) === String(g.id) &&
+                   Number.isFinite(tripState.elapsed_min) && (
+                    <span style={{ color: "#92400E", fontSize: 11, fontWeight: 700 }}
+                      title="Tiempo transcurrido desde la salida (no es una ETA)">
+                      · {tripState.elapsed_min} min en camino
+                    </span>
                   )}
                   <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: "#B45309" }}>
                     {g.stopsCompleted > 0

@@ -610,6 +610,13 @@ const api = {
     if (opts.onlyActive === false) params.onlyActive = "false";
     return proxyGet("getManualGiros", params);
   },
+  // Planner W6.6 — canonical Trip Authority wire bridge (trip_state, frozen
+  // membership, progress, real departed_at, honest ETA UNKNOWN/DEGRADED,
+  // salida/salida_source). No params: scope is backend-resolved, never
+  // client-supplied. See src/core/delivery/tripOperationalState.js (backend).
+  getTripOperationalState: function() {
+    return proxyGet("getTripOperationalState");
+  },
   // hora_ref: "HH:MM" orario operativo del giro (uscita forno, guida cucina/driver).
   // anchor_order_id: id ordine da cui proviene la scelta (audit/UX).
   // entrega_ref: "HH:MM" target consegna/giro comune scelto dall'operatore. Tutti opzionali.
