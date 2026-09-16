@@ -210,8 +210,10 @@ export function classifyEnsureAttempt(res) {
   // service_session never recomputes "today" from the clock the way the
   // order-intake resolver does — it only trusts whatever business day the
   // stored canonical pointer currently names, and that pointer advances
-  // ONLY on a real order or an explicit open (see resolve_order_intake_
-  // context_v1 / open_business_day_v1), never on a schedule. So a pointer
+  // ONLY on a real order (resolve_order_intake_context_v1 is its sole
+  // writer — O-5 dropped open_business_day_v1, the one other function that
+  // could ever touch this pointer, as a proven zero-caller second authority),
+  // never on a schedule. So a pointer
   // that is genuinely stale (nobody has ordered since a PAST business day
   // that pointer still names) makes REOPEN_REQUIRED indistinguishable, from
   // here, from a true same-day "this was already explicitly finalized

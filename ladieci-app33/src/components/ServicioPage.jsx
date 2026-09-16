@@ -1450,8 +1450,12 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
 
           {/* Centro */}
           <div style={{flex:1,textAlign:"center"}}>
+            {/* PRE_UAT_LIFECYCLE_HYGIENE — this label sits directly above LiveTime, a
+                pure client clock (new Date() + setInterval, no session data). It must
+                never read as the service's own identity/opening time; "HORA ACTUAL"
+                names the clock, not the servicio. */}
             <div style={{fontSize:9,fontWeight:800,letterSpacing:"3px",
-              textTransform:"uppercase",color:"rgba(255,255,255,0.3)",lineHeight:1,marginBottom:1}}>SERVICIO</div>
+              textTransform:"uppercase",color:"rgba(255,255,255,0.3)",lineHeight:1,marginBottom:1}}>HORA ACTUAL</div>
             <LiveTime/>
             {/* Status compatto: horno | sync/AI | reparto */}
             <div style={{
