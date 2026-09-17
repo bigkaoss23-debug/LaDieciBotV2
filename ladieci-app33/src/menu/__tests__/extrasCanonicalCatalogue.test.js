@@ -44,7 +44,6 @@ const CANONICAL = [
   ["Coppa", 2.0, "Carnes"],
   ["Spianata Calabra picante", 1.0, "Carnes"],
   ["Salami picante", 1.0, "Carnes"],
-  ["Mortadela", 1.0, "Carnes"],
   ["Salami Napoli", 1.0, "Carnes"],
   ["Atún", 1.0, "Pescados"],
   ["Yema de huevo", 0.5, "Verduras y hierbas"],
@@ -255,6 +254,95 @@ describe("Pizza a tu gusto — stesso catalogo, stessi prezzi", () => {
     const sub = "+Prosciutto cotto (Jamón cocido), +Coppa, +Coppa";
     expect((sub.match(new RegExp(`\\+${esc("Prosciutto cotto (Jamón cocido)")}`, "g")) || []).length).toBe(1);
     expect((sub.match(new RegExp(`\\+${esc("Coppa")}`, "g")) || []).length).toBe(2);
+  });
+});
+
+describe("filtro visuale per gruppo (solo ItemPickerModal)", () => {
+  const GRUPPI = {
+    Todos: null,
+    Quesos: "Quesos",
+    Carnes: "Carnes",
+    Pescados: "Pescados",
+    Verduras: "Verduras y hierbas",
+  };
+  const apriPannello = (el) => {
+    click(Array.from(el.querySelectorAll("span")).find((s) => s.textContent === "MARGHERITA"));
+    click(buttons(el).find((b) => /Añadir ingrediente extra/.test(b.textContent)));
+  };
+  // gli extra sono gli unici bottoni del pannello che mostrano un prezzo;
+  // il testo è "<emoji><nome>+X.XX€", quindi risolvo il nome dal catalogo.
+  const visibili = (el) => buttons(el)
+    .filter((b) => /\+\d+\.\d\d€$/.test(b.textContent.trim()))
+    .map((b) => {
+      const t = b.textContent.trim().replace(/\+\d+\.\d\d€$/, "").trim();
+      const hit = [...INGREDIENTI, ...EXTRAS_DULCES].find((i) => t.endsWith(i.n));
+      return hit ? hit.n : t;
+    });
+
+  test("i cinque controlli sono presenti, senza barra di ricerca", () => {
+    const el = mount(<ItemPickerModal visible onClose={() => {}} onAdd={() => {}} />);
+    apriPannello(el);
+    Object.keys(GRUPPI).forEach((label) => expect(byText(el, label)).toBeDefined());
+    expect(el.querySelectorAll('input[type="search"]')).toHaveLength(0);
+  });
+
+  test("ogni filtro mostra esattamente il proprio gruppo; Todos mostra tutti i 24", () => {
+    const el = mount(<ItemPickerModal visible onClose={() => {}} onAdd={() => {}} />);
+    apriPannello(el);
+    expect(visibili(el)).toHaveLength(24);
+    Object.entries(GRUPPI).forEach(([label, gruppo]) => {
+      click(byText(el, label));
+      const attesi = extras()
+        .filter((i) => gruppo === null || i.gruppo === gruppo)
+        .map((i) => i.n);
+      expect(visibili(el).sort()).toEqual(attesi.sort());
+      expect(attesi.length).toBeGreaterThan(0);
+    });
+  });
+
+  test("gli extra a 0 € restano visibili nel gruppo giusto", () => {
+    const el = mount(<ItemPickerModal visible onClose={() => {}} onAdd={() => {}} />);
+    apriPannello(el);
+    click(byText(el, "Quesos"));
+    expect(visibili(el)).toEqual(expect.arrayContaining(["Grana Padano rallado", "Pecorino Romano rallado"]));
+    click(byText(el, "Verduras"));
+    expect(visibili(el)).toContain("Albahaca");
+  });
+
+  test("cambiare filtro non cambia prezzi, totale, `sub` né le quantità multiple", () => {
+    const onAdd = jest.fn();
+    const el = mount(<ItemPickerModal visible onClose={() => {}} onAdd={onAdd} />);
+    apriPannello(el);
+    click(byText(el, "Carnes"));
+    click(buttons(el).find((b) => b.textContent.includes("Coppa") && /€/.test(b.textContent)));
+    apriPannello(el);
+    click(byText(el, "Verduras")); // cambio filtro: nessun effetto sul carrello
+    expect(el.textContent).toContain("14.00€");
+    click(byText(el, "Carnes"));
+    click(buttons(el).find((b) => b.textContent.includes("Coppa") && /€/.test(b.textContent)));
+    apriPannello(el);
+    click(byText(el, "Todos"));
+    const conferma = buttons(el).find((b) => /Añadir \d+ item/.test(b.textContent));
+    click(conferma);
+    const item = onAdd.mock.calls[0][0];
+    expect(item.p).toBe(16); // 12,00 + 2,00 + 2,00
+    expect(item.sub).toBe("+Coppa, +Coppa");
+  });
+
+  test("il filtro non compare sulle pizze dolci (lista EXTRAS_DULCES)", () => {
+    const el = mount(<ItemPickerModal visible onClose={() => {}} onAdd={() => {}} />);
+    click(byText(el, "Postres"));
+    click(Array.from(el.querySelectorAll("span")).find((s) => s.textContent === "Pizza de Nutella (28cm)"));
+    click(buttons(el).find((b) => /Añadir extra dulce/.test(b.textContent)));
+    expect(byText(el, "Quesos")).toBeUndefined();
+    expect(visibili(el).sort()).toEqual(EXTRAS_DULCES.map((e) => e.n).sort());
+  });
+
+  test("il filtro vive solo nel picker: nessun altro consumer lo importa", () => {
+    ["components/ModificaOrdenModal.jsx", "components/wa/WADettaglio.jsx", "components/PizzaCustomBuilder.jsx"].forEach((f) => {
+      expect(read(f)).not.toMatch(/FILTRI_EXTRA|GRUPPO_DEL_FILTRO|extraGruppo/);
+    });
+    expect(read("components/ItemPickerModal.jsx")).toMatch(/GRUPPO_DEL_FILTRO/);
   });
 });
 

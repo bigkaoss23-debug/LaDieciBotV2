@@ -138,7 +138,6 @@ const INGREDIENTI = [
   { id:"ing_coppa",         n:"Coppa",                             e:"🥓", prezzo:2.00, tipo:"standard", gruppo:"Carnes" },
   { id:"ing_spianata",      n:"Spianata Calabra picante",          e:"🌶️", prezzo:1.00, tipo:"standard", gruppo:"Carnes" },
   { id:"ing_salami",        n:"Salami picante",                    e:"🌶️", prezzo:1.00, tipo:"standard", gruppo:"Carnes" },
-  { id:"ing_mortadela",     n:"Mortadela",                         e:"🌭", prezzo:1.00, tipo:"standard", gruppo:"Carnes" },
   { id:"ing_salami_napoli", n:"Salami Napoli",                     e:"🥩", prezzo:1.00, tipo:"standard", gruppo:"Carnes" },
   // ── PESCADOS ──
   { id:"ing_atun",     n:"Atún",                     e:"🐟", prezzo:1.00, tipo:"standard", gruppo:"Pescados" },

@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react';
 import { C, MENU, CATS, INGREDIENTI, EXTRAS_DULCES, genId, pizzaLabel, esDulce, findExtra } from '../constants';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
 
+// Filtro visuale del pannello extra: etichetta → valore del campo `gruppo`
+// già presente in INGREDIENTI. "Todos" non filtra nulla.
+const FILTRI_EXTRA = [["Todos"], ["Quesos"], ["Carnes"], ["Pescados"], ["Verduras"]];
+const GRUPPO_DEL_FILTRO = {
+  Quesos: "Quesos",
+  Carnes: "Carnes",
+  Pescados: "Pescados",
+  Verduras: "Verduras y hierbas",
+};
+
 /**
  * ItemPickerModal — popup unico per aggiungere o modificare un item dell'ordine.
  *
@@ -22,6 +32,8 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
   const [cart, setCart]             = useState({});
   // Quale pizza ha il pannello extras aperto (uid)
   const [extrasOpen, setExtrasOpen] = useState(null);
+  // Filtro SOLO visuale del pannello extra: nasconde bottoni, non tocca prezzi né catalogo.
+  const [extraGruppo, setExtraGruppo] = useState("Todos");
 
   // Reset quando si apre/chiude
   useEffect(() => {
@@ -366,7 +378,22 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                                 borderRadius: 10, border: "1px solid rgba(168,85,247,0.3)",
                                 padding: 10, display: "flex", flexWrap: "wrap", gap: 6
                               }}>
-                                {(esDulce(item) ? EXTRAS_DULCES : INGREDIENTI).filter(ing => ing.tipo !== "base").map(ing => (
+                                {!esDulce(item) && (
+                                  <div style={{ width: "100%", display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 2 }}>
+                                    {FILTRI_EXTRA.map(([label]) => (
+                                      <button key={label} onClick={() => setExtraGruppo(label)} style={{
+                                        background: extraGruppo === label ? "rgba(168,85,247,0.3)" : "transparent",
+                                        border: `1px solid ${extraGruppo === label ? "#a855f7" : "rgba(168,85,247,0.25)"}`,
+                                        borderRadius: 20, color: extraGruppo === label ? "#fff" : "#a855f7",
+                                        fontSize: 10, fontWeight: 700, padding: "3px 9px", cursor: "pointer"
+                                      }}>{label}</button>
+                                    ))}
+                                  </div>
+                                )}
+                                {(esDulce(item) ? EXTRAS_DULCES : INGREDIENTI)
+                                  .filter(ing => ing.tipo !== "base")
+                                  .filter(ing => esDulce(item) || extraGruppo === "Todos" || ing.gruppo === GRUPPO_DEL_FILTRO[extraGruppo])
+                                  .map(ing => (
                                   <button key={ing.id} onClick={() => addExtra(item._uid, ing)} style={{
                                     background: "rgba(168,85,247,0.1)",
                                     border: "1px solid rgba(168,85,247,0.35)",
