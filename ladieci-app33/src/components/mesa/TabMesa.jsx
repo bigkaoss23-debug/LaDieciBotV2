@@ -1151,7 +1151,18 @@ function ComandaActualCard({ session, draft, busy, onMarkServed, onAddItems, onS
 // paidInFull (the same authoritative signal Payment Hub already treats as
 // settled), never assumed from being non-current. Muted/collapsed when
 // there is nothing else to show, same section language as Reservas below.
-function ResumenComandasSection({ session }) {
+//
+// B2 (POST_UAT_BLOCKER_FIX_2026-09-17) -- a historical comanda that is still
+// LISTO must be able to reach RETIRADO too, or a table with 2+ comandas can
+// never legitimately close: mesaService.markServed() already accepts ANY
+// orderId that belongs to this session (no "current comanda only" backend
+// restriction -- see mesaService.js), but until now ONLY ComandaActualCard
+// ever called it, so a comanda that stopped being "current" the moment a
+// newer one was sent lost its one and only path to being marked served. The
+// button below reuses that exact same onMarkServed/busy wiring; it does not
+// touch the close guard (mesa_close_session_v1), which correctly keeps
+// requiring every comanda to reach a terminal state first.
+function ResumenComandasSection({ session, busy, onMarkServed }) {
   const [expanded, setExpanded] = useState(false);
   const commands = session?.commands || [];
   const others = commands.length > 1 ? commands.slice(0, -1) : [];
@@ -1191,6 +1202,8 @@ function ResumenComandasSection({ session }) {
           {paidInFull ? "Pagada" : commandStateLabel(command.state)}
         </span>
         <strong className="mesa-resumen-amount">{euro(command.total)}</strong>
+        {command.state === "LISTO" && <button type="button" className="mesa-btn green small" data-testid="mesa-resumen-mark-served"
+          disabled={busy} onClick={() => onMarkServed(command.id)}>✓ Servida</button>}
       </div>)}
     </div>}
   </div>;
@@ -2126,7 +2139,7 @@ function MesaWorkspace({
         "Enviar a cocina" here calls the backend. Unrelated to Comanda
         actual above -- a draft is not yet a real comanda at all. */}
 
-    <ResumenComandasSection session={session} />
+    <ResumenComandasSection session={session} busy={busy} onMarkServed={markServed} />
     <ReservasSection todayReservations={todayReservations} nextReservation={nextReservation}
       canManageReservations={canManageReservations} onOpen={onViewNight} />
 
