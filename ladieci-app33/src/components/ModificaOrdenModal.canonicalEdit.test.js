@@ -237,3 +237,63 @@ describe("NF-2 — structured extras and price", () => {
     await unmount(again);
   });
 });
+
+// L1 (POST_UAT_BLOCKER_FIX_2026-09-17) — "Quitar ingredientes" is the block the
+// UAT observed directly (real ingredient chips: Tomate San Marzano, Fior di
+// latte, Albahaca — El Pelusa's own `ing` field). REACHABLE_LEGACY confirmed:
+// this modal is imported and rendered live from ServicioPage.jsx. Unlike every
+// other row above, the remove-ingredient toggle does NOT go through
+// menu/canonicalLineEdit.js — it writes `removedIngredients` directly on the
+// line via local setItems. This section proves that path is still safe: the
+// structured `removedIngredients` array is the ONLY thing that changes, and
+// classicName/fantasyName/n (product identity) and note/extras are never
+// touched by it — the historical risk (note/extra promoted into classicName)
+// does not reach this toggle.
+describe("L1 — Quitar ingredientes (legacy chip toggle), reachability and save-safety", () => {
+  test("L1a: the chip row renders the item's OWN real base ingredients, one chip per ingredient", async () => {
+    const m = await mount(order([tulipano()]));
+    const chips = Array.from(m.container.querySelectorAll('[data-testid="modifica-remove-chip"]'));
+    const labels = chips.map((c) => c.textContent);
+    expect(labels).toEqual(["Tomate San Marzano", "Fior di latte", "Gorgonzola", "Provolone", "Parmigiano"]);
+    await unmount(m);
+  });
+
+  test("L1b: toggling a chip off saves it in removedIngredients and toggling it back on clears it, with no other field touched", async () => {
+    const m = await mount(order([tulipano()]));
+    const chips = () => Array.from(m.container.querySelectorAll('[data-testid="modifica-remove-chip"]'));
+    const fiorDiLatte = () => chips().find((c) => c.textContent.includes("Fior di latte"));
+    expect(fiorDiLatte().getAttribute("aria-pressed")).toBe("false");
+
+    await click(fiorDiLatte());
+    expect(fiorDiLatte().getAttribute("aria-pressed")).toBe("true");
+    const itemsRemoved = await save(m.container, m.saved);
+    expect(itemsRemoved[0].removedIngredients).toEqual(["Fior di latte"]);
+    // Product identity and every other structured field are untouched by the toggle.
+    expect(itemsRemoved[0].classicName).toBe("Quattro Formaggi");
+    expect(itemsRemoved[0].fantasyName).toBe("Il Tulipano Nero");
+    expect(itemsRemoved[0].n).toBe("Il Tulipano Nero");
+    expect(itemsRemoved[0].extras).toEqual([]);
+    expectCoherent(itemsRemoved);
+
+    await click(fiorDiLatte());
+    const itemsRestored = await save(m.container, m.saved);
+    expect(itemsRestored[0].removedIngredients).toEqual([]);
+    expect(itemsRestored[0].classicName).toBe("Quattro Formaggi");
+    await unmount(m);
+  });
+
+  test("L1c: removing an ingredient and adding an extra in the same edit never leaks into classicName/notes", async () => {
+    const m = await mount(order([tulipano(), misu()]));
+    const chips = () => Array.from(m.container.querySelectorAll('[data-testid="modifica-remove-chip"]'));
+    await click(chips().find((c) => c.textContent.includes("Gorgonzola")));
+    await addExtra(m.container, 0, "Albahaca fresca");
+    const items = await save(m.container, m.saved);
+    expect(items[0].removedIngredients).toEqual(["Gorgonzola"]);
+    expect(items[0].extras).toEqual([{ key: "ing_albahaca", name: "Albahaca fresca", emoji: "🌿", price: 0.5, quantity: 1 }]);
+    expect(items[0].classicName).toBe("Quattro Formaggi");
+    expect(items[0].fantasyName).toBe("Il Tulipano Nero");
+    expect(items[0].nota).toBeUndefined();
+    expectCoherent(items);
+    await unmount(m);
+  });
+});
