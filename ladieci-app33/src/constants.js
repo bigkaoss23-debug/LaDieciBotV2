@@ -112,43 +112,47 @@ const MENU = [
 ];
 const CATS = ["Pizzas", "Cocina", "Postres", "Bebidas"];
 
-// ─── INGREDIENTI per pizza personalizzata ─────────────────────
-// standard = +0.50€  |  premium = +0.50€
+// ─── INGREDIENTI / EXTRAS PIZZA ───────────────────────────────
+// Catalogo UNICO degli extra salati: lo usano sia il pannello extra dei
+// picker (pizza normale) sia PizzaCustomBuilder (Pizza a tu gusto).
+// Prezzi della carta 2026-09-17: 0,00 / 0,50 / 1,00 / 2,00 €.
+// Gli extra a 0 € restano selezionabili e non alzano il totale.
 const PIZZA_BASE = { n:"Pizza a tu gusto", p:12.0, e:"⭐", cat:"Pizzas",
   sub:"Base Pelusa", ing:"Tomate San Marzano, Fior di latte" };
 
 const INGREDIENTI = [
-  // Base (sempre inclusi nella Pelusa — non si pagano extra)
+  // Base (sempre inclusa nella Pelusa — non si paga extra, non compare tra gli extra)
   { id:"ing_tomate",   n:"Tomate San Marzano",      e:"🍅", prezzo:0,    tipo:"base",     gruppo:"Base" },
   { id:"ing_fior",     n:"Fior di latte",            e:"🥛", prezzo:0,    tipo:"base",     gruppo:"Base" },
-  // Standard +0.50€
-  { id:"ing_albahaca", n:"Albahaca fresca",          e:"🌿", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_ajo",      n:"Ajo",                      e:"🧄", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_oregano",  n:"Orégano",                  e:"🌿", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_berenjena",n:"Berenjena",                e:"🍆", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_pimiento", n:"Pimiento",                 e:"🫑", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_tomate_c", n:"Tomate cherry",            e:"🍅", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_cebolla",  n:"Cebolla morada",           e:"🧅", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_aceitunas",n:"Aceitunas negras",         e:"🫒", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
+  // ── QUESOS ──
+  { id:"ing_provola",           n:"Provola ahumada",                 e:"🔶", prezzo:1.00, tipo:"standard", gruppo:"Quesos" },
+  { id:"ing_parmigiano",        n:"Lascas Parmigiano Reggiano DOP",  e:"🧀", prezzo:1.00, tipo:"standard", gruppo:"Quesos" },
+  { id:"ing_gorgonzola",        n:"Gorgonzola dulce DOP",            e:"💙", prezzo:1.00, tipo:"standard", gruppo:"Quesos" },
+  { id:"ing_gorgonzola_picante",n:"Gorgonzola picante",              e:"💙", prezzo:1.00, tipo:"standard", gruppo:"Quesos" },
+  { id:"ing_provolone",         n:"Provolone",                       e:"🧀", prezzo:1.00, tipo:"standard", gruppo:"Quesos" },
+  { id:"ing_grana",             n:"Grana Padano rallado",            e:"🧀", prezzo:0,    tipo:"standard", gruppo:"Quesos" },
+  { id:"ing_pecorino",          n:"Pecorino Romano rallado",         e:"🧀", prezzo:0,    tipo:"standard", gruppo:"Quesos" },
+  // ── CARNES ──
+  { id:"ing_jamon",         n:"Prosciutto cotto (Jamón cocido)",   e:"🥓", prezzo:1.00, tipo:"standard", gruppo:"Carnes" },
+  { id:"ing_prosciutto",    n:"Prosciutto crudo (Jamón serrano)",  e:"🍖", prezzo:2.00, tipo:"standard", gruppo:"Carnes" },
+  { id:"ing_coppa",         n:"Coppa",                             e:"🥓", prezzo:2.00, tipo:"standard", gruppo:"Carnes" },
+  { id:"ing_spianata",      n:"Spianata Calabra picante",          e:"🌶️", prezzo:1.00, tipo:"standard", gruppo:"Carnes" },
+  { id:"ing_salami",        n:"Salami picante",                    e:"🌶️", prezzo:1.00, tipo:"standard", gruppo:"Carnes" },
+  { id:"ing_mortadela",     n:"Mortadela",                         e:"🌭", prezzo:1.00, tipo:"standard", gruppo:"Carnes" },
+  { id:"ing_salami_napoli", n:"Salami Napoli",                     e:"🥩", prezzo:1.00, tipo:"standard", gruppo:"Carnes" },
+  // ── PESCADOS ──
+  { id:"ing_atun",     n:"Atún",                     e:"🐟", prezzo:1.00, tipo:"standard", gruppo:"Pescados" },
+  // ── OTROS / VERDURAS Y HIERBAS ──
+  { id:"ing_huevo",     n:"Yema de huevo",           e:"🥚", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
+  { id:"ing_aceitunas", n:"Aceitunas negras",        e:"🫒", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
+  { id:"ing_tom_conf",  n:"Tomate confitado",        e:"🍯", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
+  { id:"ing_cebolla",   n:"Cebolla morada",          e:"🧅", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
+  { id:"ing_pimiento",  n:"Pimiento",                e:"🫑", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
+  { id:"ing_berenjena", n:"Berenjena",               e:"🍆", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
+  { id:"ing_albahaca",  n:"Albahaca",                e:"🌿", prezzo:0,    tipo:"standard", gruppo:"Verduras y hierbas" },
   { id:"ing_alcachofas",n:"Alcachofas",              e:"🌱", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_champis",  n:"Champiñones frescos",      e:"🍄", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_tom_conf", n:"Tomates confitados",       e:"🍯", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_rucola",   n:"Rúcula",                   e:"🌿", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_nueces",   n:"Nueces",                   e:"🌰", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
-  { id:"ing_jamon",    n:"Jamón cocido",             e:"🥓", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
-  { id:"ing_pancetta", n:"Pancetta",                 e:"🥓", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
-  { id:"ing_huevo",    n:"Huevo carbonara",          e:"🥚", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
-  { id:"ing_salami",   n:"Salami picante Napoli",    e:"🌶️", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
-  { id:"ing_spianata", n:"Spianata Calabra",         e:"🌶️", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
-  { id:"ing_salami_napoli", n:"Salami Napoli",       e:"🥩", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
-  { id:"ing_coppa",    n:"Coppa",                    e:"🥓", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
-  { id:"ing_atun",     n:"Atún",                     e:"🐟", prezzo:0.50, tipo:"standard", gruppo:"Pescados" },
-  { id:"ing_provolone",n:"Provolone",                e:"🧀", prezzo:0.50, tipo:"standard", gruppo:"Quesos" },
-  { id:"ing_parmigiano",n:"Parmigiano Reggiano",     e:"🧀", prezzo:0.50, tipo:"standard", gruppo:"Quesos" },
-  { id:"ing_bufala",   n:"Mozzarella di Bufala DOP", e:"⭐", prezzo:0.50, tipo:"standard", gruppo:"Quesos" },
-  { id:"ing_gorgonzola",n:"Gorgonzola DOP",          e:"💙", prezzo:0.50, tipo:"standard", gruppo:"Quesos" },
-  { id:"ing_provola",   n:"Provola Ahumada",         e:"🔶", prezzo:0.50, tipo:"standard", gruppo:"Quesos" },
-  { id:"ing_prosciutto",n:"Prosciutto crudo",        e:"🍖", prezzo:0.50, tipo:"standard", gruppo:"Carnes" },
+  { id:"ing_champis",   n:"Champiñones",             e:"🍄", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
+  { id:"ing_rucola",    n:"Rúcula",                  e:"🌿", prezzo:0.50, tipo:"standard", gruppo:"Verduras y hierbas" },
 ];
 
 const GRUPPI_ING = ["Base","Verduras y hierbas","Carnes","Pescados","Quesos"];

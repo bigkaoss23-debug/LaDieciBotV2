@@ -219,13 +219,14 @@ describe("extra — salati e dolci", () => {
     });
   });
 
-  test("extra salati Salami Napoli e Coppa aggiunti, resto invariato", () => {
+  test("extra salati Salami Napoli e Coppa presenti (carta 2026-09-17)", () => {
     const names = INGREDIENTI.map((i) => i.n);
     expect(names).toContain("Salami Napoli");
     expect(names).toContain("Coppa");
-    // preesistenti: non devono sparire
     expect(names).toContain("Rúcula");
-    expect(names).toContain("Salami picante Napoli");
+    // rinominato dalla carta: "Salami picante Napoli" → "Salami picante"
+    expect(names).toContain("Salami picante");
+    // il catalogo completo e i prezzi sono in extrasCanonicalCatalogue.test.js
   });
 
   test("nessun extra dolce è finito dentro INGREDIENTI (liste separate)", () => {
@@ -279,7 +280,7 @@ describe("findExtra", () => {
   test("trova un extra salato con prezzo ed emoji", () => {
     const coppa = findExtra("Coppa");
     expect(coppa).not.toBeNull();
-    expect(coppa.prezzo).toBe(0.5);
+    expect(coppa.prezzo).toBe(2); // carta 2026-09-17
     expect(coppa.e).toBeTruthy();
   });
 

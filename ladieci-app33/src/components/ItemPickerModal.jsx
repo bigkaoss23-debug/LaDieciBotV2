@@ -366,7 +366,7 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                                 borderRadius: 10, border: "1px solid rgba(168,85,247,0.3)",
                                 padding: 10, display: "flex", flexWrap: "wrap", gap: 6
                               }}>
-                                {(esDulce(item) ? EXTRAS_DULCES : INGREDIENTI).filter(ing => ing.prezzo > 0).map(ing => (
+                                {(esDulce(item) ? EXTRAS_DULCES : INGREDIENTI).filter(ing => ing.tipo !== "base").map(ing => (
                                   <button key={ing.id} onClick={() => addExtra(item._uid, ing)} style={{
                                     background: "rgba(168,85,247,0.1)",
                                     border: "1px solid rgba(168,85,247,0.35)",

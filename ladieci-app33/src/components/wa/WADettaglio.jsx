@@ -682,9 +682,12 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                   {/* Griglia ingredienti */}
                   <div style={{overflowY:"auto",padding:"12px 14px",flex:1}}>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                      {(esDulce(editItems[showIngPanel])?EXTRAS_DULCES:INGREDIENTI).filter(ing=>ing.prezzo>0).map(ing=>{
+                      {(esDulce(editItems[showIngPanel])?EXTRAS_DULCES:INGREDIENTI).filter(ing=>ing.tipo!=="base").map(ing=>{
                         const currentSub = editItems[showIngPanel]?.sub || "";
-                        const count = (currentSub.match(new RegExp(`\\+${ing.n}`, "g")) || []).length;
+                        // I nomi della carta contengono parentesi — vanno escapati, altrimenti
+                        // diventerebbero gruppi di cattura e il contatore resterebbe a 0.
+                        const ingRe = ing.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                        const count = (currentSub.match(new RegExp(`\\+${ingRe}`, "g")) || []).length;
                         const sel = count > 0;
                         return (
                         <button key={ing.id}

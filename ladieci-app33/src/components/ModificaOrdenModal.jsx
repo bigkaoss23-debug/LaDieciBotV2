@@ -271,7 +271,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                       <div style={{marginTop:5,background:"rgba(14,14,14,0.95)",borderRadius:10,
                         border:"1px solid rgba(168,85,247,0.3)",padding:"8px",
                         display:"flex",flexWrap:"wrap",gap:5}}>
-                        {(esDulce(it)?EXTRAS_DULCES:INGREDIENTI).filter(ing=>ing.prezzo>0).map(ing=>(
+                        {(esDulce(it)?EXTRAS_DULCES:INGREDIENTI).filter(ing=>ing.tipo!=="base").map(ing=>(
                           <button key={ing.id}
                             onClick={()=>{
                               setItems(prev=>prev.map((x,j)=>j===idx?{
