@@ -13,9 +13,9 @@ const isPizzaItem = (it) => {
   if (!it || !it.n) return false;
   if (it.n === "Entrega a domicilio") return false;
   const cat = it.cat || "Pizzas";
-  if (cat === "Bebidas") return false;
-  if (cat === "Postres" && !isDessertPizza(it)) return false;
-  return true;
+  // Solo pizze da forno: Cocina, Bebidas e Postres non pizza non contano.
+  if (cat === "Postres") return isDessertPizza(it);
+  return cat === "Pizzas";
 };
 
 const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=new Set(),waMsgs=[],onViewChat,onCambiaPago,vipIds}) => {
@@ -487,7 +487,9 @@ const caricoTotale = (ordenes) => {
   const countItems = (items) => (items||[]).filter(it => {
     const mi = lookupMenu(it);
     const cat = it.cat || mi?.cat || "Pizzas";
-    return cat !== "Bebidas" && (cat !== "Postres" || isDessertPizza(it));
+    // Carico forno = solo pizze da forno. Cocina, Bebidas e Postres non pizza = 0.
+    if (cat === "Postres") return isDessertPizza(it);
+    return cat === "Pizzas";
   }).reduce((a,i) => a + (Number(i.q)||1), 0);
   // Conta solo ordini EN_COCINA — carico reale in cucina adesso
   return ordenes

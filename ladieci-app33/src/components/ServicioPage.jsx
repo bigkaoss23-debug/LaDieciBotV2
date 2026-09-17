@@ -823,9 +823,9 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     if (!it || !it.n) return false;
     if (it.n === "Entrega a domicilio") return false;
     const cat = it.cat || "Pizzas";
-    if (cat === "Bebidas") return false;
-    if (cat === "Postres" && !isDessertPizza(it)) return false;
-    return true;
+    // Solo pizze da forno: Cocina, Bebidas e Postres non pizza non contano.
+    if (cat === "Postres") return isDessertPizza(it);
+    return cat === "Pizzas";
   };
   const pizzeFatteStasera = useMemo(() => ordenes
     .filter(o => [ORDER_STATES.LISTO, ORDER_STATES.EN_ENTREGA, ORDER_STATES.RETIRADO].includes(o.estado))

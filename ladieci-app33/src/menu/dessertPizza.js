@@ -19,14 +19,29 @@
  * ma possono contenere soltanto Pizza Nutella: KitKat e Kinder non erano ancora
  * a catalogo. Il fallback sul nome copre quindi per costruzione tutto lo
  * storico, e il flag copre tutto ciò che nasce dal catalogo nuovo.
+ *
+ * CARTA 2026-09-17
+ * Le tre pizze dolci sono state rinominate ("Pizza de Nutella (28cm)" …).
+ * Non tutti i percorsi conservano `dulce`: WADettaglio, per esempio, ricopia
+ * l'item senza il flag. I nomi nuovi entrano quindi nello stesso fallback,
+ * altrimenti una pizza dolce aggiunta da lì sparirebbe dalla Pizzeria e dal
+ * carico forno.
  */
+
+const DESSERT_PIZZA_NAMES = new Set([
+  // Ordini storici precedenti al flag `dulce`.
+  "Pizza Nutella",
+  // Nomi della carta 2026-09-17 (id 16 / 40 / 41).
+  "Pizza de Nutella (28cm)",
+  "Pizza de KitKat (28cm)",
+  "Pizza de Kinder (28cm)",
+]);
 
 /** Il dessert è una pizza vera e propria (occupa il forno)? */
 export function isDessertPizza(item) {
   if (!item) return false;
   if (item.dulce === true) return true;
-  // Ordini storici precedenti al flag `dulce`.
-  return item.n === "Pizza Nutella";
+  return DESSERT_PIZZA_NAMES.has(item.n);
 }
 
 export default isDessertPizza;

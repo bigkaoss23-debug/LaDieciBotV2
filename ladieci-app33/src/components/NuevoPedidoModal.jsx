@@ -6,7 +6,7 @@ import ItemPickerModal from './ItemPickerModal';
 import { applyUiOffset } from '../utils/uiOffset';
 import { createLatestOnly, shouldGeocode, GEOCODE_DEBOUNCE_MS } from '../utils/nuevoPedidoGeocode';
 import DescuentoInput from './ui/DescuentoInput';
-import { getKitchenCapacityStatus } from '../core/kitchen/capacity';
+import { getKitchenCapacityStatus, isPizzaItem } from '../core/kitchen/capacity';
 
 const CLOSING_TIME_MIN = 23 * 60;
 const CLOSING_TIME_ERROR = "Hora inválida.";
@@ -620,8 +620,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
           const fornoMin = fornoStr ? toMin(fornoStr) : ((toMin(o.hora) - tgO) + (Number(o.ui_offset_min)||0));
           return slotOf(fornoMin) === targetSlot;
         })
+        // Solo le pizze da forno occupano lo slot: Cocina, Bebidas e Postres non pizza no.
         .reduce((s, o) => s + (o.items||[])
-          .filter(it => it.n !== "Entrega a domicilio" && it.cat !== "Bebidas")
+          .filter(isPizzaItem)
           .reduce((a, it) => a + (parseInt(it.q)||1), 0), 0);
 
     const pizzeSlot = countPizzeSlot(slot);

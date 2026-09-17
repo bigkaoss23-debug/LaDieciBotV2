@@ -52,12 +52,13 @@ export function getKitchenCapacity(windowMinutes = DEFAULT_WINDOW_MINUTES) {
   return Math.floor(safeWindow / 5) * PIZZAS_PER_5_MINUTES;
 }
 
+// Forno pizza = cat "Pizzas" (o item legacy senza cat) + pizze dolci dei Postres.
+// Cocina, Bebidas e Postres non pizza non occupano il forno.
 export function isPizzaItem(item) {
   if (!item || item.n === "Entrega a domicilio") return false;
   const cat = item.cat || "Pizzas";
-  if (cat === "Bebidas") return false;
-  if (cat === "Postres" && !isDessertPizza(item)) return false;
-  return true;
+  if (cat === "Postres") return isDessertPizza(item);
+  return cat === "Pizzas";
 }
 
 export function countPizzas(items) {

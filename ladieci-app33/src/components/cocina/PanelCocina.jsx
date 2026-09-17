@@ -3,7 +3,6 @@ import { C, tot, MAX_PIZZE_ORA, LOGO_RED_SRC, useWidth } from '../../constants';
 import { caricoTotale, lookupMenu, orarioToMs, calcTimer, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
-import Suoni from '../../sounds';
 import SnoozeButton from '../ui/SnoozeButton';
 import { api } from '../../api';
 import { isDessertPizza } from '../../menu/dessertPizza';
@@ -59,12 +58,14 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
   const caricoColor = pctCarico >= 90 ? "#C0392B" : pctCarico >= 65 ? "#E67E22" : "#27AE60";
   const caricoLabel = pctCarico >= 90 ? "FORNO SATURO" : pctCarico >= 65 ? "Cargado" : "Ok";
 
-  const isExtra = (it) => {
+  // Pizzeria = solo pizze da forno (Pizzas + pizze dolci). Cocina, Bebidas e
+  // Postres non pizza restano nella scheda Cocina, che vede l'ordine completo
+  // ed è l'unica a portarlo a LISTO.
+  const isPizzaForno = (it) => {
     const mi = lookupMenu(it);
     const cat = it.cat || mi?.cat || "Pizzas";
-    if (cat === "Bebidas") return true;
-    if (cat === "Postres" && !isDessertPizza(it)) return true;
-    return false;
+    if (cat === "Postres") return isDessertPizza(it);
+    return cat === "Pizzas";
   };
   const manualGiroMetaById = buildManualGiroMetaById(manualGiros);
 
@@ -76,7 +77,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
         o = { ...o, ui_offset_min: localOffsets[o.id] };
       }
       const all = (o.items||[]).filter(it => it.n !== "Entrega a domicilio");
-      const items = all.filter(it => !isExtra(it));
+      const items = all.filter(isPizzaForno);
       const isDelivery = o.tipo_consegna === "DOMICILIO";
       const zonaObj = isDelivery ? ZONE_DELIVERY.find(z => z.id === o.zona) : null;
       const manualGiro = getManualGiroForOrder(o, manualGiroMetaById);
@@ -92,12 +93,11 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       return {
         ...o,
         items,
-        extras: all.filter(it => isExtra(it)),
         isDelivery, horaForno, manualGiro,
         _timer: calcTimer(oPerTimer, now)
       };
     })
-    .filter(o => o.items.length > 0 || o.extras.length > 0);
+    .filter(o => o.items.length > 0);
 
   const activos = [...activosBase].sort((a,b) => {
       const aH = a.horaForno || a.hora, bH = b.horaForno || b.hora;
@@ -383,41 +383,6 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                         </div>
                       );
                     })}
-                    {/* Bebidas / Postres — solo se presenti */}
-                    {o.extras && o.extras.length > 0 && (
-                      <div style={{
-                        marginTop: o.items.length>0 ? 4 : 0,
-                        background:"#FFF7E6",
-                        border:"1.5px dashed #F0B000",
-                        borderRadius:10,
-                        padding:"8px 12px",
-                        gridColumn: compact ? "1 / -1" : undefined
-                      }}>
-                        <div style={{fontSize:10,fontWeight:900,letterSpacing:1.2,
-                          color:"#A06900",textTransform:"uppercase",marginBottom:6}}>
-                          🥤 Bebidas / Postres
-                        </div>
-                        {o.extras.map((it,i)=>{
-                          const mi = lookupMenu(it);
-                          const isSize = mi?.sub && /^[\d,.]+\s*(cl|ml|l)$/i.test(mi.sub.trim());
-                          const nomeProdotto = mi?.n || it.n || "";
-                          const sizeInfo = isSize ? ` ${mi.sub}` : "";
-                          const varSub = it.sub || "";
-                          return (
-                            <div key={i} style={{display:"flex",alignItems:"center",gap:8,
-                              padding:"3px 0",borderTop:i>0?"1px dashed #F0B00066":"none"}}>
-                              <span style={{background:"#F0B000",color:"#fff",borderRadius:6,
-                                padding:"2px 8px",fontFamily:"'DM Mono',monospace",
-                                fontWeight:900,fontSize:13,lineHeight:1,flexShrink:0}}>×{it.q}</span>
-                              <span style={{color:"#3A2A00",fontSize:13,fontWeight:800,flex:1,
-                                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                                {varSub ? varSub : `${nomeProdotto}${sizeInfo}`}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
                     {/* Note operatore — span entrambe le colonne in compact */}
                     {notaCucinaOp&&(
                       <div style={{background:"#E8341C",borderRadius:9,
@@ -436,23 +401,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                       </div>
                     );
                   })()}
-
-                  {/* Footer LISTO */}
-                  <div style={{padding:"11px 16px 14px",borderTop:`1px solid ${fc.border}44`,background:"#f5f5f5"}}>
-                    <button
-                      onClick={()=>{ Suoni.campanellaDieci(); onListo(o.id, {
-                        origin: "PanelCocina",
-                        actor: "cocina_fullscreen",
-                      }); }}
-                      style={{width:"100%",
-                        background:"linear-gradient(145deg,#27AE60,#1A7A44)",
-                        border:"none",color:"#fff",borderRadius:12,padding:"14px 0",
-                        fontWeight:900,fontSize:16,letterSpacing:.5,
-                        boxShadow:"0 4px 14px rgba(39,174,96,.35)",cursor:"pointer",
-                        fontFamily:"'Satoshi',-apple-system,sans-serif"}}>
-                      ✅ LISTO
-                    </button>
-                  </div>
+                  {/* Nessun LISTO qui: lo porta la scheda Cocina, che vede l'ordine completo. */}
                 </div>
               );
             })}

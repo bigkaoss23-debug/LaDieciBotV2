@@ -81,16 +81,16 @@ describe("D-03 · il nome classico non finisce nelle note dell'ordine", () => {
     expect(src).toMatch(/return \[\.\.\.prev,\{\.\.\.p,q:1,sub:""\}\]/);
   });
 
-  test("simulazione: aggiungere El Pelusa non lascia 'Margherita Classica' come variazione", () => {
+  test("simulazione: aggiungere El Pelusa non lascia 'Margherita' come variazione", () => {
     const pelusa = MENU.find((m) => String(m.id) === "1");
-    expect(pelusa.sub).toBe("Margherita Classica"); // il catalogo lo espone come nome classico
+    expect(pelusa.sub).toBe("Margherita"); // il catalogo lo espone come nome classico (carta 2026-09-17)
     const aggiunto = { ...pelusa, q: 1, sub: "" };  // ciò che tap() produce ora
     expect(aggiunto.sub).toBe("");
     expect(aggiunto.n).toBe("El Pelusa");
     expect(aggiunto.id).toBe(1);
   });
 
-  test("lo stesso vale per tutte e 14 le pizze", () => {
+  test("lo stesso vale per tutte e 16 le pizze", () => {
     MENU.filter((m) => m.num).forEach((p) => {
       expect({ ...p, q: 1, sub: "" }.sub).toBe("");
     });

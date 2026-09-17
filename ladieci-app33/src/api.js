@@ -549,7 +549,8 @@ const api = {
       (Array.isArray(itemsR)?itemsR:[]).forEach(it=>{
         const p=parseFloat(it.p||0),q=parseInt(it.q)||1;
         if(!isNaN(p)&&p>0) tot2+=p*q;
-        if(it.cat==="Bebidas") bevandeG+=q; else pizzeG+=q;
+        // "Comparar semanas": pizze = solo cat "Pizzas" (item legacy senza cat = pizza, come in 1c9bf16).
+        if(it.cat==="Bebidas") bevandeG+=q; else if((it.cat||"Pizzas")==="Pizzas") pizzeG+=q;
       });
       if(r.totale > 0) tot2 = r.totale;
       if(!perGiorno[dataKey]) perGiorno[dataKey]={

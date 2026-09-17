@@ -42,7 +42,8 @@ const orderNumberValue = (id) => {
   return Number.isFinite(n) ? n : 999999;
 };
 
-const aggrega = (righe) => {
+// Esportata solo per i test (conteggio pizze di "Comparar semanas").
+export const aggrega = (righe) => {
   if(!righe || righe.length === 0) return null;
 
   // Backend v7 manda oggetti con chiavi — normalizza gestisce entrambi i casi
@@ -237,7 +238,8 @@ const aggrega = (righe) => {
     (Array.isArray(itemsR)?itemsR:[]).forEach(it=>{
       const p=parseFloat(it.p||0),q=parseInt(it.q)||1;
       if(!isNaN(p)&&p>0) tot+=p*q;
-      if(it.cat==="Bebidas") bevandeG+=q; else pizzeG+=q;
+      // "Comparar semanas": pizze = solo cat "Pizzas" (item legacy senza cat = pizza, come in 1c9bf16).
+      if(it.cat==="Bebidas") bevandeG+=q; else if((it.cat||"Pizzas")==="Pizzas") pizzeG+=q;
     });
     // Use corrected r.totale (includes delivery fee) when available
     const rTotale = parseFloat(getField(r,"totale","total","Total")||0);
