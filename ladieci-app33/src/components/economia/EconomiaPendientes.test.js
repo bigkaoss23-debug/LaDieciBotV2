@@ -459,6 +459,24 @@ describe("General · Pendientes left the internal tabs", () => {
     unmount(container, root);
   });
 
+  // B3 (POST_UAT_BLOCKER_FIX_2026-09-17) -- investigated end to end (backend
+  // pendingExposures.js, this component, useEconomyPendencies): the reader,
+  // scope resolution and rendering are all correct and already covered above
+  // and in pendingExposures.test.js (cases A/F/G-H-I/J). PENDIENTE reads 0,00 €
+  // whenever every currently-unpaid order is still operationally active
+  // (isOperationallyOver) -- a DIFFERENT, narrower question than Finalizar's
+  // "Saldo pendiente" (which legitimately includes those active orders). The
+  // two numbers disagreeing is not a binding bug; this caption is the actual
+  // fix, making that distinction visible on the KPI itself.
+  test("PENDIENTE carries a caption distinguishing it from Finalizar's running balance", async () => {
+    economyApi.pendencies.mockResolvedValue({
+      ...NOTHING, counts: { porCobrar: 0, porDevolver: 0, requiereRevision: 0 }, totals: { porCobrar: 0, porDevolver: null },
+    });
+    const { container, root } = await mount(EconomiaGeneral);
+    expect(byId(container, "general-kpi-pendiente").textContent).toContain("Tras cierre operativo");
+    unmount(container, root);
+  });
+
   test("clicking PENDIENTE calls onNavigateToPendientes with the canonical scope params", async () => {
     economyApi.pendencies.mockResolvedValue({
       ...NOTHING, counts: { porCobrar: 1, porDevolver: 0, requiereRevision: 0 }, totals: { porCobrar: 20, porDevolver: null },

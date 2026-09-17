@@ -400,6 +400,18 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext, onNaviga
                 every other KPI. */}
             <Kpi label="Pendiente" value={pendMoney} testId="general-kpi-pendiente"
               tone={pendPositive ? ACCENT : undefined}
+              // B3 (POST_UAT_BLOCKER_FIX_2026-09-17) -- this is NOT the same
+              // number as Finalizar's "Saldo pendiente". Pendencias (this KPI)
+              // deliberately excludes any order/mesa still operationally
+              // active (isOperationallyOver, pendingExposures.js) -- a LISTO
+              // delivery or an open Mesa is the normal operational UI's job,
+              // not a pendencia. Finalizar's running balance legitimately
+              // includes those still-active orders. Investigated against live
+              // staging + the existing test suite: both numbers were correct
+              // and simply answering two different questions; this caption is
+              // the fix -- it makes the distinction visible instead of
+              // reading as a discrepancy.
+              sub="Tras cierre operativo"
               onClick={(onNavigateToPendientes && pendReady)
                 ? () => onNavigateToPendientes(scopeToCanonicalParams(scope))
                 : undefined} />
