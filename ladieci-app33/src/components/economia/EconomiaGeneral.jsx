@@ -398,19 +398,22 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext, onNaviga
                 canonical params for this scope. No fallback to another number
                 if the Pendencias read fails — it shows its own ··· / — like
                 every other KPI. */}
-            {/* POST_OPUS_REVIEW_REMEDIATION Scope C (2026-09-18) -- a caption alone left
-                an operator reading "Pendiente 0,00 €" with no way to see the €64,50 a
-                still-active service genuinely owes anywhere in Economía. This KPI is the
-                fix: canonical `snapshot.obligation.unpaid` (economicSnapshot.js, the SAME
-                safeTicket-derived figure Finalizar's "Saldo pendiente" already shows),
-                bound as-is -- no new endpoint, no FE recomputation. It answers a DIFFERENT
-                question than "Pendiente" below (current exposure vs. post-operational
-                exposure) and is placed first, ahead of it, so the live figure is the one
-                an operator sees before the historical one. */}
-            <Kpi label="Por cobrar ahora" value={money(obligation.unpaid)}
+            {/* POST_REMEDIATION_FINAL_OPUS_REVIEW ECON-R1 (2026-09-18) -- `obligation.unpaid`
+                is WINDOW-WIDE (every order born in the window, operationally over or not),
+                the SAME population Pendencias' own `isOperationallyOver` filter narrows
+                down to `totals.porCobrar` below. Binding this KPI to `unpaid` therefore made
+                it a superset of "Pendientes anteriores": for the same scope, 64,50 € live +
+                30 € historical showed as "Por cobrar del servicio actual 94,50 €" next to
+                "Pendientes anteriores 30,00 €" -- the live figure double-counted the
+                historical one. `obligation.currentServiceUnpaid` (economicSnapshot.js) is
+                the STILL-OPEN subset of that same `unpaid` figure -- same safeTicket
+                arithmetic, same predicate Pendencias already owns, filtered rather than
+                re-derived -- bound as-is, no FE recomputation. It and "Pendientes
+                anteriores" now partition the same money instead of overlapping. */}
+            <Kpi label="Por cobrar del servicio actual" value={money(obligation.currentServiceUnpaid)}
               testId="general-kpi-por-cobrar-ahora"
-              tone={ready && (obligation.unpaid || 0) > 0 ? ACCENT : undefined}
-              sub="Servicio en curso, aún sin cerrar" />
+              tone={ready && (obligation.currentServiceUnpaid || 0) > 0 ? ACCENT : undefined}
+              sub="Aún sin cerrar operativamente" />
             <Kpi label="Pendientes anteriores" value={pendMoney} testId="general-kpi-pendiente"
               tone={pendPositive ? ACCENT : undefined}
               // B3 (POST_UAT_BLOCKER_FIX_2026-09-17) -- this is NOT the same
@@ -534,14 +537,18 @@ export function orderContextLabel(row) {
   return 'Retiro';
 }
 
-// POST_OPUS_REVIEW_REMEDIATION Scope C -- "Por cobrar" (not "Pendiente"): this badge is
-// LIVE, any order state, the moment unpaidAmount > 0 -- a different question than the
-// "Pendientes anteriores" KPI above (post-operational only). Same screen, so the two
-// must never share a word, or an owner reads five "Pendiente" orders next to a
-// "Pendiente" tile at 0,00 € as a contradiction instead of two honest answers.
+// POST_REMEDIATION_FINAL_OPUS_REVIEW ECON-R2 (2026-09-18) -- "Sin cobrar" (not "Por
+// cobrar", not "Pendiente"): this badge is LIVE, any order state, the moment
+// unpaidAmount > 0 -- a different question than "Pendientes anteriores" above
+// (post-operational only) AND than the dedicated Pendientes page, whose own group
+// title and summary tile are already "Por cobrar" for ITS post-operational meaning
+// (EconomiaPendientes.jsx). Reusing that exact word here for a live, still-open order
+// was the residual collision the first Scope C pass (Pendiente -> Por cobrar) missed:
+// same screen family, same word, two meanings. Calculation is unchanged (still
+// `unpaidAmount > 0`) -- copy only.
 const STATE_LABEL = (t) => {
   if (t.cancelled) return { text: 'Anulado', tone: MUTED };
-  if ((t.unpaidAmount || 0) > 0) return { text: 'Por cobrar', tone: ACCENT };
+  if ((t.unpaidAmount || 0) > 0) return { text: 'Sin cobrar', tone: ACCENT };
   if ((t.refundedAmount || 0) > 0) return { text: 'Devuelto', tone: MUTED };
   return { text: 'Cobrado', tone: MONEY_IN };
 };

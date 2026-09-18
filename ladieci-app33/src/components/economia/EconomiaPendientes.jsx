@@ -292,14 +292,19 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
               tone={counts.requiereRevision > 0 ? '#c9a8e6' : undefined} />
           </div>
 
-          {/* VISUAL CONSISTENCY PASS 1 — the empty state used to add a sentence
-              ("No hay pendientes. Todo cuadra.") restating what the three zero
-              tiles directly above already say unambiguously. The zeros ARE the
-              statement; the sentence was redundant chrome. The marker element
-              stays so a consumer can still tell "nothing pending" apart from
-              "not loaded" — it is simply silent now. */}
+          {/* POST_REMEDIATION_FINAL_OPUS_REVIEW ECON-R2 (2026-09-18) -- VISUAL_CONSISTENCY_PASS_1
+              made this a silent blank ("nothing owed" would have been a false claim, so it said
+              nothing at all instead). But "silent" and "current service owes real money" look
+              identical here: this page ONLY ever lists post-operational exposures
+              (isOperationallyOver, pendingExposures.js), so an empty read here says nothing
+              about General's "Por cobrar del servicio actual" KPI, which can be genuinely
+              non-zero at the exact same moment. The scope-qualified sentence removes that
+              ambiguity without claiming "nothing is owed" -- it only ever claims "nothing
+              owed AFTER operational close", which this reader's own scope guarantees. */}
           {isEmpty ? (
-            <div data-testid="pendientes-empty" />
+            <div data-testid="pendientes-empty" style={{ color: MUTED, fontSize: 12 }}>
+              No hay pendientes anteriores.
+            </div>
           ) : (
             <>
               {/* POST_OPUS_REVIEW_REMEDIATION Scope C -- this page only ever lists

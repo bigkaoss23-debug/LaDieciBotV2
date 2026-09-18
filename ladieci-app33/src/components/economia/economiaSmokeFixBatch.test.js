@@ -524,11 +524,12 @@ describe('ventas · which sales compose this scope', () => {
     expect(text[0]).toContain('Cobrado');
     expect(text[1]).toContain('#999032');
     expect(text[1]).toContain('15,00');
-    // POST_OPUS_REVIEW_REMEDIATION Scope C (2026-09-18): renamed from "Pendiente" to
-    // "Por cobrar" so this live per-order badge never again collides with the
-    // post-operational-only "Pendientes anteriores" KPI/page, which now owns the word
-    // "Pendiente" exclusively.
-    expect(text[1]).toContain('Por cobrar');
+    // POST_REMEDIATION_FINAL_OPUS_REVIEW ECON-R2 (2026-09-18): renamed again, from
+    // "Por cobrar" to "Sin cobrar" — "Por cobrar" was itself the collision, reused
+    // verbatim by the dedicated Pendientes page's own (post-operational-only) group
+    // title and summary tile (EconomiaPendientes.jsx). This live per-order badge now
+    // shares no word with either "Pendientes anteriores" or the Pendientes page.
+    expect(text[1]).toContain('Sin cobrar');
     expect(text[2]).toContain('#999033');
     expect(text[2]).toContain('17,00');
     // Context resolved from the order rows the page already holds.

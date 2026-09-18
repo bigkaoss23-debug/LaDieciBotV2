@@ -256,12 +256,13 @@ test("K · per-group empty copy when one group is empty, global empty copy when 
 
   economyApi.pendencies.mockResolvedValue(NOTHING);
   const none = await mount();
-  // VISUAL CONSISTENCY PASS 1 — the marker survives (a consumer must still be
-  // able to tell "nothing pending" apart from "not loaded"), but it no longer
-  // carries a sentence: the three zero tiles directly above already say it,
-  // and "No hay pendientes. Todo cuadra." was only restating them.
+  // POST_REMEDIATION_FINAL_OPUS_REVIEW ECON-R2 (2026-09-18) — VISUAL_CONSISTENCY_PASS_1's
+  // silent marker (no text at all) was itself the defect: "silent" and "the current
+  // service still owes real money" render identically. The marker survives, but now
+  // carries a SCOPE-QUALIFIED sentence ("anteriores", not "pendientes" bare) so it can
+  // never be misread as "nothing is owed" while General's own live KPI is non-zero.
   expect(byId(none.container, "pendientes-empty")).toBeTruthy();
-  expect(byId(none.container, "pendientes-empty").textContent).toBe("");
+  expect(byId(none.container, "pendientes-empty").textContent).toBe("No hay pendientes anteriores.");
   expect(none.container.textContent).not.toMatch(/todo cuadra/i);
   expect(byId(none.container, "pendientes-group-cobrar")).toBeNull();
   unmount(none.container, none.root);
