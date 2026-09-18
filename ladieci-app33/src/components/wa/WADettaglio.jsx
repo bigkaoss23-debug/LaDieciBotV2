@@ -1,11 +1,21 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { C, MENU, CATS, tot, genId, INGREDIENTI, calcTotale as calcTotaleHelper } from '../../constants';
+import { C, MENU, CATS, tot, genId, INGREDIENTI, findExtra, calcTotale as calcTotaleHelper } from '../../constants';
 import { sb, api, auth } from '../../api';
 import ItemPickerModal from '../ItemPickerModal';
 import Chip from '../ui/Chip';
 import IaPill from '../ui/IaPill';
 import Av from '../ui/Av';
 import { ZONE_DELIVERY, zonaBadgeStyle } from '../../zones';
+// POST_OPUS_REVIEW_REMEDIATION Scope D (2026-09-18) — canonicalization. Before this,
+// the "Añadir ingrediente extra" panel wrote a free-text "+Name" tag directly into
+// `sub` and mutated `p` ad hoc; the save path called `api.post({action:'updateOrden'})`
+// directly, bypassing the draft-write lock every other order-edit surface respects.
+// Same helpers ModificaOrdenModal.jsx already uses (proven save-safe, L1 audit,
+// POST_UAT_BLOCKER_FIX_2026-09-17): structured extras[]/baseUnitPrice/finalUnitPrice
+// stay in sync with `sub` instead of `sub` being the only record.
+import { lineExtras, addLineExtra, removeLineExtra, mergeAddedLines, lineQuantity } from '../../menu/canonicalLineEdit';
+import { applyLineQuantity } from '../../menu/itemSignature';
+import { submitOrderPayload } from '../../order/persistenceGateway';
 
 const stripMd = t => (t||"").replace(/\*\*(.*?)\*\*/gs,"$1").replace(/\*(.*?)\*/gs,"$1").replace(/_(.*?)_/gs,"$1");
 
@@ -251,11 +261,17 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
     if(ia.hora) setHoraEdit(normalizeHora(ia.hora));
   // eslint-disable-next-line
   },[msg.ia]);
+  // Canonical extras resolver — same lookup ModificaOrdenModal.jsx uses.
+  const resolveExtra = (name) => (INGREDIENTI || []).find(g => g.n === name) || findExtra(name);
   const confC = c => c>=80?C.verde:c>=50?C.giallo:C.rosso;
+  // Quantity goes through applyLineQuantity (menu/itemSignature.js), the single
+  // canonical quantity updater every other order-line editor uses — it keeps the q/
+  // quantity mirrors and lineTotal in sync, never a raw `q:+d` mutation left to drift
+  // from a line's canonical extras/baseUnitPrice once those are populated.
   const adj=(idx,d)=>{
     editDirtyRef.current = true;
     setEditItems(prev=>
-      prev.map((it,i)=>i===idx?{...it,q:Math.max(0,(parseInt(it.q)||1)+d)}:it)
+      prev.map((it,i)=>i===idx?applyLineQuantity(it, Math.max(0, lineQuantity(it)+d)):it)
           .filter(it=>it.q>0));
   };
 
@@ -595,18 +611,13 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                     padding:"5px 9px",fontSize:12,fontWeight:it.sub?700:400,
                     boxSizing:"border-box"}}
                 />
-                {/* Riepilogo extras aggiunti via bottone */}
+                {/* Riepilogo extras aggiunti via bottone — canonical extras[] (NF-1/NF-2),
+                    never re-parsed from `sub` text. */}
                 {(()=>{
-                  const matches = (it.sub||"").match(/\+[^,]+/g)||[];
-                  const counts = {};
-                  matches.forEach(m=>{
-                    const name=m.replace(/^\+/,"").trim();
-                    counts[name]=(counts[name]||0)+1;
-                  });
-                  const extras=Object.entries(counts).map(([name,qty])=>{
-                    const ing=INGREDIENTI.find(g=>g.n===name);
-                    return{name,qty,prezzo:ing?Math.round(ing.prezzo*qty*100)/100:0,e:ing?ing.e:"➕"};
-                  });
+                  const extras = lineExtras(it, resolveExtra).map(ex => ({
+                    name: ex.name, qty: ex.quantity, prezzo: Math.round(ex.price * ex.quantity * 100) / 100,
+                    e: ex.emoji || resolveExtra(ex.name)?.e || "➕",
+                  }));
                   if(!extras.length) return null;
                   return(
                     <div style={{marginTop:5,background:"rgba(168,85,247,0.08)",borderRadius:7,
@@ -621,20 +632,8 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                             fontFamily:"'DM Mono',monospace"}}>+{ex.prezzo.toFixed(2)}€</span>
                           <button
                             onClick={()=>{
-                              const ing=INGREDIENTI.find(g=>g.n===ex.name);
-                              setEditItems(prev=>prev.map((x,j)=>{
-                                if(j!==i) return x;
-                                // Rimuove una sola occorrenza di "+NomeIngrediente" dal sub
-                                const parts=(x.sub||"").split(",").map(s=>s.trim()).filter(Boolean);
-                                let rimosso=false;
-                                const newParts=parts.filter(p=>{
-                                  if(!rimosso && p==="+"+ex.name){rimosso=true;return false;}
-                                  return true;
-                                });
-                                const newSub=newParts.join(", ");
-                                const newP=ing?Math.round((x.p - ing.prezzo)*100)/100:x.p;
-                                return{...x, sub:newSub, p:Math.max(0,newP)};
-                              }));
+                              editDirtyRef.current = true;
+                              setEditItems(prev=>prev.map((x,j)=>j===i?removeLineExtra(x, ex.name, resolveExtra):x));
                             }}
                             style={{background:"rgba(232,52,28,0.15)",border:"1px solid rgba(232,52,28,0.4)",
                               borderRadius:5,color:"#E8341C",fontSize:10,fontWeight:800,
@@ -687,17 +686,16 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                   <div style={{overflowY:"auto",padding:"12px 14px",flex:1}}>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                       {INGREDIENTI.filter(ing=>ing.prezzo>0).map(ing=>{
-                        const currentSub = editItems[showIngPanel]?.sub || "";
-                        const count = (currentSub.match(new RegExp(`\\+${ing.n}`, "g")) || []).length;
+                        const currentLine = editItems[showIngPanel];
+                        const count = currentLine
+                          ? (lineExtras(currentLine, resolveExtra).find(e => e.name === ing.n)?.quantity || 0)
+                          : 0;
                         const sel = count > 0;
                         return (
                         <button key={ing.id}
                           onClick={()=>{
-                            setEditItems(prev=>prev.map((x,j)=>j===showIngPanel?{
-                              ...x,
-                              p: Math.round((x.p + ing.prezzo)*100)/100,
-                              sub: [x.sub, `+${ing.n}`].filter(Boolean).join(", ")
-                            }:x));
+                            editDirtyRef.current = true;
+                            setEditItems(prev=>prev.map((x,j)=>j===showIngPanel?addLineExtra(x, ing, resolveExtra):x));
                           }}
                           style={{background: sel ? "rgba(168,85,247,0.2)" : "#222",
                             border: `1px solid ${sel ? "#a855f7" : "#333"}`,
@@ -737,22 +735,26 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
               onClose={() => setShowPickerWa(false)}
               onAdd={async (item) => {
                 editDirtyRef.current = true;
-                const newItems = (() => {
-                  const prev = editItems;
-                  const idx = prev.findIndex(i => String(i.id) === String(item.id) && !item.sub);
-                  if (idx >= 0 && !item.sub) {
-                    const u = [...prev]; u[idx] = { ...u[idx], q: u[idx].q + 1 }; return u;
-                  }
-                  return [...prev, { id: item.id, n: item.n, q: item.q || 1, p: item.p, e: item.e, sub: item.sub || "", alg: item.alg || "", cat: item.cat, ing: item.ing || "" }];
-                })();
+                // NF-1 — same merge rule the catalogue pickers use (menu/canonicalLineEdit.js):
+                // a bare catalogue tap bumps an existing PLAIN row of the same product
+                // through the canonical quantity updater; anything configured (extras,
+                // custom sub) is always its own row. Replaces a raw `q: u[idx].q + 1` mutation.
+                const newItems = mergeAddedLines(editItems, [
+                  { id: item.id, n: item.n, q: item.q || 1, p: item.p, e: item.e, sub: item.sub || "", alg: item.alg || "", cat: item.cat, ing: item.ing || "" },
+                ]);
                 setEditItems(newItems);
-                // Se l'ordine è già in cucina, salva subito su Railway
+                // Se l'ordine è già in cucina, salva subito su Railway — attraverso il
+                // gateway canonico (submitOrderPayload), non più una api.post diretta:
+                // rispetta lo stesso draft-write lock di ogni altro editor de pedidos,
+                // riporta un esito tipizzato invece di un try/catch silenzioso.
                 if (statoLocale === "COCINA" && ordenActivaId) {
                   setSavingUpdate(true);
-                  try {
-                    await api.post({ action: "updateOrden", id: ordenActivaId, items: newItems, hora: horaEdit || undefined });
-                    editDirtyRef.current = false;
-                  } catch (e) { console.error(e); }
+                  const result = await submitOrderPayload(
+                    { id: ordenActivaId, items: newItems, hora: horaEdit || undefined },
+                    { persist: (snap) => api.post({ action: "updateOrden", ...snap }) },
+                  );
+                  if (result.status === "success") editDirtyRef.current = false;
+                  else console.error("[WADettaglio] updateOrden failed:", result.code, result.message);
                   setSavingUpdate(false);
                 }
               }}
@@ -885,12 +887,20 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                 onClick={async()=>{
                   if (!ordenActivaId) return;
                   setSavingUpdate(true);
-                  try {
-                    await api.post({action:"updateOrden", id:ordenActivaId, items:editItems, hora:horaEdit||undefined});
+                  // Same canonical gateway as every other order-edit save path
+                  // (persistenceGateway.js) — draft-write-locked, typed result, never a
+                  // bare try/catch swallowing a failed save with no operator feedback.
+                  const result = await submitOrderPayload(
+                    { id: ordenActivaId, items: editItems, hora: horaEdit || undefined },
+                    { persist: (snap) => api.post({ action: "updateOrden", ...snap }) },
+                  );
+                  if (result.status === "success") {
                     await api.post({action:"updateWaStato", id:msg.id, ia_items: editItems});
                     if (onUpdateIaItems) onUpdateIaItems(msg.id, editItems);
                     editDirtyRef.current = false;
-                  } catch(e){ console.error(e); }
+                  } else {
+                    console.error("[WADettaglio] updateOrden failed:", result.code, result.message);
+                  }
                   setSavingUpdate(false);
                 }}
                 disabled={savingUpdate}
