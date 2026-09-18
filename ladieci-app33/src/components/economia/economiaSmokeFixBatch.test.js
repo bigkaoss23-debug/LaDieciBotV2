@@ -518,13 +518,17 @@ describe('ventas · which sales compose this scope', () => {
     const rows = Array.from(c.querySelectorAll('[data-testid="general-ventas-row"]'));
     expect(rows).toHaveLength(3);
     const text = rows.map((r) => r.textContent);
-    // Order numbers, not anonymous "Cobrado / Pendiente" lines.
+    // Order numbers, not anonymous "Cobrado / Por cobrar" lines.
     expect(text[0]).toContain('#999031');
     expect(text[0]).toContain('69,00');
     expect(text[0]).toContain('Cobrado');
     expect(text[1]).toContain('#999032');
     expect(text[1]).toContain('15,00');
-    expect(text[1]).toContain('Pendiente');
+    // POST_OPUS_REVIEW_REMEDIATION Scope C (2026-09-18): renamed from "Pendiente" to
+    // "Por cobrar" so this live per-order badge never again collides with the
+    // post-operational-only "Pendientes anteriores" KPI/page, which now owns the word
+    // "Pendiente" exclusively.
+    expect(text[1]).toContain('Por cobrar');
     expect(text[2]).toContain('#999033');
     expect(text[2]).toContain('17,00');
     // Context resolved from the order rows the page already holds.

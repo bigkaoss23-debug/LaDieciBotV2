@@ -398,7 +398,20 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext, onNaviga
                 canonical params for this scope. No fallback to another number
                 if the Pendencias read fails — it shows its own ··· / — like
                 every other KPI. */}
-            <Kpi label="Pendiente" value={pendMoney} testId="general-kpi-pendiente"
+            {/* POST_OPUS_REVIEW_REMEDIATION Scope C (2026-09-18) -- a caption alone left
+                an operator reading "Pendiente 0,00 €" with no way to see the €64,50 a
+                still-active service genuinely owes anywhere in Economía. This KPI is the
+                fix: canonical `snapshot.obligation.unpaid` (economicSnapshot.js, the SAME
+                safeTicket-derived figure Finalizar's "Saldo pendiente" already shows),
+                bound as-is -- no new endpoint, no FE recomputation. It answers a DIFFERENT
+                question than "Pendiente" below (current exposure vs. post-operational
+                exposure) and is placed first, ahead of it, so the live figure is the one
+                an operator sees before the historical one. */}
+            <Kpi label="Por cobrar ahora" value={money(obligation.unpaid)}
+              testId="general-kpi-por-cobrar-ahora"
+              tone={ready && (obligation.unpaid || 0) > 0 ? ACCENT : undefined}
+              sub="Servicio en curso, aún sin cerrar" />
+            <Kpi label="Pendientes anteriores" value={pendMoney} testId="general-kpi-pendiente"
               tone={pendPositive ? ACCENT : undefined}
               // B3 (POST_UAT_BLOCKER_FIX_2026-09-17) -- this is NOT the same
               // number as Finalizar's "Saldo pendiente". Pendencias (this KPI)
@@ -408,9 +421,13 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext, onNaviga
               // not a pendencia. Finalizar's running balance legitimately
               // includes those still-active orders. Investigated against live
               // staging + the existing test suite: both numbers were correct
-              // and simply answering two different questions; this caption is
-              // the fix -- it makes the distinction visible instead of
-              // reading as a discrepancy.
+              // and simply answering two different questions.
+              // POST_OPUS_REVIEW_REMEDIATION Scope C -- the caption alone was not a
+              // sufficient fix (a caption cannot be read from the Ventas tab or the
+              // dedicated Pendientes page). Renamed from "Pendiente" to "Pendientes
+              // anteriores" so this label never again collides with the live "Por
+              // cobrar ahora" KPI above or the Ventas "Por cobrar" badge below --
+              // three surfaces, three distinct words, one meaning each.
               sub="Tras cierre operativo"
               onClick={(onNavigateToPendientes && pendReady)
                 ? () => onNavigateToPendientes(scopeToCanonicalParams(scope))
@@ -517,9 +534,14 @@ export function orderContextLabel(row) {
   return 'Retiro';
 }
 
+// POST_OPUS_REVIEW_REMEDIATION Scope C -- "Por cobrar" (not "Pendiente"): this badge is
+// LIVE, any order state, the moment unpaidAmount > 0 -- a different question than the
+// "Pendientes anteriores" KPI above (post-operational only). Same screen, so the two
+// must never share a word, or an owner reads five "Pendiente" orders next to a
+// "Pendiente" tile at 0,00 € as a contradiction instead of two honest answers.
 const STATE_LABEL = (t) => {
   if (t.cancelled) return { text: 'Anulado', tone: MUTED };
-  if ((t.unpaidAmount || 0) > 0) return { text: 'Pendiente', tone: ACCENT };
+  if ((t.unpaidAmount || 0) > 0) return { text: 'Por cobrar', tone: ACCENT };
   if ((t.refundedAmount || 0) > 0) return { text: 'Devuelto', tone: MUTED };
   return { text: 'Cobrado', tone: MONEY_IN };
 };

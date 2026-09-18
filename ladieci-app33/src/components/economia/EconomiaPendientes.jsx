@@ -302,9 +302,17 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
             <div data-testid="pendientes-empty" />
           ) : (
             <>
+              {/* POST_OPUS_REVIEW_REMEDIATION Scope C -- this page only ever lists
+                  post-operational exposures (isOperationallyOver, pendingExposures.js):
+                  an order still LISTO/EN_ENTREGA or on an open Mesa never appears here,
+                  by design, even while genuinely unpaid. The unqualified "Sin saldos
+                  pendientes." used to read as "nothing is owed" when a live service
+                  could owe real money the operator would only see in Economía General's
+                  "Por cobrar ahora" KPI. Qualifying the scope in the empty text itself
+                  removes that ambiguity without touching which items this group lists. */}
               <Group testId="pendientes-group-cobrar" title="Por cobrar"
                 count={counts.porCobrar} total={totals.porCobrar} tone={ACCENT} icon={I_IN}
-                items={porCobrar} emptyText="Sin saldos pendientes."
+                items={porCobrar} emptyText="Sin saldos pendientes tras cierre operativo."
                 renderItem={(it, i) => (
                   <AmountItem key={it.orderUid || `c-${i}`} item={it} tone={ACCENT} testId="pendientes-item-cobrar" />
                 )} />
