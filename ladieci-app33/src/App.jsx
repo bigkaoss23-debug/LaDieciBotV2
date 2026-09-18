@@ -518,7 +518,8 @@ export default function App({ skipSplash = false } = {}) {
       {screen==="repartidor" && <RepartidorPage
           ordenes={ordenes}
           onBack={startedAtRepartidor.current ? null : ()=>setScreen("home")}
-          notify={notify}/>}
+          notify={notify}
+          onUnlocked={()=>setPinUnlocked(true)}/>}
       {/* Vista interna/admin read-only del Delivery Planner. Accesso solo via
           deep-link nascosto /shadow-preview (dietro PIN), nessun bottone operatore. */}
       {screen==="shadowpreview" && <ShadowPreviewPanel onBack={()=>setScreen("home")}/>}

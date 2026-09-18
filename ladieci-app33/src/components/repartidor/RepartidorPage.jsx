@@ -282,7 +282,11 @@ const EntregaCard = ({ orden, onSalgo, onEntregado, loading }) => {
 };
 
 // ─── Pagina principale ────────────────────────────────────────────────────
-const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
+// onUnlocked — F-RIDER-1: called ONCE after this page's own PIN login succeeds as the
+// rider. The order list this page renders is App's `ordenes`, and App loads it only
+// behind its own `pinUnlocked`; without this signal a rider who logs in here on a cold
+// page saw an empty list until a reload. Optional, so any other mount is unchanged.
+const RepartidorPage = ({ ordenes = [], onBack, notify, onUnlocked }) => {
   const [loading,      setLoading]      = useState(null);
   const [ordLocal,     setOrdLocal]     = useState([]);
   const [audioAttivato, setAudioAttivato] = useState(false);
@@ -327,6 +331,7 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
     setRepPinLoading(false);
     if (result.success && result.role === REP_ROLE) {
       setRepUnlocked(true);
+      if (typeof onUnlocked === "function") onUnlocked();
     } else {
       if (result.success) auth.clear();   // authenticated, but not the delivery actor
       setRepPinError(true); setRepPin("");
