@@ -410,7 +410,7 @@ export default function EconomiaGeneral({ lateAfterClose, orderContext, onNaviga
                 arithmetic, same predicate Pendencias already owns, filtered rather than
                 re-derived -- bound as-is, no FE recomputation. It and "Pendientes
                 anteriores" now partition the same money instead of overlapping. */}
-            <Kpi label="Por cobrar del servicio actual" value={money(obligation.currentServiceUnpaid)}
+            <Kpi label="Por cobrar aún abierto" value={money(obligation.currentServiceUnpaid)}
               testId="general-kpi-por-cobrar-ahora"
               tone={ready && (obligation.currentServiceUnpaid || 0) > 0 ? ACCENT : undefined}
               sub="Aún sin cerrar operativamente" />
