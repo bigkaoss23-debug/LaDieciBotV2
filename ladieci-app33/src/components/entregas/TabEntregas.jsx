@@ -4,7 +4,6 @@ import { api } from '../../api';
 import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
-import { isPaymentFailure, describePaymentFailure } from '../../utils/paymentOutcome';
 import { formatOrderNumber, buildVisibleOrderLabels, resolveVisibleOrderLabel } from '../../utils/orderNumber';
 import { formatClockTime } from '../../components/mesa/mesaFormat';
 
@@ -409,11 +408,13 @@ const ZonaOrderRow = ({
         </button>
       )}
 
-      {/* Override: marcar driver de vuelta manualmente.
-          DOMICILIO: RETIRADO = driver rientrato in pizzeria (giro chiuso), NON consegna cliente. */}
+      {/* "Driver de vuelta": intenta cerrar el giro (trip lifecycle), nunca declara una
+          entrega -- solo el repartidor puede confirmar que una entrega ocurrió. El
+          backend rechaza el cierre (EARLY_CLOSE/MISSING_TRIP_MEMBER) si aún faltan
+          entregas por confirmar por el repartidor real. */}
       {isEnEntrega && (
         <button disabled={isLoading} onClick={() => {
-          if (!window.confirm("¿Driver de vuelta? Esta acción cerrará el giro (RETIRADO).")) return;
+          if (!window.confirm("¿Driver de vuelta? Se intentará cerrar el giro. Si quedan entregas sin confirmar por el repartidor, se rechazará.")) return;
           onForzaEntregado && onForzaEntregado(o);
         }}
           style={{
@@ -422,7 +423,7 @@ const ZonaOrderRow = ({
             borderRadius: 8, color: "#22C55E", fontWeight: 700, fontSize: 11,
             cursor: "pointer", flexShrink: 0
           }}
-          title="Marcar driver de vuelta (RETIRADO) desde el panel del operador">
+          title="Registrar el regreso del repartidor y cerrar el giro (no marca ninguna entrega)">
           ✓ Driver volvió
         </button>
       )}
@@ -1147,64 +1148,33 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     setLoadingId(null);
   };
 
-  // Override operatore: marca entregado manualmente (driver dimenticò Entregado)
+  // Operador: "Driver de vuelta" -- registra el REGRESO del repartidor al giro, NO la
+  // entrega de un pedido concreto. Corrección de producto (POST_OPUS_REVIEW_REMEDIATION,
+  // Scope A, 2026-09-18): esto llamaba antes a api.marcarEntregado, la MISMA acción que
+  // la confirmación de entrega del propio repartidor -- solo el repartidor físico puede
+  // saber que una entrega realmente ocurrió, así que el operador nunca debe poder
+  // declararla. Ahora llama solo a close_rider_trip: una acción canónica ya
+  // autorizada para el operador, sin mutar ningún pedido, cuyo propio guard
+  // (EARLY_CLOSE/MISSING_TRIP_MEMBER) falla cerrado hasta que CADA entrega del giro fue
+  // confirmada por el repartidor real -- nunca por este botón.
   const handleForzaEntregado = async (ordine) => {
-    logLegacyBypass({
-      component: "TabEntregas",
-      action: "handleForzaEntregado",
-      orderId: ordine.id,
-      metadata: {
-        reason: "delivery_force_entregado_legacy_bypass",
-        estadoOriginale: ordine?.estado,
-        targetEstado: ORDER_STATES.RETIRADO,
-      },
-    });
-    logTransition({
-      component: "TabEntregas",
-      action: "handleForzaEntregado",
-      orderId: ordine.id,
-      from: ordine?.estado,
-      to: ORDER_STATES.RETIRADO,
-    });
     setLoadingId(ordine.id);
-    setOrdenes(prev => prev.map(o => o.id === ordine.id ? { ...o, estado: ORDER_STATES.RETIRADO, hora_entrega: Date.now() } : o));
     try {
-      // S2-7D6E2 — "Driver volvió" è un override OPERATIVO, non un incasso. Prima
-      // mandava cobrado:true con metodo_pago:"manual": "manual" non è un metodo di
-      // pagamento, quindi non produceva alcun evento nel ledger, ma la colonna cobrado
-      // veniva scritta lo stesso — esattamente lo stato #723 (RETIRADO + cobrado + zero
-      // eventi). Ora non si dichiara nessun pagamento e la risposta viene controllata.
-      const res = await api.marcarEntregado(ordine.id, false, ordine, "");
-      if (isPaymentFailure(res)) {
-        const { message } = describePaymentFailure(res);
-        logRollback({
-          component: "TabEntregas",
-          action: "handleForzaEntregado.refused",
-          orderId: ordine.id,
-          from: ORDER_STATES.RETIRADO,
-          to: ordine?.estado,
-          metadata: { reason: "backend refused; order did not move" },
-        });
-        setOrdenes(prev => prev.map(o => o.id === ordine.id ? { ...o, estado: ordine.estado, hora_entrega: ordine.hora_entrega } : o));
+      const res = await api.chiudiGiro();
+      if (!res || res._ok === false) {
+        const reason = res && res.error;
+        const message = reason === "EARLY_CLOSE" || reason === "MISSING_TRIP_MEMBER"
+          ? "Quedan entregas sin confirmar por el repartidor"
+          : reason === "NO_ACTIVE_TRIP"
+            ? "No hay ningún giro activo que cerrar"
+            : "Error al cerrar el giro";
         if (notify) notify("❌ " + message, "#EF4444");
         setLoadingId(null);
         return;
       }
-      // Controlla se era l'ultimo
-      const rimanenti = entregas.filter(o => [ORDER_STATES.LISTO, ORDER_STATES.EN_ENTREGA].includes(o.estado) && o.id !== ordine.id);
-      if (rimanenti.length === 0) await api.chiudiGiro();
-      if (notify) notify("✓ Driver volvió (operador)", "#22C55E");
-    } catch(e) {
-      logRollback({
-        component: "TabEntregas",
-        action: "handleForzaEntregado.rollback",
-        orderId: ordine.id,
-        from: ORDER_STATES.RETIRADO,
-        to: ORDER_STATES.EN_ENTREGA,
-        metadata: { reason: "api.marcarEntregado failed" },
-      });
-      setOrdenes(prev => prev.map(o => o.id === ordine.id ? { ...o, estado: ORDER_STATES.EN_ENTREGA } : o));
-      if (notify) notify("❌ Error al marcar entregado", "#E8341C");
+      if (notify) notify("✓ Driver volvió — giro cerrado", "#22C55E");
+    } catch (e) {
+      if (notify) notify("❌ Error al cerrar el giro", "#E8341C");
     }
     setLoadingId(null);
   };

@@ -5,10 +5,18 @@
 // WHY. `proxyPost` never throws. On a 409 it returns `{...body, _ok:false}` — a truthy
 // object — so a `try/await/catch` around an api call sees a SUCCESS. That is precisely how
 // a 12.00 cash sale (#723) was announced to the operator as collected while the ledger had
-// no row. ServicioPage.setRetirado was fixed with isPaymentFailure(); the OTHER two
-// surfaces that book a collection were not, and a `catch` block is not a substitute:
+// no row. ServicioPage.setRetirado was fixed with isPaymentFailure(); the other surface
+// that books a collection was not, and a `catch` block is not a substitute:
 //   - RepartidorPage.handleEntregado   — the rider's Efectivo / Tarjeta buttons
-//   - TabEntregas.handleForzaEntregado — the operator's "driver volvió" button
+//
+// TabEntregas.handleForzaEntregado ("driver volvió") is NO LONGER a collection surface at
+// all (POST_OPUS_REVIEW_REMEDIATION, Scope A, 2026-09-18): it used to call marcarEntregado
+// with a forced "manual" method, which is exactly this test's #723 shape. The product
+// correction went further than fixing the payment-outcome check — it removed the ability
+// to collect from this control entirely: only the physical rider can know a delivery
+// happened, so the operator's control now calls ONLY close_rider_trip (a trip-lifecycle
+// action, not a collection one) and never references marcarEntregado at all. See the
+// dedicated block below, which proves that removal, not merely a guarded collection.
 //
 // This test is source-static on purpose: these handlers live inside 1000+ line components
 // with heavy context, and the contract being protected is structural (guard BEFORE the
@@ -56,7 +64,6 @@ check("the shared outcome helper still fails closed on a transport-level error",
 for (const [label, source, handler] of [
   ["ServicioPage.setRetirado", SERVICIO, "setRetirado"],
   ["RepartidorPage.handleEntregado", REPARTIDOR, "handleEntregado"],
-  ["TabEntregas.handleForzaEntregado", ENTREGAS, "handleForzaEntregado"],
 ]) {
   const body = handlerBody(source, handler);
 
@@ -84,16 +91,25 @@ for (const [label, source, handler] of [
   });
 }
 
-console.log("\n[the frontend never invents a collection]");
+console.log("\n[TabEntregas.handleForzaEntregado is no longer a collection surface at all]");
 
-check("no surface sends cobrado:true together with a non-collection method", () => {
-  // "manual" is not a payment method: the backend registrar rejects it, so no ledger row is
-  // written — but `cobrado:true` would still be persisted, recreating the exact #723 state
-  // (RETIRADO + collected boolean + zero ledger events).
+check("the handler never references marcarEntregado — the #723 risk is removed, not guarded", () => {
+  // The strongest possible fix to "a collection could be invented here": there is no
+  // collection call left to invent one from. If this ever regresses (someone re-adds a
+  // marcarEntregado call to this handler), the isPaymentFailure/describePaymentFailure
+  // guard above must come back with it — this assertion is the tripwire for that.
   const forced = handlerBody(ENTREGAS, "handleForzaEntregado");
-  assert.doesNotMatch(forced, /marcarEntregado\([^)]*true[^)]*["']manual["']/,
-    'TabEntregas books cobrado:true with metodo_pago:"manual" — a collection with no ledger event');
+  assert.doesNotMatch(forced, /marcarEntregado/,
+    "TabEntregas.handleForzaEntregado references marcarEntregado again — it must either stay a non-collection trip action, or regain the isPaymentFailure guard");
 });
+
+check("the handler calls the canonical trip-closure action, not a payment one", () => {
+  const forced = handlerBody(ENTREGAS, "handleForzaEntregado");
+  assert.match(forced, /api\.chiudiGiro\(\)/,
+    "expected the handler to call the canonical close_rider_trip action (api.chiudiGiro)");
+});
+
+console.log("\n[the frontend never invents a collection]");
 
 check("no component assigns cobrado: true on its own", () => {
   for (const [label, source] of [["ServicioPage", SERVICIO], ["RepartidorPage", REPARTIDOR], ["TabEntregas", ENTREGAS]]) {
