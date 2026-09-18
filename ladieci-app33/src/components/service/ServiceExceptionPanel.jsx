@@ -29,6 +29,7 @@ import {
 } from '../../utils/serviceEnsureOutcome';
 import { Row, identityGrid, fmtDate, fmtTime, roleLabelOf, primaryBtn, ghostBtn } from './OpenServiceConfirmation';
 import FinalizarServicioModal from '../servicio/FinalizarServicioModal';
+import StaleTableRecovery from '../servicio/StaleTableRecovery';
 
 // Backend 'YYYY-MM-DD' → 'DD/MM'. Presentation only; never a comparison.
 const shortBusinessDate = (isoDate) =>
@@ -44,6 +45,15 @@ export default function ServiceExceptionPanel({ role, actor, exception, retrying
   const showStaleFinalize = exceptionShowsStaleFinalize(kind) && !isRider(role);
   const staleDate = shortBusinessDate(exception && exception.staleBusinessDate);
   const [finalizarOpen, setFinalizarOpen] = useState(false);
+  // PREVIOUS_SERVICE_OPEN_TABLE_RECOVERY — the ONE blocking table currently
+  // being resolved, or null. Set from FinalizarServicioModal's pending-items
+  // list (a table row with a real tableSessionId, see FinalizarServicioModal
+  // onResolveTable). While set, FinalizarServicioModal is closed rather than
+  // layered underneath (see the `open` prop below) — one recovery surface at
+  // a time, and closing StaleTableRecovery re-opens Finalizar, which re-runs
+  // its own pre-close scan exactly as a fresh open always has, so a resolved
+  // table simply stops appearing.
+  const [recoveryTable, setRecoveryTable] = useState(null);
 
   return (
     <main data-testid="service-exception-landing" style={shell}>
@@ -118,11 +128,25 @@ export default function ServiceExceptionPanel({ role, actor, exception, retrying
           this closes exactly the right one. A real close re-runs the silent
           ensure, which then lands on the normal idle / open state. */}
       <FinalizarServicioModal
-        open={finalizarOpen}
+        open={finalizarOpen && !recoveryTable}
         title="Finalizar servicio anterior"
         onClose={() => setFinalizarOpen(false)}
         onClosed={() => { setFinalizarOpen(false); if (onRetry) onRetry(); }}
+        onResolveTable={(blocker) => setRecoveryTable(blocker)}
       />
+
+      {/* PREVIOUS_SERVICE_OPEN_TABLE_RECOVERY — the bounded Mesa bridge for
+          the ONE blocking table named above. Mounted in place of Finalizar
+          (never on top of it: see the `open` prop above), so there is only
+          ever one recovery surface up at a time. Closing it (resolved or
+          not) hands control straight back to Finalizar. */}
+      {recoveryTable && (
+        <StaleTableRecovery
+          tableSessionId={recoveryTable.tableSessionId}
+          role={role}
+          onClose={() => setRecoveryTable(null)}
+        />
+      )}
     </main>
   );
 }

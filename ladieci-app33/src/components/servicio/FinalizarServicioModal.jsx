@@ -45,6 +45,13 @@ export default function FinalizarServicioModal({
   onClosed,
   notify = () => {},
   title = 'Finalizar servicio',
+  // PREVIOUS_SERVICE_OPEN_TABLE_RECOVERY — optional. When given, a pending
+  // "table" blocker row (kind:"table", now carrying tableSessionId) becomes
+  // clickable and calls this with { tableSessionId, tableId, nombre }
+  // instead of sitting inert. Omitted by ServicioPage's normal "Finalizar
+  // servicio" button, which already has full Mesa access outside this
+  // modal — the rows there render exactly as before.
+  onResolveTable = null,
 }) {
   // `flow` is the modal's own state (null = closed). Shape unchanged from the
   // inline version: { loading, completati, attivi, blocking, reconLoading,
@@ -204,15 +211,32 @@ export default function FinalizarServicioModal({
                 {flow.attivi.length} elemento{flow.attivi.length>1?"s pendientes":" pendiente"}
               </div>
               <div style={{display:"flex",flexDirection:"column",maxHeight:150,overflowY:"auto"}}>
-                {flow.attivi.map((a,i) => (
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,color:MS.TEXT.value,fontSize:12.5,padding:"6px 0",borderTop:i===0?"none":MS.LINE.row}}>
-                    <span style={{background:"rgba(240,169,60,.16)",border:"1px solid rgba(240,169,60,.34)",borderRadius:6,padding:"2px 7px",fontWeight:800,fontSize:10.5,letterSpacing:".3px",color:MS.ACCENT.warn,flexShrink:0}}>
-                      {a.stato || "activo"}
-                    </span>
-                    <span style={{fontWeight:700,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre}</span>
-                    {a.hora ? <span style={{color:MS.TEXT.muted,marginLeft:"auto",flexShrink:0}}>{a.hora}</span> : null}
-                  </div>
-                ))}
+                {flow.attivi.map((a,i) => {
+                  // PREVIOUS_SERVICE_OPEN_TABLE_RECOVERY — only a "table"
+                  // blocker with a real identity, and only when the caller
+                  // (ServiceExceptionPanel) actually offers somewhere to
+                  // send it, becomes interactive. Every other row (orders,
+                  // conversations, or a table row without tableSessionId —
+                  // e.g. an old/unpromoted backend) stays the same inert
+                  // <div> it always was.
+                  const resolvable = a.kind === "table" && a.tableSessionId && typeof onResolveTable === "function";
+                  const Row = resolvable ? "button" : "div";
+                  return (
+                    <Row key={i} type={resolvable ? "button" : undefined}
+                      data-testid={resolvable ? "finalizar-pending-table-resolve" : undefined}
+                      onClick={resolvable ? () => onResolveTable({ tableSessionId: a.tableSessionId, tableId: a.tableId || null, nombre: a.nombre }) : undefined}
+                      style={{display:"flex",alignItems:"center",gap:8,color:MS.TEXT.value,fontSize:12.5,padding:"6px 0",borderTop:i===0?"none":MS.LINE.row,
+                        width:"100%",background:"none",borderLeft:"none",borderRight:"none",borderBottom:"none",
+                        font:"inherit",textAlign:"left",cursor:resolvable?"pointer":"default"}}>
+                      <span style={{background:"rgba(240,169,60,.16)",border:"1px solid rgba(240,169,60,.34)",borderRadius:6,padding:"2px 7px",fontWeight:800,fontSize:10.5,letterSpacing:".3px",color:MS.ACCENT.warn,flexShrink:0}}>
+                        {a.stato || "activo"}
+                      </span>
+                      <span style={{fontWeight:700,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre}</span>
+                      {a.hora ? <span style={{color:MS.TEXT.muted,marginLeft:resolvable?0:"auto",flexShrink:0}}>{a.hora}</span> : null}
+                      {resolvable && <span style={{color:MS.ACCENT.warn,marginLeft:"auto",flexShrink:0,fontWeight:800,fontSize:11.5}}>Resolver →</span>}
+                    </Row>
+                  );
+                })}
               </div>
               <div style={{color:MS.TEXT.muted,fontSize:11.5,marginTop:9,lineHeight:1.45}}>
                 {flow.blocking?.tables > 0

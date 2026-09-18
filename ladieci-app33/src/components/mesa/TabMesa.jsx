@@ -1132,8 +1132,10 @@ function ComandaActualCard({ session, draft, busy, onMarkServed, onAddItems, onS
       {/* Fase 3 -- same callback as the bottom "Nueva comanda", never a
           second implementation. Hidden while a draft exists: the draft
           panel below already offers its own "Modificar" entry point into
-          the exact same picker. */}
-      {!draft && <button type="button" className="mesa-current-add" data-testid="mesa-current-add" onClick={onAddItems}>
+          the exact same picker. PREVIOUS_SERVICE_OPEN_TABLE_RECOVERY --
+          onAddItems is null when the caller (StaleTableRecovery) disabled
+          intake, so this simply has nothing to call. */}
+      {!draft && onAddItems && <button type="button" className="mesa-current-add" data-testid="mesa-current-add" onClick={onAddItems}>
         <HubIcon d={ICON_PLUS_CIRCLE} size={15} />Añadir artículos
       </button>}
 
@@ -1997,6 +1999,12 @@ function MesaWorkspace({
   // non-compact (tablet/desktop) path stays byte-identical to before this
   // slice, everywhere it's reached, including outside this shell.
   compactCard = false,
+  // PREVIOUS_SERVICE_OPEN_TABLE_RECOVERY — default true keeps every existing
+  // caller (the normal TabMesa board) byte-identical. StaleTableRecovery is
+  // the one caller that passes false: the stale-service recovery surface may
+  // resolve (pay/close) the ONE blocking table, never add new orders to a
+  // service that belongs to a past Business Day.
+  allowIntake = true,
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -2130,7 +2138,7 @@ function MesaWorkspace({
         (see ComandaActualCard). With no draft, nothing moves. */}
     {draft && renderDraftPanel()}
     <ComandaActualCard session={session} draft={draft} busy={busy} onMarkServed={markServed}
-      onAddItems={() => onNewCommand(table)} onSelectLine={setSelectedLine} />
+      onAddItems={allowIntake ? () => onNewCommand(table) : null} onSelectLine={setSelectedLine} />
     {selectedLine && <LineDetailSheet payload={selectedLine} onClose={() => setSelectedLine(null)} />}
 
     {/* Comanda por confirmar -- the local draft MesaOrderBuilder handed back
@@ -2148,7 +2156,7 @@ function MesaWorkspace({
         P0-B.1 conditions (Nueva comanda/Cerrar mesa hidden while a draft is
         pending) as before this slice; only the layout and icons are new. */}
     <div className="mesa-current-actions">
-      {!draft && <button type="button" className="mesa-btn primary mesa-current-cta-primary" onClick={() => onNewCommand(table)}>
+      {!draft && allowIntake && <button type="button" className="mesa-btn primary mesa-current-cta-primary" onClick={() => onNewCommand(table)}>
         <HubIcon d={ICON_PLUS_CIRCLE} size={19} />Nueva comanda
       </button>}
       <div className="mesa-current-cta-row">
@@ -3207,4 +3215,14 @@ export default function TabMesa({
   </div>;
 }
 
-export { equalShares, hasReadyOrder, css as mesaCss, resolveTablePositions, isRelevantReservation, responsiveTableSize, previewResponsiveTablePx, BOARD_WIDTH_REFERENCE, TABLE_MIN_SCALE, STATUS, tableState, bookedForToday, canEditMesaRoom, canManageMesaReservations, UltimasCuentasModal };
+export {
+  equalShares, hasReadyOrder, css as mesaCss, resolveTablePositions, isRelevantReservation,
+  responsiveTableSize, previewResponsiveTablePx, BOARD_WIDTH_REFERENCE, TABLE_MIN_SCALE, STATUS,
+  tableState, bookedForToday, canEditMesaRoom, canManageMesaReservations, UltimasCuentasModal,
+  // PREVIOUS_SERVICE_OPEN_TABLE_RECOVERY — MesaWorkspace is the ONE per-table
+  // operative surface (Ver cuenta / Cerrar mesa / Nueva comanda); exported so
+  // StaleTableRecovery can mount it directly for a single stale table, with
+  // no second implementation. The two role predicates travel with it so that
+  // surface can compute canRefund/canAdjust the exact same way TabMesa does.
+  MesaWorkspace, canRefundMesaPayment, canAdjustMesaObligation,
+};
