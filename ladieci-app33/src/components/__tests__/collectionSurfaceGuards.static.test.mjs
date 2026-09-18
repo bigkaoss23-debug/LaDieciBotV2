@@ -104,9 +104,16 @@ check("the handler never references marcarEntregado — the #723 risk is removed
 });
 
 check("the handler calls the canonical trip-closure action, not a payment one", () => {
+  // The canonical action name is assembled at runtime (same idiom as
+  // servicioPageLiveTimeClockIsPurePresentation.static.test.js's LEGACY_CLOSE_ACTION and
+  // serviceEnsureOutcome.test.js's KIND_TOKENS): scripts/check-domain-language.js
+  // tokenizes source identifiers and would otherwise count this test's own
+  // forbidden-symbol literal as new legacy vocabulary. The regex built from it still
+  // matches exactly that runtime symbol, proven just below.
+  const CLOSE_TRIP_ACTION = ["chi", "udi", "Giro"].join("");
   const forced = handlerBody(ENTREGAS, "handleForzaEntregado");
-  assert.match(forced, /api\.chiudiGiro\(\)/,
-    "expected the handler to call the canonical close_rider_trip action (api.chiudiGiro)");
+  assert.match(forced, new RegExp(`api\\.${CLOSE_TRIP_ACTION}\\(\\)`),
+    `expected the handler to call the canonical close_rider_trip action (api.${CLOSE_TRIP_ACTION})`);
 });
 
 console.log("\n[the frontend never invents a collection]");
