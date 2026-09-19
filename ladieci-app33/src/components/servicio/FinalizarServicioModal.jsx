@@ -25,6 +25,7 @@ import * as MS from '../ui/mesaSurface';
 import { economyApi } from '../../economy/economyApi';
 import { api } from '../../api';
 import { classifyCloseOutcome } from '../../utils/closeServiceOutcome';
+import { closeTripFailureMessage } from '../../utils/closeServiceOutcome';
 import FinalizarReconciliationPanel from './FinalizarReconciliationPanel';
 
 // Preflight-only failures. Spanish, and never alarming: the service close
@@ -153,7 +154,39 @@ export default function FinalizarServicioModal({
     }
   };
 
+  // ACTIVE RIDER TRIP / SERVICE CLOSE GUARD — the operator's way out when the
+  // backend reports an ACTIVE rider trip on this service. It is the EXISTING
+  // canonical action, unchanged: the same api method as the Entregas tab's
+  // "Driver volvió" (close_rider_trip). It records the trip's return and
+  // nothing else: no order is touched, no delivery or payment is asserted (that
+  // stays the real rider's Entregado), and close_rider_trip's own guard
+  // (EARLY_CLOSE) still refuses until every stop was confirmed by the rider.
+  // Needed HERE because a stale PREVIOUS_SERVICE_PENDING service replaces the
+  // Servicio page (and its Entregas tab) with the exception panel, so this modal
+  // is the only recovery surface the operator has. On success the scan is
+  // re-read, so the trip row disappears and Finalizar unlocks by itself.
+  const closeTrip = async () => {
+    setFlow(m => m ? { ...m, tripClosing: true, tripError: null } : m);
+    try {
+      // language-guard: allow-legacy chiudiGiro is the existing api.js method / backend action name (wire string), not new vocabulary
+      const res = await api.chiudiGiro();
+      if (!res || res._ok === false) {
+        setFlow(m => m ? { ...m, tripClosing: false, tripError: closeTripFailureMessage(res) } : m);
+        return;
+      }
+      notifyRef.current("✓ Driver volvió — reparto cerrado", C.verde);
+      await runScan();
+    } catch (err) {
+      setFlow(m => m ? { ...m, tripClosing: false, tripError: closeTripFailureMessage(null) } : m);
+    }
+  };
+
   if (!open || !flow) return null;
+
+  // `trips`: 0 = none, >=1 = an ACTIVE rider trip is attributed to this service,
+  // null = the backend could not read it (never treated as "none"). `undefined`
+  // is a backend that predates the guard: unchanged behaviour.
+  const tripsClear = flow.blocking?.trips === undefined || flow.blocking?.trips === 0;
 
   return (
     <div style={MS.overlay}>
@@ -219,12 +252,19 @@ export default function FinalizarServicioModal({
                   // conversations, or a table row without tableSessionId —
                   // e.g. an old/unpromoted backend) stays the same inert
                   // <div> it always was.
-                  const resolvable = a.kind === "table" && a.tableSessionId && typeof onResolveTable === "function";
+                  const tableResolvable = a.kind === "table" && a.tableSessionId && typeof onResolveTable === "function";
+                  // ACTIVE RIDER TRIP guard — a "trip" row is always actionable: the
+                  // existing "Driver volvió" (close_rider_trip), see closeTrip above.
+                  const tripResolvable = a.kind === "trip";
+                  const resolvable = tableResolvable || tripResolvable;
                   const Row = resolvable ? "button" : "div";
                   return (
                     <Row key={i} type={resolvable ? "button" : undefined}
-                      data-testid={resolvable ? "finalizar-pending-table-resolve" : undefined}
-                      onClick={resolvable ? () => onResolveTable({ tableSessionId: a.tableSessionId, tableId: a.tableId || null, nombre: a.nombre }) : undefined}
+                      disabled={tripResolvable ? !!flow.tripClosing : undefined}
+                      data-testid={tripResolvable ? "finalizar-pending-trip-close" : (tableResolvable ? "finalizar-pending-table-resolve" : undefined)}
+                      onClick={tripResolvable
+                        ? () => closeTrip()
+                        : (tableResolvable ? () => onResolveTable({ tableSessionId: a.tableSessionId, tableId: a.tableId || null, nombre: a.nombre }) : undefined)}
                       style={{display:"flex",alignItems:"center",gap:8,color:MS.TEXT.value,fontSize:12.5,padding:"6px 0",borderTop:i===0?"none":MS.LINE.row,
                         width:"100%",background:"none",borderLeft:"none",borderRight:"none",borderBottom:"none",
                         font:"inherit",textAlign:"left",cursor:resolvable?"pointer":"default"}}>
@@ -233,7 +273,7 @@ export default function FinalizarServicioModal({
                       </span>
                       <span style={{fontWeight:700,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre}</span>
                       {a.hora ? <span style={{color:MS.TEXT.muted,marginLeft:resolvable?0:"auto",flexShrink:0}}>{a.hora}</span> : null}
-                      {resolvable && <span style={{color:MS.ACCENT.warn,marginLeft:"auto",flexShrink:0,fontWeight:800,fontSize:11.5}}>Resolver →</span>}
+                      {resolvable && <span style={{color:MS.ACCENT.warn,marginLeft:"auto",flexShrink:0,fontWeight:800,fontSize:11.5}}>{tripResolvable ? (flow.tripClosing ? "Cerrando…" : "Driver volvió →") : "Resolver →"}</span>}
                     </Row>
                   );
                 })}
@@ -241,6 +281,8 @@ export default function FinalizarServicioModal({
               <div style={{color:MS.TEXT.muted,fontSize:11.5,marginTop:9,lineHeight:1.45}}>
                 {flow.blocking?.tables > 0
                   ? "Hay mesas con cuenta abierta: cóbralas antes de cerrar el servicio."
+                  : flow.blocking?.trips > 0
+                    ? "Hay un reparto en curso: ciérralo con «Driver volvió» antes de cerrar el servicio."
                   : flow.blocking?.orders > 0
                     // SMOKE FIX — this used to say "con su importe pendiente" for
                     // every unresolved order. An order can be POR_CONFIRMAR and
@@ -258,6 +300,16 @@ export default function FinalizarServicioModal({
             </div>
           )}
 
+          {/* ACTIVE RIDER TRIP guard — the reparto could not be read (null) or "Driver volvió"
+              was refused. Never rendered for the normal 0 / undefined case. */}
+          {(flow.blocking?.trips === null || flow.tripError) && (
+            <div data-testid="finalizar-trip-notice" style={{...MS.card(),borderColor:"rgba(240,169,60,.36)",background:"rgba(240,169,60,.08)"}}>
+              <div style={{color:MS.TEXT.strong,fontSize:13,lineHeight:1.45}}>
+                {flow.tripError || "No se pudo comprobar el reparto. Cierra este aviso y vuelve a abrir Finalizar para reintentarlo."}
+              </div>
+            </div>
+          )}
+
           {/* Error de cierre — fallo aplicativo (success:false), persistente.
               El servicio sigue abierto; el operador ve el motivo y puede reintentar. */}
           {flow.error && (
@@ -270,7 +322,7 @@ export default function FinalizarServicioModal({
 
           {/* Botones */}
           <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:2,opacity:flow.submitting?0.6:1,pointerEvents:flow.submitting?"none":"auto"}}>
-            {flow.blocking?.tables === 0 && flow.blocking?.orders > 0 && (
+            {flow.blocking?.tables === 0 && tripsClear && flow.blocking?.orders > 0 && (
               <button disabled={flow.submitting} onClick={()=>confirmClose()}
                 style={{...MS.button({tone:"danger",size:"lg",full:true}),boxShadow:"0 4px 18px rgba(192,57,43,.28)"}}>
                 {/* UAT-P2-D -- this used to read "Cerrar y anular pedidos
@@ -285,7 +337,7 @@ export default function FinalizarServicioModal({
                 Finalizar servicio con pendientes
               </button>
             )}
-            {flow.blocking?.tables === 0 && flow.blocking?.orders === 0 && <button
+            {flow.blocking?.tables === 0 && tripsClear && flow.blocking?.orders === 0 && <button
               disabled={flow.submitting} onClick={()=>confirmClose()}
               style={{...MS.button({tone: flow.attivi.length > 0 ? "positive" : "danger",size:"lg",full:true}),
                 ...(flow.attivi.length > 0 ? {} : {boxShadow:"0 4px 18px rgba(192,57,43,.28)"})}}>

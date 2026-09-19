@@ -20,6 +20,9 @@ export function closeFailureMessage(res) {
     invalid_service_session_identity: "Estado del servicio inconsistente; recarga e inténtalo de nuevo.",
     rider_state_gate_failed: "Hay un reparto en curso; cierra el reparto antes de cerrar el servicio.",
     active_rider_trip: "Hay un reparto en curso; cierra el reparto antes de cerrar el servicio.",
+    // ACTIVE RIDER TRIP / SERVICE CLOSE GUARD — the V3 close engine's typed refusals.
+    V3_CLOSE_ACTIVE_RIDER_TRIP: "Hay un reparto en curso; cierra el reparto antes de cerrar el servicio.",
+    V3_CLOSE_RIDER_TRIP_UNVERIFIABLE: "No se pudo comprobar el reparto. El servicio sigue abierto; recarga e inténtalo de nuevo.",
     mesa_tables_not_released: "Hay mesas con la cuenta abierta. Cobra esas cuentas antes de cerrar el servicio.",
     MESA_TABLES_NOT_RELEASED: "Hay mesas con la cuenta abierta. Cobra esas cuentas antes de cerrar el servicio.",
     mesa_table_gate_failed: "No se pudo comprobar el estado de las mesas. El servicio sigue abierto; recarga e inténtalo de nuevo.",
@@ -36,6 +39,17 @@ export function closeFailureMessage(res) {
     );
   }
   return "No se pudo cerrar el servicio.";
+}
+
+// ACTIVE RIDER TRIP / SERVICE CLOSE GUARD — the operator-facing reason a
+// "Driver volvió" (close_rider_trip) call was refused. Same wording the Entregas tab
+// already uses for the same backend codes: the trip close is close_rider_trip,
+// whose own guard stays closed until EVERY stop was confirmed by the real rider.
+export function closeTripFailureMessage(res) {
+  const reason = res && res.error;
+  if (reason === "EARLY_CLOSE" || reason === "MISSING_TRIP_MEMBER") return "Quedan entregas sin confirmar por el repartidor";
+  if (reason === "NO_ACTIVE_TRIP") return "No hay ningún giro activo que cerrar";
+  return "Error al cerrar el giro";
 }
 
 // Classify a chiudiServizio response into a UI outcome.
