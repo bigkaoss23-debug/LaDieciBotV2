@@ -47,7 +47,7 @@ describe("C — Cocina: una sola deadline", () => {
   test("DOMICILIO: il solo orario visibile è il límite; niente forno_out / hora / rider / countdown", async () => {
     const el = await mount(<TabCocina ordenes={[o("#001", "21:45", { hora: "21:30" })]} onListo={() => {}} />);
     const txt = el.textContent;
-    expect(txt).toMatch(/21:45\s*LÍMITE/);
+    expect(txt).toMatch(/21:45\s*HORA LÍMITE/);
     expect(txt.match(/\d\d:\d\d/g)).toEqual(["21:45"]);             // UN solo orario (no 21:30 cliente, no 20:40 forno_out, no rider)
     expect(txt).not.toMatch(RIDER);
     expect(txt).not.toMatch(/CLIENTE|⏱|-\d+:\d\d/);
@@ -55,9 +55,9 @@ describe("C — Cocina: una sola deadline", () => {
   test("stati: normale / LÍMITE CERCA (≤10 min) / ⚠ TARDE (superato)", async () => {
     const el = await mount(<TabCocina ordenes={[o("#001", "21:45"), o("#002", "21:08"), o("#003", "20:55")]} onListo={() => {}} />);
     const txt = el.textContent;
-    expect(txt).toMatch(/21:45\s*LÍMITE(?! CERCA)/);
-    expect(txt).toMatch(/21:08\s*LÍMITE CERCA/);
-    expect(txt).toMatch(/20:55\s*⚠ TARDE/);
+    expect(txt).toMatch(/21:45\s*HORA LÍMITE/);
+    expect(txt).toMatch(/21:08\s*URGENTE/);
+    expect(txt).toMatch(/20:55\s*TARDE/);
     expect(deadlineState(o("#9", "21:10"), NOW).state).toBe("near");
     expect(deadlineState(o("#9", "21:11"), NOW).state).toBe("normal");
     expect(deadlineState(o("#9", "20:59"), NOW).state).toBe("late");
@@ -120,8 +120,29 @@ describe("A5 — render reale + realtime", () => {
     const el = await mount(<PanelCocina ordenes={g} onListo={() => {}} onClose={() => {}} />);
     expect(cardsOrder(el)).toEqual(["#001", "#003", "#002"]);
     const txt = el.textContent;
-    expect(txt).toMatch(/21:30\s*LÍMITE/); expect(txt).toMatch(/21:45\s*LÍMITE/);
+    expect(txt).toMatch(/21:30\s*HORA LÍMITE/); expect(txt).toMatch(/21:45\s*HORA LÍMITE/);
     expect(txt).not.toMatch(RIDER);
     expect(txt).not.toMatch(/CLIENTE|⏱|20:40|21:15/);
+  });
+});
+
+describe("R3 — ± una sola volta per giro, scelta rapida, nessuna animazione", () => {
+  test("TabCocina: controllo ± sulla prima card del giro e sugli standalone, non sugli altri membri", async () => {
+    const g = [o("#001", "21:30", { manual_giro_id: "g1" }), o("#002", "21:30"), o("#003", "21:45", { manual_giro_id: "g1" })];
+    const el = await mount(<TabCocina ordenes={g} onListo={() => {}} />);
+    expect([...el.querySelectorAll('button[aria-label="Retrasar"]')]).toHaveLength(2);   // #001 (giro) + #002 (standalone)
+    expect(el.textContent).toMatch(/Todo el giro/);
+    expect(el.textContent).not.toMatch(/Cancelar snooze|−5|\+5/);
+    expect([...el.querySelectorAll("div")].filter((d) => /blink/.test(d.style.animation || ""))).toHaveLength(0);
+  });
+  test("picker: valori assoluti 5..30, 'Sin prioridad' solo con offset, setUiOffset col valore scelto", async () => {
+    const { api } = require("../api");
+    api.setUiOffset.mockResolvedValue({ _ok: true, _status: 200 });
+    const el = await mount(<TabCocina ordenes={[o("#001", "21:30", { ui_offset_min: 10 })]} onListo={() => {}} />);
+    expect(el.textContent).toMatch(/\+10 min/);
+    await act(async () => { el.querySelector('button[aria-label="Adelantar"]').click(); });
+    expect([...el.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(["5", "10", "15", "20", "30", "Sin prioridad"]);
+    await act(async () => { [...el.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "15").click(); await Promise.resolve(); });
+    expect(api.setUiOffset).toHaveBeenCalledWith("#001", -15);
   });
 });

@@ -47,3 +47,10 @@ describe("FDV1 — hora e deadline separate", () => {
     expect(src).toMatch(/!fdv1HoraPrefilled\.current && !horaCustom\.current/);
   });
 });
+
+describe("R3 — header globale", () => {
+  test("nessun chip 'Reparto +N min' (il ± è priorità di produzione, non ritardo rider)", () => {
+    const src = read("components/ServicioPage.jsx");
+    expect(src).not.toMatch(/Reparto \$\{|repartoOffsetMax/);
+  });
+});

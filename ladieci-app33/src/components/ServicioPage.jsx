@@ -16,7 +16,7 @@ import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrint
 import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
 import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
-import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isTerminalState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
+import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
 import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
 import { isDessertPizza } from '../menu/dessertPizza';
 
@@ -304,17 +304,10 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
   const waTotBadge = waNoLei + pregNoLei;
   const listosN  = useMemo(() => ordenes.filter(o=>o.estado===ORDER_STATES.LISTO || o.estado===ORDER_STATES.EN_ENTREGA).length, [ordenes]);
   const cocinaNC = useMemo(() => ordenes.filter(o=>o.estado===ORDER_STATES.EN_COCINA).length, [ordenes]);
-  const repartoOffsetMax = useMemo(() => ordenes
-    .filter(o => o.tipo_consegna === "DOMICILIO" && !isTerminalState(o.estado))
-    .reduce((max, o) => Math.max(max, Number(o.ui_offset_min) || 0), 0),
-  [ordenes]);
   const totPizze  = useMemo(() => caricoTotale(ordenes), [ordenes]);
   const pctCarico = Math.min(100, Math.round((totPizze / MAX_PIZZE_ORA) * 100));
   const caricoCol = pctCarico >= 90 ? "#C0392B" : pctCarico >= 65 ? "#E67E22" : "#27AE60";
   const caricoLbl = pctCarico >= 90 ? "SATURO" : pctCarico >= 65 ? "Cargado" : "Libre";
-  const repartoCol = repartoOffsetMax >= 20 ? "#C0392B" : repartoOffsetMax >= 10 ? "#E67E22" : "#27AE60";
-  const repartoPct = Math.min(100, Math.round((repartoOffsetMax / 20) * 100));
-  const repartoTxt = repartoOffsetMax > 0 ? `+${repartoOffsetMax} min` : "OK";
   const ordineImpossibile = pctCarico >= 90 && waMsgsOrdini.some(m=>!m.stato||m.stato==="NUEVO");
 
   const handleTabChange = useCallback((t) => setTab(t), []);
@@ -1031,7 +1024,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         if (msg) { setChatStoricoSel(msg.id); setTab("wa"); }
       }}/>;
     if(tab==="cocina")   return <TabCocina ordenes={ordenes} onListo={setListo} loadingIds={loadingIds} msgsPreguntas={waMsgsPreguntas} pizzeFatte={pizzeFatteStasera}/>;
-    if(tab==="entregas") return <TabEntregas ordenes={ordenes} setOrdenes={setOrdenes} notify={notify}/>;
+    if(tab==="entregas") return <TabEntregas ordenes={ordenes} setOrdenes={setOrdenes} notify={notify} suspended={showCocina}/>;
     return null;
   };
 
@@ -1191,32 +1184,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
                 display:"flex",alignItems:"center",justifyContent:headerPhone?"flex-start":"flex-start",
                 gap:headerPhone?3:6,minWidth:0,overflow:headerPhone?"visible":"hidden"
               }}>
-                {!headerPhone && (
-                  <div style={{
-                    width:"clamp(72px, 11vw, 118px)",height:6,
-                    background:"rgba(255,255,255,0.08)",
-                    borderRadius:3,overflow:"hidden",
-                    border:"1px solid rgba(255,255,255,0.06)",
-                    boxShadow:"inset 0 1px 2px rgba(0,0,0,0.4)",
-                    flexShrink:1
-                  }}>
-                    <div style={{
-                      width:`${repartoPct}%`,height:"100%",
-                      background:`linear-gradient(90deg,${repartoCol}88,${repartoCol})`,
-                      borderRadius:3,
-                      boxShadow:`0 0 6px ${repartoCol}88`,
-                      transition:"width .6s ease"
-                    }}/>
-                  </div>
-                )}
-                <span style={{
-                  fontSize:10,fontWeight:800,letterSpacing:.2,
-                  color:repartoCol,
-                  textShadow:`0 0 10px ${repartoCol}88`,
-                  whiteSpace:"nowrap",
-                  overflow:headerPhone?"visible":"hidden",
-                  textOverflow:headerPhone?"clip":"ellipsis"
-                }}>{headerPhone ? `🛵 ${repartoOffsetMax > 0 ? `+${repartoOffsetMax}` : "OK"}` : `🛵 Reparto ${repartoTxt}`}</span>
+                {/* [FDV1] niente chip "Reparto +N min": il ± è priorità di produzione (anche negativa), visibile sulle card. */}
               </div>
             </div>
           </div>

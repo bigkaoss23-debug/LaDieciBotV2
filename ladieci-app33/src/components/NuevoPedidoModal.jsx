@@ -996,7 +996,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: 14, fontWeight: 700, width: 80, outline: "none", lineHeight: 1 }} />
                     {isFdv1Delivery && fdv1Preview?.hora_preview && (
                       <span title="Límite de entrega: creación + 55 min (fijado al guardar)" style={{ color: "#67e8f9", fontSize: 10, fontWeight: 800, lineHeight: 1, fontFamily: "'DM Mono',monospace" }}>
-                        límite {fdv1Preview.hora_preview}
+                        Límite {fdv1Preview.hora_preview}
                       </span>
                     )}
                   </div>
@@ -1010,7 +1010,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       border: "1px solid rgba(249,115,22,0.3)",
                       borderRadius: 6, padding: "2px 6px", lineHeight: 1
                     }}>
-                      🛵 ~{zonaInfo.durataAndataMin}min
+                      ida ~{zonaInfo.durataAndataMin} min
                     </span>
                   )}
                 </div>
@@ -1784,8 +1784,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     <div style={{ borderRadius: 10, padding: "12px 14px", background: "rgba(0,151,167,0.08)",
                       border: "1.5px solid rgba(0,151,167,0.45)", display: "flex", flexDirection: "column", gap: 8 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 16 }}>⏱</span>
-                        <span style={{ color: "#fff", fontWeight: 800, fontSize: 14, flex: 1 }}>Límite de entrega</span>
+                        <span style={{ color: "#fff", fontWeight: 800, fontSize: 14, flex: 1 }}>Hora límite</span>
                         <span style={{ color: "#67e8f9", fontWeight: 900, fontSize: 18, fontFamily: "'DM Mono',monospace" }}>{lim}</span>
                       </div>
                       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
@@ -1817,7 +1816,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   background: zona ? zona.colore : "rgba(249,115,22,0.7)",
                   color: "#fff", fontWeight: 900, fontSize: 16, cursor: "pointer", marginTop: 4
                 }}>
-                  {`✓ Confirmar entrega · cliente ${hora || "—"} · límite ${(fdv1Preview && fdv1Preview.hora_preview) || "—"}${giroIntent ? (giroIntent.giro_id ? " · agregar a giro" : " · crear giro") : ""}`}
+                  {`✓ Confirmar entrega · cliente ${hora || "—"} · Límite ${(fdv1Preview && fdv1Preview.hora_preview) || "—"}${giroIntent ? (giroIntent.giro_id ? " · agregar a giro" : " · crear giro") : ""}`}
                 </button>
 
                 {/* Suggerimento giro esistente nella stessa zona — [FDV1] sostituito dall'asistente sopra */}

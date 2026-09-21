@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { C, tot, MAX_PIZZE_ORA, LOGO_RED_SRC, useWidth } from '../../constants';
 import { caricoTotale, lookupMenu, calcTimer, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
-import SnoozeButton from '../ui/SnoozeButton';
+import PriorityControl from '../ui/PriorityControl';
 import { api } from '../../api';
 import { isDessertPizza } from '../../menu/dessertPizza';
 import {
@@ -11,7 +11,8 @@ import {
   getManualGiroForOrder,
   manualGiroBadgeStyle,
   deadlineState,
-  sortKitchenCards
+  sortKitchenCards,
+  markPriorityHolders
 } from './manualGiroCocina';
 
 const subtractMinutes = (hora, min) => {
@@ -103,7 +104,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
     .filter(o => o.items.length > 0);
 
   // [FDV1] A5: giro = blocco atomico anche nell'ordinamento
-  const activos = sortKitchenCards(activosBase);
+  const activos = markPriorityHolders(sortKitchenCards(activosBase));
 
   const nowStr = new Date(now).toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"});
   const dateStr = new Date(now).toLocaleDateString("es",{weekday:"short",day:"numeric",month:"short"});
@@ -252,14 +253,14 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                       {o.manualGiro && (
                         <div style={{marginTop:6}}>
                           <span style={manualGiroBadgeStyle(true)}>
-                            giro manual · {formatManualGiroLabel(o.manualGiro)}
+                            Giro {formatManualGiroLabel(o.manualGiro)}
                           </span>
                         </div>
                       )}
                       {/* [FDV1] DOMICILIO: solo il comando di priorità ± (il límite è a destra) */}
                       {o.isDelivery && (
                         <div style={{marginTop:6}}>
-                          <SnoozeButton orden={o} onUpdate={handleOffsetChange} />
+                          {o._priorityHere && <PriorityControl orden={o} onUpdate={handleOffsetChange} light={true} label={o.manualGiro ? "Todo el giro" : null} />}
                         </div>
                       )}
                       {!o.isDelivery && (o.horaForno || o.hora) && (
@@ -279,10 +280,10 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                         <div title="Límite de entrega (creación + 55 min)" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
                           <div style={{fontFamily:"'DM Mono',monospace",fontSize:40,fontWeight:900,lineHeight:1,
                             color: o.dl && o.dl.state === "late" ? "#DC2626" : o.dl && o.dl.state === "near" ? "#D97706" : "#065F46",
-                            animation: o.dl && o.dl.state === "late" ? "blink 1s infinite" : "none"}}>{o.dl ? o.dl.hhmm : "—"}</div>
+                            animation: "none"}}>{o.dl ? o.dl.hhmm : "—"}</div>
                           <div style={{color: o.dl && o.dl.state === "late" ? "#7F1D1D" : o.dl && o.dl.state === "near" ? "#7C2D12" : "#065F46",
                             fontSize: o.dl && o.dl.state === "late" ? 14 : 11, fontWeight:900, letterSpacing:.5}}>
-                            {o.dl && o.dl.state === "late" ? "⚠ TARDE" : o.dl && o.dl.state === "near" ? "LÍMITE CERCA" : "LÍMITE"}
+                            {o.dl && o.dl.state === "late" ? "TARDE" : o.dl && o.dl.state === "near" ? "URGENTE" : "HORA LÍMITE"}
                           </div>
                         </div>
                       ) : t.showCountdown ? (

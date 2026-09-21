@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { calcTotale } from '../../constants';
 import { api } from '../../api';
 import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
 import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
 import { orderDeadlineMs, orderDeadlineHHMM, giroEarliestDeadlineMs, formatMadridHHMM } from '../cocina/manualGiroCocina';
 import { filterFdv1Warnings } from './fdv1Warnings';
+import { withTimeout, classifyGiroResult, giroErrorText, intentApplied } from './giroOutcome';
 
 // Helpers tempi: hora consegna ↔ horaForno (= partenza driver = uscita pizza forno)
 // [FDV1] A1: riferimento del blocco = límite (deadline) — giro: il più urgente dei membri; standalone: il suo.
@@ -19,10 +20,10 @@ const fdv1WarningLabel = (w) => {
   const ids = (w.member_ids || []).join(", ");
   const d = w.data || {};
   switch (w.code) {
-    case "deadline_much_closer": return `Límite mucho antes (−${d.delta_min} min): ${ids}`;
-    case "spread_over_window":   return `Límites separados ${d.spread_min} min (> ${d.window_min}): ${ids}`;
-    case "deadline_passed":      return `Límite ya pasado: ${ids}`;
-    case "already_departed":     return `Ya en camino: ${ids}`;
+    case "deadline_much_closer": return `En riesgo: ${ids} (vence ${d.delta_min} min antes que el resto)`;
+    case "spread_over_window":   return `En riesgo: ${ids} (horas límite separadas ${d.spread_min} min)`;
+    case "deadline_passed":      return `Ya tarde: ${ids}`;
+    case "already_departed":     return `Ya en reparto: ${ids}`;
     case "zones_differ":         return `Zonas diferentes: ${(d.zones || []).join(", ")}`;
     case "capacity_exceeded":    return `Capacidad superada: ${d.used}/${d.max}`;
     case "no_zone":              return `Sin zona: ${ids}`;
@@ -106,7 +107,7 @@ const ZonaOrderRow = ({
   o, zona, onSendRepartidor, loadingId, onForzaEntregado,
   manualGiro, manualGiroWarnings = [], isManualGiroSelected = false,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro,
-  giroOptions = [], onMoveToGiro
+  giroOptions = [], onMoveToGiro, inGiroBlock = false
 }) => {
   const isLoading   = loadingId === o.id;
   const isListo     = o.estado === ORDER_STATES.LISTO;
@@ -124,8 +125,6 @@ const ZonaOrderRow = ({
   const totaleNum = (Number(o.totale) > 0) ? Number(o.totale) : calcTotale(safeItems, o.tipo_consegna || "DOMICILIO");
   const total = totaleNum.toFixed(2);
 
-  const estadoColor = isEnEntrega ? ORANGE : isListo ? "#22C55E" : isCocina ? "#3B82F6" : "#06B6D4";
-  const estadoLabel = isEnEntrega ? "🛵" : isListo ? "✅" : isCocina ? "🔥" : "⏳";
 
   return (
     <div style={{
@@ -137,27 +136,24 @@ const ZonaOrderRow = ({
       display: "flex", alignItems: "center", gap: 10,
       boxShadow: manualGiro ? "inset 3px 0 0 rgba(251,191,36,0.70)" : "none"
     }}>
-      {selectableForManualGiro && (
+      {selectableForManualGiro && !manualGiro && (
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onToggleManualGiro && onToggleManualGiro(o.id); }}
           aria-pressed={isManualGiroSelected}
-          title={isManualGiroSelected ? "Quitar de seleccion manual" : "Añadir a giro manual"}
+          title={isManualGiroSelected ? "Quitar de la selección" : "Elegir para un giro nuevo"}
           style={{
-            width: 24, height: 24, borderRadius: 7,
+            minWidth: 64, height: 30, padding: "0 8px", borderRadius: 7,
             border: `1.5px solid ${isManualGiroSelected ? "#fbbf24" : "rgba(251,191,36,0.55)"}`,
             background: isManualGiroSelected ? "rgba(251,191,36,0.22)" : "rgba(251,191,36,0.08)",
             color: isManualGiroSelected ? "#fbbf24" : "#fde68a",
             display: "inline-flex", alignItems: "center", justifyContent: "center",
-            fontSize: 14, fontWeight: 900, lineHeight: 1, cursor: "pointer", flexShrink: 0
+            fontSize: 12, fontWeight: 900, lineHeight: 1, cursor: "pointer", flexShrink: 0
           }}
         >
-          {isManualGiroSelected ? "✓" : "+"}
+          {isManualGiroSelected ? "✓ Elegido" : "Elegir"}
         </button>
       )}
-
-      {/* Stato */}
-      <span style={{ fontSize: 14, flexShrink: 0 }}>{estadoLabel}</span>
 
       {/* [FDV1] ADD / MOVE: standalone → giro, G1 → G2 (giro → suelto = × sul badge) */}
       {selectableForManualGiro && onMoveToGiro && giroOptions.some(g => g.id !== (manualGiro && manualGiro.id)) && (
@@ -169,10 +165,10 @@ const ZonaOrderRow = ({
           onChange={(e) => { const v = e.target.value; if (v) onMoveToGiro(o.id, v); }}
           style={{
             background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.45)", color: "#fde68a",
-            borderRadius: 7, fontSize: 11, fontWeight: 800, padding: "2px 4px", flexShrink: 0, cursor: "pointer"
+            borderRadius: 7, fontSize: 12, fontWeight: 800, padding: "0 6px", height: 30, flexShrink: 0, cursor: "pointer"
           }}
         >
-          <option value="">{manualGiro ? "→ mover" : "→ giro"}</option>
+          <option value="">{manualGiro ? "Mover a…" : "Añadir a…"}</option>
           {giroOptions.filter(g => g.id !== (manualGiro && manualGiro.id)).map(g => (
             <option key={g.id} value={g.id}>{g.label}</option>
           ))}
@@ -184,51 +180,20 @@ const ZonaOrderRow = ({
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{o.nombre}</span>
           <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>{o.id}</span>
-          {manualGiro && (
-            <span style={{
-              display: "inline-flex", alignItems: "center", gap: 5,
-              background: "rgba(251,191,36,0.14)",
-              border: "1px solid rgba(251,191,36,0.42)",
-              color: "#fbbf24", borderRadius: 999,
-              padding: "2px 7px", fontSize: 10, fontWeight: 900,
-              textTransform: "lowercase", whiteSpace: "nowrap"
-            }} title="Giro manual persistente (backend)">
-              giro manual · {formatGiroLabel(manualGiro)}
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onRemoveFromManualGiro && onRemoveFromManualGiro(manualGiro.id, o.id); }}
-                title="Quitar este pedido del giro"
-                style={{
-                  background: "transparent", border: "none", color: "#fde68a",
-                  fontSize: 12, fontWeight: 900, padding: 0, cursor: "pointer", lineHeight: 1
-                }}
-              >×</button>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onDissolveManualGiro && onDissolveManualGiro(manualGiro.id); }}
-                title="Disolver giro manual"
-                style={{
-                  background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.28)",
-                  color: "#fde68a", borderRadius: 999, fontSize: 9, fontWeight: 900,
-                  padding: "1px 5px", cursor: "pointer", lineHeight: 1.2
-                }}
-              >disolver</button>
-            </span>
-          )}
           {manualGiroWarnings.map(w => (
             <span key={`${manualGiro?.id || o.id}-${w.key}`} style={warningStyle(w.level)}>
               {w.label}
             </span>
           ))}
           {(() => {
-            // [FDV1] UN solo riferimento temporale: 🛵 límite (delivery_deadline_at) del pedido; "cliente" = hora
+            // [FDV1] UN solo riferimento temporale: Límite (delivery_deadline_at) del pedido; "cliente" = hora
             // prometida solo se diversa. Nessun orario derivato dal ± (priorità) né dal rider.
             const deadlineCliente = orderDeadlineHHMM(o);
             if (!deadlineCliente) return null;
             return (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
-                <span style={{ color: "#C2410C", fontWeight: 800 }} title="Límite de entrega (creación + 55 min)">
-                  🛵 {deadlineCliente}
+                <span style={{ color: "#FDBA74", fontWeight: 800 }} title="Hora límite de entrega (creación + 55 min)">
+                  Límite {deadlineCliente}
                 </span>
                 {o.hora && o.hora !== deadlineCliente && (
                   <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 600 }} title="Hora prometida al cliente">
@@ -278,9 +243,22 @@ const ZonaOrderRow = ({
           fontSize: 11,
           flexShrink: 0,
           whiteSpace: "nowrap"
-        }} title="Acciones de repartidor disponibles cuando pase a LISTO">
-          🔥 En cocina
+        }} title="Se podrá enviar cuando esté listo">
+          En cocina
         </span>
+      )}
+
+      {/* [FDV1] giro: separar este pedido (el resto del giro sigue). Botón de texto, lejos de las acciones de estado. */}
+      {inGiroBlock && manualGiro && selectableForManualGiro && (
+        <button type="button"
+          onClick={(e) => { e.stopPropagation(); onRemoveFromManualGiro && onRemoveFromManualGiro(manualGiro.id, o.id); }}
+          title="Quitar este pedido del giro"
+          style={{
+            height: 30, padding: "0 10px", borderRadius: 8, flexShrink: 0, cursor: "pointer",
+            background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.25)",
+            color: "rgba(255,255,255,0.75)", fontSize: 12, fontWeight: 800
+          }}
+        >Separar</button>
       )}
 
       {/* Bottone manda repartidor */}
@@ -292,12 +270,16 @@ const ZonaOrderRow = ({
             borderRadius: 8, color: ORANGE, fontWeight: 700, fontSize: 12,
             cursor: isLoading ? "not-allowed" : "pointer", flexShrink: 0
           }}>
-          {isLoading ? "..." : "🛵"}
+          {isLoading ? "..." : "Enviar"}
         </button>
       )}
 
       {/* Override: marcar driver de vuelta manualmente.
           DOMICILIO: RETIRADO = driver rientrato in pizzeria (giro chiuso), NON consegna cliente. */}
+      {isEnEntrega && (
+        <span style={{ padding: "5px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap",
+          background: "rgba(249,115,22,0.10)", border: "1px solid rgba(249,115,22,0.35)", color: ORANGE }}>En reparto</span>
+      )}
       {isEnEntrega && (
         <button disabled={isLoading} onClick={() => {
           if (!window.confirm("¿Pedido entregado? Pasa a RETIRADO.")) return;
@@ -359,21 +341,11 @@ const ZonaBlock = ({
               background: zona.colore, color: "#fff",
               borderRadius: 8, padding: "2px 10px",
               fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 900
-            }} title="Límite de entrega (delivery_deadline_at)">🛵 límite {giroHora}</span>
+            }} title="Hora límite de entrega">Límite {giroHora}</span>
           )}
           <span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 600, fontSize: 12 }}>
             {zona.nome}
           </span>
-        </span>
-        {/* Contatore ordini / max */}
-        <span style={{
-          background: isFull ? "rgba(251,191,36,0.20)" : `${zona.colore}33`,
-          border: `1.5px solid ${isFull ? "rgba(251,191,36,0.6)" : zona.colore + "99"}`,
-          color: isFull ? "#fbbf24" : "#fff",
-          borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 800,
-          boxShadow: isFull ? "none" : `0 0 8px ${zona.colore}55`
-        }}>
-          {ordini.length}/{zona.maxOrdiniPerGiro}
         </span>
         {/* Tempo giro — snapshot durata_andata reale (Google), worst-case del giro.
             Se almeno un ordine non ha né durata_andata_min né zona_lat/lon, il valore
@@ -392,8 +364,8 @@ const ZonaBlock = ({
               }}
               title={isFallback
                 ? "Estimación de zona (sin GPS del cliente) — verificar en Maps"
-                : "Tempo andata one-way (peggior caso del giro)"}>
-              ~{tg}min{isFallback ? "*" : ""}
+                : "Tiempo de ida en coche (zona)"}>
+              ida ~{tg} min{isFallback ? "*" : ""}
             </span>
           );
         })()}
@@ -459,14 +431,14 @@ const ManualGiroBlock = ({
           background: AMBER, color: "#1c1300", borderRadius: 8,
           padding: "3px 10px", fontSize: 13, fontWeight: 900, flexShrink: 0
         }}>
-          🔗 Giro manual {giroLabel}
+          Giro {giroLabel}
         </span>
         {hora && (
           <span style={{
             background: AMBER, color: "#1c1300",
             borderRadius: 8, padding: "2px 10px",
             fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 900
-          }} title="Límite más urgente del giro (delivery_deadline_at)">🛵 límite {hora}</span>
+          }} title="Hora límite más urgente del giro">Límite {hora}</span>
         )}
         {/* Zone incluse */}
         <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap" }}>
@@ -497,14 +469,17 @@ const ManualGiroBlock = ({
         }}>{ordini.length} pedidos</span>
         <button
           type="button"
-          onClick={() => onDissolveManualGiro && onDissolveManualGiro(giro.id)}
-          title="Disolver giro manual"
+          onClick={() => {
+            if (!window.confirm(`¿Deshacer el giro ${giroLabel}? Los ${ordini.length} pedidos quedan separados.`)) return;
+            onDissolveManualGiro && onDissolveManualGiro(giro.id);
+          }}
+          title="Deshacer giro"
           style={{
             background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.18)",
             color: "rgba(255,255,255,0.6)", borderRadius: 8, padding: "4px 10px",
-            fontSize: 11, fontWeight: 800, cursor: "pointer"
+            fontSize: 12, fontWeight: 800, cursor: "pointer", height: 30, marginLeft: 12
           }}
-        >Disolver</button>
+        >Deshacer giro</button>
       </div>
 
       {/* Ordini del giro — ognuno con la propria zona + orario cliente */}
@@ -518,7 +493,7 @@ const ManualGiroBlock = ({
             onToggleManualGiro={onToggleManualGiro}
             onRemoveFromManualGiro={onRemoveFromManualGiro}
             onDissolveManualGiro={onDissolveManualGiro}
-            giroOptions={giroOptions} onMoveToGiro={onMoveToGiro} />
+            giroOptions={giroOptions} onMoveToGiro={onMoveToGiro} inGiroBlock />
         ))}
       </div>
     </div>
@@ -530,7 +505,7 @@ const ManualGiroBlock = ({
 const GiroReviewModal = ({ review, orders = [], pending, onConfirm, onCancel }) => {
   const warnings = review.warnings || [];
   const isCreate = review.kind === "create";
-  const title = isCreate ? `Crear giro manual · ${orders.length} pedidos` : `${review.moving ? "Mover" : "Añadir"} ${review.orderIds.join(", ")} → ${review.giroLabel || "giro"}`;
+  const title = isCreate ? `Crear giro · ${orders.length} pedidos` : `${review.moving ? "Mover" : "Añadir"} ${review.orderIds.join(", ")} → ${review.giroLabel || "giro"}`;
   const cta = pending ? "..." : warnings.length ? "Confirmar igualmente" : (isCreate ? "Crear giro" : review.moving ? "Mover" : "Añadir al giro");
   return (
     <div style={{
@@ -544,7 +519,7 @@ const GiroReviewModal = ({ review, orders = [], pending, onConfirm, onCancel }) 
       }}>
         <div style={{ color: "#fde68a", fontWeight: 900, fontSize: 15, marginBottom: 4 }}>{title}</div>
         <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12.5, marginBottom: 12 }}>
-          El giro toma el <strong style={{ color: "#fde68a" }}>límite más urgente</strong> de sus pedidos. Los límites de cada cliente no cambian.
+          El giro usa la <strong style={{ color: "#fde68a" }}>hora límite más urgente</strong>. La hora límite de cada cliente no cambia.
         </div>
         {orders.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
@@ -552,7 +527,7 @@ const GiroReviewModal = ({ review, orders = [], pending, onConfirm, onCancel }) 
               <div key={o.id} style={{ display: "flex", gap: 8, fontSize: 12.5, color: "#fff" }}>
                 <span style={{ fontWeight: 800, minWidth: 44 }}>{o.id}</span>
                 <span style={{ flex: 1, color: "rgba(255,255,255,0.7)" }}>{o.nombre}</span>
-                <span style={{ fontFamily: "'DM Mono',monospace", color: "rgba(255,255,255,0.6)" }}>{o.zona || "—"} · límite {orderDeadlineHHMM(o) || "—"}</span>
+                <span style={{ fontFamily: "'DM Mono',monospace", color: "rgba(255,255,255,0.6)" }}>{o.zona || "—"} · Límite {orderDeadlineHHMM(o) || "—"}</span>
               </div>
             ))}
           </div>
@@ -584,13 +559,15 @@ const GiroReviewModal = ({ review, orders = [], pending, onConfirm, onCancel }) 
   );
 };
 
-const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
+const TabEntregas = ({ ordenes = [], notify, setOrdenes, suspended = false }) => {
   const [loadingId,    setLoadingId]    = useState(null);
   const [apertoConsegnati, setApertoConsegnati] = useState(false);
   // DELIVERY-MANUAL-GIRO-01 P1C.1: manualGiros è backend-derived (api.getManualGiros).
   // selectedManualGiroOrderIds resta locale (selezione UI, mai persistita).
   // pendingManualGiroAction disabilita i bottoni durante una mutation in volo.
   const [manualGiros, setManualGiros] = useState([]);
+  // [FDV1] ultima lettura riuscita dei giri + ultimo tentativo: se le letture falliscono da >30 s lo si dice.
+  const [girosReadState, setGirosReadState] = useState({ okAt: Date.now(), failing: false });
   const [selectedManualGiroOrderIds, setSelectedManualGiroOrderIds] = useState([]);
   const [pendingManualGiroAction, setPendingManualGiroAction] = useState(false);
   // [FDV1] revisione in corso: { kind: 'create'|'add', orderIds, giroId?, giroLabel?, moving?, warnings, warningsUnavailable? }
@@ -640,9 +617,10 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       try {
         const res = await api.getManualGiros();
         if (!mounted) return;
-        if (Array.isArray(res)) setManualGiros(res);
-        else if (res && res.error) console.warn("[manualGiros] fetch error:", res.error);
+        if (Array.isArray(res)) { setManualGiros(res); setGirosReadState({ okAt: Date.now(), failing: false }); }
+        else { setGirosReadState(prev => ({ ...prev, failing: true })); if (res && res.error) console.warn("[manualGiros] fetch error:", res.error); }
       } catch (e) {
+        if (mounted) setGirosReadState(prev => ({ ...prev, failing: true }));
         console.warn("[manualGiros] fetch threw:", (e && e.message) || e);
       }
     };
@@ -706,30 +684,67 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     }
   };
 
+  // [FDV1] La revisione esiste solo in Entregas: se la Pizzeria (overlay) si apre, si chiude e le risposte tardive
+  // (giroWarnings) vengono scartate (token). Nessuna mutazione parte mentre Entregas è coperta.
+  const reviewToken = useRef(0);
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
+  useEffect(() => { if (suspended) { reviewToken.current += 1; setGiroReview(null); } }, [suspended]);
+
+  const giroName = (giroId) => formatGiroLabel(giroMetaById[giroId] || { id: giroId });
+  const toastOk = (msg) => notify && notify(msg, "#22C55E");
+  const toastErr = (msg) => notify && notify(msg, "#E8341C");
+  const toastWait = (msg) => notify && notify(msg, "#fbbf24");
+
+  // Esecuzione unica di una mutazione giro: ok / errore certo / esito incerto (verifica rileggendo gli ordini).
+  const runGiroMutation = async (intent, call, okText) => {
+    const res = await withTimeout(call());
+    const kind = classifyGiroResult(res);
+    if (kind === "ok") { toastOk(okText(res)); return true; }
+    if (kind === "failed") { toastErr(giroErrorText(res && res.error)); console.warn("[giro] failed:", res); return false; }
+    toastWait("Sin confirmar — comprobando…");
+    console.warn("[giro] outcome uncertain:", res);
+    let fresh = null;
+    try { const r = await api.getOrdenes(); fresh = r && Array.isArray(r.ordenes) ? r.ordenes : null; } catch (_) { fresh = null; }
+    if (!fresh) { toastErr("Sin confirmar — recarga la página"); return false; }
+    const applied = intentApplied(intent, fresh);
+    if (setOrdenes) {
+      const g = new Map(fresh.map(o => [o.id, o]));
+      setOrdenes(prev => prev.map(o => (g.has(o.id) ? { ...o, manual_giro_id: g.get(o.id).manual_giro_id, ui_offset_min: g.get(o.id).ui_offset_min } : o)));
+    }
+    if (applied) { toastOk(okText({ giro: typeof applied === "string" ? { id: applied } : null })); return true; }
+    toastErr("No se guardó — reintenta");
+    return false;
+  };
+
   // [FDV1] Apre la revisione (warning fattuali dal backend) prima di creare il giro. Nessun orario da scegliere.
   const openGiroModal = async () => {
-    if (pendingManualGiroAction) return;
+    if (pendingManualGiroAction || suspendedRef.current) return;
     const orderIds = selectedManualGiroOrderIds.filter(id => activeManualGiroIds.has(id));
     if (orderIds.length < 2) return;
+    const token = ++reviewToken.current;
     setPendingManualGiroAction(true);
     let res = null;
-    try { res = await api.giroWarnings({ order_ids: orderIds }); } catch (_) { res = null; }
+    try { res = await withTimeout(api.giroWarnings({ order_ids: orderIds }), 8000); } catch (_) { res = null; }
     setPendingManualGiroAction(false);
+    if (token !== reviewToken.current || suspendedRef.current) return;
     const members = ordenes.filter(o => orderIds.includes(o.id));
     setGiroReview({ kind: "create", orderIds, warnings: filterFdv1Warnings((res && res.ok && res.warnings) || [], members), warningsUnavailable: !(res && res.ok) });
   };
 
   // [FDV1] ADD / MOVE: standalone → giro, oppure G1 → G2 ("move silent" atomico lato DB).
   const moveToGiro = async (orderId, giroId) => {
-    if (pendingManualGiroAction) return;
+    if (pendingManualGiroAction || suspendedRef.current) return;
+    const token = ++reviewToken.current;
     setPendingManualGiroAction(true);
     let res = null;
-    try { res = await api.giroWarnings({ giro_id: giroId, order_ids: [orderId] }); } catch (_) { res = null; }
+    try { res = await withTimeout(api.giroWarnings({ giro_id: giroId, order_ids: [orderId] }), 8000); } catch (_) { res = null; }
     setPendingManualGiroAction(false);
+    if (token !== reviewToken.current || suspendedRef.current) return;
     const cur = ordenes.find(o => o.id === orderId);
     setGiroReview({
       kind: "add", orderIds: [orderId], giroId,
-      giroLabel: formatGiroLabel(giroMetaById[giroId] || { id: giroId }),
+      giroLabel: giroName(giroId),
       moving: !!(cur && cur.manual_giro_id),
       warnings: filterFdv1Warnings((res && res.ok && res.warnings) || [],
         ordenes.filter(o => o.id === orderId || (o.manual_giro_id === giroId && o.id !== orderId))),
@@ -739,79 +754,51 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
 
   // Conferma dalla revisione (= override se ci sono warning).
   const confirmGiroReview = async () => {
-    if (pendingManualGiroAction || !giroReview) return;
+    if (pendingManualGiroAction || !giroReview || suspendedRef.current) return;
     const rv = giroReview;
     setPendingManualGiroAction(true);
     try {
-      const res = rv.kind === "create"
-        ? await api.createManualGiro(rv.orderIds.filter(id => activeManualGiroIds.has(id)))
-        : await api.addOrderToManualGiro(rv.giroId, rv.orderIds[0]);
-      if (res && res.ok) {
-        if (notify) notify(rv.kind === "create" ? `✓ Giro manual creado · ${formatGiroLabel(res.giro)}` : `✓ ${rv.orderIds[0]} → ${rv.giroLabel}`, "#22C55E");
-        if (rv.kind === "create") setSelectedManualGiroOrderIds([]);
-        setGiroReview(null);
+      let ok;
+      if (rv.kind === "create") {
+        const ids = rv.orderIds.filter(id => activeManualGiroIds.has(id));
+        ok = await runGiroMutation({ kind: "create", orderIds: ids }, () => api.createManualGiro(ids),
+          (res) => `Giro ${res && res.giro ? formatGiroLabel(res.giro) : ""} creado`.replace("  ", " "));
+        if (ok) setSelectedManualGiroOrderIds([]);
       } else {
-        const code = res && res.error;
-        const msg = code === "invalid_orders" || code === "order_not_eligible" ? "Pedidos no elegibles"
-          : code === "some_orders_not_found" || code === "order_not_found" ? "Pedidos no encontrados"
-          : code === "giro_not_found" || code === "giro_not_found_or_dissolved" ? "Giro ya no existe"
-          : code === "giro_full" ? "Giro completo"
-          : code === "giro_departed" || code === "members_departed" ? "Giro ya en camino"
-          : code === "members_already_in_giro" || code === "giro_changed_during_add" ? "El giro cambió — revisa y reintenta"
-          : code === "giro_atomic_unavailable" ? "Giros no disponibles (servidor)"
-          : (code === "need_at_least_2_orders" || code === "need_at_least_2_distinct_orders") ? "Selecciona 2 pedidos"
-          : code === "giro_rpc_outcome_unknown" ? "Resultado incierto — reintenta"
-          : "Error en el giro";
-        if (notify) notify("❌ " + msg, "#E8341C");
-        console.warn("[manualGiros] giro action failed:", res);
+        ok = await runGiroMutation({ kind: "add", orderId: rv.orderIds[0], giroId: rv.giroId },
+          () => api.addOrderToManualGiro(rv.giroId, rv.orderIds[0]),
+          () => (rv.moving ? `${rv.orderIds[0]} movido a ${rv.giroLabel}` : `${rv.orderIds[0]} añadido a ${rv.giroLabel}`));
       }
-    } catch (e) {
-      console.warn("[manualGiros] giro action threw:", e);
-      if (notify) notify("❌ Error de red", "#E8341C");
+      if (ok) setGiroReview(null);
+    } finally {
+      await refetchManualGiros();
+      setPendingManualGiroAction(false);
     }
-    await refetchManualGiros();
-    setPendingManualGiroAction(false);
   };
 
   // giroId ricevuto per compatibilità chiamante; backend usa solo orderId.
   const removeFromManualGiro = async (_giroId, orderId) => {
-    if (pendingManualGiroAction) return;
+    if (pendingManualGiroAction || suspendedRef.current) return;
     setPendingManualGiroAction(true);
     try {
-      const res = await api.removeOrderFromManualGiro(orderId);
-      if (res && res.ok) {
-        if (res.auto_dissolved && notify) {
-          notify("⚠️ Giro disuelto: quedan menos de 2 pedidos", "#fbbf24");
-        }
-      } else {
-        if (notify) notify("❌ Error al quitar pedido", "#E8341C");
-        console.warn("[manualGiros] removeOrderFromManualGiro failed:", res);
-      }
-    } catch (e) {
-      console.warn("[manualGiros] removeOrderFromManualGiro threw:", e);
-      if (notify) notify("❌ Error de red", "#E8341C");
+      await runGiroMutation({ kind: "remove", orderId }, () => api.removeOrderFromManualGiro(orderId),
+        (res) => (res && res.auto_dissolved ? `${orderId} separado · giro deshecho (quedaba 1 pedido)` : `${orderId} separado`));
+    } finally {
+      await refetchManualGiros();
+      setPendingManualGiroAction(false);
     }
-    await refetchManualGiros();
-    setPendingManualGiroAction(false);
   };
 
   const dissolveManualGiro = async (giroId) => {
-    if (pendingManualGiroAction) return;
+    if (pendingManualGiroAction || suspendedRef.current) return;
+    const label = giroName(giroId);
     setPendingManualGiroAction(true);
     try {
-      const res = await api.dissolveManualGiro(giroId);
-      if (res && res.ok) {
-        if (notify) notify("✓ Giro disuelto", "#22C55E");
-      } else {
-        if (notify) notify("❌ Error al disolver", "#E8341C");
-        console.warn("[manualGiros] dissolveManualGiro failed:", res);
-      }
-    } catch (e) {
-      console.warn("[manualGiros] dissolveManualGiro threw:", e);
-      if (notify) notify("❌ Error de red", "#E8341C");
+      await runGiroMutation({ kind: "dissolve", giroId }, () => api.dissolveManualGiro(giroId), () => `Giro ${label} deshecho`);
+    } finally {
+      await refetchManualGiros();
+      setPendingManualGiroAction(false);
     }
-    await refetchManualGiros();
-    setPendingManualGiroAction(false);
   };
 
   // ── Step 1: i giri MANUALI comandano sul clustering automatico ──────────
@@ -1012,6 +999,13 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}`}</style>
 
 
+      {girosReadState.failing && Date.now() - girosReadState.okAt > 30000 && (
+        <div role="status" style={{ marginBottom: 10, padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+          background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.45)", color: "#fbbf24" }}>
+          Giros sin actualizar — comprobando conexión…
+        </div>
+      )}
+
       {/* Giro manual persistente (P1C.1): selezione locale, mutazioni via api.createManualGiro. */}
       {selectedManualGiroOrderIds.length > 0 && (
         <div style={{
@@ -1048,7 +1042,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
                   cursor: enabled ? "pointer" : "not-allowed"
                 }}
               >
-                {pendingManualGiroAction ? "..." : "Crear giro manual"}
+                {pendingManualGiroAction ? "..." : `Crear giro con ${selectedManualGiroOrderIds.length}`}
               </button>
             );
           })()}
@@ -1090,7 +1084,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
             color: "#fde68a", fontSize: 11, fontWeight: 900, lineHeight: 1, flexShrink: 0
           }}>+</span>
           <span>
-            Giro manual: pulsa el <strong style={{ color: "#fde68a" }}>+</strong> en 2+ pedidos para agruparlos
+            Para un giro nuevo: pulsa <strong style={{ color: "#fde68a" }}>Elegir</strong> en 2 o más pedidos
           </span>
         </div>
       )}

@@ -119,6 +119,19 @@ export const sortKitchenCards = (cards = []) => {
   });
 };
 
+// [FDV1] ± una sola volta per giro: la prima card (nell'ordine di cucina) di ogni giro porta il controllo; gli altri
+// membri no (il backend applica il valore a tutto il blocco). Standalone DOMICILIO: controllo sulla propria card.
+export const markPriorityHolders = (cards = []) => {
+  const seen = new Set();
+  return cards.map((c) => {
+    if (!c || c.tipo_consegna !== "DOMICILIO") return c;
+    if (!c.manual_giro_id) return { ...c, _priorityHere: true };
+    if (seen.has(c.manual_giro_id)) return { ...c, _priorityHere: false };
+    seen.add(c.manual_giro_id);
+    return { ...c, _priorityHere: true };
+  });
+};
+
 export const getManualGiroForOrder = (order, giroMetaById = {}) => {
   const gid = order?.manual_giro_id;
   if (!gid) return null;

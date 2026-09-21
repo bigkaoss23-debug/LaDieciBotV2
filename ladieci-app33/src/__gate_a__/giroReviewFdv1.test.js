@@ -49,10 +49,10 @@ const deliveries = [
 const openReview = async (ordenes = deliveries) => {
   const el = mount(<TabEntregas ordenes={ordenes} notify={() => {}} setOrdenes={() => {}} />);
   await flush();
-  const selectors = [...el.querySelectorAll("button[aria-pressed]")].filter((b) => /giro manual|seleccion manual/i.test(b.getAttribute("title") || ""));
+  const selectors = [...el.querySelectorAll("button[aria-pressed]")].filter((b) => /Elegir para un giro nuevo|Quitar de la selección/i.test(b.getAttribute("title") || ""));
   expect(selectors.length).toBeGreaterThanOrEqual(2);
   await click(selectors[0]); await click(selectors[1]);
-  await click(btn(el, "Crear giro manual"));
+  await click([...el.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith("Crear giro con")));
   await flush();
   return el;
 };
@@ -63,7 +63,7 @@ test("create senza warning: nessun input orario, 'Crear giro' chiama createManua
   expect(api.giroWarnings).toHaveBeenCalledWith({ order_ids: ["D-1", "D-2"] });
   expect(el.querySelector('input[placeholder="HH:MM"]')).toBeNull();
   expect(el.textContent).not.toContain("REVISAR");
-  expect(el.textContent).toContain("límite 20:40");
+  expect(el.textContent).toContain("Límite 20:40");
   await click(btn(el, "Crear giro"));
   expect(api.createManualGiro).toHaveBeenCalledTimes(1);
   expect(api.createManualGiro.mock.calls[0]).toEqual([["D-1", "D-2"]]);
@@ -73,7 +73,7 @@ test("create con rischio: REVISAR con l'ordine realmente a rischio; 'Confirmar i
   api.giroWarnings.mockResolvedValue({ ok: true, warnings: [{ code: "spread_over_window", member_ids: ["D-1", "D-2"], data: { spread_min: 40, window_min: 15 } }] });
   const el = await openReview();
   expect(el.textContent).toContain("REVISAR");
-  expect(el.textContent).toContain("Límites separados 40 min (> 15): D-1");   // A4: D-2 (límite più lontano) non è a rischio
+  expect(el.textContent).toContain("En riesgo: D-1 (horas límite separadas 40 min)");   // A4: D-2 (límite più lontano) non è a rischio
   expect(el.textContent).not.toContain("D-1, D-2");
   expect(btn(el, "Crear giro")).toBeUndefined();
   await click(btn(el, "Confirmar igualmente"));
@@ -141,9 +141,12 @@ test("MOVE G1 → G2, REMOVE (giro → suelto), DISSOLVE: ognuno chiama la sua a
   await click(quitar);
   expect(api.removeOrderFromManualGiro).toHaveBeenCalledTimes(1);
   // DISSOLVE
-  const dis = [...el.querySelectorAll('button[title="Disolver giro manual"]')][0];
+  const confirmSpy = jest.spyOn(window, "confirm").mockImplementation(() => true);
+  const dis = [...el.querySelectorAll('button[title="Deshacer giro"]')][0];
   await click(dis);
+  expect(confirmSpy).toHaveBeenCalledTimes(1);
   expect(api.dissolveManualGiro).toHaveBeenCalledTimes(1);
+  confirmSpy.mockRestore();
   // nessuna UI rider
   expect(api.getDriverStatus).not.toHaveBeenCalled();
   expect(el.textContent).not.toMatch(/Registrar salida|Rider volviendo|Driver volvió/);
@@ -151,14 +154,14 @@ test("MOVE G1 → G2, REMOVE (giro → suelto), DISSOLVE: ognuno chiama la sua a
 
 test("errore reale della RPC (order_not_eligible) → messaggio chiaro, modal resta aperto, nessuno stato locale inventato", async () => {
   api.giroWarnings.mockResolvedValue({ ok: true, warnings: [] });
-  api.createManualGiro.mockResolvedValueOnce({ ok: false, status: 400, error: "invalid_orders", details: ["D-2"] });
+  api.createManualGiro.mockResolvedValueOnce({ ok: false, status: 400, _status: 400, _ok: false, error: "invalid_orders", details: ["D-2"] });
   const notify = jest.fn();
   const el = mount(<TabEntregas ordenes={deliveries} notify={notify} setOrdenes={() => {}} />);
   await flush();
-  const selectors = [...el.querySelectorAll("button[aria-pressed]")].filter((b) => /giro manual|seleccion manual/i.test(b.getAttribute("title") || ""));
+  const selectors = [...el.querySelectorAll("button[aria-pressed]")].filter((b) => /Elegir para un giro nuevo|Quitar de la selección/i.test(b.getAttribute("title") || ""));
   await click(selectors[0]); await click(selectors[1]);
-  await click(btn(el, "Crear giro manual")); await flush();
+  await click([...el.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith("Crear giro con"))); await flush();
   await click(btn(el, "Crear giro")); await flush();
-  expect(notify).toHaveBeenCalledWith("❌ Pedidos no elegibles", "#E8341C");
+  expect(notify).toHaveBeenCalledWith("Pedidos no elegibles", "#E8341C");
   expect(btn(el, "Crear giro")).toBeTruthy();
 });
