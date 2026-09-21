@@ -147,3 +147,17 @@ test("MOVE G1 → G2, REMOVE (giro → suelto), DISSOLVE: ognuno chiama la sua a
   expect(api.getDriverStatus).not.toHaveBeenCalled();
   expect(el.textContent).not.toMatch(/Registrar salida|Rider volviendo|Driver volvió/);
 });
+
+test("errore reale della RPC (order_not_eligible) → messaggio chiaro, modal resta aperto, nessuno stato locale inventato", async () => {
+  api.giroWarnings.mockResolvedValue({ ok: true, warnings: [] });
+  api.createManualGiro.mockResolvedValueOnce({ ok: false, status: 400, error: "invalid_orders", details: ["D-2"] });
+  const notify = jest.fn();
+  const el = mount(<TabEntregas ordenes={deliveries} notify={notify} setOrdenes={() => {}} />);
+  await flush();
+  const selectors = [...el.querySelectorAll("button[aria-pressed]")].filter((b) => /giro manual|seleccion manual/i.test(b.getAttribute("title") || ""));
+  await click(selectors[0]); await click(selectors[1]);
+  await click(btn(el, "Crear giro manual")); await flush();
+  await click(btn(el, "Crear giro")); await flush();
+  expect(notify).toHaveBeenCalledWith("❌ Pedidos no elegibles", "#E8341C");
+  expect(btn(el, "Crear giro")).toBeTruthy();
+});

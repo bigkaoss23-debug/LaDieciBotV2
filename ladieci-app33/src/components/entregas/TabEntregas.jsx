@@ -884,9 +884,13 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
         setGiroReview(null);
       } else {
         const code = res && res.error;
-        const msg = code === "invalid_orders" || code === "invalid_order" ? "Pedidos no elegibles"
+        const msg = code === "invalid_orders" || code === "order_not_eligible" ? "Pedidos no elegibles"
           : code === "some_orders_not_found" || code === "order_not_found" ? "Pedidos no encontrados"
-          : code === "giro_not_found" || code === "giro_dissolved" ? "Giro ya no existe"
+          : code === "giro_not_found" || code === "giro_not_found_or_dissolved" ? "Giro ya no existe"
+          : code === "giro_full" ? "Giro completo"
+          : code === "giro_departed" || code === "members_departed" ? "Giro ya en camino"
+          : code === "members_already_in_giro" || code === "giro_changed_during_add" ? "El giro cambió — revisa y reintenta"
+          : code === "giro_atomic_unavailable" ? "Giros no disponibles (servidor)"
           : (code === "need_at_least_2_orders" || code === "need_at_least_2_distinct_orders") ? "Selecciona 2 pedidos"
           : code === "giro_rpc_outcome_unknown" ? "Resultado incierto — reintenta"
           : "Error en el giro";
