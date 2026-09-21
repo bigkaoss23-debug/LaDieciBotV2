@@ -297,6 +297,14 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                               </span>
                             </div>
                           )}
+                          {o.isDelivery && o.hora && o.hora !== o.deadlineCliente && (
+                            // [FDV1] promessa al cliente (hora), separata dal límite
+                            <div title="Hora prometida al cliente" style={{display:"inline-flex",alignItems:"center",gap:4,
+                              background:"#fff",border:"1.5px solid #6B7280",borderRadius:20,padding:"3px 9px"}}>
+                              <span style={{color:"#374151",fontWeight:900,fontSize:12}}>CLIENTE</span>
+                              <span style={{color:"#374151",fontWeight:900,fontSize:15,fontFamily:"'DM Mono',monospace"}}>{o.hora}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

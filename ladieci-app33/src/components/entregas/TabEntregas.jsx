@@ -34,6 +34,8 @@ const fdv1WarningLabel = (w) => {
 };
 
 const ORANGE = "#F97316";
+// [FDV1] nessuna telemetria rider (DRIVER_STATO) nel percorso operativo.
+const FDV1_NO_RIDER = true;
 
 // Per la navigazione usa solo "Via Numero" — l'interno/scala confonde Google Maps
 const mapsAddr = (dir) => (dir || "").split(",")[0].trim();
@@ -121,7 +123,8 @@ const ZonaOrderRow = ({
   const selectableForManualGiro = isManualGiroSelectableOrder(o);
 
   // Override: salida no registrada (ordine EN_ENTREGA ma partito_alle nullo)
-  const salidaMancante = isEnEntrega && !driverStato?.partito_alle;
+  // [FDV1] niente "salida no registrada": la partenza rider non è un dato del Planner.
+  const salidaMancante = !FDV1_NO_RIDER && isEnEntrega && !driverStato?.partito_alle;
 
   const safeItems = (() => {
     if (!o.items) return [];
@@ -244,9 +247,14 @@ const ZonaOrderRow = ({
                       ⏱ {hF}
                     </span>
                   )}
-                  <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 700 }} title="Límite cliente">
+                  <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 700 }} title="Límite de entrega (creación + 55 min)">
                     🛵 {deadlineCliente}
                   </span>
+                  {o.hora && o.hora !== deadlineCliente && (
+                    <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 600 }} title="Hora prometida al cliente">
+                      cliente {o.hora}
+                    </span>
+                  )}
                 </span>
               );
             }
@@ -267,8 +275,13 @@ const ZonaOrderRow = ({
                   </span>
                 )}
                 {showClienteRef && (
-                  <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 600 }} title="Límite cliente">
-                    cliente {deadlineCliente}
+                  <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 600 }} title="Límite de entrega del pedido">
+                    límite {deadlineCliente}
+                  </span>
+                )}
+                {o.hora && o.hora !== deadlineCliente && (
+                  <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 600 }} title="Hora prometida al cliente">
+                    cliente {o.hora}
                   </span>
                 )}
               </span>
@@ -375,7 +388,7 @@ const ZonaOrderRow = ({
           DOMICILIO: RETIRADO = driver rientrato in pizzeria (giro chiuso), NON consegna cliente. */}
       {isEnEntrega && (
         <button disabled={isLoading} onClick={() => {
-          if (!window.confirm("¿Driver de vuelta? Esta acción cerrará el giro (RETIRADO).")) return;
+          if (!window.confirm("¿Pedido entregado? Pasa a RETIRADO.")) return;
           onForzaEntregado && onForzaEntregado(o);
         }}
           style={{
@@ -384,8 +397,8 @@ const ZonaOrderRow = ({
             borderRadius: 8, color: "#22C55E", fontWeight: 700, fontSize: 11,
             cursor: "pointer", flexShrink: 0
           }}
-          title="Marcar driver de vuelta (RETIRADO) desde el panel del operador">
-          ✓ Driver volvió
+          title="Marcar pedido entregado (RETIRADO) desde el panel del operador">
+          ✓ Entregado
         </button>
       )}
     </div>
@@ -684,7 +697,10 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   // Rider return = TELEMETRIA VISIVA dal backend (getDriverStatus), read-only ogni 15s.
   // Il frontend NON scrive più DRIVER_STATO: la telemetria è un side-effect backend
   // (d569163). Null/errore → nessun banner (degrado silenzioso), zero crash.
+  // [FDV1] il rider non è una variabile del Planner: nessuna lettura di DRIVER_STATO (driverStato resta null →
+  // nessun banner di rientro, nessun "Registrar salida"). Il flusso di stato EN_ENTREGA → RETIRADO resta invariato.
   useEffect(() => {
+    if (FDV1_NO_RIDER) return undefined;
     let mounted = true;
     const loadDriver = async () => {
       try {
@@ -1072,7 +1088,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       // La chiusura del giro + ETA rientro sono ora un side-effect BACKEND del
       // RETIRADO (d569163): il backend rileva l'ultima consegna del giro
       // server-side. Niente decisione last-of-giro né chiudiGiro lato frontend.
-      if (notify) notify("✓ Driver volvió (operador)", "#22C55E");
+      if (notify) notify("✓ Entregado (operador)", "#22C55E");
     } catch(e) {
       logRollback({
         component: "TabEntregas",

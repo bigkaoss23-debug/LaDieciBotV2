@@ -33,6 +33,8 @@ function buildClosingOverrideNota(nota, hora) {
 // oraria, zona e stato operativo. Sorgente: ordenes delivery attivi + campi
 // driver separati (salida_driver_estimada / entrega_estimada) con fallback
 // legacy forno_out / hora. Nessun calcolo di scheduling: solo lettura.
+// [FDV1] nessuna lettura della telemetria rider (DRIVER_STATO) nel percorso operativo.
+const FDV1_NO_RIDER = true;
 const DISPONIBILIDAD_STATES = ["EN_COCINA", "POR_CONFIRMAR", "LISTO", "EN_ENTREGA"];
 const GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN = 20;
 // Margine (min): la pizza nuova può uscire dal forno fino a N minuti DOPO la
@@ -352,8 +354,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       items: items.map(i => ({ ...i })),
       nota: notaFinale, hora, ts: Date.now(), estado: "POR_CONFIRMAR",
       tipo_consegna: tipoConsegna,
-      // [FDV1] il backend fissa delivery_deadline_at = ts + 55' (e hora come specchio); giro_intent opzionale
-      ...(tipoConsegna === "DOMICILIO" ? { delivery_contract: "v1", ...(giroIntent ? { giro_intent: giroIntent } : {}) } : {}),
+      // [FDV1] il backend fissa delivery_deadline_at = ts + 55' nella INSERT; `hora` resta la promessa al cliente.
+      ...(tipoConsegna === "DOMICILIO" && giroIntent ? { giro_intent: giroIntent } : {}),
       direccion: tipoConsegna === "DOMICILIO" ? direccion.trim() : null,
       direccion_note: tipoConsegna === "DOMICILIO" ? (direccionNote.trim() || null) : null,
       // ── Step 2 anti-cerotto: geo/durata NON sono più fonte di verità del
@@ -481,8 +483,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   };
 
   // ── Fetch driver state quando il modal è visibile ────────────────────────
+  // [FDV1] il rider non è una variabile del Planner: DRIVER_STATO non viene più letto (driverStato resta null).
   useEffect(() => {
-    if (!visible) { setDriverStato(null); return; }
+    if (!visible || FDV1_NO_RIDER) { setDriverStato(null); return; }
     let mounted = true;
     (async () => {
       try {
@@ -739,6 +742,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // [FDV1] deadline preview (ora + 55') + giro compatibile (zona, deadline ±15', capienza, stato). Sola lettura;
   // ricaricata ogni 30 s. La deadline vera la fissa il backend al salvataggio (ts server + 55').
   const fdv1Zona = zonaAssegnata ? (zonaInfo?.zona?.id || null) : null;
+  const fdv1HoraPrefilled = useRef(false);
+  useEffect(() => { if (!visible) fdv1HoraPrefilled.current = false; }, [visible]);
   useEffect(() => {
     if (!visible || !isFdv1Delivery) { setFdv1Preview(null); return; }
     let cancelled = false;
@@ -747,7 +752,12 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         const res = await api.previewDeliveryV1({ zona: fdv1Zona });
         if (cancelled || !res || !res.ok) return;
         setFdv1Preview(res);
-        if (res.hora_preview) setHora(res.hora_preview);
+        // Proposta iniziale per la promessa al cliente (UNA volta, solo se l'operatore non l'ha toccata):
+        // poi `hora` è un dato dell'operatore, indipendente dalla deadline.
+        if (res.hora_preview && !fdv1HoraPrefilled.current && !horaCustom.current) {
+          fdv1HoraPrefilled.current = true;
+          setHora(res.hora_preview);
+        }
       } catch (e) {
         if (!cancelled) console.warn("[previewDeliveryV1] failed:", e?.message || e);
       }
@@ -995,15 +1005,14 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   <span style={{ fontSize: 16 }}>🕐</span>
                   <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                     <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 9, fontWeight: 800, letterSpacing: .8, textTransform: "uppercase", lineHeight: 1 }}>
-                      {tipoConsegna === "DOMICILIO" ? "Límite entrega" : "Retirar a las"}
+                      {tipoConsegna === "DOMICILIO" ? "Hora cliente" : "Retirar a las"}
                     </span>
-                    {isFdv1Delivery ? (
-                      <span title="Creación + 55 min (fijado al guardar)" style={{ color: "#fff", fontSize: 14, fontWeight: 700, width: 80, lineHeight: 1, fontFamily: "'DM Mono',monospace" }}>
-                        {hora || "—"}
+                    <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)}
+                      style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: 14, fontWeight: 700, width: 80, outline: "none", lineHeight: 1 }} />
+                    {isFdv1Delivery && fdv1Preview?.hora_preview && (
+                      <span title="Límite de entrega: creación + 55 min (fijado al guardar)" style={{ color: "#67e8f9", fontSize: 10, fontWeight: 800, lineHeight: 1, fontFamily: "'DM Mono',monospace" }}>
+                        límite {fdv1Preview.hora_preview}
                       </span>
-                    ) : (
-                      <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)}
-                        style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: 14, fontWeight: 700, width: 80, outline: "none", lineHeight: 1 }} />
                     )}
                   </div>
                   {tipoConsegna === "DOMICILIO" && zonaInfo?.durataAndataMin != null && (
@@ -1684,11 +1693,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     }} />
                 </div>
 
-                {/* Hora — [FDV1] sostituita dal límite de entrega (creación + 55') */}
-                {false && (
+                {/* Hora — [FDV1] promessa al cliente (dato dell'operatore), separata dal límite de entrega sotto */}
+                {(
                 <div>
                   <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700,
-                    letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Hora de entrega</div>
+                    letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Hora prometida al cliente</div>
                   <input type="time" value={hora}
                     onChange={e => { setForzaHora(false); setHoraFromOperator(e.target.value); }}
                     style={{
@@ -1778,7 +1787,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 {/* [FDV1] Límite de entrega + asistente giro (AGREGAR / CREAR GIRO / SEPARADO). Sin rider. */}
                 {(() => {
                   const sugg = fdv1Preview && fdv1Preview.giro_suggestion;
-                  const lim = (fdv1Preview && fdv1Preview.hora_preview) || hora || "—";
+                  const lim = (fdv1Preview && fdv1Preview.hora_preview) || "—";
                   const chip = (active) => ({
                     background: active ? "rgba(0,151,167,0.35)" : "rgba(255,255,255,0.05)",
                     border: `1.5px solid ${active ? "rgba(103,232,249,0.9)" : "rgba(255,255,255,0.18)"}`,
@@ -1823,7 +1832,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   background: zona ? zona.colore : "rgba(249,115,22,0.7)",
                   color: "#fff", fontWeight: 900, fontSize: 16, cursor: "pointer", marginTop: 4
                 }}>
-                  {`✓ Confirmar entrega · límite ${(fdv1Preview && fdv1Preview.hora_preview) || hora || "—"}${giroIntent ? (giroIntent.giro_id ? " · agregar a giro" : " · crear giro") : ""}`}
+                  {`✓ Confirmar entrega · cliente ${hora || "—"} · límite ${(fdv1Preview && fdv1Preview.hora_preview) || "—"}${giroIntent ? (giroIntent.giro_id ? " · agregar a giro" : " · crear giro") : ""}`}
                 </button>
 
                 {/* Suggerimento giro esistente nella stessa zona — [FDV1] sostituito dall'asistente sopra */}

@@ -287,11 +287,19 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                               </span>
                             </div>
                             {o.isManualGiro && o.deadlineCliente && o.deadlineCliente !== o.horaEntrega && (
-                              // Promessa individuale del cliente: resta visibile anche dentro un giro.
-                              <div title="Hora cliente" style={{display:"inline-flex",alignItems:"center",gap:4,
+                              // [FDV1] límite (deadline canonica) del singolo: resta visibile anche dentro un giro.
+                              <div title="Límite de entrega del pedido (creación + 55 min)" style={{display:"inline-flex",alignItems:"center",gap:4,
                                 background:"#fff",border:"1.5px solid #C2410C",borderRadius:20,padding:"3px 9px"}}>
-                                <span style={{color:"#C2410C",fontWeight:900,fontSize:12}}>CLIENTE</span>
+                                <span style={{color:"#C2410C",fontWeight:900,fontSize:12}}>LÍMITE</span>
                                 <span style={{color:"#C2410C",fontWeight:900,fontSize:15,fontFamily:"'DM Mono',monospace"}}>{o.deadlineCliente}</span>
+                              </div>
+                            )}
+                            {o.isDelivery && o.hora && o.hora !== o.deadlineCliente && (
+                              // [FDV1] promessa al cliente (hora), dato separato dalla deadline.
+                              <div title="Hora prometida al cliente" style={{display:"inline-flex",alignItems:"center",gap:4,
+                                background:"#fff",border:"1.5px solid #6B7280",borderRadius:20,padding:"3px 9px"}}>
+                                <span style={{color:"#374151",fontWeight:900,fontSize:12}}>CLIENTE</span>
+                                <span style={{color:"#374151",fontWeight:900,fontSize:15,fontFamily:"'DM Mono',monospace"}}>{o.hora}</span>
                               </div>
                             )}
                           </div>
