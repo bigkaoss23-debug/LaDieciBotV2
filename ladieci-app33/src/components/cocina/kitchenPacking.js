@@ -128,10 +128,13 @@ export const blockDeadline = (cards = [], nowMs) => {
 };
 
 // Countdown = PROIEZIONE VISIVA dello stesso timestamp: nessun secondo orologio di business.
+// Formato COMPATTO e operativo, da leggere a colpo d'occhio accanto all'ora: "−43 min" = quanto manca,
+// "+8 min" = quanto si è già sforato. Niente frasi lunghe ("faltan 43 minutos") che rubano larghezza
+// all'header e costringono a leggere invece di guardare.
 export const countdownLabel = (deadlineMs, nowMs) => {
   if (!Number.isFinite(deadlineMs) || !Number.isFinite(nowMs)) return null;
   const min = Math.round((deadlineMs - nowMs) / 60000);
-  if (min < 0) return { text: `${Math.abs(min)} min tarde`, late: true, minutes: min };
-  if (min === 0) return { text: "ahora", late: false, minutes: 0 };
-  return { text: `faltan ${min} min`, late: false, minutes: min };
+  if (min < 0) return { text: `+${Math.abs(min)} min`, late: true, minutes: min };
+  if (min === 0) return { text: "0 min", late: false, minutes: 0 };
+  return { text: `−${min} min`, late: false, minutes: min };
 };

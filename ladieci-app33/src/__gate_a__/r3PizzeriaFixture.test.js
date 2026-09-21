@@ -27,7 +27,7 @@ import PanelCocina from "../components/cocina/PanelCocina";
 
 const iso = (hhmm) => `2026-09-21T${String(Number(hhmm.slice(0, 2)) - 2).padStart(2, "0")}:${hhmm.slice(3)}:00.000Z`;
 const NOW = Date.parse(iso("21:00"));
-const P = (n, sub, q = 1) => ({ n, sub, q, cat: "Pizzas" });
+const P = (n, q = 1, variacion = "") => ({ n, q, cat: "Pizzas", ...(variacion ? { sub: variacion } : {}) });
 const dom = (id, nombre, hhmm, zona, items, extra = {}) => ({
   id, nombre, tipo_consegna: "DOMICILIO", estado: "EN_COCINA", zona,
   hora: hhmm, delivery_deadline_at: iso(hhmm), ui_offset_min: 0, manual_giro_id: null, items, ts: 1, ...extra });
@@ -38,26 +38,26 @@ const rit = (id, nombre, hhmm, items) => ({
 // 16 ordini: Q1 CENTRO · Q5 LAS MARINAS · Q4 CORTIJOS · sin zona · Recogida en local
 export const FIXTURE = [
   // giro3 CENTRO — TARDE (blocco rosso zona, orario del più urgente)
-  dom("#001", "Marta",  "20:52", "Q1", [P("Margherita", "Tomate, mozzarella"), P("Diavola", "Salami picante", 2)], { manual_giro_id: "mg_260921_1" }),
-  dom("#003", "Luis",   "20:56", "Q1", [P("Cuatro Quesos", "Mozzarella, gorgonzola, brie, parmesano")], { manual_giro_id: "mg_260921_1" }),
-  dom("#004", "Nuria",  "20:58", "Q1", [P("Capricciosa", "Jamón, champiñones, alcachofas", 2)], { manual_giro_id: "mg_260921_1" }),
+  dom("#001", "Marta",  "20:52", "Q1", [P("El Pelusa"), P("El Gaucho", 2)], { manual_giro_id: "mg_260921_1" }),
+  dom("#003", "Luis",   "20:56", "Q1", [P("Tulipano Nero")], { manual_giro_id: "mg_260921_1" }),
+  dom("#004", "Nuria",  "20:58", "Q1", [P("Il Gladiatore", 2)], { manual_giro_id: "mg_260921_1" }),
   // giro2 LAS MARINAS — URGENTE
-  dom("#010", "Jose",   "21:08", "Q5", [P("Margherita", "Tomate, mozzarella")], { manual_giro_id: "mg_260921_2" }),
-  dom("#011", "Rocío",  "21:10", "Q5", [P("Prosciutto", "Jamón cocido", 2)], { manual_giro_id: "mg_260921_2" }),
+  dom("#010", "Jose",   "21:08", "Q5", [P("El Pelusa")], { manual_giro_id: "mg_260921_2" }),
+  dom("#011", "Rocío",  "21:10", "Q5", [P("Divino Codino", 2)], { manual_giro_id: "mg_260921_2" }),
   // giro2 CORTIJOS — normale
-  dom("#008", "Andrés", "21:35", "Q4", [P("Barbacoa", "Pollo, bacon, salsa BBQ")], { manual_giro_id: "mg_260921_3" }),
-  dom("#002", "Pilar",  "21:38", "Q4", [P("Vegetariana", "Verduras de temporada")], { manual_giro_id: "mg_260921_3" }),
+  dom("#008", "Andrés", "21:35", "Q4", [P("La Joya")], { manual_giro_id: "mg_260921_3" }),
+  dom("#002", "Pilar",  "21:38", "Q4", [P("Mago de Zadar")], { manual_giro_id: "mg_260921_3" }),
   // standalone
-  dom("#006", "Kevin",  "21:15", null, [P("Margherita", "Tomate, mozzarella")]),
-  dom("#012", "Sonia",  "21:18", "Q1", [P("Diavola", "Salami picante")]),
-  dom("#013", "Marc",   "21:22", "Q3", [P("Calzone", "Cerrada, jamón y queso")]),
-  dom("#014", "Elena",  "21:26", "Q5", [P("Cuatro Estaciones", "Cuatro sabores", 2)]),
-  dom("#015", "Toni",   "21:44", "Q4", [P("Margherita", "Tomate, mozzarella", 3)]),
-  dom("#016", "Berta",  "21:52", "Q1", [P("Tartufo", "Crema de trufa, champiñones")]),
+  dom("#006", "Kevin",  "21:15", null, [P("El Pelusa")]),
+  dom("#012", "Sonia",  "21:18", "Q1", [P("El Gaucho")]),
+  dom("#013", "Marc",   "21:22", "Q3", [P("Il Professore")]),
+  dom("#014", "Elena",  "21:26", "Q5", [P("Magic Box", 2)]),
+  dom("#015", "Toni",   "21:44", "Q4", [P("El Pelusa", 3, "sin albahaca")]),
+  dom("#016", "Berta",  "21:52", "Q1", [P("Pinturicchio")]),
   // recogida en local
-  rit("#007", "Cliente barra", "21:20", [P("Diavola", "Salami picante")]),
-  rit("#009", "Cliente barra", "21:40", [P("Capricciosa", "Jamón, champiñones", 2)]),
-  rit("#017", "Cliente barra", "22:00", [P("Margherita", "Tomate, mozzarella")]),
+  rit("#007", "Cliente barra", "21:20", [P("El Gaucho")]),
+  rit("#009", "Cliente barra", "21:40", [P("Il Gladiatore", 2)]),
+  rit("#017", "Cliente barra", "22:00", [P("El Pelusa")]),
 ];
 
 describe("[FDV1 R3 §24] fixture visiva Pizzeria (16 ordini)", () => {
@@ -113,7 +113,7 @@ describe("[FDV1 R3 §24] fixture visiva Pizzeria (16 ordini)", () => {
     expect(container.textContent).toMatch(/MARINAS/);
     expect(container.textContent).toMatch(/CORTIJOS/);
     expect(container.textContent).toMatch(/SIN ZONA/);
-    expect(container.textContent).toMatch(/Recogida en local/);
+    expect(container.textContent).toMatch(/RECOGIDA EN LOCAL/);
     expect(container.textContent).not.toMatch(/\bQ[1-5]\b/);
   });
 
@@ -129,10 +129,44 @@ describe("[FDV1 R3 §24] fixture visiva Pizzeria (16 ordini)", () => {
     }
   });
 
-  test("la top bar resta quella originale: nessun contatore Q1/Q3/Q4, nessun pannello zona nuovo", () => {
-    expect(container.textContent).toMatch(/PIZZERIA/i);
-    expect(container.textContent).toMatch(/16 pedidos · 24 pizzas/);
+  test("top bar su UNA riga, stesse informazioni, nessun contatore per zona", () => {
+    expect(container.textContent).toMatch(/16 pedidos · 24 pizzas/);   // ordini + pizze
+    expect(container.textContent).toMatch(/21:00/);                     // ora corrente
+    expect(container.textContent).toMatch(/60% · Ok/);                  // stato carico
     expect(container.textContent).toMatch(/Hechas/);
     expect(container.textContent).not.toMatch(/EN PREPARACIÓN|Dashboard|zona:/i);
+    const bar = container.firstElementChild.firstElementChild;          // la barra
+    expect(bar.getBoundingClientRect).toBeDefined();
+    expect(bar.style.display).toBe("flex");
+    expect(bar.style.flexWrap).toBe("");                                // una riga: nessun wrap
+  });
+
+  test("§5 gerarchia della card: quantità nel colore del blocco, NOME PIZZA grande maiuscolo, alias secondario", () => {
+    const b = blocks()[0];                                              // CENTRO (Q1 #0097A7)
+    const qty = b.querySelector('[data-testid="qty-badge"]');
+    const name = b.querySelector('[data-testid="pizza-name"]');
+    const alias = b.querySelector('[data-testid="pizza-alias"]');
+    expect(qty.textContent).toBe("×1");
+    expect(["#0097a7", "rgb(0, 151, 167)"]).toContain(qty.style.background.toLowerCase());   // colore zona del blocco
+    expect(name.textContent).toBe("Margherita");                        // testo reale...
+    expect(name.style.textTransform).toBe("uppercase");                 // ...reso MAIUSCOLO dalla UI
+    expect(parseFloat(name.style.fontSize)).toBeGreaterThanOrEqual(24);
+    expect(alias.textContent).toBe("El Pelusa");                        // alias commerciale, secondario
+    expect(parseFloat(alias.style.fontSize)).toBeLessThan(parseFloat(name.style.fontSize));
+    // il badge quantità di un blocco pickup usa il blu RECOGIDA, non un colore zona
+    const pb = blocks().find((x) => x.getAttribute("data-identity") === "RECOGIDA");
+    expect(["#0369a1", "rgb(3, 105, 161)"]).toContain(pb.querySelector('[data-testid="qty-badge"]').style.background.toLowerCase());
+  });
+
+  test("§11 countdown compatto accanto all'ora, senza frasi lunghe", () => {
+    const cds = [...container.querySelectorAll('[data-testid="block-countdown"]')].map((n) => n.textContent);
+    expect(cds.length).toBeGreaterThan(0);
+    for (const c of cds) expect(c).toMatch(/^[−+]\d+ min$|^0 min$/);
+    expect(container.textContent).not.toMatch(/faltan|minutos|min tarde/i);   // TARDE resta come etichetta di stato
+    // l'ora e il countdown stanno nello stesso gruppo, non dispersi
+    const b = blocks()[0];
+    expect(b.querySelector('[data-testid="block-main-time"]').parentElement)
+      .toBe(b.querySelector('[data-testid="block-countdown"]').parentElement);
+    expect(b.querySelector('[data-testid="block-header"]').textContent).toMatch(/LÍMITE/);
   });
 });

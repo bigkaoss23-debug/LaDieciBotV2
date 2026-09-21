@@ -264,7 +264,7 @@ describe("Pizzeria — blocco = unità visiva", () => {
     api.priorityContract.mockResolvedValue(V2);
     const el = await mount(<PanelCocina ordenes={[o("#401", "21:08", { zona: "Q1" }), o("#402", "20:52", { zona: "Q4" })]} onListo={() => {}} onClose={() => {}} />);
     const cds = [...el.querySelectorAll('[data-testid="block-countdown"]')].map((n) => n.textContent);
-    expect(cds).toEqual(expect.arrayContaining([expect.stringMatching(/faltan 8 min/), expect.stringMatching(/8 min tarde/)]));
+    expect(cds.sort()).toEqual(["+8 min", "−8 min"]);                          // compatto: −N manca, +N sforato
     const states = [...el.querySelectorAll('[data-testid="block-header"]')].map((n) => n.getAttribute("data-state"));
     expect(states.sort()).toEqual(["late", "near"]);
   });
@@ -274,7 +274,7 @@ describe("Pizzeria — blocco = unità visiva", () => {
     const el = await mount(<PanelCocina ordenes={[pick("#501", "21:20"), o("#502", "21:30", { zona: "Q1" })]} onListo={() => {}} onClose={() => {}} />);
     const pb = blocks(el).find((b) => b.getAttribute("data-identity") === "RECOGIDA");
     expect(pb).toBeTruthy();
-    expect(pb.textContent).toMatch(/Recogida en local/);
+    expect(pb.textContent).toMatch(/RECOGIDA EN LOCAL/);
     expect(pb.querySelector('[data-testid="block-main-time"]').textContent).toBe("21:20");   // hora de recogida mantenida
     expect(pb.querySelector('[data-testid="block-countdown"]')).toBeNull();
     expect(pb.querySelector('[data-testid="pickup-tag"]')).toBeTruthy();
@@ -289,7 +289,10 @@ describe("Pizzeria — blocco = unità visiva", () => {
     const el = await mount(<PanelCocina ordenes={SERVICE()} onListo={() => {}} onClose={() => {}} />);
     for (const b of blocks(el)) expect(b.querySelectorAll('button[aria-label="Retrasar en la cola"]').length).toBeLessThanOrEqual(1);
     expect(el.querySelectorAll('button[aria-label="Retrasar en la cola"]')).toHaveLength(7);   // 5 standalone + 2 giri
-    expect(el.textContent).not.toMatch(/[−+-]5\b/);
+    // nessun minuto scritto sui bottoni di priorità (il countdown "−5 min" nell'header è un'altra cosa)
+    for (const btn of el.querySelectorAll('button[aria-label^="Retrasar"], button[aria-label^="Adelantar"]')) {
+      expect(btn.textContent.trim()).toMatch(/^[−+]$/);
+    }
     expect(el.textContent).not.toMatch(/giro manual|GIRO MANUAL|🛵|Repartidor|al horno/i);
   });
 

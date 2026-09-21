@@ -127,7 +127,7 @@ describe("A5 — render reale + realtime", () => {
     for (const b of blocks) expect(b.querySelectorAll('[data-testid="block-main-time"]')).toHaveLength(1);
     expect([...el.querySelectorAll('[data-testid="card-own-limit"]')].map((n) => n.textContent)).toEqual(["límite 21:45"]);
     expect(txt).not.toMatch(/HORA LÍMITE/);
-    expect(txt).toMatch(/faltan 30 min/);
+    expect(txt).toMatch(/−30 min/);                                   // countdown compatto accanto all'ora
     expect(txt).not.toMatch(RIDER);
     // ⏱ qui è il countdown del blocco (§11), non il vecchio "target di produzione" per-card
     expect(txt).not.toMatch(/CLIENTE|20:40|21:15/);

@@ -110,106 +110,94 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
   // [FDV1] A5: giro = blocco atomico anche nell'ordinamento
   const activos = sortKitchenCards(activosBase, now);
 
-  const renderBody = (o, fc) => {
-                    const notaVisibile = notaCucina(o.nota);
-                    const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
-                    const compact = o.items.length >= 5;
-                    return (
-                      <div style={{padding:"12px 16px",flex:1,
-                        display: compact ? "grid" : "flex",
-                        gridTemplateColumns: compact ? "1fr 1fr" : undefined,
-                        flexDirection: compact ? undefined : "column",
-                        gap: compact ? 8 : 12, background:"#fff"}}>
-                    {o.items.map((it,i)=>{
-                      const mi = lookupMenu(it);
-                      const nomeCompleto = mi?.sub || "";
-                      const nomeBreve    = it.n || "";
-                      const varSub       = it.sub || "";
-                      const nomeIng      = mi?.ing || it.ing || "";
-                      return (
-                        <div key={i} style={{
-                          borderBottom: !compact && i<o.items.length-1 ? `2px dashed ${fc.border}44` : "none",
-                          paddingBottom: !compact && i<o.items.length-1 ? 12 : 0,
-                          background: compact ? "#f7f7f7" : "transparent",
-                          borderRadius: compact ? 8 : 0,
-                          border: compact ? `1.5px solid ${fc.border}33` : "none",
-                          padding: compact ? "8px 8px" : 0,
-                          minWidth: 0,
-                          overflow: "hidden",
-                        }}>
-                          {/* 1. Pill qty + nome breve */}
-                          <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:compact?4:8}}>
-                            <div style={{display:"inline-flex",alignItems:"center",gap:8,
-                              background:"#f0f0f0",borderRadius:9,padding:"4px 10px"}}>
-                              <span style={{background:"#111",color:"#fff",
-                                borderRadius:7,padding:compact?"3px 11px":"5px 14px",fontFamily:"'DM Mono',monospace",
-                                fontWeight:900,fontSize:compact?18:24,lineHeight:1}}>×{it.q}</span>
-                              <span style={{color:"#222",fontSize:compact?13:15,fontWeight:800,letterSpacing:.3}}>{nomeBreve}</span>
-                            </div>
-                          </div>
-                          {/* 2. Nome completo — grande */}
-                          {nomeCompleto && (
-                            <div style={{color:"#111",fontSize:compact?15:22,fontWeight:900,lineHeight:1.2,
-                              marginBottom:4,letterSpacing:-.3}}>
-                              {nomeCompleto}
-                            </div>
-                          )}
-                          {!nomeCompleto && (
-                            <div style={{color:"#111",fontSize:compact?15:22,fontWeight:900,lineHeight:1.2,marginBottom:4}}>
-                              {nomeBreve}
-                            </div>
-                          )}
-                          {/* 3. Ingredienti — piccoli grigi */}
-                          {nomeIng && (
-                            <div style={{color:"#777",fontSize:compact?10:12,fontWeight:500,lineHeight:1.5,marginBottom:varSub?6:0}}>
-                              {nomeIng}
-                            </div>
-                          )}
-                          {/* 4. Variazione — IN FONDO, badge arancione */}
-                          {varSub && (
-                            <div style={{display:"inline-block",background:"#FF6B00",color:"#fff",
-                              borderRadius:8,padding: compact?"3px 8px":"4px 12px",fontSize:compact?11:14,fontWeight:800,
-                              marginTop:4,letterSpacing:.2}}>
-                              ⚠ {varSub}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {/* Note operatore — span entrambe le colonne in compact */}
-                    {notaCucinaOp&&(
-                      <div style={{background:"#E8341C",borderRadius:9,
-                        padding:"9px 13px",color:"#fff",fontSize:15,fontWeight:900,letterSpacing:.2,
-                        gridColumn: compact ? "1 / -1" : undefined}}>
-                        🍕 {notaCucinaOp}
-                      </div>
-                    )}
-                    {notaVisibile&&(
-                      <div style={{background:"rgba(232,52,28,0.12)",border:"2px solid rgba(232,52,28,0.45)",
-                        borderRadius:9,padding:"9px 13px",color:"#C0271A",fontSize:15,fontWeight:800,
-                        gridColumn: compact ? "1 / -1" : undefined}}>
-                        ⚠ {notaVisibile}
-                      </div>
-                    )}
-                      </div>
-                    );
-                    };
+  // [FDV1 R3] Corpo della card: gerarchia tipografica pensata per essere letta DA LONTANO, non col naso
+  // sul monitor. Per ogni prodotto una sola riga d'attacco:
+  //     [×2]   PROSCIUTTO   Divino Codino
+  // — badge quantità grande, nel colore del blocco/zona (lo stesso colpo d'occhio del contenitore);
+  // — NOME PIZZA grande e MAIUSCOLO: è l'informazione che il pizzaiolo cerca;
+  // — alias commerciale piccolo e secondario, accanto, senza rubare la riga;
+  // — ingredienti subito sotto, compatti (2 righe max): servono al controllo, non alla ricerca.
+  const renderBody = (o, fc, accent = "#374151") => {
+    const notaVisibile = notaCucina(o.nota);
+    const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
+    const compact = o.items.length >= 4;
+    return (
+      <div style={{ padding: "7px 9px 8px", display: "flex", flexDirection: "column", gap: compact ? 6 : 8, background: "#fff" }}>
+        {o.items.map((it, i) => {
+          const mi = lookupMenu(it);
+          const alias = it.n || "";                       // nome commerciale (El Pelusa, Divino Codino…)
+          const pizza = (mi?.sub || alias || "").trim();  // nome pizza vero (Margherita, Prosciutto…)
+          const nomeIng = mi?.ing || it.ing || "";
+          const varSub = it.sub || "";
+          const mostraAlias = alias && alias.toUpperCase() !== pizza.toUpperCase();
+          return (
+            <div key={i} style={{
+              borderTop: i > 0 ? `1px dashed ${fc.border}44` : "none",
+              paddingTop: i > 0 ? (compact ? 5 : 7) : 0, minWidth: 0,
+            }}>
+              {/* riga d'attacco: quantità + nome pizza + alias */}
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", rowGap: 2 }}>
+                <span data-testid="qty-badge" style={{
+                  background: accent, color: "#fff", borderRadius: 8,
+                  padding: compact ? "2px 9px" : "3px 11px",
+                  fontFamily: "'DM Mono',monospace", fontWeight: 900,
+                  fontSize: compact ? 20 : 24, lineHeight: 1.15, flexShrink: 0,
+                }}>×{it.q}</span>
+                <span data-testid="pizza-name" style={{
+                  color: "#0B0B0B", fontSize: compact ? 20 : 25, fontWeight: 900,
+                  lineHeight: 1.1, letterSpacing: -.2, textTransform: "uppercase", minWidth: 0,
+                }}>{pizza}</span>
+                {mostraAlias && (
+                  <span data-testid="pizza-alias" style={{
+                    color: "#9CA3AF", fontSize: compact ? 11 : 12, fontWeight: 700, whiteSpace: "nowrap",
+                  }}>{alias}</span>
+                )}
+              </div>
+              {nomeIng && (
+                <div style={{
+                  color: "#6B7280", fontSize: compact ? 10 : 11.5, fontWeight: 500, lineHeight: 1.35,
+                  marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                }}>{nomeIng}</div>
+              )}
+              {varSub && (
+                <div style={{
+                  display: "inline-block", background: "#FF6B00", color: "#fff", borderRadius: 7,
+                  padding: "2px 9px", fontSize: compact ? 11 : 13, fontWeight: 800, marginTop: 4,
+                }}>⚠ {varSub}</div>
+              )}
+            </div>
+          );
+        })}
+        {notaCucinaOp && (
+          <div style={{ background: "#E8341C", borderRadius: 7, padding: "5px 9px", color: "#fff", fontSize: 13, fontWeight: 900 }}>
+            🍕 {notaCucinaOp}
+          </div>
+        )}
+        {notaVisibile && (
+          <div style={{ background: "rgba(232,52,28,0.12)", border: "1.5px solid rgba(232,52,28,0.45)", borderRadius: 7,
+            padding: "5px 9px", color: "#C0271A", fontSize: 12, fontWeight: 800 }}>
+            ⚠ {notaVisibile}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // [FDV1 R3] renderLegacyCard rimosso: in Pizzeria ogni ordine vive dentro un blocco
   //   (DOMICILIO = blocco zona/giro, RITIRO = blocco "Recogida en local").
 
   // [FDV1 R3] card DOMICILIO DENTRO il blocco: l'orario grande sta nell'header del blocco (§10), qui restano
   // identità, zona (quando il blocco è misto) e il proprio límite solo se diverso da quello del blocco.
-  const renderDeliveryCard = (o, { blockMs = null, showZone = false } = {}) => {
+  const renderDeliveryCard = (o, { blockMs = null, showZone = false, accent = null } = {}) => {
     const zone = zoneMeta(o);
     const fcNeutral = { border: "#9CA3AF" };
     return (
       <div key={o.id} data-testid="kitchen-card" data-zone={zone.id} data-state={(o.dl && o.dl.state) || "normal"} style={{
-        background: "#fff", borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column",
-        border: "1.5px solid #D1D5DB", borderLeft: `10px solid ${zone.color}`, boxShadow: "0 1px 6px rgba(0,0,0,0.10)", minWidth: 0
+        background: "#fff", borderRadius: 11, overflow: "hidden", display: "flex", flexDirection: "column",
+        border: "1.5px solid #D1D5DB", borderLeft: `9px solid ${zone.color}`, boxShadow: "0 1px 5px rgba(0,0,0,0.09)", minWidth: 0
       }}>
         <CardIdentity o={o} zone={zone} blockMs={blockMs} showZone={showZone} />
-        {renderBody(o, fcNeutral)}
+        {renderBody(o, fcNeutral, accent || zone.color)}
       </div>
     );
   };
@@ -236,7 +224,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
             }}>{timerStr}</span>
           )}
         </div>
-        {renderBody(o, fc)}
+        {renderBody(o, fc, PICKUP_INK)}
       </div>
     );
   };
@@ -254,89 +242,58 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       paddingTop:"env(safe-area-inset-top)",
       paddingBottom:"env(safe-area-inset-bottom)"
     }}>
-      {/* Header — 3 colonne */}
+      {/* [FDV1 R3] Barra superiore su UNA riga: logo · carico · orologio · stato forno · hechas · chiudi.
+          Meno altezza sprecata = più ordini visibili senza scorrere. Nessun contatore per zona, nessun
+          pannello analitico nuovo: sono le stesse informazioni di prima, su una linea sola. */}
       <div style={{
-        background:"#fff",
-        borderBottom:"1.5px solid #e8e8e8",
-        padding:"10px 16px",
-        display:"flex", alignItems:"center", gap:12,
-        flexShrink:0,
+        background:"#fff", borderBottom:"1.5px solid #e8e8e8", padding:"6px 14px",
+        display:"flex", alignItems:"center", gap:14, flexShrink:0, minHeight:52,
       }}>
-        {/* SINISTRA: Logo + pedidos/pizzas */}
-        <div style={{display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
-          <div style={{width:44,height:44,borderRadius:12,overflow:"visible",flexShrink:0,
-            background:"#0A0A0A",
-            border:"2px solid rgba(232,52,28,0.8)",
-            boxShadow:"0 0 16px rgba(232,52,28,0.4)",
-            display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <img src={LOGO_RED_SRC} style={{
-              width:"115%",height:"115%",objectFit:"contain",
-              filter:"brightness(1.3) contrast(1.2) saturate(1.25) drop-shadow(0 0 8px rgba(255,60,20,0.7))"
-            }}/>
-          </div>
-          <div>
-            <div style={{fontSize:10,fontWeight:700,color:"#bbb",letterSpacing:"2px",
-              textTransform:"uppercase",marginBottom:3}}>Pizzeria</div>
-            <div style={{fontSize:21,fontWeight:800,color:"#111",lineHeight:1}}>
-              {activos.length === 0
-                ? <span style={{color:"#27AE60"}}>Todo listo ✓</span>
-                : <span>{activos.length} pedido{activos.length!==1?"s":""} · {totPizze} pizza{totPizze!==1?"s":""}</span>
-              }
-            </div>
-          </div>
+        <div style={{width:34,height:34,borderRadius:9,flexShrink:0,background:"#0A0A0A",
+          border:"1.5px solid rgba(232,52,28,0.8)", boxShadow:"0 0 10px rgba(232,52,28,0.35)",
+          display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <img src={LOGO_RED_SRC} alt="" style={{width:"115%",height:"115%",objectFit:"contain",
+            filter:"brightness(1.3) contrast(1.2) saturate(1.25)"}}/>
         </div>
 
-        {/* CENTRO: ora + data + barra */}
-        <div style={{flex:1,textAlign:"center"}}>
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:28,fontWeight:900,color:"#111",lineHeight:1}}>
-            {nowStr}
-          </div>
-          <div style={{fontSize:10,color:"#bbb",marginTop:2,letterSpacing:.5,textTransform:"capitalize",marginBottom:7}}>
-            {dateStr}
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}}>
-            <div style={{width:160,height:6,background:"#f0f0f0",borderRadius:3,overflow:"hidden"}}>
-              <div style={{
-                width:`${pctCarico}%`,height:"100%",
-                background:caricoColor,
-                borderRadius:3,transition:"width .4s ease"
-              }}/>
-            </div>
-            <span style={{fontSize:12,fontWeight:700,color:caricoColor,whiteSpace:"nowrap"}}>
-              {pctCarico}% — {caricoLabel}
-            </span>
-          </div>
+        <div style={{fontSize:18,fontWeight:800,color:"#111",lineHeight:1,whiteSpace:"nowrap"}}>
+          {activos.length === 0
+            ? <span style={{color:"#27AE60"}}>Todo listo ✓</span>
+            : <span><span style={{fontFamily:"'DM Mono',monospace",fontWeight:900}}>{activos.length}</span> pedido{activos.length!==1?"s":""} · <span style={{fontFamily:"'DM Mono',monospace",fontWeight:900}}>{totPizze}</span> pizza{totPizze!==1?"s":""}</span>
+          }
         </div>
 
-        {/* DESTRA: scoreboard pizze hechas */}
-        <div style={{flexShrink:0,display:"flex",alignItems:"center",gap:10}}>
-          <div style={{
-            background:"#0A0A0A",
-            border:"2px solid rgba(232,52,28,0.5)",
-            borderRadius:9,
-            padding:"4px 11px",
-            textAlign:"center",
-            minWidth:60,
-          }}>
-            <div style={{fontSize:8,fontWeight:800,letterSpacing:"2px",
-              textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:2}}>
-              🍕 Hechas
-            </div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:22,fontWeight:900,
-              color:"#fff",lineHeight:1,
-              textShadow:"0 0 10px rgba(232,52,28,0.7)"}}>
-              {pizzeFatte}
-            </div>
-          </div>
+        <span style={{width:1,height:24,background:"#ececec",flexShrink:0}} />
 
-          {/* Cerrar */}
-          <button onClick={onClose} style={{
-            background:"#f4f4f4",border:"1px solid #e0e0e0",color:"#666",
-            borderRadius:"50%",width:34,height:34,fontSize:16,fontWeight:700,
-            display:"flex",alignItems:"center",justifyContent:"center",
-            cursor:"pointer"
-          }}>✕</button>
+        <div style={{fontFamily:"'DM Mono',monospace",fontSize:24,fontWeight:900,color:"#111",lineHeight:1,whiteSpace:"nowrap"}}>
+          {nowStr}
         </div>
+        <div style={{fontSize:11,color:"#b0b0b0",letterSpacing:.3,textTransform:"capitalize",whiteSpace:"nowrap"}}>
+          {dateStr}
+        </div>
+
+        <span style={{flex:1,minWidth:8}} />
+
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          <div style={{width:110,height:6,background:"#f0f0f0",borderRadius:3,overflow:"hidden"}}>
+            <div style={{width:`${pctCarico}%`,height:"100%",background:caricoColor,borderRadius:3,transition:"width .4s ease"}}/>
+          </div>
+          <span style={{fontSize:12,fontWeight:800,color:caricoColor,whiteSpace:"nowrap"}}>
+            {pctCarico}% · {caricoLabel}
+          </span>
+        </div>
+
+        <div style={{display:"flex",alignItems:"center",gap:7,background:"#0A0A0A",
+          border:"1.5px solid rgba(232,52,28,0.5)",borderRadius:8,padding:"4px 10px",flexShrink:0}}>
+          <span style={{fontSize:9,fontWeight:800,letterSpacing:1.4,textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>🍕 Hechas</span>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:18,fontWeight:900,color:"#fff",lineHeight:1,
+            textShadow:"0 0 8px rgba(232,52,28,0.7)"}}>{pizzeFatte}</span>
+        </div>
+
+        <button onClick={onClose} aria-label="Cerrar pizzeria" style={{
+          background:"#f4f4f4",border:"1px solid #e0e0e0",color:"#666",borderRadius:"50%",
+          width:32,height:32,fontSize:15,fontWeight:700,flexShrink:0,
+          display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>✕</button>
       </div>
 
       {/* Content */}
@@ -365,11 +322,18 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
               }
               const blockMs = Math.min(...cards.map(orderDeadlineMs).filter(Number.isFinite));
               const zones = new Set(cards.map((c) => zoneMeta(c).id));
+              // badge quantità = colore del blocco quando la zona è unica (stesso colpo d'occhio del contenitore);
+              // blocco misto → ogni card usa la PROPRIA zona, così non si inventa un'appartenenza sbagliata.
+              const blockAccent = zoneMeta(cards[0]).color;
               return (
                 <KitchenBlock key={key} cards={cards} width={width} cols={cols} nowMs={now}
                   giroId={seg.type === "giro" ? seg.giroId : null}
                   control={<PriorityControl orden={cards[0]} windowOrders={cards} onUpdate={handleOffsetChange} light={false} nowMs={now} />}>
-                  {cards.map((o) => renderDeliveryCard(o, { blockMs: Number.isFinite(blockMs) ? blockMs : null, showZone: zones.size > 1 }))}
+                  {cards.map((o) => renderDeliveryCard(o, {
+                    blockMs: Number.isFinite(blockMs) ? blockMs : null,
+                    showZone: zones.size > 1,
+                    accent: zones.size > 1 ? zoneMeta(o).color : blockAccent,
+                  }))}
                 </KitchenBlock>
               );
             })}

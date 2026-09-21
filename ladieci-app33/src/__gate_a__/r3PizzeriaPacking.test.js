@@ -126,9 +126,9 @@ describe("blocco: orario e countdown (puro)", () => {
     const dl = blockDeadline(cards, NOW);
     expect(dl.hhmm).toBe("21:08");
     expect(dl.state).toBe("near");
-    expect(countdownLabel(dl.ms, NOW)).toMatchObject({ text: "faltan 8 min", late: false });
-    expect(countdownLabel(dl.ms, NOW + 20 * 60000)).toMatchObject({ text: "12 min tarde", late: true });
-    expect(countdownLabel(dl.ms, dl.ms)).toMatchObject({ text: "ahora" });
+    expect(countdownLabel(dl.ms, NOW)).toMatchObject({ text: "−8 min", late: false });          // formato compatto
+    expect(countdownLabel(dl.ms, NOW + 20 * 60000)).toMatchObject({ text: "+12 min", late: true });
+    expect(countdownLabel(dl.ms, dl.ms)).toMatchObject({ text: "0 min" });
     expect(blockDeadline([{ id: "#R", tipo_consegna: "RITIRO", hora: "21:30" }], NOW)).toBeNull();
   });
 });
