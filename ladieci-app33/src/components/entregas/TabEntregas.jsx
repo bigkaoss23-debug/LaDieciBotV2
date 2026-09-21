@@ -833,7 +833,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     const zones = Array.from(new Set(ordini.map(o => o.zona).filter(Boolean)));
     const hora = blockDeadlineHHMM(giroMeta, ordini);
     const warnings = manualGiroWarningsById[ordini[0].id] || buildManualGiroWarnings(ordini);
-    return { type: "manual", id: gid, giro: giroMeta, ordini, zones, hora, warnings };
+    const dlMs = Math.min(...ordini.map(orderDeadlineMs).filter(Number.isFinite));
+    return { type: "manual", id: gid, giro: giroMeta, ordini, zones, hora, dlMs: Number.isFinite(dlMs) ? dlMs : null, warnings };
   });
 
   // [FDV1] destinazioni per ADD / MOVE: i giri attivi visibili.
@@ -852,13 +853,15 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const autoGiri = [];
   for (const zonaId of Object.keys(perZonaSorted)) {
     for (const o of perZonaSorted[zonaId].sort((a, b) => (orderDeadlineMs(a) ?? 0) - (orderDeadlineMs(b) ?? 0))) {
-      autoGiri.push({ type: "auto", zonaId, hora: orderDeadlineHHMM(o) || o.hora, ordini: [o] });
+      autoGiri.push({ type: "auto", zonaId, hora: orderDeadlineHHMM(o) || o.hora, dlMs: orderDeadlineMs(o), ordini: [o] });
     }
   }
 
   // ── Step 3: merge blocchi (manuali + automatici) ordinati per orario ────
+  // [FDV1] A1: ordine per límite (ms esatto; a parità di minuto nessun salto), poi id stabile.
+  const blockDlMs = (b) => (Number.isFinite(b.dlMs) ? b.dlMs : toMin(b.hora) * 60000);
   const allBlocks = [...manualGiroBlocks, ...autoGiri]
-    .sort((a, b) => toMin(a.hora) - toMin(b.hora));
+    .sort((a, b) => (toMin(a.hora) - toMin(b.hora)) || (blockDlMs(a) - blockDlMs(b)) || String(a.id || a.ordini[0].id).localeCompare(String(b.id || b.ordini[0].id)));
 
   // Conteggio per zona (per riepilogo rapido) — include membri dei giri manuali.
   const perZonaCount = {};
@@ -1140,7 +1143,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
         if (!zona) return null;
         return (
           <ZonaBlock
-            key={`${block.zonaId}|${block.hora}`}
+            key={`${block.zonaId}|${block.ordini[0].id}`}
             zona={zona}
             ordini={block.ordini}
             giroHora={block.hora}

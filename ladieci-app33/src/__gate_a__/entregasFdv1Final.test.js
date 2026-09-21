@@ -142,3 +142,26 @@ describe("Static search — percorso FDV1", () => {
     expect(src).toMatch(/if \(FDV1_NO_RIDER_SIM\) return \[\];/);
   });
 });
+
+describe("Entregas — blocchi con stesso límite e stessa zona", () => {
+  test("nessuna card duplicata dopo re-sort / realtime (chiave per ordine, non per zona|minuto)", async () => {
+    api.getManualGiros.mockResolvedValue([]);
+    const errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const base = [mk("P-1", "14:52"), mk("P-2", "14:52"), mk("P-3", "14:52"), mk("P-4", "14:53")];
+    const el = mount(<TabEntregas ordenes={base} notify={() => {}} setOrdenes={() => {}} />);
+    await flush();
+    const count = () => { const c = {}; for (const m of el.textContent.matchAll(/(P-\d)(?=Calle|\s|#|🛵)/g)) c[m[1]] = (c[m[1]] || 0) + 1; return c; };
+    const cards = () => [...el.querySelectorAll('button[aria-pressed]')].length;
+    expect(cards()).toBe(4);
+    await act(async () => { root.render(<TabEntregas ordenes={[base[2], base[0], { ...base[1], hora: "14:30" }, base[3]]} notify={() => {}} setOrdenes={() => {}} />); await Promise.resolve(); });
+    await flush();
+    expect(cards()).toBe(4);
+    await act(async () => { root.render(<TabEntregas ordenes={[base[3], base[1], base[2]]} notify={() => {}} setOrdenes={() => {}} />); await Promise.resolve(); });
+    await flush();
+    expect(cards()).toBe(3);
+    const dupKey = errSpy.mock.calls.filter((c) => String(c[0]).includes("same key"));
+    errSpy.mockRestore();
+    expect(dupKey).toEqual([]);
+    void count;
+  });
+});
