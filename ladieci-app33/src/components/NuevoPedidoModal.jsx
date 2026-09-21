@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { C, genId, INGREDIENTI, calcTotale, DELIVERY_FEE, aplicarDescuento } from '../constants';
-import { api, sb } from '../api';
+import { api } from '../api';
 import { assegnaZonaDaKeyword, suggerisciOrario, zonaBadgeStyle, ZonaBadge, ZONE_DELIVERY, risolviTempoAndata, tempoAndata, proposeForNewOrder, BUFFER_OPS_DRIVER_MIN } from '../zones';
 import ItemPickerModal from './ItemPickerModal';
 import { applyUiOffset } from '../utils/uiOffset';
@@ -33,8 +33,6 @@ function buildClosingOverrideNota(nota, hora) {
 // oraria, zona e stato operativo. Sorgente: ordenes delivery attivi + campi
 // driver separati (salida_driver_estimada / entrega_estimada) con fallback
 // legacy forno_out / hora. Nessun calcolo di scheduling: solo lettura.
-// [FDV1] nessuna lettura della telemetria rider (DRIVER_STATO) nel percorso operativo.
-const FDV1_NO_RIDER = true;
 const DISPONIBILIDAD_STATES = ["EN_COCINA", "POR_CONFIRMAR", "LISTO", "EN_ENTREGA"];
 const GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN = 20;
 // Margine (min): la pizza nuova può uscire dal forno fino a N minuti DOPO la
@@ -190,7 +188,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   //   scenario: "A"|"B"|"C"|"D"|"E"|"F", driverRientro, stessaZona }
 
   // ── Stato driver (fetch quando il modal si apre) ──────────────────────────
-  const [driverStato,    setDriverStato]    = useState(null);
+  const [driverStato]    = useState(null);   // [FDV1] sempre null: nessuna telemetria rider
 
   // [FDV1] anteprima deadline + suggerimento giro (previewDeliveryV1) e scelta operatore
   // giroIntent: null = pedido separado · { giro_id } = AGREGAR · { with_order_id } = CREAR GIRO
@@ -482,25 +480,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setShowSugerencias(false);
   };
 
-  // ── Fetch driver state quando il modal è visibile ────────────────────────
-  // [FDV1] il rider non è una variabile del Planner: DRIVER_STATO non viene più letto (driverStato resta null).
-  useEffect(() => {
-    if (!visible || FDV1_NO_RIDER) { setDriverStato(null); return; }
-    let mounted = true;
-    (async () => {
-      try {
-        const rows = await sb.select("config", "chiave=eq.DRIVER_STATO");
-        if (!mounted) return;
-        if (rows && rows.length > 0) {
-          const val = typeof rows[0].valore === "string"
-            ? JSON.parse(rows[0].valore)
-            : rows[0].valore;
-          setDriverStato(val);
-        }
-      } catch(e) {}
-    })();
-    return () => { mounted = false; };
-  }, [visible]);
+  // [FDV1] DRIVER_STATO non viene più letto: il rider non è una variabile del Planner (driverStato resta null).
 
   // Traccia se l'operatore ha toccato manualmente l'orario
   const horaCustom = useRef(false);

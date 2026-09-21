@@ -4,7 +4,7 @@
 // I dati veri (`hora`, `forno_out`) restano intatti — qui solo display.
 
 export const UI_OFFSET_STEP = 5;
-export const UI_OFFSET_MAX  = 20;
+export const UI_OFFSET_MAX  = 30;   // [FDV1] = contratto backend setPriorityOffset (−30..+30)
 
 // Aggiunge N minuti a una stringa "HH:MM". Ritorna null se input invalido.
 export const applyUiOffset = (hhmm, offsetMin) => {

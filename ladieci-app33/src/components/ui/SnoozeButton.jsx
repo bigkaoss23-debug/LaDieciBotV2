@@ -157,7 +157,7 @@ const SnoozeButton = ({ orden, onUpdate }) => {
             maxWidth: 120,
           }}
         >
-          Máximo +{UI_OFFSET_MAX} min. Usa × para reiniciar.
+          Máximo ±{UI_OFFSET_MAX} min. Usa × para reiniciar.
         </div>
       )}
     </div>

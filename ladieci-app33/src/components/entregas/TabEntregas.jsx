@@ -676,7 +676,7 @@ const GiroReviewModal = ({ review, orders = [], pending, onConfirm, onCancel }) 
 
 const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const [loadingId,    setLoadingId]    = useState(null);
-  const [driverStato,  setDriverStato]  = useState(null);
+  const [driverStato] = useState(null);   // [FDV1] sempre null: nessuna telemetria rider
   const [apertoConsegnati, setApertoConsegnati] = useState(false);
   // DELIVERY-MANUAL-GIRO-01 P1C.1: manualGiros è backend-derived (api.getManualGiros).
   // selectedManualGiroOrderIds resta locale (selezione UI, mai persistita).
@@ -694,25 +694,9 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     return () => clearInterval(tick);
   }, []);
 
-  // Rider return = TELEMETRIA VISIVA dal backend (getDriverStatus), read-only ogni 15s.
-  // Il frontend NON scrive più DRIVER_STATO: la telemetria è un side-effect backend
-  // (d569163). Null/errore → nessun banner (degrado silenzioso), zero crash.
+  // [FDV1] Rider return: nessuna telemetria (driverStato sempre null → nessun banner).
   // [FDV1] il rider non è una variabile del Planner: nessuna lettura di DRIVER_STATO (driverStato resta null →
   // nessun banner di rientro, nessun "Registrar salida"). Il flusso di stato EN_ENTREGA → RETIRADO resta invariato.
-  useEffect(() => {
-    if (FDV1_NO_RIDER) return undefined;
-    let mounted = true;
-    const loadDriver = async () => {
-      try {
-        const s = await api.getDriverStatus();
-        if (!mounted) return;
-        setDriverStato(s || null);
-      } catch(e) { if (mounted) setDriverStato(null); }
-    };
-    loadDriver();
-    const poll = setInterval(loadDriver, 15000);
-    return () => { mounted = false; clearInterval(poll); };
-  }, []);
 
   // Reparto operativo: include EN_COCINA per pianificazione operatore di sala
   // (badge "🔥" + nessun bottone d'azione finché non passa a LISTO).
@@ -728,9 +712,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   );
 
   // ── Rider return: TELEMETRIA VISIVA dal backend ───────────────────────────
-  // Sorgente UNICA = getDriverStatus (backend d569163). `driverStato` è già
-  // normalizzato { out, returning, rientro_stimato, partito_alle, ... } oppure
-  // null (DRIVER_STATO assente/LIBERO/malformato) → nessun banner.
+  // [FDV1] driverStato è sempre null (nessuna lettura di DRIVER_STATO) → sezione mai visibile.
   // NIENTE fallback hora_entrega+durata: eviterebbe il "returning" prematuro in
   // un giro multi-ordine (no banner > banner sbagliato). Il "returning" diventa
   // vero solo quando il backend chiude il giro (ultima consegna). Nessuna
@@ -1027,9 +1009,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     try {
       await api.marcarEnEntrega(id);
       if (notify) notify("🛵 Repartidor en camino", ORANGE);
-      // Telemetria DRIVER_STATO (driver fuori) è un side-effect BACKEND della
-      // transizione EN_ENTREGA (d569163). Il frontend non scrive più DRIVER_STATO:
-      // il poll getDriverStatus (15s) riallinea il banner visivo, se disponibile.
+      // [FDV1] nessuna telemetria rider: EN_ENTREGA è solo un cambio di stato dell'ordine.
     } catch(e) {
       logRollback({
         component: "TabEntregas",
@@ -1050,17 +1030,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   // Override operatore: la telemetria "driver fuori" è ora BACKEND-owned (side-effect
   // di EN_ENTREGA, d569163). Il frontend non scrive più DRIVER_STATO — questo handler
   // si limita a ri-leggere lo status backend (read-only) e riallineare il banner.
-  const handleForzaSalida = async (ordine) => {
-    setLoadingId(ordine?.id || null);
-    try {
-      const s = await api.getDriverStatus();
-      setDriverStato(s || null);
-      if (notify) notify("🛵 Estado del rider actualizado", "#fbbf24");
-    } catch(e) {
-      console.warn("[handleForzaSalida] getDriverStatus refresh failed:", e?.message || e);
-    }
-    setLoadingId(null);
-  };
+  // [FDV1] nessuna registrazione / rilettura della partenza rider (niente getDriverStatus).
+  const handleForzaSalida = () => {};
 
   // Override operatore: marca entregado manualmente (driver dimenticò Entregado)
   const handleForzaEntregado = async (ordine) => {

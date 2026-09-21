@@ -115,3 +115,35 @@ test("ADD: un ordine standalone si aggiunge a un giro esistente via '→ giro' (
   await click(btn(el, "Añadir al giro"));
   expect(api.addOrderToManualGiro).toHaveBeenCalledWith("mg_1", "D-3");
 });
+
+test("MOVE G1 → G2, REMOVE (giro → suelto), DISSOLVE: ognuno chiama la sua azione atomica; nessuna UI rider", async () => {
+  api.getManualGiros.mockResolvedValue([
+    { id: "mg_1", seq: 1, dissolved_at: null, order_ids: ["D-1", "D-2"] },
+    { id: "mg_2", seq: 2, dissolved_at: null, order_ids: ["D-3", "D-4"] },
+  ]);
+  api.giroWarnings.mockResolvedValue({ ok: true, warnings: [] });
+  const mk = (id, g, hh) => ({ id, nombre: id, tipo_consegna: "DOMICILIO", estado: "EN_COCINA", direccion: "C", zona: "Q1", hora: hh, delivery_deadline_at: dl(hh), manual_giro_id: g, items: [] });
+  const ordenes = [mk("D-1", "mg_1", "20:40"), mk("D-2", "mg_1", "20:45"), mk("D-3", "mg_2", "21:10"), mk("D-4", "mg_2", "21:15")];
+  const el = mount(<TabEntregas ordenes={ordenes} notify={() => {}} setOrdenes={() => {}} />);
+  await flush();
+  // MOVE
+  const sel = el.querySelector('select[aria-label="Mover a otro giro"]');
+  expect(sel).toBeTruthy();
+  await act(async () => { sel.value = "mg_2"; sel.dispatchEvent(new Event("change", { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
+  await flush();
+  expect(api.giroWarnings).toHaveBeenCalledWith({ giro_id: "mg_2", order_ids: ["D-1"] });
+  expect(el.textContent).toContain("Mover D-1 → G2");
+  await click(btn(el, "Mover"));
+  expect(api.addOrderToManualGiro).toHaveBeenCalledWith("mg_2", "D-1");
+  // REMOVE
+  const quitar = [...el.querySelectorAll('button[title="Quitar este pedido del giro"]')][0];
+  await click(quitar);
+  expect(api.removeOrderFromManualGiro).toHaveBeenCalledTimes(1);
+  // DISSOLVE
+  const dis = [...el.querySelectorAll('button[title="Disolver giro manual"]')][0];
+  await click(dis);
+  expect(api.dissolveManualGiro).toHaveBeenCalledTimes(1);
+  // nessuna UI rider
+  expect(api.getDriverStatus).not.toHaveBeenCalled();
+  expect(el.textContent).not.toMatch(/Registrar salida|Rider volviendo|Driver volvió/);
+});
