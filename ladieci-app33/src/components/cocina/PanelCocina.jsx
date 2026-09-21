@@ -3,17 +3,21 @@ import { C, tot, MAX_PIZZE_ORA, LOGO_RED_SRC, useWidth } from '../../constants';
 import { caricoTotale, lookupMenu, calcTimer, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import PriorityControl from '../ui/PriorityControl';
-import { KitchenVisualStyles, DeadlineHeader, GiroGroup, zoneMeta } from './kitchenVisual';
+import { KitchenVisualStyles, zoneMeta } from './kitchenVisual';
+import { KitchenBlock, CardIdentity } from './PizzeriaBlocks';
+import { packKitchenSegments } from './kitchenPacking';
 import { api } from '../../api';
 import { isDessertPizza } from '../../menu/dessertPizza';
 import {
   buildManualGiroMetaById,
-  formatManualGiroLabel,
   getManualGiroForOrder,
   deadlineState,
+  orderDeadlineMs,
   sortKitchenCards,
   groupKitchenSegments
 } from './manualGiroCocina';
+
+const PICKUP_INK = "#0369A1";
 
 const subtractMinutes = (hora, min) => {
   if (!hora || !min) return null;
@@ -191,105 +195,48 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                     );
                     };
 
-  const renderLegacyCard = (o) => {
-              const t  = o._timer;
-              // [FDV1] DOMICILIO: colori dallo stato della deadline
-              const fc = o.isDelivery
-                ? (o.dl && o.dl.state === "late" ? FASE_CONFIG.tarde : o.dl && o.dl.state === "near" ? FASE_CONFIG.al_horno : FASE_CONFIG.espera)
-                : (FASE_CONFIG[t.fase] || FASE_CONFIG.espera);
-              const isUrgent = o.isDelivery ? !!(o.dl && o.dl.state !== "normal") : (t.fase==="tarde" || t.fase==="lista" || t.fase==="para_salir");
-              const timerStr = t ? `${t.scaduto&&t.conOrario?"-":""}${String(t.mm).padStart(2,"0")}:${String(t.ss).padStart(2,"0")}` : "";
-              const notaVisibile = notaCucina(o.nota);
-              const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
-              const isDelivery = o.tipo_consegna === "DOMICILIO";
-              const zonaColore = isDelivery
-                ? (ZONE_DELIVERY.find(z => z.id === o.zona)?.colore || "#F97316")
-                : null;
-              return (
-                <div key={o.id} style={{
-                  background:"#fff",
-                  borderRadius:16,
-                  border: isDelivery ? `4px solid ${zonaColore}` : `2px solid ${fc.border}`,
-                  display:"flex",flexDirection:"column",overflow:"hidden",
-                  boxShadow: isDelivery
-                    ? `0 0 0 4px ${zonaColore}88, 0 6px 24px ${zonaColore}55`
-                    : isUrgent
-                      ? `0 0 0 3px ${fc.border}44, 0 4px 20px ${fc.border}33`
-                      : "0 2px 10px rgba(0,0,0,0.12)",
-                  position:"relative"
-                }}>
-                  {/* Header colorato per fase — tema chiaro (full-screen pizzeria) */}
-                  <div style={{background:fc.bgLight, padding:"12px 16px",
-                    display:"flex",justifyContent:"space-between",alignItems:"flex-start",
-                    borderBottom:`1px solid ${fc.border}55`}}>
-                    <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
-                      <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:20,lineHeight:1}}>{o.id}</div>
-                      <div style={{color:fc.textLight,opacity:0.85,fontWeight:700,fontSize:14,marginTop:3,
-                        whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {o.nombre}</div>
-                      {/* [FDV1 R3] le card DOMICILIO usano renderDeliveryCard: qui solo RITIRO */}
-                      {!o.isDelivery && (o.horaForno || o.hora) && (
-                        <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:5,
-                          background:"#16A34A", border:"1.5px solid #78350F",
-                          borderRadius:20,padding:"4px 10px", boxShadow:"0 2px 8px rgba(120,53,15,.4)"}}>
-                          <span style={{fontSize:14}}>🕐</span>
-                          <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
-                            {o.horaForno || o.hora}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div style={{textAlign:"right",flexShrink:0}}>
-                      {o.isDelivery ? (
-                        // [FDV1] límite de entrega: UN solo orario principale
-                        <div title="Límite de entrega (creación + 55 min)" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
-                          <div style={{fontFamily:"'DM Mono',monospace",fontSize:40,fontWeight:900,lineHeight:1,
-                            color: o.dl && o.dl.state === "late" ? "#DC2626" : o.dl && o.dl.state === "near" ? "#D97706" : "#065F46",
-                            animation: "none"}}>{o.dl ? o.dl.hhmm : "—"}</div>
-                          <div style={{color: o.dl && o.dl.state === "late" ? "#7F1D1D" : o.dl && o.dl.state === "near" ? "#7C2D12" : "#065F46",
-                            fontSize: o.dl && o.dl.state === "late" ? 14 : 11, fontWeight:900, letterSpacing:.5}}>
-                            {o.dl && o.dl.state === "late" ? "TARDE" : o.dl && o.dl.state === "near" ? "URGENTE" : "HORA LÍMITE"}
-                          </div>
-                        </div>
-                      ) : t.showCountdown ? (
-                        <>
-                          <div style={{fontFamily:"'DM Mono',monospace",fontSize:t.conOrario?40:34,
-                            fontWeight:900,color:fc.timerColorLight,lineHeight:1,
-                            animation:isUrgent?"blink 1s infinite":"none"}}>{timerStr}</div>
-                          <div style={{color:fc.textLight,opacity:0.55,fontSize:10,textAlign:"center",marginTop:2,letterSpacing:.5}}>
-                            {t.conOrario ? (t.scaduto ? "RETRASO" : "al retiro") : "desde orden"}
-                          </div>
-                          {fc.label&&<div style={{marginTop:4,color:fc.labelColorLight,fontSize:12,fontWeight:900,
-                            letterSpacing:.5,animation:isUrgent?"blink 1s infinite":"none"}}>{fc.label}</div>}
-                        </>
-                      ) : (
-                        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                          <div style={{background:"rgba(5,150,105,0.12)",border:"1px solid rgba(5,150,105,0.35)",
-                            borderRadius:20,padding:"5px 12px",color:"#059669",fontSize:12,fontWeight:800}}>⏳ EN ESPERA</div>
-                          {t.mm>0&&<div style={{color:"rgba(0,0,0,0.4)",fontSize:11,
-                            fontFamily:"'DM Mono',monospace"}}>{t.mm} min</div>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+  // [FDV1 R3] renderLegacyCard rimosso: in Pizzeria ogni ordine vive dentro un blocco
+  //   (DOMICILIO = blocco zona/giro, RITIRO = blocco "Recogida en local").
 
-                  {renderBody(o, fc)}
-                  {/* Nessun LISTO qui: lo porta la scheda Cocina, che vede l'ordine completo. */}
-                </div>
-              );
-  };
-
-  // [FDV1 R3] card DOMICILIO: zona persistente (banda + badge), HORA LÍMITE con stato, prodotto; ± solo se standalone.
-  const renderDeliveryCard = (o, control) => {
+  // [FDV1 R3] card DOMICILIO DENTRO il blocco: l'orario grande sta nell'header del blocco (§10), qui restano
+  // identità, zona (quando il blocco è misto) e il proprio límite solo se diverso da quello del blocco.
+  const renderDeliveryCard = (o, { blockMs = null, showZone = false } = {}) => {
     const zone = zoneMeta(o);
     const fcNeutral = { border: "#9CA3AF" };
     return (
       <div key={o.id} data-testid="kitchen-card" data-zone={zone.id} data-state={(o.dl && o.dl.state) || "normal"} style={{
-        background: "#fff", borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column",
-        border: "2px solid #D1D5DB", borderLeft: `14px solid ${zone.color}`, boxShadow: "0 2px 10px rgba(0,0,0,0.12)", minWidth: 0
+        background: "#fff", borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column",
+        border: "1.5px solid #D1D5DB", borderLeft: `10px solid ${zone.color}`, boxShadow: "0 1px 6px rgba(0,0,0,0.10)", minWidth: 0
       }}>
-        <DeadlineHeader o={o} zone={zone} light />
-        {control && <div style={{ padding: "8px 12px 0", display: "flex" }}>{control}</div>}
+        <CardIdentity o={o} zone={zone} blockMs={blockMs} showZone={showZone} />
         {renderBody(o, fcNeutral)}
+      </div>
+    );
+  };
+
+  // [FDV1 R3 §12] RITIRO: il cliente viene al locale — nessun countdown di entrega. Resta l'orario di
+  // preparación/recogida (comportamento Pizzeria invariato), dentro il contenitore "Recogida en local".
+  const renderPickupCard = (o) => {
+    const t = o._timer;
+    const fc = FASE_CONFIG[t && t.fase] || FASE_CONFIG.espera;
+    const timerStr = t ? `${t.scaduto && t.conOrario ? "-" : ""}${String(t.mm).padStart(2, "0")}:${String(t.ss).padStart(2, "0")}` : "";
+    return (
+      <div key={o.id} data-testid="kitchen-card" data-pickup="1" style={{
+        background: "#fff", borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column",
+        border: "1.5px solid #D1D5DB", borderLeft: `10px solid ${PICKUP_INK}`, boxShadow: "0 1px 6px rgba(0,0,0,0.10)", minWidth: 0
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "8px 10px", background: "#fff", borderBottom: "1px solid #E5E7EB" }}>
+          <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 900, fontSize: 18, color: "#111827" }}>{o.id}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#4B5563", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>{o.nombre || ""}</span>
+          <span style={{ flex: 1, minWidth: 4 }} />
+          {t && t.showCountdown && (
+            <span data-testid="pickup-prep" title={t.conOrario ? "Tiempo hasta la recogida" : "Desde la orden"} style={{
+              fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 900, color: fc.textLight,
+              background: "#F1F5F9", borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap",
+            }}>{timerStr}</span>
+          )}
+        </div>
+        {renderBody(o, fc)}
       </div>
     );
   };
@@ -402,18 +349,30 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
             <div style={{fontSize:15,color:"#555"}}>Sin pedidos pendientes</div>
           </div>
         ) : (
-          <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>
+          <div data-testid="pizzeria-grid" style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:12,alignItems:"stretch"}}>
             <KitchenVisualStyles />
-            {groupKitchenSegments(activos).map((seg) => seg.type === "giro" ? (
-              <GiroGroup key={"g:" + seg.giroId} giro={seg.cards[0].manualGiro || { id: seg.giroId }}
-                label={formatManualGiroLabel(seg.cards[0].manualGiro || { id: seg.giroId })} count={seg.cards.length}
-                cols={Math.min(cols, Math.max(1, seg.cards.length))} light
-                control={<PriorityControl orden={seg.cards[0]} windowOrders={seg.cards} onUpdate={handleOffsetChange} light nowMs={now} />}>
-                {seg.cards.map((o) => renderDeliveryCard(o, null))}
-              </GiroGroup>
-            ) : seg.card.isDelivery
-              ? renderDeliveryCard(seg.card, <PriorityControl orden={seg.card} onUpdate={handleOffsetChange} light nowMs={now} />)
-              : renderLegacyCard(seg.card))}
+            {packKitchenSegments(groupKitchenSegments(activos), cols).map(({ seg, width }) => {
+              const cards = seg.type === "giro" ? seg.cards : [seg.card];
+              const isPickup = cards.every((c) => c.tipo_consegna !== "DOMICILIO");
+              const key = seg.type === "giro" ? "g:" + seg.giroId : "o:" + seg.card.id;
+              if (isPickup) {
+                return (
+                  <KitchenBlock key={key} cards={cards} width={width} cols={cols} nowMs={now}
+                    pickupHora={cards[0].horaForno || cards[0].hora || null}>
+                    {cards.map(renderPickupCard)}
+                  </KitchenBlock>
+                );
+              }
+              const blockMs = Math.min(...cards.map(orderDeadlineMs).filter(Number.isFinite));
+              const zones = new Set(cards.map((c) => zoneMeta(c).id));
+              return (
+                <KitchenBlock key={key} cards={cards} width={width} cols={cols} nowMs={now}
+                  giroId={seg.type === "giro" ? seg.giroId : null}
+                  control={<PriorityControl orden={cards[0]} windowOrders={cards} onUpdate={handleOffsetChange} light={false} nowMs={now} />}>
+                  {cards.map((o) => renderDeliveryCard(o, { blockMs: Number.isFinite(blockMs) ? blockMs : null, showZone: zones.size > 1 }))}
+                </KitchenBlock>
+              );
+            })}
           </div>
         )}
       </div>

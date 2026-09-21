@@ -6,15 +6,22 @@ import { ZONE_DELIVERY } from '../../zones';
 //   TEMPO = area HORA LÍMITE (header): NORMAL neutro / URGENTE ambra / TARDE rosso pieno (pulse leggero, no strobo).
 //   GIRO  = contenitore comune con colore proprio (palette distinta dalle zone), identificativo G1/G2, un solo ±.
 
-export const SIN_ZONA = Object.freeze({ id: "SIN ZONA", nome: "", color: "#6B7280", none: true });
+// [FDV1 R3 §7] Al pizzaiolo i codici tecnici Q1/Q3/Q4 non dicono niente: in cucina si mostra SEMPRE il nome
+// operativo del quartiere (CENTRO, LAS MARINAS, CORTIJOS, …). `id` resta solo come attributo dati / debug.
+// Nessuna modifica alla logica DB delle zone: è pura presentazione.
+export const SIN_ZONA = Object.freeze({ id: "SIN_ZONA", nome: "SIN ZONA", color: "#6B7280", none: true });
 
 export const zoneMeta = (o) => {
   const id = o && o.zona;
   const z = id ? ZONE_DELIVERY.find((x) => x.id === id) : null;
   if (!z) return SIN_ZONA;
-  const nome = z.nomeBreve || z.nome || "";
+  const nome = z.nomeBreve || z.nome || z.id;
   return { id: z.id, nome, color: z.colore, none: false };
 };
+
+// Zona "mista": un giro con zone diverse NON inventa una zona — prende un'identità neutra dedicata e ogni
+// card conserva la propria banda/badge di zona.
+export const ZONA_MIXTA = Object.freeze({ id: "MIXTA", nome: "VARIAS ZONAS", color: "#334155", mixed: true });
 
 // Palette giri: toni scuri e neutri, lontani dai colori zona (teal, viola chiaro, arancio, magenta, verde).
 export const GIRO_COLORS = ["#1E3A8A", "#4C1D95", "#1F2937", "#713F12", "#134E4A"];
@@ -46,7 +53,7 @@ export const ZoneBadge = ({ zone, size = 16 }) => (
     borderRadius: 8, padding: "3px 10px", fontWeight: 900, fontSize: size, lineHeight: 1.1, letterSpacing: .3,
     border: zone.none ? "2px dashed #FFFFFF" : "none", whiteSpace: "nowrap",
   }}>
-    {zone.id}{zone.nome ? <span style={{ fontSize: Math.round(size * 0.62), fontWeight: 800, opacity: .9 }}>{zone.nome}</span> : null}
+    {zone.nome || zone.id}
   </span>
 );
 

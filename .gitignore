@@ -36,3 +36,6 @@ Thumbs.db
 
 # Local assistant/tooling state
 .claude/
+
+# [FDV1 R3] fixture visiva generata dai test (non versionata)
+ladieci-app33/fixture-out/

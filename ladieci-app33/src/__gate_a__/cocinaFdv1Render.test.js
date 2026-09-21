@@ -115,14 +115,22 @@ describe("A5 — render reale + realtime", () => {
     await rerender(<TabCocina ordenes={[g[0], g[1], { ...g[2], manual_giro_id: null }]} onListo={() => {}} />);  // remove #003
     expect(cardsOrder(el)).toEqual(["#001", "#002", "#003"]);
   });
-  test("PanelCocina (Pizzeria): stesso raggruppamento, una deadline chiara, nessun rider", async () => {
+  test("PanelCocina (Pizzeria): stesso raggruppamento, UN solo orario grande per blocco, nessun rider", async () => {
     const g = [o("#002", "21:30"), o("#003", "21:45", { manual_giro_id: "g1" }), o("#001", "21:30", { manual_giro_id: "g1", hora: "21:15" })];
     const el = await mount(<PanelCocina ordenes={g} onListo={() => {}} onClose={() => {}} />);
     expect(cardsOrder(el)).toEqual(["#001", "#003", "#002"]);
     const txt = el.textContent;
-    expect(txt).toMatch(/21:30\s*HORA LÍMITE/); expect(txt).toMatch(/21:45\s*HORA LÍMITE/);
+    // [FDV1 R3 §10] la Pizzeria non ripete più l'etichetta HORA LÍMITE su ogni card: ogni blocco ha UN orario
+    // (quello del membro più urgente) più il countdown; il límite del membro diverso resta in piccolo.
+    const blocks = [...el.querySelectorAll('[data-testid="kitchen-block"]')];
+    expect(blocks.map((b) => b.querySelector('[data-testid="block-main-time"]').textContent)).toEqual(["21:30", "21:30"]);
+    for (const b of blocks) expect(b.querySelectorAll('[data-testid="block-main-time"]')).toHaveLength(1);
+    expect([...el.querySelectorAll('[data-testid="card-own-limit"]')].map((n) => n.textContent)).toEqual(["límite 21:45"]);
+    expect(txt).not.toMatch(/HORA LÍMITE/);
+    expect(txt).toMatch(/faltan 30 min/);
     expect(txt).not.toMatch(RIDER);
-    expect(txt).not.toMatch(/CLIENTE|⏱|20:40|21:15/);
+    // ⏱ qui è il countdown del blocco (§11), non il vecchio "target di produzione" per-card
+    expect(txt).not.toMatch(/CLIENTE|20:40|21:15/);
   });
 });
 

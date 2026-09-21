@@ -75,23 +75,26 @@ export const deadlineState = (o, nowMs) => {
 
 // Chiave di priorità di produzione di una card: DOMICILIO = deadline + offset ± (il ± sposta SOLO l'ordine di
 // lavoro, non crea orari visibili); RITIRO = orario di ritiro/forno come prima. Senza orario: in fondo.
-// [FDV1 R3] finestra del + (priorità di produzione): minuti ancora disponibili prima della HORA LÍMITE più urgente
-// meno il margine URGENTE, limitati al contratto. Nessuna deadline → 0 (+ non dimostrabilmente sicuro).
-export const maxPlusMinutes = (orders = [], nowMs = Date.now(), contract = { max: 30, margin_min: 10 }) => {
+// [FDV1 R3] finestra del + (priorità di produzione): minuti realmente disponibili prima della HORA LÍMITE più
+// urgente, limitati al contratto. Nessun buffer artificiale (margin_min = 0 nel contratto v2): URGENTE è uno stato
+// visivo, non una zona vietata; solo TARDE (límite superato) azzera la finestra.
+// Nessuna deadline → 0 (+ non dimostrabilmente sicuro).
+export const maxPlusMinutes = (orders = [], nowMs = Date.now(), contract = { max: 30, margin_min: 0 }) => {
   const dls = (orders || []).map(orderDeadlineMs).filter((x) => Number.isFinite(x));
   if (!dls.length) return 0;
   const left = Math.floor((Math.min(...dls) - nowMs) / 60000) - (Number(contract.margin_min) || 0);
   return Math.max(0, Math.min(Number(contract.max) || 0, left));
 };
 
-// Chiave di ordinamento cucina. DOMICILIO: HORA LÍMITE + priorità. Un + non porta MAI la card oltre la finestra
-// sicura (se il tempo passa, il + effettivo si riduce da solo: la card risale). Il − è sempre pieno. Nessun dato scritto.
+// Chiave di ordinamento cucina. DOMICILIO: HORA LÍMITE + priorità. Il + effettivo non porta MAI la card oltre la
+// propria HORA LÍMITE reale (col passare del tempo si riduce da solo: la card risale). Nessun buffer artificiale:
+// il valore scelto dall'operatore NON viene mai riscritto — qui si proietta solo l'ordinamento. Il − è sempre pieno.
 export const kitchenSortMs = (o, nowMs = null) => {
   if (o && o.tipo_consegna === "DOMICILIO") {
     const dl = orderDeadlineMs(o);
     if (dl != null) {
       let off = Number(o.ui_offset_min) || 0;
-      if (off > 0 && Number.isFinite(nowMs)) off = Math.min(off, Math.max(0, Math.floor((dl - nowMs) / 60000) - 10));
+      if (off > 0 && Number.isFinite(nowMs)) off = Math.min(off, Math.max(0, Math.floor((dl - nowMs) / 60000)));
       return dl + off * 60000;
     }
   }
