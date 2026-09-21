@@ -728,7 +728,7 @@ const GiroTimeModal = ({ orders, warnings = [], pending, onConfirm, onCancel }) 
 
         {lateMembers.length > 0 && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
-            <span style={warningStyle("strong")}>REVISAR</span>
+            <span style={warningStyle("strong")}>REVISAR · confirmar = override</span>
             {lateMembers.map(o => (
               <span key={`late-${o.id}`} style={warningStyle("strong")}>
                 Salida {preview.hora_ref} &gt; cliente {o.hora} · {o.id || o.nombre || "?"}
@@ -750,7 +750,7 @@ const GiroTimeModal = ({ orders, warnings = [], pending, onConfirm, onCancel }) 
             color: pending ? "rgba(255,255,255,0.3)" : "#fde68a",
             borderRadius: 9, padding: "8px 16px", fontSize: 12.5, fontWeight: 900,
             cursor: pending ? "not-allowed" : "pointer"
-          }}>{pending ? "..." : (lateMembers.length > 0 ? "Confirmar igualmente" : "Crear giro")}</button>
+          }}>{pending ? "..." : "Crear giro"}</button>
         </div>
       </div>
     </div>
