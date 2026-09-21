@@ -403,6 +403,10 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       setOrdenes(p=>p.map(x=>x.id===o.id?{...x,id:res.id,_temp:false}:x));
       creationQueue.confirm(requestId, { ...o, ...res, id: res.id, _temp: false });
       notify("✅ " + res.id + " → " + canalLabel);
+      // [FDV1] giro_intent non applicato (giro pieno / partito / sciolto nel frattempo): l'ordine resta separato
+      if (res.giro && res.giro.applied === false && res.giro.reason !== "no_intent") {
+        notify("⚠️ " + res.id + " guardado separado — giro no aplicado (" + res.giro.reason + ")", "#fbbf24");
+      }
     } catch(err) {
       // ROLLBACK: l'ordine fantasma viene rimosso dallo state. Il pizzaiolo
       // NON deve vedere ordini senza backing DB. Vedi audit CL4SBU del 14/05/2026.

@@ -1,5 +1,4 @@
 import { orarioToMs } from '../ordenes/TabListos';
-import { applyUiOffset } from '../../utils/uiOffset';
 
 export const formatManualGiroLabel = (giro) => {
   if (!giro) return "G?";
@@ -8,20 +7,10 @@ export const formatManualGiroLabel = (giro) => {
   return m ? "G" + m[1] : "G?";
 };
 
-// hora_ref / entrega_ref derivati da un ordine anchor che non è più membro del giro
-// (es. 3→2 togliendo proprio l'anchor): il backend LIVE non li ricalcola alla rimozione.
-// In sola lettura li trattiamo come assenti → i membri tornano al proprio forno_out /
-// alla propria ora cliente. Il DB non viene toccato. allOrders = lista COMPLETA ordenes.
-export const sanitizeGiroRefs = (giro, allOrders) => {
-  if (!giro || !giro.anchor_order_id || !Array.isArray(allOrders)) return giro;
-  const anchorIsMember = allOrders.some(o => o && o.id === giro.anchor_order_id && o.manual_giro_id === giro.id);
-  return anchorIsMember ? giro : { ...giro, hora_ref: null, entrega_ref: null, anchor_order_id: null };
-};
-
-export const buildManualGiroMetaById = (manualGiros = [], allOrders = null) => {
+export const buildManualGiroMetaById = (manualGiros = []) => {
   const out = {};
   for (const giro of manualGiros || []) {
-    if (giro && giro.id && !giro.dissolved_at) out[giro.id] = allOrders ? sanitizeGiroRefs(giro, allOrders) : giro;
+    if (giro && giro.id && !giro.dissolved_at) out[giro.id] = giro;
   }
   return out;
 };
@@ -31,16 +20,47 @@ export const buildManualGiroMetaById = (manualGiros = [], allOrders = null) => {
 export const compareWithinGiro = (a, b) => {
   const d = (orarioToMs(a?.horaForno || a?.hora) || 0) - (orarioToMs(b?.horaForno || b?.hora) || 0);
   if (d !== 0) return d;
-  return (orarioToMs(a?.hora) || 0) - (orarioToMs(b?.hora) || 0);
+  return (orderDeadlineMs(a) || orarioToMs(a?.hora) || 0) - (orderDeadlineMs(b) || orarioToMs(b?.hora) || 0);
 };
 
-// Target di produzione (⏱) della card. Membro di giro manuale: la base è hora_ref
-// (orario operativo comune); altrimenti forno_out. Il +5 dell'operatore (ui_offset_min,
-// solo DOMICILIO) si applica SEMPRE sopra, anche dentro un giro. Non tocca mai o.hora
-// (promessa cliente), né hora_ref/entrega_ref del giro.
-export const resolveHoraFornoCard = (order, manualGiro, horaFornoBase, isDelivery) => {
-  const base = (manualGiro && manualGiro.hora_ref) ? manualGiro.hora_ref : horaFornoBase;
-  return isDelivery ? applyUiOffset(base, order?.ui_offset_min) : base;
+// ─── [FDV1] Frozen Delivery V1: deadline + production target (no rider, no travel subtraction) ───────────
+// Deadline DOMICILIO = ordenes.delivery_deadline_at (ts + 55', set once by the backend, immutable).
+// Legacy rows without it (pre-FDV1): fail-safe fallback to `hora` (the promise they were created with).
+const MADRID_HHMM = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+export const formatMadridHHMM = (ms) => (Number.isFinite(ms) ? MADRID_HHMM.format(new Date(ms)) : null);
+const GIRO_MEMBER_STATES = new Set(["POR_CONFIRMAR", "EN_COCINA", "LISTO", "EN_ENTREGA"]);
+
+export const orderDeadlineMs = (o) => {
+  if (!o || o.tipo_consegna !== "DOMICILIO") return null;
+  if (o.delivery_deadline_at) {
+    const t = Date.parse(o.delivery_deadline_at);
+    if (Number.isFinite(t)) return t;
+  }
+  return o.hora ? orarioToMs(o.hora) : null;
+};
+export const orderDeadlineHHMM = (o) => {
+  const ms = orderDeadlineMs(o);
+  return ms == null ? (o?.hora || null) : formatMadridHHMM(ms);
+};
+
+// Urgenza del giro = EARLIEST MEMBER DEADLINE (membri non ancora partiti; se tutti partiti, tutti).
+// allOrders = lista COMPLETA ordenes (realtime), non solo le card visibili.
+export const giroEarliestDeadlineMs = (giroId, allOrders = []) => {
+  if (!giroId) return null;
+  const members = (allOrders || []).filter(m => m && m.manual_giro_id === giroId && m.tipo_consegna === "DOMICILIO" && GIRO_MEMBER_STATES.has(m.estado));
+  const live = members.filter(m => m.estado !== "EN_ENTREGA");
+  const ms = (live.length ? live : members).map(orderDeadlineMs).filter(Number.isFinite);
+  return ms.length ? Math.min(...ms) : null;
+};
+
+// Target di produzione (⏱) DOMICILIO = (deadline del giro più urgente | propria deadline) + offset ±.
+// L'offset è di blocco (il backend lo scrive su tutti i membri del giro). Non tocca mai la deadline.
+export const productionTargetHHMM = (o, allOrders = []) => {
+  if (!o || o.tipo_consegna !== "DOMICILIO") return null;
+  const own = orderDeadlineMs(o);
+  const base = o.manual_giro_id ? (giroEarliestDeadlineMs(o.manual_giro_id, allOrders) ?? own) : own;
+  if (base == null) return o.hora || null;
+  return formatMadridHHMM(base + (Number(o.ui_offset_min) || 0) * 60000);
 };
 
 export const getManualGiroForOrder = (order, giroMetaById = {}) => {

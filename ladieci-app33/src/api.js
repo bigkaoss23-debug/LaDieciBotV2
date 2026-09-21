@@ -400,7 +400,7 @@ const api = {
   // ── Manual giros (DELIVERY-MANUAL-GIRO-01 P1C.1) ──────────────
   // Backend è la fonte di verità: ordenes.manual_giro_id + tabella
   // manual_giros con seq per service day. Vedi LaDieciBotV2_DELIVERY_MANUAL_GIRO_01BC_SPEC.md.
-  // addOrderToManualGiro esiste lato backend ma è fuori scope S3 (no workflow UI).
+  // [FDV1] giro atomico: create / add (= move silent) / remove / dissolve / reconcile sono UNA funzione DB ciascuna.
   getManualGiros: function(opts = {}) {
     const params = {};
     if (opts.day) params.day = opts.day;
@@ -412,6 +412,21 @@ const api = {
   // entrega_ref: "HH:MM" target consegna/giro comune scelto dall'operatore. Tutti opzionali.
   createManualGiro: function(order_ids, hora_ref = null, anchor_order_id = null, entrega_ref = null) {
     return proxyPost({ action: "createManualGiro", order_ids, hora_ref, anchor_order_id, entrega_ref });
+  },
+  // [FDV1] aggiunge un ordine a un giro esistente o lo SPOSTA da un altro giro (standalone→giro, G1→G2).
+  addOrderToManualGiro: function(giro_id, order_id) {
+    return proxyPost({ action: "addOrderToManualGiro", giro_id, order_id });
+  },
+  // [FDV1] warning fattuali (mai bloccanti) per una composizione: { order_ids } oppure { giro_id, order_ids }.
+  giroWarnings: function(body = {}) {
+    return proxyPost({ action: "giroWarnings", ...body });
+  },
+  // [FDV1] Nuevo Pedido DOMICILIO: deadline (ora + 55') + suggerimento giro compatibile. Sola lettura.
+  previewDeliveryV1: function(body = {}) {
+    return proxyPost({ action: "previewDeliveryV1", ...body });
+  },
+  reconcileManualGiros: function() {
+    return proxyPost({ action: "reconcileManualGiros" });
   },
   removeOrderFromManualGiro: function(order_id) {
     return proxyPost({ action: "removeOrderFromManualGiro", order_id });

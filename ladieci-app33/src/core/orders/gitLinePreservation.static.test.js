@@ -93,8 +93,13 @@ describe("validazioni data e ora", () => {
     expect(read("components/ShadowPreviewPanel.jsx")).toMatch(/Fecha no v/);
   });
 
-  test("validazione HH:MM (entregas) non rimossa", () => {
-    expect(read("components/entregas/TabEntregas.jsx")).toMatch(/Formato HH:MM/);
+  // [FDV1] l'input HH:MM del giro (hora_ref) è ritirato: il giro prende la deadline più urgente dei membri.
+  // Al suo posto: revisione con warning fattuali (REVISAR) + conferma operatore.
+  test("revisione giro FDV1 (warning + conferma) presente in entregas", () => {
+    const src = read("components/entregas/TabEntregas.jsx");
+    expect(src).toMatch(/GiroReviewModal/);
+    expect(src).toMatch(/REVISAR/);
+    expect(src).not.toMatch(/Formato HH:MM/);
   });
 });
 

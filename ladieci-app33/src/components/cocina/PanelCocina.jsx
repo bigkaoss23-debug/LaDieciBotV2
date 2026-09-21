@@ -11,8 +11,9 @@ import {
   getManualGiroForOrder,
   manualGiroBadgeStyle,
   manualGiroSortAnchorMs,
-  resolveHoraFornoCard,
-  compareWithinGiro
+  compareWithinGiro,
+  productionTargetHHMM,
+  orderDeadlineHHMM
 } from './manualGiroCocina';
 
 const subtractMinutes = (hora, min) => {
@@ -28,8 +29,11 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
   const [manualGiros, setManualGiros] = useState([]);
   // Override locale ottimistico per ui_offset_min — il polling/WS poi sincronizza
   const [localOffsets, setLocalOffsets] = useState({});
+  // [FDV1] offset di un membro di giro = tutto il blocco (il backend scrive tutti i membri)
   const handleOffsetChange = (id, val) => {
-    setLocalOffsets(prev => ({ ...prev, [id]: val }));
+    const gid = (ordenes.find(x => x.id === id) || {}).manual_giro_id;
+    const ids = gid ? ordenes.filter(x => x.manual_giro_id === gid).map(x => x.id) : [id];
+    setLocalOffsets(prev => { const n = { ...prev }; const at = Date.now(); for (const k of ids) n[k] = { v: val, at }; return n; });
   };
   useEffect(()=>{
     const i = setInterval(()=>setNow(Date.now()),1000);
@@ -68,14 +72,16 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
     if (cat === "Postres") return isDessertPizza(it);
     return cat === "Pizzas";
   };
-  const manualGiroMetaById = buildManualGiroMetaById(manualGiros, ordenes);
+  const manualGiroMetaById = buildManualGiroMetaById(manualGiros);
 
   const activosBase = ordenes
     .filter(o => o.estado==="EN_COCINA")
     .map(o => {
       // Applica override ottimistico ui_offset_min (se presente, sovrascrive il valore polled)
-      if (Object.prototype.hasOwnProperty.call(localOffsets, o.id)) {
-        o = { ...o, ui_offset_min: localOffsets[o.id] };
+      // override ottimistico breve (8 s): poi vince il valore sincronizzato (offset di blocco allineati dal backend)
+      const lo = localOffsets[o.id];
+      if (lo && now - lo.at < 8000) {
+        o = { ...o, ui_offset_min: lo.v };
       }
       const all = (o.items||[]).filter(it => it.n !== "Entrega a domicilio");
       const items = all.filter(isPizzaForno);
@@ -85,14 +91,14 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       // Sorgente unica: o.forno_out (backend cascade-aware). Fallback legacy per ordini pre-migration.
       const horaFornoBase = o.forno_out
         || (isDelivery && zonaObj && o.hora ? subtractMinutes(o.hora, tempoAndata(o, zonaObj)) : (o.hora || null));
-      // Giro manuale: hora_ref è l'orario operativo comune del giro; il +5 per-card
-      // (ui_offset_min, solo DOMICILIO) si applica sopra, anche dentro un giro.
-      const horaForno = resolveHoraFornoCard(o, manualGiro, horaFornoBase, isDelivery);
+      // [FDV1] DOMICILIO: target = deadline (giro → la più urgente) + offset ± di blocco. RITIRO invariato.
+      const horaForno = isDelivery ? productionTargetHHMM(o, ordenes) : horaFornoBase;
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;
       return {
         ...o,
         items,
         isDelivery, horaForno, manualGiro,
+        deadlineCliente: isDelivery ? orderDeadlineHHMM(o) : o.hora,
         _timer: calcTimer(oPerTimer, now)
       };
     })
@@ -280,14 +286,14 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                               <SnoozeButton orden={o} onUpdate={handleOffsetChange} />
                             )}
                           </div>
-                          {o.isDelivery && o.hora && (
-                            <div style={{display:"inline-flex",alignItems:"center",gap:6,
+                          {o.isDelivery && o.deadlineCliente && (
+                            <div title="Límite cliente" style={{display:"inline-flex",alignItems:"center",gap:6,
                               background:"#C2410C",border:"1.5px solid rgba(194,65,12,0.85)",
                               borderRadius:20,padding:"4px 10px",
                               boxShadow:"0 2px 8px rgba(194,65,12,.4)"}}>
                               <span style={{fontSize:14}}>🛵</span>
                               <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
-                                {o.hora}
+                                {o.deadlineCliente}
                               </span>
                             </div>
                           )}

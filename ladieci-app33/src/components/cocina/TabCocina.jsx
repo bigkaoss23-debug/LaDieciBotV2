@@ -13,9 +13,11 @@ import {
   getManualGiroForOrder,
   manualGiroBadgeStyle,
   manualGiroSortAnchorMs,
-  resolveHoraEntregaGiro,
-  resolveHoraFornoCard,
-  compareWithinGiro
+  compareWithinGiro,
+  productionTargetHHMM,
+  orderDeadlineHHMM,
+  giroEarliestDeadlineMs,
+  formatMadridHHMM
 } from './manualGiroCocina';
 
 // hora = orario consegna cliente → horaForno = hora − tempoAndata(ordine)
@@ -43,8 +45,11 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
   const [manualGiros, setManualGiros] = useState([]);
   // Override locale ottimistico per ui_offset_min — il polling/WS poi sincronizza
   const [localOffsets, setLocalOffsets] = useState({});
+  // [FDV1] l'offset di un membro di giro vale per tutto il blocco (il backend scrive tutti i membri)
   const handleOffsetChange = (id, val) => {
-    setLocalOffsets(prev => ({ ...prev, [id]: val }));
+    const gid = (ordenes.find(x => x.id === id) || {}).manual_giro_id;
+    const ids = gid ? ordenes.filter(x => x.manual_giro_id === gid).map(x => x.id) : [id];
+    setLocalOffsets(prev => { const n = { ...prev }; const at = Date.now(); for (const k of ids) n[k] = { v: val, at }; return n; });
   };
   const handleListo = (o) => {
     onListo(o.id, {
@@ -148,14 +153,16 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
     return false;
   };
 
-  const manualGiroMetaById = buildManualGiroMetaById(manualGiros, ordenes);
+  const manualGiroMetaById = buildManualGiroMetaById(manualGiros);
 
   const activosBase = ordenes
     .filter(o=>o.estado===ORDER_STATES.EN_COCINA)
     .map(o=>{
       // Applica override ottimistico ui_offset_min (se presente, sovrascrive il valore polled)
-      if (Object.prototype.hasOwnProperty.call(localOffsets, o.id)) {
-        o = { ...o, ui_offset_min: localOffsets[o.id] };
+      // override ottimistico breve (8 s): poi vince il valore sincronizzato (offset di blocco allineati dal backend)
+      const lo = localOffsets[o.id];
+      if (lo && now - lo.at < 8000) {
+        o = { ...o, ui_offset_min: lo.v };
       }
       const all = (o.items||[]).filter(it=>it.n!=="Entrega a domicilio");
       const items = all.filter(it => !isExtra(it));
@@ -166,24 +173,22 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
       // Sorgente unica: o.forno_out (backend cascade-aware). Fallback legacy per ordini pre-migration.
       const horaFornoBase = o.forno_out
         || (isDelivery && zonaObj && o.hora ? subtractMinutes(o.hora, tempoAndata(o, zonaObj)) : (o.hora || null));
-      // Giro manuale: hora_ref è l'orario operativo comune del giro; il +5 per-card
-      // (ui_offset_min, solo DOMICILIO) si applica sopra, anche dentro un giro.
-      const horaForno = resolveHoraFornoCard(o, manualGiro, horaFornoBase, isDelivery);
+      // [FDV1] DOMICILIO: target di produzione = deadline (giro → la più urgente dei membri) + offset ± di blocco.
+      // Nessuna sottrazione di viaggio, nessun rider, nessun hora_ref. RITIRO: invariato (forno_out / hora).
+      const horaForno = isDelivery ? productionTargetHHMM(o, ordenes) : horaFornoBase;
       // nPizze = solo pizze (no bevande, no dolci)
       const nPizze = items.reduce((s,it) => s + (parseInt(it.q)||1), 0);
       // Il timer usa horaForno come deadline (non hora)
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;
-      // Orario consegna (🛵): per un giro manuale è il target comune del giro
-      // (entrega_ref → anchor.hora → max ora membri → o.hora); altrimenti l'ora cliente.
-      // Usa la lista completa `ordenes` (non activosBase) per non sottostimare il max.
+      // 🛵: giro → GIRO <deadline più urgente>; ordine singolo → la sua deadline. CLIENTE = deadline del singolo.
       const isManualGiro = !!(manualGiro && manualGiro.id);
-      const horaEntregaGiro = isManualGiro ? resolveHoraEntregaGiro(o, manualGiro, ordenes) : null;
-      const horaEntrega = isManualGiro ? horaEntregaGiro : o.hora;
-      // Warning non bloccante: la pizza esce dal forno DOPO l'ora cliente (solo delivery)
+      const deadlineCliente = isDelivery ? orderDeadlineHHMM(o) : o.hora;
+      const horaEntrega = isManualGiro ? (formatMadridHHMM(giroEarliestDeadlineMs(o.manual_giro_id, ordenes)) || deadlineCliente) : deadlineCliente;
+      // Warning non bloccante: il target di produzione supera la deadline del cliente (solo delivery)
       const fornoMs = orarioToMs(horaForno);
-      const horaMs = orarioToMs(o.hora);
+      const horaMs = orarioToMs(deadlineCliente);
       const riesgoRetraso = isDelivery && fornoMs != null && horaMs != null && fornoMs > horaMs;
-      return {...o, items, extras, horaForno, horaEntrega, isManualGiro, nPizze, isDelivery, zonaObj, manualGiro, riesgoRetraso, _timer: calcTimer(oPerTimer, now)};
+      return {...o, items, extras, horaForno, horaEntrega, deadlineCliente, isManualGiro, nPizze, isDelivery, zonaObj, manualGiro, riesgoRetraso, _timer: calcTimer(oPerTimer, now)};
     })
     .filter(o=>o.items.length>0 || o.extras.length>0);
 
@@ -281,12 +286,12 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                                 {o.isManualGiro ? `GIRO ${o.horaEntrega}` : o.horaEntrega}
                               </span>
                             </div>
-                            {o.isManualGiro && o.hora && o.hora !== o.horaEntrega && (
+                            {o.isManualGiro && o.deadlineCliente && o.deadlineCliente !== o.horaEntrega && (
                               // Promessa individuale del cliente: resta visibile anche dentro un giro.
                               <div title="Hora cliente" style={{display:"inline-flex",alignItems:"center",gap:4,
                                 background:"#fff",border:"1.5px solid #C2410C",borderRadius:20,padding:"3px 9px"}}>
                                 <span style={{color:"#C2410C",fontWeight:900,fontSize:12}}>CLIENTE</span>
-                                <span style={{color:"#C2410C",fontWeight:900,fontSize:15,fontFamily:"'DM Mono',monospace"}}>{o.hora}</span>
+                                <span style={{color:"#C2410C",fontWeight:900,fontSize:15,fontFamily:"'DM Mono',monospace"}}>{o.deadlineCliente}</span>
                               </div>
                             )}
                           </div>

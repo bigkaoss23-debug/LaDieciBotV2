@@ -190,6 +190,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // ── Stato driver (fetch quando il modal si apre) ──────────────────────────
   const [driverStato,    setDriverStato]    = useState(null);
 
+  // [FDV1] anteprima deadline + suggerimento giro (previewDeliveryV1) e scelta operatore
+  // giroIntent: null = pedido separado · { giro_id } = AGREGAR · { with_order_id } = CREAR GIRO
+  const [fdv1Preview, setFdv1Preview] = useState(null);
+  const [giroIntent,  setGiroIntent]  = useState(null);
+
   // ItemPickerModal state
   const [pickerVisible,   setPickerVisible]   = useState(false);
   const [editingItem,     setEditingItem]     = useState(null); // null = nuovo, item = modifica
@@ -197,6 +202,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // ── Tipo consegna: si determina automaticamente dall'indirizzo ─────────
   // Se l'indirizzo è compilato → DOMICILIO, altrimenti → RITIRO
   const tipoConsegna = direccion.trim().length > 0 ? "DOMICILIO" : "RITIRO";
+  // [FDV1] Frozen Delivery V1: ogni DOMICILIO nasce con deadline = creazione + 55' (backend) e il giro lo decide
+  // l'operatore. Niente rider / slot driver / hora scelta a mano per il delivery.
+  const isFdv1Delivery = tipoConsegna === "DOMICILIO";
 
   // ── Totale ──────────────────────────────────────────────────────────────
   // Sorgente unica: calcTotale (sum items + delivery_fee). Niente più magic numbers.
@@ -231,6 +239,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setPickerVisible(false); setEditingItem(null);
     setZonaInfo(null); setZonaLoading(false); setZonaManuale(false);
     setBackendTiming(null); setBackendTimingLoading(false);
+    setFdv1Preview(null); setGiroIntent(null);
     horaCustom.current = false;
     setHoraTouchedByOperator(false);
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
@@ -343,6 +352,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       items: items.map(i => ({ ...i })),
       nota: notaFinale, hora, ts: Date.now(), estado: "POR_CONFIRMAR",
       tipo_consegna: tipoConsegna,
+      // [FDV1] il backend fissa delivery_deadline_at = ts + 55' (e hora come specchio); giro_intent opzionale
+      ...(tipoConsegna === "DOMICILIO" ? { delivery_contract: "v1", ...(giroIntent ? { giro_intent: giroIntent } : {}) } : {}),
       direccion: tipoConsegna === "DOMICILIO" ? direccion.trim() : null,
       direccion_note: tipoConsegna === "DOMICILIO" ? (direccionNote.trim() || null) : null,
       // ── Step 2 anti-cerotto: geo/durata NON sono più fonte di verità del
@@ -683,6 +694,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // Input GREZZI: niente durata/zona/geo calcolati dal frontend.
   useEffect(() => {
     if (!visible) { setBackendTiming(null); return; }
+    // [FDV1] il delivery non usa più il timing rider (previewOrderTiming): vedi previewDeliveryV1 sotto.
+    if (tipoConsegna === "DOMICILIO") { setBackendTiming(null); return; }
     if (tipoConsegna === "DOMICILIO" && direccion.trim().length < 5) {
       setBackendTiming(null);
       return;
@@ -722,6 +735,28 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setForzaHora(false);
     setHora(firstAvailable);
   }, [visible, tipoConsegna, backendTiming, horaTouchedByOperator, hora]);
+
+  // [FDV1] deadline preview (ora + 55') + giro compatibile (zona, deadline ±15', capienza, stato). Sola lettura;
+  // ricaricata ogni 30 s. La deadline vera la fissa il backend al salvataggio (ts server + 55').
+  const fdv1Zona = zonaAssegnata ? (zonaInfo?.zona?.id || null) : null;
+  useEffect(() => {
+    if (!visible || !isFdv1Delivery) { setFdv1Preview(null); return; }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await api.previewDeliveryV1({ zona: fdv1Zona });
+        if (cancelled || !res || !res.ok) return;
+        setFdv1Preview(res);
+        if (res.hora_preview) setHora(res.hora_preview);
+      } catch (e) {
+        if (!cancelled) console.warn("[previewDeliveryV1] failed:", e?.message || e);
+      }
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [visible, isFdv1Delivery, fdv1Zona]); // eslint-disable-line
+  useEffect(() => { setGiroIntent(null); }, [fdv1Zona]);
 
   // Prefill quando il modal si apre
   useEffect(() => {
@@ -960,10 +995,16 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   <span style={{ fontSize: 16 }}>🕐</span>
                   <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                     <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 9, fontWeight: 800, letterSpacing: .8, textTransform: "uppercase", lineHeight: 1 }}>
-                      {tipoConsegna === "DOMICILIO" ? "Entrega a las" : "Retirar a las"}
+                      {tipoConsegna === "DOMICILIO" ? "Límite entrega" : "Retirar a las"}
                     </span>
-                    <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)}
-                      style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: 14, fontWeight: 700, width: 80, outline: "none", lineHeight: 1 }} />
+                    {isFdv1Delivery ? (
+                      <span title="Creación + 55 min (fijado al guardar)" style={{ color: "#fff", fontSize: 14, fontWeight: 700, width: 80, lineHeight: 1, fontFamily: "'DM Mono',monospace" }}>
+                        {hora || "—"}
+                      </span>
+                    ) : (
+                      <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)}
+                        style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: 14, fontWeight: 700, width: 80, outline: "none", lineHeight: 1 }} />
+                    )}
                   </div>
                   {tipoConsegna === "DOMICILIO" && zonaInfo?.durataAndataMin != null && (
                     <span title="Tiempo de ida en coche (Google)" style={{
@@ -985,7 +1026,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               {/* Fonte unica: zona/durata/source/forno_out/warnings/driver/giro
                   arrivano dal backend (previewOrderTiming). Il frontend mostra,
                   non ricalcola. */}
-              {tipoConsegna === "DOMICILIO" && (backendTiming || backendTimingLoading) && (
+              {!isFdv1Delivery && tipoConsegna === "DOMICILIO" && (backendTiming || backendTimingLoading) && (
                 <div style={{
                   background: "rgba(255,255,255,0.04)",
                   border: "1px solid rgba(255,255,255,0.12)",
@@ -1071,7 +1112,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
               {(() => {
                 const zona = zonaInfo?.zona;
                 const hasDir = direccion.trim().length > 0;
-                const hasConflict = deliveryStatus.isBlocked;
+                const hasConflict = !isFdv1Delivery && deliveryStatus.isBlocked;
                 return (
                   <button onClick={() => setShowDeliveryPopup(true)} style={{
                     display: "flex", alignItems: "center", gap: 10,
@@ -1643,7 +1684,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     }} />
                 </div>
 
-                {/* Hora */}
+                {/* Hora — [FDV1] sostituita dal límite de entrega (creación + 55') */}
+                {false && (
                 <div>
                   <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700,
                     letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Hora de entrega</div>
@@ -1661,6 +1703,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* Zona */}
                 {direccion.trim().length >= 3 && (
@@ -1732,8 +1775,59 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   </div>
                 )}
 
-                {/* Suggerimento giro esistente nella stessa zona */}
-                {!zonaLoading && zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache") && (() => {
+                {/* [FDV1] Límite de entrega + asistente giro (AGREGAR / CREAR GIRO / SEPARADO). Sin rider. */}
+                {(() => {
+                  const sugg = fdv1Preview && fdv1Preview.giro_suggestion;
+                  const lim = (fdv1Preview && fdv1Preview.hora_preview) || hora || "—";
+                  const chip = (active) => ({
+                    background: active ? "rgba(0,151,167,0.35)" : "rgba(255,255,255,0.05)",
+                    border: `1.5px solid ${active ? "rgba(103,232,249,0.9)" : "rgba(255,255,255,0.18)"}`,
+                    color: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 800, cursor: "pointer"
+                  });
+                  const suggIntent = sugg ? (sugg.kind === "GIRO" ? { giro_id: sugg.giro_id } : { with_order_id: sugg.order_id }) : null;
+                  const intentActive = !!(giroIntent && suggIntent && JSON.stringify(giroIntent) === JSON.stringify(suggIntent));
+                  return (
+                    <div style={{ borderRadius: 10, padding: "12px 14px", background: "rgba(0,151,167,0.08)",
+                      border: "1.5px solid rgba(0,151,167,0.45)", display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 16 }}>⏱</span>
+                        <span style={{ color: "#fff", fontWeight: 800, fontSize: 14, flex: 1 }}>Límite de entrega</span>
+                        <span style={{ color: "#67e8f9", fontWeight: 900, fontSize: 18, fontFamily: "'DM Mono',monospace" }}>{lim}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
+                        Creación + {(fdv1Preview && fdv1Preview.deadline_min) || 55} min · se fija al guardar el pedido
+                      </div>
+                      {zona && !sugg && fdv1Preview && (
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>Sin giro compatible · pedido separado</div>
+                      )}
+                      {sugg && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div style={{ fontSize: 12.5, color: "#67e8f9", fontWeight: 700 }}>
+                            {sugg.kind === "GIRO"
+                              ? `Giro compatible ${sugg.label || sugg.giro_id}: ${sugg.member_ids.join(", ")} · Δ ${sugg.delta_min} min · ${sugg.used}/${sugg.max}`
+                              : `Pedido compatible ${sugg.order_id} · Δ ${sugg.delta_min} min`}
+                          </div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button type="button" onClick={() => setGiroIntent(suggIntent)} style={chip(intentActive)}>
+                              {sugg.kind === "GIRO" ? `Agregar a ${sugg.label || "giro"}` : `Crear giro con ${sugg.order_id}`}
+                            </button>
+                            <button type="button" onClick={() => setGiroIntent(null)} style={chip(!giroIntent)}>Dejar separado</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                <button type="button" onClick={() => setShowDeliveryPopup(false)} style={{
+                  width: "100%", padding: "15px", border: "none", borderRadius: 12,
+                  background: zona ? zona.colore : "rgba(249,115,22,0.7)",
+                  color: "#fff", fontWeight: 900, fontSize: 16, cursor: "pointer", marginTop: 4
+                }}>
+                  {`✓ Confirmar entrega · límite ${(fdv1Preview && fdv1Preview.hora_preview) || hora || "—"}${giroIntent ? (giroIntent.giro_id ? " · agregar a giro" : " · crear giro") : ""}`}
+                </button>
+
+                {/* Suggerimento giro esistente nella stessa zona — [FDV1] sostituito dall'asistente sopra */}
+                {false && !zonaLoading && zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache") && (() => {
                   const sugg = suggerisciOrario(zona.id, ordenes);
                   if (!sugg) return null;
                   const toM = (t) => { const [h,m]=t.split(":").map(Number); return h*60+m; };
@@ -1784,7 +1878,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                 })()}
 
                 {/* ── Status unificato: forno + driver (schedule-aware cascade) ── */}
-                {(deliveryStatus.fromBackend || (!backendTimingLoading && sf)) && hora && zona && (() => {
+                {false && (deliveryStatus.fromBackend || (!backendTimingLoading && sf)) && hora && zona && (() => {
                   if (deliveryStatus.fromBackend && backendTiming) {
                     const selectedH = deliveryStatus.selectedH || hora;
                     const firstAvailableH = deliveryStatus.firstAvailableH || deliveryStatus.sugeridoH;
@@ -2079,7 +2173,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     2. BLOCKED no forzato → verde, APPLICA la sugerencia al click
                     3. BLOCKED forzato    → arancione/giallo, conferma hora forzata
                 */}
-                {(() => {
+                {false && (() => {
                   const { isBlocked, selectedH, sugeridoH, outOfServiceWindow } = deliveryStatus;
                   const zonaOk = zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
                   let bg, label, onClick;
@@ -2138,7 +2232,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
                 {/* ── Columna derecha: card Disponibilidad (lateral en desktop/tablet,
                     debajo en móvil via flex-wrap). Misma lógica de presentación. ── */}
-                {!zonaLoading && zonaOkForDisponibilidad && (
+                {false && !zonaLoading && zonaOkForDisponibilidad && (
                   <div style={{ flex: "1 1 300px", minWidth: 260 }}>
                     {(() => {
                       const disp = deliveryDisponibilidad;

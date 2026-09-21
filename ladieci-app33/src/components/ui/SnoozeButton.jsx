@@ -16,9 +16,12 @@ const SnoozeButton = ({ orden, onUpdate }) => {
   const [maxFlash, setMaxFlash] = useState(false);
   const pulseTimer = useRef(null);
 
+  // [FDV1] ± priorità di produzione (−max..+max). In un giro il backend la applica a tutto il blocco.
+  // Non tocca mai la deadline del cliente.
   const current = Number(orden?.ui_offset_min) || 0;
-  const hasOffset = current > 0;
+  const hasOffset = current !== 0;
   const atCap     = current >= UI_OFFSET_MAX;
+  const atFloor   = current <= -UI_OFFSET_MAX;
 
   const triggerPulse = () => {
     if (pulseTimer.current) clearTimeout(pulseTimer.current);
@@ -26,15 +29,15 @@ const SnoozeButton = ({ orden, onUpdate }) => {
     pulseTimer.current = setTimeout(() => setPulse(false), 320);
   };
 
-  const handleAdd = async (e) => {
+  const applyStep = async (e, delta) => {
     e.stopPropagation();
     if (saving) return;
-    if (atCap) {
+    if ((delta > 0 && atCap) || (delta < 0 && atFloor)) {
       setMaxFlash(true);
       setTimeout(() => setMaxFlash(false), 500);
       return;
     }
-    const next = Math.min(UI_OFFSET_MAX, current + UI_OFFSET_STEP);
+    const next = Math.max(-UI_OFFSET_MAX, Math.min(UI_OFFSET_MAX, current + delta));
     triggerPulse();
     setSaving(true);
     onUpdate?.(orden.id, next); // ottimistico
@@ -51,6 +54,8 @@ const SnoozeButton = ({ orden, onUpdate }) => {
       setSaving(false);
     }
   };
+  const handleAdd = (e) => applyStep(e, UI_OFFSET_STEP);
+  const handleSub = (e) => applyStep(e, -UI_OFFSET_STEP);
 
   const handleReset = async (e) => {
     e.stopPropagation();
@@ -83,6 +88,17 @@ const SnoozeButton = ({ orden, onUpdate }) => {
     >
       <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
         <button
+          onClick={handleSub}
+          disabled={saving}
+          title={atFloor ? `Min −${UI_OFFSET_MAX} min` : `−${UI_OFFSET_STEP} min`}
+          style={{
+            background: bg, border: `1.5px solid ${border}`, color: text,
+            borderRadius: 8, padding: "3px 7px", fontWeight: 800, fontSize: 13,
+            fontFamily: "'DM Mono', monospace", cursor: saving ? "wait" : "pointer",
+            display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 30,
+          }}
+        >−{UI_OFFSET_STEP}</button>
+        <button
           onClick={handleAdd}
           disabled={saving}
           title={atCap ? `Max ${UI_OFFSET_MAX} min` : `+${UI_OFFSET_STEP} min`}
@@ -110,7 +126,7 @@ const SnoozeButton = ({ orden, onUpdate }) => {
               color: pulse ? "#D97706" : text,
             }}
           >
-            {hasOffset ? `+${current}` : `+${UI_OFFSET_STEP}`}
+            {hasOffset ? `${current > 0 ? "+" : "−"}${Math.abs(current)}` : `+${UI_OFFSET_STEP}`}
           </span>
         </button>
         {hasOffset && (

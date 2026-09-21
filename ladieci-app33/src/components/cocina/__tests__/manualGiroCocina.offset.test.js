@@ -1,70 +1,59 @@
-import { resolveHoraFornoCard, sanitizeGiroRefs, buildManualGiroMetaById, compareWithinGiro } from '../manualGiroCocina';
+import { productionTargetHHMM, orderDeadlineHHMM, orderDeadlineMs, giroEarliestDeadlineMs, compareWithinGiro } from '../manualGiroCocina';
 
-// [LIVE 2026-09-21] +5 per-card anche dentro un giro manuale; la promessa cliente (o.hora) non cambia mai.
-describe('resolveHoraFornoCard', () => {
-  const giro = { id: 'mg_260921_1', hora_ref: '21:10', entrega_ref: '21:35' };
+// [FDV1] deadline DOMICILIO = delivery_deadline_at (ts + 55'); target di produzione = deadline (giro → la più urgente) + offset ±.
+// Orari in Europe/Madrid (UTC+2 a settembre).
+const iso = (hhmmMadrid) => `2026-09-21T${String(Number(hhmmMadrid.slice(0, 2)) - 2).padStart(2, '0')}:${hhmmMadrid.slice(3)}:00.000Z`;
+const dom = (id, dl, extra = {}) => ({ id, tipo_consegna: 'DOMICILIO', estado: 'EN_COCINA', hora: dl, delivery_deadline_at: iso(dl), ui_offset_min: 0, manual_giro_id: null, ...extra });
 
-  test('ordine singolo DOMICILIO: forno_out + offset (comportamento LIVE invariato)', () => {
-    expect(resolveHoraFornoCard({ ui_offset_min: 0 }, null, '21:00', true)).toBe('21:00');
-    expect(resolveHoraFornoCard({ ui_offset_min: 5 }, null, '21:00', true)).toBe('21:05');
+describe('orderDeadlineHHMM / orderDeadlineMs', () => {
+  test('usa delivery_deadline_at quando presente', () => {
+    expect(orderDeadlineHHMM(dom('#1', '21:05', { hora: '20:00' }))).toBe('21:05');
   });
-
-  test('RITIRO: offset ignorato (comportamento LIVE invariato)', () => {
-    expect(resolveHoraFornoCard({ ui_offset_min: 10 }, null, '21:00', false)).toBe('21:00');
+  test('ordine legacy senza deadline: fallback fail-safe su hora', () => {
+    expect(orderDeadlineHHMM({ id: '#L', tipo_consegna: 'DOMICILIO', hora: '21:40' })).toBe('21:40');
   });
-
-  test('membro di giro: base hora_ref, +5 applicato sopra', () => {
-    expect(resolveHoraFornoCard({ ui_offset_min: 0 }, giro, '20:50', true)).toBe('21:10');
-    expect(resolveHoraFornoCard({ ui_offset_min: 5 }, giro, '20:50', true)).toBe('21:15');
-    expect(resolveHoraFornoCard({ ui_offset_min: 20 }, giro, '20:50', true)).toBe('21:30');
-  });
-
-  test('giro senza hora_ref: ricade su forno_out + offset', () => {
-    expect(resolveHoraFornoCard({ ui_offset_min: 5 }, { id: 'g', hora_ref: null }, '20:50', true)).toBe('20:55');
-  });
-
-  test('non muta ordine né giro (hora cliente e riferimenti del giro invariati)', () => {
-    const o = { hora: '21:20', ui_offset_min: 5 };
-    const g = { ...giro };
-    resolveHoraFornoCard(o, g, '20:50', true);
-    expect(o).toEqual({ hora: '21:20', ui_offset_min: 5 });
-    expect(g).toEqual(giro);
+  test('RITIRO non ha deadline delivery', () => {
+    expect(orderDeadlineMs({ tipo_consegna: 'RITIRO', hora: '21:00' })).toBeNull();
   });
 });
 
-// [LIVE 2026-09-21] 3→2 togliendo l'anchor: i riferimenti del giro derivati da lui non guidano più i membri.
-describe('sanitizeGiroRefs', () => {
-  const g = { id: 'mg_1', hora_ref: '09:40', entrega_ref: '09:45', anchor_order_id: '#003' };
-  const members = [{ id: '#001', manual_giro_id: 'mg_1', hora: '09:05' }, { id: '#002', manual_giro_id: 'mg_1', hora: '09:25' }];
-
-  test('anchor ancora membro: giro invariato', () => {
-    const all = [...members, { id: '#003', manual_giro_id: 'mg_1', hora: '09:45' }];
-    expect(sanitizeGiroRefs(g, all)).toBe(g);
+describe('productionTargetHHMM', () => {
+  test('standalone: deadline + offset (±), deadline invariata', () => {
+    const o = dom('#1', '21:05');
+    expect(productionTargetHHMM(o, [o])).toBe('21:05');
+    expect(productionTargetHHMM({ ...o, ui_offset_min: 5 }, [o])).toBe('21:10');
+    expect(productionTargetHHMM({ ...o, ui_offset_min: -5 }, [o])).toBe('21:00');
+    expect(orderDeadlineHHMM({ ...o, ui_offset_min: 5 })).toBe('21:05');
   });
-  test('anchor uscito dal giro (singolo o cancellato): hora_ref/entrega_ref ignorati in lettura', () => {
-    for (const all of [[...members, { id: '#003', manual_giro_id: null, hora: '09:45' }], members]) {
-      const r = sanitizeGiroRefs(g, all);
-      expect(r).toMatchObject({ id: 'mg_1', hora_ref: null, entrega_ref: null, anchor_order_id: null });
-      expect(g.hora_ref).toBe('09:40');   // oggetto originale non mutato
-    }
+  test('giro: urgenza = EARLIEST MEMBER DEADLINE, + offset di blocco', () => {
+    const a = dom('#A', '21:05', { manual_giro_id: 'g1' }), b = dom('#B', '21:25', { manual_giro_id: 'g1' }), c = dom('#C', '21:45');
+    const all = [a, b, c];
+    expect(formatMs(giroEarliestDeadlineMs('g1', all))).toBe('21:05');
+    expect(productionTargetHHMM(b, all)).toBe('21:05');
+    expect(productionTargetHHMM({ ...b, ui_offset_min: 5 }, all)).toBe('21:10');
+    expect(productionTargetHHMM(c, all)).toBe('21:45');
   });
-  test('giro personalizzato (anchor null): invariato', () => {
-    const c = { id: 'mg_1', hora_ref: '09:30', entrega_ref: '09:45', anchor_order_id: null };
-    expect(sanitizeGiroRefs(c, members)).toBe(c);
+  test('3→2: il membro uscito non influenza più il giro (niente orario ereditato)', () => {
+    const a = dom('#A', '21:05'), b = dom('#B', '21:25', { manual_giro_id: 'g1' }), c = dom('#C', '21:45', { manual_giro_id: 'g1' });
+    expect(productionTargetHHMM(c, [a, b, c])).toBe('21:25');
   });
-  test('buildManualGiroMetaById senza lista ordini: comportamento LIVE invariato', () => {
-    expect(buildManualGiroMetaById([g]).mg_1).toBe(g);
-    expect(buildManualGiroMetaById([g], members).mg_1.hora_ref).toBeNull();
+  test('membri già partiti (EN_ENTREGA) non guidano il giro finché ne resta uno in cucina', () => {
+    const a = dom('#A', '21:05', { manual_giro_id: 'g1', estado: 'EN_ENTREGA' }), b = dom('#B', '21:25', { manual_giro_id: 'g1' });
+    expect(productionTargetHHMM(b, [a, b])).toBe('21:25');
   });
 });
 
 describe('compareWithinGiro', () => {
-  test('a pari target di produzione, esce prima la promessa cliente più urgente', () => {
-    const cards = [{ id: 'C', horaForno: '09:40', hora: '09:45' }, { id: 'B', horaForno: '09:40', hora: '09:25' }, { id: 'A', horaForno: '09:40', hora: '09:05' }];
+  test('a pari target di produzione, esce prima la deadline cliente più urgente', () => {
+    const cards = [dom('C', '21:45'), dom('B', '21:25'), dom('A', '21:05')].map(o => ({ ...o, horaForno: '21:05' }));
     expect(cards.slice().sort(compareWithinGiro).map(c => c.id)).toEqual(['A', 'B', 'C']);
   });
-  test('il target di produzione (es. dopo +5) resta il criterio primario', () => {
-    const cards = [{ id: 'A', horaForno: '09:45', hora: '09:05' }, { id: 'B', horaForno: '09:40', hora: '09:25' }];
+  test('il target di produzione resta il criterio primario', () => {
+    const cards = [{ ...dom('A', '21:05'), horaForno: '21:10' }, { ...dom('B', '21:25'), horaForno: '21:05' }];
     expect(cards.slice().sort(compareWithinGiro).map(c => c.id)).toEqual(['B', 'A']);
   });
 });
+
+function formatMs(ms) {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
+}
