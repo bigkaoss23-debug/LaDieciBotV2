@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { C, tot, MAX_PIZZE_ORA, LOGO_RED_SRC, useWidth } from '../../constants';
-import { caricoTotale, lookupMenu, orarioToMs, calcTimer, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
+import { caricoTotale, lookupMenu, calcTimer, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import SnoozeButton from '../ui/SnoozeButton';
 import { api } from '../../api';
@@ -10,10 +10,8 @@ import {
   formatManualGiroLabel,
   getManualGiroForOrder,
   manualGiroBadgeStyle,
-  manualGiroSortAnchorMs,
-  compareWithinGiro,
-  productionTargetHHMM,
-  orderDeadlineHHMM
+  deadlineState,
+  sortKitchenCards
 } from './manualGiroCocina';
 
 const subtractMinutes = (hora, min) => {
@@ -91,35 +89,21 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       // Sorgente unica: o.forno_out (backend cascade-aware). Fallback legacy per ordini pre-migration.
       const horaFornoBase = o.forno_out
         || (isDelivery && zonaObj && o.hora ? subtractMinutes(o.hora, tempoAndata(o, zonaObj)) : (o.hora || null));
-      // [FDV1] DOMICILIO: target = deadline (giro → la più urgente) + offset ± di blocco. RITIRO invariato.
-      const horaForno = isDelivery ? productionTargetHHMM(o, ordenes) : horaFornoBase;
+      // [FDV1] DOMICILIO: UN solo riferimento temporale = delivery_deadline_at; il ± cambia solo l'ordine. RITIRO invariato.
+      const horaForno = isDelivery ? null : horaFornoBase;
       const oPerTimer = horaForno ? {...o, hora: horaForno} : o;
       return {
         ...o,
         items,
         isDelivery, horaForno, manualGiro,
-        deadlineCliente: isDelivery ? orderDeadlineHHMM(o) : o.hora,
-        _timer: calcTimer(oPerTimer, now)
+        dl: isDelivery ? deadlineState(o, now) : null,
+        _timer: isDelivery ? null : calcTimer(oPerTimer, now)
       };
     })
     .filter(o => o.items.length > 0);
 
-  const activos = [...activosBase].sort((a,b) => {
-      const aH = a.horaForno || a.hora, bH = b.horaForno || b.hora;
-      if(aH && bH) {
-        const aMs = manualGiroSortAnchorMs(a, activosBase)||0, bMs = manualGiroSortAnchorMs(b, activosBase)||0;
-        // A parità di slot 10min → RITIRO viene PRIMA (max 5min ritardo accettabile per delivery)
-        const aSlot10 = Math.floor(aMs/(10*60*1000));
-        const bSlot10 = Math.floor(bMs/(10*60*1000));
-        if (a.manual_giro_id && a.manual_giro_id === b.manual_giro_id) {
-          return compareWithinGiro(a, b);
-        }
-        if (aSlot10 === bSlot10 && a.isDelivery !== b.isDelivery) return a.isDelivery ? 1 : -1;
-        return aMs - bMs;
-      }
-      if(aH) return -1; if(bH) return 1;
-      return (a.ts||0) - (b.ts||0);
-    });
+  // [FDV1] A5: giro = blocco atomico anche nell'ordinamento
+  const activos = sortKitchenCards(activosBase);
 
   const nowStr = new Date(now).toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"});
   const dateStr = new Date(now).toLocaleDateString("es",{weekday:"short",day:"numeric",month:"short"});
@@ -232,9 +216,12 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
           <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>
             {activos.map((o) => {
               const t  = o._timer;
-              const fc = FASE_CONFIG[t.fase] || FASE_CONFIG.espera;
-              const isUrgent = t.fase==="tarde" || t.fase==="lista" || t.fase==="para_salir";
-              const timerStr = `${t.scaduto&&t.conOrario?"-":""}${String(t.mm).padStart(2,"0")}:${String(t.ss).padStart(2,"0")}`;
+              // [FDV1] DOMICILIO: colori dallo stato della deadline
+              const fc = o.isDelivery
+                ? (o.dl && o.dl.state === "late" ? FASE_CONFIG.tarde : o.dl && o.dl.state === "near" ? FASE_CONFIG.al_horno : FASE_CONFIG.espera)
+                : (FASE_CONFIG[t.fase] || FASE_CONFIG.espera);
+              const isUrgent = o.isDelivery ? !!(o.dl && o.dl.state !== "normal") : (t.fase==="tarde" || t.fase==="lista" || t.fase==="para_salir");
+              const timerStr = t ? `${t.scaduto&&t.conOrario?"-":""}${String(t.mm).padStart(2,"0")}:${String(t.ss).padStart(2,"0")}` : "";
               const notaVisibile = notaCucina(o.nota);
               const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
               const isDelivery = o.tipo_consegna === "DOMICILIO";
@@ -269,53 +256,42 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
                           </span>
                         </div>
                       )}
-                      {(o.horaForno || o.hora) && (
-                        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:5,marginTop:5}}>
-                          <div style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                            <div style={{display:"inline-flex",alignItems:"center",gap:6,
-                              background: o.isDelivery ? "#F97316" : "#16A34A",
-                              border: o.isDelivery ? "1.5px solid rgba(249,115,22,0.7)" : "1.5px solid #78350F",
-                              borderRadius:20,padding:"4px 10px",
-                              boxShadow: o.isDelivery ? "0 2px 8px rgba(249,115,22,.4)" : "0 2px 8px rgba(120,53,15,.4)"}}>
-                              <span style={{fontSize:14}}>{o.isDelivery ? "⏱" : "🕐"}</span>
-                              <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
-                                {o.horaForno || o.hora}
-                              </span>
-                            </div>
-                            {o.isDelivery && (
-                              <SnoozeButton orden={o} onUpdate={handleOffsetChange} />
-                            )}
-                          </div>
-                          {o.isDelivery && o.deadlineCliente && (
-                            <div title="Límite cliente" style={{display:"inline-flex",alignItems:"center",gap:6,
-                              background:"#C2410C",border:"1.5px solid rgba(194,65,12,0.85)",
-                              borderRadius:20,padding:"4px 10px",
-                              boxShadow:"0 2px 8px rgba(194,65,12,.4)"}}>
-                              <span style={{fontSize:14}}>🛵</span>
-                              <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
-                                {o.deadlineCliente}
-                              </span>
-                            </div>
-                          )}
-                          {o.isDelivery && o.hora && o.hora !== o.deadlineCliente && (
-                            // [FDV1] promessa al cliente (hora), separata dal límite
-                            <div title="Hora prometida al cliente" style={{display:"inline-flex",alignItems:"center",gap:4,
-                              background:"#fff",border:"1.5px solid #6B7280",borderRadius:20,padding:"3px 9px"}}>
-                              <span style={{color:"#374151",fontWeight:900,fontSize:12}}>CLIENTE</span>
-                              <span style={{color:"#374151",fontWeight:900,fontSize:15,fontFamily:"'DM Mono',monospace"}}>{o.hora}</span>
-                            </div>
-                          )}
+                      {/* [FDV1] DOMICILIO: solo il comando di priorità ± (il límite è a destra) */}
+                      {o.isDelivery && (
+                        <div style={{marginTop:6}}>
+                          <SnoozeButton orden={o} onUpdate={handleOffsetChange} />
+                        </div>
+                      )}
+                      {!o.isDelivery && (o.horaForno || o.hora) && (
+                        <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:5,
+                          background:"#16A34A", border:"1.5px solid #78350F",
+                          borderRadius:20,padding:"4px 10px", boxShadow:"0 2px 8px rgba(120,53,15,.4)"}}>
+                          <span style={{fontSize:14}}>🕐</span>
+                          <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
+                            {o.horaForno || o.hora}
+                          </span>
                         </div>
                       )}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
-                      {t.showCountdown ? (
+                      {o.isDelivery ? (
+                        // [FDV1] límite de entrega: UN solo orario principale
+                        <div title="Límite de entrega (creación + 55 min)" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
+                          <div style={{fontFamily:"'DM Mono',monospace",fontSize:40,fontWeight:900,lineHeight:1,
+                            color: o.dl && o.dl.state === "late" ? "#DC2626" : o.dl && o.dl.state === "near" ? "#D97706" : "#065F46",
+                            animation: o.dl && o.dl.state === "late" ? "blink 1s infinite" : "none"}}>{o.dl ? o.dl.hhmm : "—"}</div>
+                          <div style={{color: o.dl && o.dl.state === "late" ? "#7F1D1D" : o.dl && o.dl.state === "near" ? "#7C2D12" : "#065F46",
+                            fontSize: o.dl && o.dl.state === "late" ? 14 : 11, fontWeight:900, letterSpacing:.5}}>
+                            {o.dl && o.dl.state === "late" ? "⚠ TARDE" : o.dl && o.dl.state === "near" ? "LÍMITE CERCA" : "LÍMITE"}
+                          </div>
+                        </div>
+                      ) : t.showCountdown ? (
                         <>
                           <div style={{fontFamily:"'DM Mono',monospace",fontSize:t.conOrario?40:34,
                             fontWeight:900,color:fc.timerColorLight,lineHeight:1,
                             animation:isUrgent?"blink 1s infinite":"none"}}>{timerStr}</div>
                           <div style={{color:fc.textLight,opacity:0.55,fontSize:10,textAlign:"center",marginTop:2,letterSpacing:.5}}>
-                            {t.conOrario ? (t.scaduto ? "RETRASO" : o.isDelivery ? "al horno" : "al retiro") : "desde orden"}
+                            {t.conOrario ? (t.scaduto ? "RETRASO" : "al retiro") : "desde orden"}
                           </div>
                           {fc.label&&<div style={{marginTop:4,color:fc.labelColorLight,fontSize:12,fontWeight:900,
                             letterSpacing:.5,animation:isUrgent?"blink 1s infinite":"none"}}>{fc.label}</div>}

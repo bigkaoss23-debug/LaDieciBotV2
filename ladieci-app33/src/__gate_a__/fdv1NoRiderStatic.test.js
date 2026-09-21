@@ -18,9 +18,8 @@ describe("FDV1 — nessun rider nel percorso operativo", () => {
   });
   test("Entregas: nessun 'Registrar salida', nessun banner rientro, RETIRADO = 'Entregado'", () => {
     const src = read("components/entregas/TabEntregas.jsx");
-    expect(src).toMatch(/const \[driverStato\] = useState\(null\);/);
-    expect(src).toMatch(/const salidaMancante = !FDV1_NO_RIDER &&/);
-    expect(src).not.toMatch(/Driver volvió|Driver de vuelta/);
+    expect(src).not.toMatch(/driverStato|salidaMancante|RiderReturnSection|Registrar salida|Rider volviendo/);
+    expect(src).not.toMatch(/Driver volvió/);
   });
   test("Nuevo Pedido: DRIVER_STATO non viene letto", () => {
     const src = read("components/NuevoPedidoModal.jsx");

@@ -99,8 +99,8 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                     ? <span style={{background:"rgba(255,255,255,0.20)",color:"#FFFFFF",
                         border:"1px solid rgba(255,255,255,0.35)",borderRadius:20,
                         padding:"2px 9px",fontSize:11,fontWeight:700}}>
-                        {/* DOMICILIO: RETIRADO = driver rientrato, NON consegnato al cliente. */}
-                        {o.tipo_consegna === "DOMICILIO" ? "🛵 Driver volvió" : "✅ Entregado"}
+                        {/* [FDV1] nessuna rappresentazione rider: stato finale neutro. */}
+                        ✅ Entregado
                       </span>
                     : <span style={{background:"rgba(0,0,0,0.25)",color:"#FFFFFF",
                         border:"1px solid rgba(255,255,255,0.30)",borderRadius:20,

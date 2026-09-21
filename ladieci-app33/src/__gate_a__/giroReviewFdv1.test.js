@@ -73,7 +73,8 @@ test("create con rischio: REVISAR con l'ordine realmente a rischio; 'Confirmar i
   api.giroWarnings.mockResolvedValue({ ok: true, warnings: [{ code: "spread_over_window", member_ids: ["D-1", "D-2"], data: { spread_min: 40, window_min: 15 } }] });
   const el = await openReview();
   expect(el.textContent).toContain("REVISAR");
-  expect(el.textContent).toContain("Límites separados 40 min (> 15): D-1, D-2");
+  expect(el.textContent).toContain("Límites separados 40 min (> 15): D-1");   // A4: D-2 (límite più lontano) non è a rischio
+  expect(el.textContent).not.toContain("D-1, D-2");
   expect(btn(el, "Crear giro")).toBeUndefined();
   await click(btn(el, "Confirmar igualmente"));
   expect(api.createManualGiro).toHaveBeenCalledTimes(1);

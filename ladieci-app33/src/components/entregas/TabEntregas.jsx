@@ -4,18 +4,15 @@ import { api } from '../../api';
 import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
 import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
 import { orderDeadlineMs, orderDeadlineHHMM, giroEarliestDeadlineMs, formatMadridHHMM } from '../cocina/manualGiroCocina';
+import { filterFdv1Warnings } from './fdv1Warnings';
 
 // Helpers tempi: hora consegna ↔ horaForno (= partenza driver = uscita pizza forno)
-const _tm = (t) => { if (!t) return null; const [h,m] = t.split(":").map(Number); return h*60+m; };
-// [FDV1] Target di produzione DOMICILIO = (deadline più urgente del giro | propria deadline) + offset ± (di blocco).
-// Niente rider, niente sottrazione di viaggio, niente hora_ref. giroMeta._earliestMs è calcolato dagli ordini realtime.
-const targetHHMM = (o, giroMeta) => {
-  const base = (giroMeta && Number.isFinite(giroMeta._earliestMs)) ? giroMeta._earliestMs : orderDeadlineMs(o);
-  if (base == null) return o?.hora || null;
-  return formatMadridHHMM(base + (Number(o?.ui_offset_min) || 0) * 60000);
+// [FDV1] A1: riferimento del blocco = límite (deadline) — giro: il più urgente dei membri; standalone: il suo.
+const blockDeadlineHHMM = (giroMeta, ordini) => {
+  if (giroMeta && Number.isFinite(giroMeta._earliestMs)) return formatMadridHHMM(giroMeta._earliestMs);
+  const ms = (ordini || []).map(orderDeadlineMs).filter(Number.isFinite);
+  return ms.length ? formatMadridHHMM(Math.min(...ms)) : ((ordini && ordini[0] && ordini[0].hora) || null);
 };
-// Orario operativo del blocco giro = target del giro (deadline più urgente + offset di blocco).
-const giroOperationalHora = (giroMeta, ordini) => ((ordini && ordini[0]) ? targetHHMM(ordini[0], giroMeta) : null);
 
 // [FDV1] warning fattuali dal backend (giroWarnings) → testo operatore. Mai bloccanti.
 const fdv1WarningLabel = (w) => {
@@ -35,7 +32,6 @@ const fdv1WarningLabel = (w) => {
 
 const ORANGE = "#F97316";
 // [FDV1] nessuna telemetria rider (DRIVER_STATO) nel percorso operativo.
-const FDV1_NO_RIDER = true;
 
 // Per la navigazione usa solo "Via Numero" — l'interno/scala confonde Google Maps
 const mapsAddr = (dir) => (dir || "").split(",")[0].trim();
@@ -94,12 +90,8 @@ const buildManualGiroWarnings = (orders, manualGiroByOrderId = {}) => {
   if (list.some(o => !o.direccion)) add("no-dir", "Sin direccion");
   if (list.some(o => manualGiroByOrderId[o.id])) add("already", "Ya en giro");
 
-  const mins = list.map(o => _tm(o.hora)).filter(m => m != null);
-  if (mins.length >= 2) {
-    const diff = Math.max(...mins) - Math.min(...mins);
-    if (diff > 25) add("hora-strong", "Horarios >25 min", "strong");
-    else if (diff > 15) add("hora", "Horarios >15 min");
-  }
+  // [FDV1] A2: nessun warning locale sulla distanza tra le `hora` cliente. Il warning canonico è quello del
+  // backend (giroWarnings, sulle deadline), mostrato nella revisione con i soli ordini realmente a rischio.
 
   const states = new Set(list.map(o => o.estado));
   if (states.has(ORDER_STATES.EN_COCINA) && states.has(ORDER_STATES.EN_ENTREGA)) {
@@ -111,7 +103,7 @@ const buildManualGiroWarnings = (orders, manualGiroByOrderId = {}) => {
 
 // ─── Card ordine dentro un blocco zona ────────────────────────────────────
 const ZonaOrderRow = ({
-  o, zona, onSendRepartidor, loadingId, driverStato, onForzaSalida, onForzaEntregado,
+  o, zona, onSendRepartidor, loadingId, onForzaEntregado,
   manualGiro, manualGiroWarnings = [], isManualGiroSelected = false,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro,
   giroOptions = [], onMoveToGiro
@@ -121,10 +113,6 @@ const ZonaOrderRow = ({
   const isEnEntrega = o.estado === ORDER_STATES.EN_ENTREGA;
   const isCocina    = o.estado === ORDER_STATES.EN_COCINA;
   const selectableForManualGiro = isManualGiroSelectableOrder(o);
-
-  // Override: salida no registrada (ordine EN_ENTREGA ma partito_alle nullo)
-  // [FDV1] niente "salida no registrada": la partenza rider non è un dato del Planner.
-  const salidaMancante = !FDV1_NO_RIDER && isEnEntrega && !driverStato?.partito_alle;
 
   const safeItems = (() => {
     if (!o.items) return [];
@@ -233,52 +221,15 @@ const ZonaOrderRow = ({
             </span>
           ))}
           {(() => {
-            // [FDV1] ⏱ = target di produzione (deadline + offset ±); 🛵 = deadline cliente (singolo) o del giro
-            // (la più urgente dei membri); "cliente" = deadline del singolo quando differisce da quella del giro.
-            const isGiro = !!(manualGiro && manualGiro.id);
+            // [FDV1] UN solo riferimento temporale: 🛵 límite (delivery_deadline_at) del pedido; "cliente" = hora
+            // prometida solo se diversa. Nessun orario derivato dal ± (priorità) né dal rider.
             const deadlineCliente = orderDeadlineHHMM(o);
-            if (!isGiro) {
-              const hF = targetHHMM(o, null);
-              if (!deadlineCliente && !hF) return null;
-              return (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
-                  {hF && (
-                    <span style={{ color: "#C2410C", fontWeight: 700 }} title="Objetivo producción">
-                      ⏱ {hF}
-                    </span>
-                  )}
-                  <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 700 }} title="Límite de entrega (creación + 55 min)">
-                    🛵 {deadlineCliente}
-                  </span>
-                  {o.hora && o.hora !== deadlineCliente && (
-                    <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 600 }} title="Hora prometida al cliente">
-                      cliente {o.hora}
-                    </span>
-                  )}
-                </span>
-              );
-            }
-            const hF = targetHHMM(o, manualGiro);
-            const hEntrega = formatMadridHHMM(manualGiro._earliestMs) || deadlineCliente;
-            const showClienteRef = deadlineCliente && deadlineCliente !== hEntrega;
-            if (!hF && !hEntrega) return null;
+            if (!deadlineCliente) return null;
             return (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
-                {hF && (
-                  <span style={{ color: "#C2410C", fontWeight: 700 }} title="Objetivo producción (giro)">
-                    ⏱ {hF}
-                  </span>
-                )}
-                {hEntrega && (
-                  <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 700 }} title="Límite más urgente del giro">
-                    🛵 {hEntrega}
-                  </span>
-                )}
-                {showClienteRef && (
-                  <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 600 }} title="Límite de entrega del pedido">
-                    límite {deadlineCliente}
-                  </span>
-                )}
+                <span style={{ color: "#C2410C", fontWeight: 800 }} title="Límite de entrega (creación + 55 min)">
+                  🛵 {deadlineCliente}
+                </span>
                 {o.hora && o.hora !== deadlineCliente && (
                   <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 600 }} title="Hora prometida al cliente">
                     cliente {o.hora}
@@ -291,31 +242,6 @@ const ZonaOrderRow = ({
         <div style={{ color: "rgba(253,186,116,0.8)", fontSize: 12, marginTop: 2, lineHeight: 1.4 }}>
           📍 {o.direccion || <span style={{ color: "rgba(255,100,50,0.5)" }}>Sin dirección</span>}
         </div>
-        {/* Riesgo repartidor (DELIVERY-DRIVER-SCHEDULE-SEPARATION-01).
-            Sorgente: campi driver backend separati da forno_out (cucina).
-            forno_out NON è la salida driver: qui mostriamo la partenza/consegna
-            stimata reale del rider e l'eventuale retraso. */}
-        {o.conflicto_driver && o.salida_driver_estimada && (
-          <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-            <span style={{
-              display: "inline-flex", alignItems: "center", gap: 4,
-              background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.45)",
-              color: "#fca5a5", borderRadius: 999, fontSize: 10, fontWeight: 800,
-              padding: "2px 8px", whiteSpace: "nowrap"
-            }} title="Schedule rider: salida estimada y retraso respecto a la hora cliente">
-              ⚠ Repartidor tarde · salida {o.salida_driver_estimada}
-              {Number(o.retraso_estimado_min) > 0 ? ` · +${o.retraso_estimado_min} min` : ""}
-            </span>
-            {o.entrega_estimada && (
-              <span style={{
-                color: "rgba(255,255,255,0.45)", fontSize: 10, fontWeight: 700,
-                fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap"
-              }} title="Entrega estimada al cliente (schedule rider)">
-                entrega est. {o.entrega_estimada}
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Pizze + totale */}
@@ -370,20 +296,6 @@ const ZonaOrderRow = ({
         </button>
       )}
 
-      {/* Override: salida no registrada */}
-      {salidaMancante && (
-        <button disabled={isLoading} onClick={() => onForzaSalida && onForzaSalida(o)}
-          style={{
-            padding: "5px 10px",
-            background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.5)",
-            borderRadius: 8, color: "#fbbf24", fontWeight: 700, fontSize: 11,
-            cursor: "pointer", flexShrink: 0
-          }}
-          title="Registrar manualmente la salida del repartidor">
-          ⚠️ Registrar salida
-        </button>
-      )}
-
       {/* Override: marcar driver de vuelta manualmente.
           DOMICILIO: RETIRADO = driver rientrato in pizzeria (giro chiuso), NON consegna cliente. */}
       {isEnEntrega && (
@@ -407,7 +319,7 @@ const ZonaOrderRow = ({
 
 // ─── Blocco giro (zona + ora consegna) ───────────────────────────────────
 const ZonaBlock = ({
-  zona, ordini, giroHora, onSendRepartidor, loadingId, driverStato, onForzaSalida, onForzaEntregado,
+  zona, ordini, giroHora, onSendRepartidor, loadingId, onForzaEntregado,
   manualGiroByOrderId, manualGiroWarningsById, selectedManualGiroOrderIds,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro,
   giroOptions = [], onMoveToGiro
@@ -447,7 +359,7 @@ const ZonaBlock = ({
               background: zona.colore, color: "#fff",
               borderRadius: 8, padding: "2px 10px",
               fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 900
-            }} title="Última entrega del giro">⏱ {giroHora}</span>
+            }} title="Límite de entrega (delivery_deadline_at)">🛵 límite {giroHora}</span>
           )}
           <span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 600, fontSize: 12 }}>
             {zona.nome}
@@ -503,8 +415,7 @@ const ZonaBlock = ({
       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
         {ordini.map(o => (
           <ZonaOrderRow key={o.id} o={o} zona={zona}
-            onSendRepartidor={onSendRepartidor} loadingId={loadingId}
-            driverStato={driverStato} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado}
+            onSendRepartidor={onSendRepartidor} loadingId={loadingId} onForzaEntregado={onForzaEntregado}
             manualGiro={manualGiroByOrderId[o.id] || null}
             manualGiroWarnings={manualGiroWarningsById[o.id] || []}
             isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
@@ -524,7 +435,7 @@ const ZonaBlock = ({
 // (deadline più urgente + offset di blocco) + zone incluse + deadline individuali per card.
 const ManualGiroBlock = ({
   giro, ordini, zones, hora, warnings = [],
-  onSendRepartidor, loadingId, driverStato, onForzaSalida, onForzaEntregado,
+  onSendRepartidor, loadingId, onForzaEntregado,
   manualGiroByOrderId, manualGiroWarningsById, selectedManualGiroOrderIds,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro,
   giroOptions = [], onMoveToGiro
@@ -555,7 +466,7 @@ const ManualGiroBlock = ({
             background: AMBER, color: "#1c1300",
             borderRadius: 8, padding: "2px 10px",
             fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 900
-          }} title="Orario operativo del giro (salida driver)">🕐 {hora}</span>
+          }} title="Límite más urgente del giro (delivery_deadline_at)">🛵 límite {hora}</span>
         )}
         {/* Zone incluse */}
         <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap" }}>
@@ -600,8 +511,7 @@ const ManualGiroBlock = ({
       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
         {ordini.map(o => (
           <ZonaOrderRow key={o.id} o={o} zona={ZONE_DELIVERY.find(z => z.id === o.zona)}
-            onSendRepartidor={onSendRepartidor} loadingId={loadingId}
-            driverStato={driverStato} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado}
+            onSendRepartidor={onSendRepartidor} loadingId={loadingId} onForzaEntregado={onForzaEntregado}
             manualGiro={manualGiroByOrderId[o.id] || null}
             manualGiroWarnings={manualGiroWarningsById[o.id] || []}
             isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
@@ -676,7 +586,6 @@ const GiroReviewModal = ({ review, orders = [], pending, onConfirm, onCancel }) 
 
 const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const [loadingId,    setLoadingId]    = useState(null);
-  const [driverStato] = useState(null);   // [FDV1] sempre null: nessuna telemetria rider
   const [apertoConsegnati, setApertoConsegnati] = useState(false);
   // DELIVERY-MANUAL-GIRO-01 P1C.1: manualGiros è backend-derived (api.getManualGiros).
   // selectedManualGiroOrderIds resta locale (selezione UI, mai persistita).
@@ -686,17 +595,9 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   const [pendingManualGiroAction, setPendingManualGiroAction] = useState(false);
   // [FDV1] revisione in corso: { kind: 'create'|'add', orderIds, giroId?, giroLabel?, moving?, warnings, warningsUnavailable? }
   const [giroReview, setGiroReview] = useState(null);
-  // Ticker UI-only (no network): fa avanzare il countdown del rientro rider
-  // mentre l'operatore resta sulla pagina. 15s basta (display in minuti).
-  const [riderNowMs, setRiderNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const tick = setInterval(() => setRiderNowMs(Date.now()), 15000);
-    return () => clearInterval(tick);
-  }, []);
-
-  // [FDV1] Rider return: nessuna telemetria (driverStato sempre null → nessun banner).
-  // [FDV1] il rider non è una variabile del Planner: nessuna lettura di DRIVER_STATO (driverStato resta null →
-  // nessun banner di rientro, nessun "Registrar salida"). Il flusso di stato EN_ENTREGA → RETIRADO resta invariato.
+  // [FDV1] Rider return: nessuna telemetria rider (nessun banner, nessuna ETA).
+  // [FDV1] il rider non è una variabile del Planner: nessuna lettura di DRIVER_STATO →
+  // nessun banner di rientro, nessuna registrazione della partenza. Il flusso di stato EN_ENTREGA → RETIRADO resta invariato.
 
   // Reparto operativo: include EN_COCINA per pianificazione operatore di sala
   // (badge "🔥" + nessun bottone d'azione finché non passa a LISTO).
@@ -711,44 +612,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     o.tipo_consegna === "DOMICILIO" && o.estado === ORDER_STATES.RETIRADO
   );
 
-  // ── Rider return: TELEMETRIA VISIVA dal backend ───────────────────────────
-  // [FDV1] driverStato è sempre null (nessuna lettura di DRIVER_STATO) → sezione mai visibile.
-  // NIENTE fallback hora_entrega+durata: eviterebbe il "returning" prematuro in
-  // un giro multi-ordine (no banner > banner sbagliato). Il "returning" diventa
-  // vero solo quando il backend chiude il giro (ultima consegna). Nessuna
-  // scrittura DRIVER_STATO lato frontend.
-  const RIDER_RETURN_GRACE_MIN = 5;
-  // nowMs deriva dal ticker UI (riderNowMs): il countdown avanza senza refresh.
-  const nowMs = riderNowMs;
-  const driverOut = !!(driverStato && driverStato.out === true);
-  const driverReturning = !!(driverStato && driverStato.returning === true && driverStato.rientro_stimato);
-  const driverPartitoMs = driverStato?.partito_alle ? Date.parse(driverStato.partito_alle) : NaN;
-  const riderBannerEtaMs = driverReturning ? Date.parse(driverStato.rientro_stimato) : NaN;
-  // Card del giro in ritorno: ordini consegnati DOPO la partenza corrente,
-  // mostrati SOLO quando il backend dichiara returning=true (giro chiuso).
-  const returningOrders = (driverReturning && Number.isFinite(riderBannerEtaMs))
-    ? consegnati.filter(o => {
-        const he = Number(o?.hora_entrega);
-        if (!Number.isFinite(he)) return false;
-        return !Number.isFinite(driverPartitoMs) || he >= driverPartitoMs;
-      })
-    : [];
-  const returningIds = new Set(returningOrders.map(o => o.id));
-  // Esclude i returning dal riepilogo collassato per evitare duplicati.
-  const consegnatiCollapsed = consegnati.filter(o => !returningIds.has(o.id));
-  // Banner attivo finché non superata ETA + grace (5 min); poi si nasconde.
-  const riderReturnActive = Number.isFinite(riderBannerEtaMs) && nowMs <= riderBannerEtaMs + RIDER_RETURN_GRACE_MIN * 60000;
-  const riderReturnBeforeEta = Number.isFinite(riderBannerEtaMs) && nowMs <= riderBannerEtaMs;
-  const riderReturnQuedanMin = Number.isFinite(riderBannerEtaMs)
-    ? Math.max(0, Math.ceil((riderBannerEtaMs - nowMs) / 60000)) : 0;
-  // Dopo l'ETA (dentro la grace di 5 min): minuti trascorsi dalla stima. <1 min → "~1 min".
-  const riderReturnElapsedMin = Number.isFinite(riderBannerEtaMs)
-    ? Math.max(1, Math.ceil((nowMs - riderBannerEtaMs) / 60000)) : 0;
-  const riderReturnEtaHHMM = Number.isFinite(riderBannerEtaMs)
-    ? new Date(riderBannerEtaMs).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" })
-    : "";
-  // Mostra la sezione anche per "driver fuori senza ETA" (out && !returning).
-  const riderSectionVisible = riderReturnActive || (driverOut && !driverReturning);
+  // [FDV1] nessuna telemetria rider: nessun banner di rientro, nessuna ETA.
+  const consegnatiCollapsed = consegnati;
 
   const toMin = (t) => { if (!t) return 9999; const [h,m] = t.split(":").map(Number); return h*60+m; };
   const toHora = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
@@ -850,7 +715,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     let res = null;
     try { res = await api.giroWarnings({ order_ids: orderIds }); } catch (_) { res = null; }
     setPendingManualGiroAction(false);
-    setGiroReview({ kind: "create", orderIds, warnings: (res && res.ok && res.warnings) || [], warningsUnavailable: !(res && res.ok) });
+    const members = ordenes.filter(o => orderIds.includes(o.id));
+    setGiroReview({ kind: "create", orderIds, warnings: filterFdv1Warnings((res && res.ok && res.warnings) || [], members), warningsUnavailable: !(res && res.ok) });
   };
 
   // [FDV1] ADD / MOVE: standalone → giro, oppure G1 → G2 ("move silent" atomico lato DB).
@@ -865,7 +731,9 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
       kind: "add", orderIds: [orderId], giroId,
       giroLabel: formatGiroLabel(giroMetaById[giroId] || { id: giroId }),
       moving: !!(cur && cur.manual_giro_id),
-      warnings: (res && res.ok && res.warnings) || [], warningsUnavailable: !(res && res.ok),
+      warnings: filterFdv1Warnings((res && res.ok && res.warnings) || [],
+        ordenes.filter(o => o.id === orderId || (o.manual_giro_id === giroId && o.id !== orderId))),
+      warningsUnavailable: !(res && res.ok),
     });
   };
 
@@ -960,10 +828,10 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     }
   }
   const manualGiroBlocks = Object.keys(manualMembersByGiro).map(gid => {
-    const ordini = manualMembersByGiro[gid].slice().sort((a, b) => toMin(a.hora) - toMin(b.hora));
+    const ordini = manualMembersByGiro[gid].slice().sort((a, b) => (orderDeadlineMs(a) ?? 0) - (orderDeadlineMs(b) ?? 0));
     const giroMeta = giroMetaById[gid] || manualGiroByOrderId[ordini[0].id] || { id: gid, seq: null };
     const zones = Array.from(new Set(ordini.map(o => o.zona).filter(Boolean)));
-    const hora = giroOperationalHora(giroMeta, ordini);
+    const hora = blockDeadlineHHMM(giroMeta, ordini);
     const warnings = manualGiroWarningsById[ordini[0].id] || buildManualGiroWarnings(ordini);
     return { type: "manual", id: gid, giro: giroMeta, ordini, zones, hora, warnings };
   });
@@ -983,8 +851,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   // Solo l'operatore crea giri (Crear giro manual / → giro).
   const autoGiri = [];
   for (const zonaId of Object.keys(perZonaSorted)) {
-    for (const o of perZonaSorted[zonaId].sort((a, b) => toMin(a.hora) - toMin(b.hora))) {
-      autoGiri.push({ type: "auto", zonaId, hora: o.hora, ordini: [o] });
+    for (const o of perZonaSorted[zonaId].sort((a, b) => (orderDeadlineMs(a) ?? 0) - (orderDeadlineMs(b) ?? 0))) {
+      autoGiri.push({ type: "auto", zonaId, hora: orderDeadlineHHMM(o) || o.hora, ordini: [o] });
     }
   }
 
@@ -1012,7 +880,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     ));
     try {
       await api.marcarEnEntrega(id);
-      if (notify) notify("🛵 Repartidor en camino", ORANGE);
+      if (notify) notify("🛵 Pedido en entrega", ORANGE);
       // [FDV1] nessuna telemetria rider: EN_ENTREGA è solo un cambio di stato dell'ordine.
     } catch(e) {
       logRollback({
@@ -1034,8 +902,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   // Override operatore: la telemetria "driver fuori" è ora BACKEND-owned (side-effect
   // di EN_ENTREGA, d569163). Il frontend non scrive più DRIVER_STATO — questo handler
   // si limita a ri-leggere lo status backend (read-only) e riallineare il banner.
-  // [FDV1] nessuna registrazione / rilettura della partenza rider (niente getDriverStatus).
-  const handleForzaSalida = () => {};
 
   // Override operatore: marca entregado manualmente (driver dimenticò Entregado)
   const handleForzaEntregado = async (ordine) => {
@@ -1079,77 +945,12 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     setLoadingId(null);
   };
 
-  // Riepilogo "esta noche": esclude gli ordini attualmente nella sezione "Rider volviendo".
+  // Riepilogo "esta noche" dei pedidos entregados.
   const totalNoche = consegnatiCollapsed.reduce((sum, o) => {
     if (Number(o.totale) > 0) return sum + Number(o.totale);
     const its = (Array.isArray(o.items) ? o.items : []).filter(i => i.n !== "Entrega a domicilio");
     return sum + calcTotale(its, o.tipo_consegna || "DOMICILIO");
   }, 0);
-
-  // ── Sezione "Rider volviendo": banner globale + card del giro in ritorno ──
-  // Renderizzata sia nel ramo vuoto (giro chiuso → nessuna entrega attiva) sia
-  // in quello principale, così l'operatore la vede sempre durante il ritorno.
-  const RiderReturnSection = riderSectionVisible ? (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{
-        background: "rgba(249,115,22,0.10)",
-        border: "1.5px solid rgba(249,115,22,0.45)",
-        borderRadius: 12, padding: "10px 14px",
-        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap"
-      }}>
-        <span style={{ fontSize: 18, lineHeight: 1 }}>🛵</span>
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 170 }}>
-          <span style={{ color: "#fdba74", fontWeight: 900, fontSize: 13.5 }}>
-            {!driverReturning
-              ? "Rider en reparto"
-              : (riderReturnBeforeEta ? "Rider volviendo a pizzería" : "Rider debería estar llegando a pizzería")}
-          </span>
-          <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 11.5, fontWeight: 600 }}>
-            {!driverReturning
-              ? "En reparto · sin hora estimada todavía"
-              : (riderReturnBeforeEta
-                  ? `Regreso estimado en ~${riderReturnQuedanMin} min${riderReturnEtaHHMM ? ` · Hora estimada ${riderReturnEtaHHMM}` : ""}`
-                  : `Estimado cumplido hace ~${riderReturnElapsedMin} min${riderReturnEtaHHMM ? ` · Hora estimada ${riderReturnEtaHHMM}` : ""}`)}
-          </span>
-        </div>
-      </div>
-      {returningOrders.length > 0 && (
-        <div style={{
-          marginTop: 8,
-          border: "1px solid rgba(249,115,22,0.28)",
-          borderRadius: 10, overflow: "hidden"
-        }}>
-          <div style={{
-            background: "rgba(249,115,22,0.08)",
-            padding: "6px 12px", fontSize: 11.5, fontWeight: 800, color: "#fdba74"
-          }}>
-            🛵 Rider volviendo a pizzería · {returningOrders.length} {returningOrders.length === 1 ? "pedido" : "pedidos"}
-          </div>
-          <div style={{ padding: "4px 12px" }}>
-            {returningOrders.map((o, i) => {
-              const its = (Array.isArray(o.items) ? o.items : []).filter(it => it.n !== "Entrega a domicilio");
-              const totNum = (Number(o.totale) > 0) ? Number(o.totale) : calcTotale(its, o.tipo_consegna || "DOMICILIO");
-              return (
-                <div key={o.id} style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "7px 0", gap: 8,
-                  borderBottom: i < returningOrders.length - 1 ? "1px solid rgba(255,255,255,0.07)" : "none",
-                  fontSize: 13, color: "rgba(255,255,255,0.82)"
-                }}>
-                  <span style={{ fontWeight: 700 }}>
-                    {o.id} · {o.nombre}{o.zona ? ` · ${o.zona}` : ""}
-                  </span>
-                  <span style={{ color: "#4ade80", fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>
-                    {totNum.toFixed(2)}€
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  ) : null;
 
   const ResumenEntregados = consegnatiCollapsed.length > 0 ? (
     <div style={{ marginTop: 16 }}>
@@ -1191,7 +992,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
 
   if (entregas.length === 0) return (
     <div>
-      {RiderReturnSection}
       <div style={{ textAlign: "center", padding: "60px 24px", color: "rgba(255,255,255,0.2)" }}>
         <div style={{ fontSize: 48, marginBottom: 12, opacity: .35 }}>🛵</div>
         <div style={{ fontSize: 15, fontWeight: 600 }}>Sin entregas a domicilio</div>
@@ -1208,7 +1008,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     <div>
       <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}`}</style>
 
-      {RiderReturnSection}
 
       {/* Giro manual persistente (P1C.1): selezione locale, mutazioni via api.createManualGiro. */}
       {selectedManualGiroOrderIds.length > 0 && (
@@ -1326,8 +1125,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
               warnings={block.warnings}
               onSendRepartidor={handleSendRepartidor}
               loadingId={loadingId}
-              driverStato={driverStato}
-              onForzaSalida={handleForzaSalida}
               onForzaEntregado={handleForzaEntregado}
               manualGiroByOrderId={manualGiroByOrderId}
               manualGiroWarningsById={manualGiroWarningsById}
@@ -1349,8 +1146,6 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
             giroHora={block.hora}
             onSendRepartidor={handleSendRepartidor}
             loadingId={loadingId}
-            driverStato={driverStato}
-            onForzaSalida={handleForzaSalida}
             onForzaEntregado={handleForzaEntregado}
             manualGiroByOrderId={manualGiroByOrderId}
             manualGiroWarningsById={manualGiroWarningsById}
@@ -1385,8 +1180,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
           <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
             {senzaZona.map(o => (
               <ZonaOrderRow key={o.id} o={o}
-                onSendRepartidor={handleSendRepartidor} loadingId={loadingId}
-                driverStato={driverStato} onForzaSalida={handleForzaSalida} onForzaEntregado={handleForzaEntregado}
+                onSendRepartidor={handleSendRepartidor} loadingId={loadingId} onForzaEntregado={handleForzaEntregado}
                 manualGiro={manualGiroByOrderId[o.id] || null}
                 manualGiroWarnings={manualGiroWarningsById[o.id] || []}
                 isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}

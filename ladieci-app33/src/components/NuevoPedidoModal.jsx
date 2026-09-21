@@ -72,7 +72,12 @@ function timeDiffMin(a, b) {
   return Math.abs(ma - mb);
 }
 
+// [FDV1] il rider non è una variabile del Planner: la disponibilità giro basata sulla simulazione rider è spenta.
+const FDV1_NO_RIDER_SIM = true;
+
 function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, marginMin = GIRO_AGGREGATION_MARGIN_MIN, nowMin = nowMinutes()) {
+  // [FDV1] nessuna simulazione rider (salida_driver_estimada / entrega_estimada / conflicto_driver) nel percorso FDV1.
+  if (FDV1_NO_RIDER_SIM) return [];
   const toM = (t) => { if (!t) return null; const [h, m] = String(t).split(":").map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
   // forno_out del NUOVO ordine: minuto in cui la sua pizza esce dal forno.
   // Serve a decidere se è ancora in tempo per agganciarsi a un giro esistente.

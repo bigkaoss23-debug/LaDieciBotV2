@@ -63,6 +63,62 @@ export const productionTargetHHMM = (o, allOrders = []) => {
   return formatMadridHHMM(base + (Number(o.ui_offset_min) || 0) * 60000);
 };
 
+// ─── [FDV1 FE final] Cucina: UN solo riferimento temporale DOMICILIO = delivery_deadline_at ───────────────
+// Stato visivo semplice (nessun ETA, nessun timer nuovo): normale / vicino al limite / superato (TARDE).
+export const DEADLINE_NEAR_MIN = 10;
+export const deadlineState = (o, nowMs) => {
+  const ms = orderDeadlineMs(o);
+  if (ms == null) return null;
+  const diff = ms - nowMs;
+  return { ms, hhmm: formatMadridHHMM(ms), state: diff < 0 ? "late" : diff <= DEADLINE_NEAR_MIN * 60000 ? "near" : "normal" };
+};
+
+// Chiave di priorità di produzione di una card: DOMICILIO = deadline + offset ± (il ± sposta SOLO l'ordine di
+// lavoro, non crea orari visibili); RITIRO = orario di ritiro/forno come prima. Senza orario: in fondo.
+export const kitchenSortMs = (o) => {
+  if (o && o.tipo_consegna === "DOMICILIO") {
+    const dl = orderDeadlineMs(o);
+    if (dl != null) return dl + (Number(o.ui_offset_min) || 0) * 60000;
+  }
+  const t = orarioToMs(o && (o.horaForno || o.hora));
+  return t == null ? Number.MAX_SAFE_INTEGER : t;
+};
+
+// Ordinamento Cocina / Pizzeria con il giro come BLOCCO ATOMICO (A5): ordine totale sui blocchi
+// (slot 10' della chiave del blocco → a parità di slot il RITIRO prima, come nel LIVE → chiave → deadline più
+// urgente del blocco → id del blocco), poi dentro il giro per urgenza individuale. Uno standalone con lo stesso
+// minuto non può mai finire in mezzo a un giro: tutti i membri condividono la stessa chiave di blocco.
+export const sortKitchenCards = (cards = []) => {
+  const SLOT = 10 * 60000;
+  const blockOf = (c) => (c.manual_giro_id ? "g:" + c.manual_giro_id : "o:" + c.id);
+  const blocks = new Map();
+  for (const c of cards) {
+    const k = blockOf(c);
+    const ms = kitchenSortMs(c);
+    const dl = orderDeadlineMs(c);
+    const b = blocks.get(k);
+    if (!b) blocks.set(k, { ms, dl: dl == null ? ms : dl, isDelivery: c.tipo_consegna === "DOMICILIO" });
+    else { b.ms = Math.min(b.ms, ms); b.dl = Math.min(b.dl, dl == null ? ms : dl); }
+  }
+  return [...cards].sort((a, b) => {
+    const ka = blockOf(a), kb = blockOf(b);
+    if (ka !== kb) {
+      const A = blocks.get(ka), B = blocks.get(kb);
+      const sa = Math.floor(A.ms / SLOT), sb = Math.floor(B.ms / SLOT);
+      if (sa !== sb) return sa - sb;
+      if (A.isDelivery !== B.isDelivery) return A.isDelivery ? 1 : -1;
+      if (A.ms !== B.ms) return A.ms - B.ms;
+      if (A.dl !== B.dl) return A.dl - B.dl;
+      return ka < kb ? -1 : 1;
+    }
+    const d = kitchenSortMs(a) - kitchenSortMs(b);
+    if (d) return d;
+    const e = (orderDeadlineMs(a) ?? 0) - (orderDeadlineMs(b) ?? 0);
+    if (e) return e;
+    return String(a.id) < String(b.id) ? -1 : 1;
+  });
+};
+
 export const getManualGiroForOrder = (order, giroMetaById = {}) => {
   const gid = order?.manual_giro_id;
   if (!gid) return null;
