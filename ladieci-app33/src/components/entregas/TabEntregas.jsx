@@ -234,7 +234,8 @@ const ZonaOrderRow = ({
                 </span>
               );
             }
-            const hF = manualGiro.hora_ref || (zona ? calcHoraForno(o, zona) : null);
+            // +5 per-card (ui_offset_min) applicato anche sopra hora_ref, come in Cocina.
+            const hF = manualGiro.hora_ref ? applyUiOffset(manualGiro.hora_ref, o.ui_offset_min) : (zona ? calcHoraForno(o, zona) : null);
             const hEntrega = manualGiro.entrega_ref || o.hora;
             const showClienteRef = o.hora && o.hora !== hEntrega;
             if (!hF && !hEntrega) return null;
@@ -636,6 +637,14 @@ const GiroTimeModal = ({ orders, warnings = [], pending, onConfirm, onCancel }) 
     return { hora_ref: earliest.salida, anchor_order_id: earliest.o.id, entrega_ref: maxMemberHora() };
   };
 
+  // Rischio fattuale (non bloccante): l'uscita forno scelta per il giro è DOPO la promessa
+  // di un cliente membro → ritardo certo. L'operatore rivede o conferma (override manuale).
+  // Solo lettura: nessuna hora cliente viene modificata.
+  const preview = resolve();
+  const lateMembers = preview.hora_ref
+    ? orders.filter(o => o.hora && _tm(o.hora) != null && _tm(preview.hora_ref) > _tm(o.hora))
+    : [];
+
   const confirm = () => {
     const r = resolve();
     if (r.error) { setErr(r.error); return; }
@@ -717,6 +726,17 @@ const GiroTimeModal = ({ orders, warnings = [], pending, onConfirm, onCancel }) 
           </label>
         </div>
 
+        {lateMembers.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
+            <span style={warningStyle("strong")}>REVISAR</span>
+            {lateMembers.map(o => (
+              <span key={`late-${o.id}`} style={warningStyle("strong")}>
+                Salida {preview.hora_ref} &gt; cliente {o.hora} · {o.id || o.nombre || "?"}
+              </span>
+            ))}
+          </div>
+        )}
+
         {err && <div style={{ color: "#fca5a5", fontSize: 12, marginTop: 10 }}>{err}</div>}
 
         <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
@@ -730,7 +750,7 @@ const GiroTimeModal = ({ orders, warnings = [], pending, onConfirm, onCancel }) 
             color: pending ? "rgba(255,255,255,0.3)" : "#fde68a",
             borderRadius: 9, padding: "8px 16px", fontSize: 12.5, fontWeight: 900,
             cursor: pending ? "not-allowed" : "pointer"
-          }}>{pending ? "..." : "Crear giro"}</button>
+          }}>{pending ? "..." : (lateMembers.length > 0 ? "Confirmar igualmente" : "Crear giro")}</button>
         </div>
       </div>
     </div>

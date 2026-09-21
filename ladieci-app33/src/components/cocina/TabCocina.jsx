@@ -4,7 +4,6 @@ import { sb, api } from '../../api';
 import Suoni from '../../sounds';
 import { lookupMenu, orarioToMs, calcTimer, formatSub, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
-import { applyUiOffset } from '../../utils/uiOffset';
 import SnoozeButton from '../ui/SnoozeButton';
 import { ORDER_STATES } from '../../core/orders';
 import { isDessertPizza } from '../../menu/dessertPizza';
@@ -14,7 +13,8 @@ import {
   getManualGiroForOrder,
   manualGiroBadgeStyle,
   manualGiroSortAnchorMs,
-  resolveHoraEntregaGiro
+  resolveHoraEntregaGiro,
+  resolveHoraFornoCard
 } from './manualGiroCocina';
 
 // hora = orario consegna cliente → horaForno = hora − tempoAndata(ordine)
@@ -165,12 +165,9 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
       // Sorgente unica: o.forno_out (backend cascade-aware). Fallback legacy per ordini pre-migration.
       const horaFornoBase = o.forno_out
         || (isDelivery && zonaObj && o.hora ? subtractMinutes(o.hora, tempoAndata(o, zonaObj)) : (o.hora || null));
-      // Giro manuale: hora_ref è l'orario operativo UNICO del giro (scelto dall'operatore)
-      // → comanda su forno_out per allineare tutti i membri allo stesso timer.
-      const horaForno = (manualGiro && manualGiro.hora_ref)
-        ? manualGiro.hora_ref
-        // Snooze visivo per-card: solo DOMICILIO usa l'offset (PICKUP è priorità reale)
-        : (isDelivery ? applyUiOffset(horaFornoBase, o.ui_offset_min) : horaFornoBase);
+      // Giro manuale: hora_ref è l'orario operativo comune del giro; il +5 per-card
+      // (ui_offset_min, solo DOMICILIO) si applica sopra, anche dentro un giro.
+      const horaForno = resolveHoraFornoCard(o, manualGiro, horaFornoBase, isDelivery);
       // nPizze = solo pizze (no bevande, no dolci)
       const nPizze = items.reduce((s,it) => s + (parseInt(it.q)||1), 0);
       // Il timer usa horaForno come deadline (non hora)
@@ -283,6 +280,14 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                                 {o.isManualGiro ? `GIRO ${o.horaEntrega}` : o.horaEntrega}
                               </span>
                             </div>
+                            {o.isManualGiro && o.hora && o.hora !== o.horaEntrega && (
+                              // Promessa individuale del cliente: resta visibile anche dentro un giro.
+                              <div title="Hora cliente" style={{display:"inline-flex",alignItems:"center",gap:4,
+                                background:"#fff",border:"1.5px solid #C2410C",borderRadius:20,padding:"3px 9px"}}>
+                                <span style={{color:"#C2410C",fontWeight:900,fontSize:12}}>CLIENTE</span>
+                                <span style={{color:"#C2410C",fontWeight:900,fontSize:15,fontFamily:"'DM Mono',monospace"}}>{o.hora}</span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

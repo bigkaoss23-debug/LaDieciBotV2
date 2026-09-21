@@ -1,4 +1,5 @@
 import { orarioToMs } from '../ordenes/TabListos';
+import { applyUiOffset } from '../../utils/uiOffset';
 
 export const formatManualGiroLabel = (giro) => {
   if (!giro) return "G?";
@@ -13,6 +14,15 @@ export const buildManualGiroMetaById = (manualGiros = []) => {
     if (giro && giro.id && !giro.dissolved_at) out[giro.id] = giro;
   }
   return out;
+};
+
+// Target di produzione (⏱) della card. Membro di giro manuale: la base è hora_ref
+// (orario operativo comune); altrimenti forno_out. Il +5 dell'operatore (ui_offset_min,
+// solo DOMICILIO) si applica SEMPRE sopra, anche dentro un giro. Non tocca mai o.hora
+// (promessa cliente), né hora_ref/entrega_ref del giro.
+export const resolveHoraFornoCard = (order, manualGiro, horaFornoBase, isDelivery) => {
+  const base = (manualGiro && manualGiro.hora_ref) ? manualGiro.hora_ref : horaFornoBase;
+  return isDelivery ? applyUiOffset(base, order?.ui_offset_min) : base;
 };
 
 export const getManualGiroForOrder = (order, giroMetaById = {}) => {
