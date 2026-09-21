@@ -75,26 +75,37 @@ export const deadlineState = (o, nowMs) => {
 
 // Chiave di priorità di produzione di una card: DOMICILIO = deadline + offset ± (il ± sposta SOLO l'ordine di
 // lavoro, non crea orari visibili); RITIRO = orario di ritiro/forno come prima. Senza orario: in fondo.
-export const kitchenSortMs = (o) => {
+// [FDV1 R3] finestra del + (priorità di produzione): minuti ancora disponibili prima della HORA LÍMITE più urgente
+// meno il margine URGENTE, limitati al contratto. Nessuna deadline → 0 (+ non dimostrabilmente sicuro).
+export const maxPlusMinutes = (orders = [], nowMs = Date.now(), contract = { max: 30, margin_min: 10 }) => {
+  const dls = (orders || []).map(orderDeadlineMs).filter((x) => Number.isFinite(x));
+  if (!dls.length) return 0;
+  const left = Math.floor((Math.min(...dls) - nowMs) / 60000) - (Number(contract.margin_min) || 0);
+  return Math.max(0, Math.min(Number(contract.max) || 0, left));
+};
+
+// Chiave di ordinamento cucina. DOMICILIO: HORA LÍMITE + priorità. Un + non porta MAI la card oltre la finestra
+// sicura (se il tempo passa, il + effettivo si riduce da solo: la card risale). Il − è sempre pieno. Nessun dato scritto.
+export const kitchenSortMs = (o, nowMs = null) => {
   if (o && o.tipo_consegna === "DOMICILIO") {
     const dl = orderDeadlineMs(o);
-    if (dl != null) return dl + (Number(o.ui_offset_min) || 0) * 60000;
+    if (dl != null) {
+      let off = Number(o.ui_offset_min) || 0;
+      if (off > 0 && Number.isFinite(nowMs)) off = Math.min(off, Math.max(0, Math.floor((dl - nowMs) / 60000) - 10));
+      return dl + off * 60000;
+    }
   }
   const t = orarioToMs(o && (o.horaForno || o.hora));
   return t == null ? Number.MAX_SAFE_INTEGER : t;
 };
 
-// Ordinamento Cocina / Pizzeria con il giro come BLOCCO ATOMICO (A5): ordine totale sui blocchi
-// (slot 10' della chiave del blocco → a parità di slot il RITIRO prima, come nel LIVE → chiave → deadline più
-// urgente del blocco → id del blocco), poi dentro il giro per urgenza individuale. Uno standalone con lo stesso
-// minuto non può mai finire in mezzo a un giro: tutti i membri condividono la stessa chiave di blocco.
-export const sortKitchenCards = (cards = []) => {
+export const sortKitchenCards = (cards = [], nowMs = null) => {
   const SLOT = 10 * 60000;
   const blockOf = (c) => (c.manual_giro_id ? "g:" + c.manual_giro_id : "o:" + c.id);
   const blocks = new Map();
   for (const c of cards) {
     const k = blockOf(c);
-    const ms = kitchenSortMs(c);
+    const ms = kitchenSortMs(c, nowMs);
     const dl = orderDeadlineMs(c);
     const b = blocks.get(k);
     if (!b) blocks.set(k, { ms, dl: dl == null ? ms : dl, isDelivery: c.tipo_consegna === "DOMICILIO" });
@@ -111,7 +122,7 @@ export const sortKitchenCards = (cards = []) => {
       if (A.dl !== B.dl) return A.dl - B.dl;
       return ka < kb ? -1 : 1;
     }
-    const d = kitchenSortMs(a) - kitchenSortMs(b);
+    const d = kitchenSortMs(a, nowMs) - kitchenSortMs(b, nowMs);
     if (d) return d;
     const e = (orderDeadlineMs(a) ?? 0) - (orderDeadlineMs(b) ?? 0);
     if (e) return e;
@@ -130,6 +141,19 @@ export const markPriorityHolders = (cards = []) => {
     seen.add(c.manual_giro_id);
     return { ...c, _priorityHere: true };
   });
+};
+
+// [FDV1 R3] segmenti di visualizzazione: ogni giro = UN blocco (membri contigui dopo sortKitchenCards), standalone = card.
+export const groupKitchenSegments = (cards = []) => {
+  const out = [];
+  for (const c of cards || []) {
+    const gid = c && c.tipo_consegna === "DOMICILIO" ? c.manual_giro_id : null;
+    const last = out[out.length - 1];
+    if (gid && last && last.type === "giro" && last.giroId === gid) last.cards.push(c);
+    else if (gid) out.push({ type: "giro", giroId: gid, cards: [c] });
+    else out.push({ type: "single", card: c });
+  }
+  return out;
 };
 
 export const getManualGiroForOrder = (order, giroMetaById = {}) => {

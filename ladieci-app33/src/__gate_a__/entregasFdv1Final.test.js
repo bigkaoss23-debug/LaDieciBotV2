@@ -89,7 +89,7 @@ describe("Entregas — render", () => {
     const el = mount(<TabEntregas ordenes={ordenes} notify={() => {}} setOrdenes={() => {}} />);
     await flush();
     const txt = el.textContent;
-    const heads = [...el.querySelectorAll('span[title="Hora límite de entrega"], span[title="Hora límite más urgente del giro"]')].map((n) => n.textContent.replace("Límite ", ""));
+    const heads = [...el.querySelectorAll('span[title="Hora límite de entrega"], span[title="Hora límite más urgente del giro"]')].map((n) => n.textContent.replace("Hora límite ", ""));
     expect(heads).toEqual(["21:00", "21:20", "21:40"]);                       // S-2, giro (earliest 21:20), S-1
     expect(txt).not.toMatch(/⏱/);
     expect(txt).toMatch(/cliente 20:10/);                                      // hora solo come dato secondario

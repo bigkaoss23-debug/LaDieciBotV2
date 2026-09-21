@@ -4,7 +4,12 @@
 // I dati veri (`hora`, `forno_out`) restano intatti — qui solo display.
 
 export const UI_OFFSET_STEP = 5;
-export const UI_OFFSET_MAX  = 30;   // [FDV1] = contratto backend setPriorityOffset (−30..+30)
+export const UI_OFFSET_MAX  = 30;   // [FDV1] contratto v1 (BE eee119e): −30..+30 — fallback se il BE non espone priorityContract
+// [FDV1 R3] contratto v2 (BE priorityContract): range teorico −50..+50; il + è applicabile solo se resta ad almeno
+// PRIORITY_MARGIN_MIN minuti dalla HORA LÍMITE più urgente (per un giro: il membro più urgente).
+export const PRIORITY_STEPS_ALL = [5, 10, 15, 20, 30, 40, 50];
+export const PRIORITY_MARGIN_MIN = 10;
+export const CONTRACT_V1 = Object.freeze({ version: 1, min: -30, max: 30, margin_min: PRIORITY_MARGIN_MIN });
 
 // Aggiunge N minuti a una stringa "HH:MM". Ritorna null se input invalido.
 export const applyUiOffset = (hhmm, offsetMin) => {

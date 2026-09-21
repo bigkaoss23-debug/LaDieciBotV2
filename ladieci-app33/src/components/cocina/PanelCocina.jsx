@@ -3,16 +3,16 @@ import { C, tot, MAX_PIZZE_ORA, LOGO_RED_SRC, useWidth } from '../../constants';
 import { caricoTotale, lookupMenu, calcTimer, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import PriorityControl from '../ui/PriorityControl';
+import { KitchenVisualStyles, DeadlineHeader, GiroGroup, zoneMeta } from './kitchenVisual';
 import { api } from '../../api';
 import { isDessertPizza } from '../../menu/dessertPizza';
 import {
   buildManualGiroMetaById,
   formatManualGiroLabel,
   getManualGiroForOrder,
-  manualGiroBadgeStyle,
   deadlineState,
   sortKitchenCards,
-  markPriorityHolders
+  groupKitchenSegments
 } from './manualGiroCocina';
 
 const subtractMinutes = (hora, min) => {
@@ -104,7 +104,195 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
     .filter(o => o.items.length > 0);
 
   // [FDV1] A5: giro = blocco atomico anche nell'ordinamento
-  const activos = markPriorityHolders(sortKitchenCards(activosBase));
+  const activos = sortKitchenCards(activosBase, now);
+
+  const renderBody = (o, fc) => {
+                    const notaVisibile = notaCucina(o.nota);
+                    const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
+                    const compact = o.items.length >= 5;
+                    return (
+                      <div style={{padding:"12px 16px",flex:1,
+                        display: compact ? "grid" : "flex",
+                        gridTemplateColumns: compact ? "1fr 1fr" : undefined,
+                        flexDirection: compact ? undefined : "column",
+                        gap: compact ? 8 : 12, background:"#fff"}}>
+                    {o.items.map((it,i)=>{
+                      const mi = lookupMenu(it);
+                      const nomeCompleto = mi?.sub || "";
+                      const nomeBreve    = it.n || "";
+                      const varSub       = it.sub || "";
+                      const nomeIng      = mi?.ing || it.ing || "";
+                      return (
+                        <div key={i} style={{
+                          borderBottom: !compact && i<o.items.length-1 ? `2px dashed ${fc.border}44` : "none",
+                          paddingBottom: !compact && i<o.items.length-1 ? 12 : 0,
+                          background: compact ? "#f7f7f7" : "transparent",
+                          borderRadius: compact ? 8 : 0,
+                          border: compact ? `1.5px solid ${fc.border}33` : "none",
+                          padding: compact ? "8px 8px" : 0,
+                          minWidth: 0,
+                          overflow: "hidden",
+                        }}>
+                          {/* 1. Pill qty + nome breve */}
+                          <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:compact?4:8}}>
+                            <div style={{display:"inline-flex",alignItems:"center",gap:8,
+                              background:"#f0f0f0",borderRadius:9,padding:"4px 10px"}}>
+                              <span style={{background:"#111",color:"#fff",
+                                borderRadius:7,padding:compact?"3px 11px":"5px 14px",fontFamily:"'DM Mono',monospace",
+                                fontWeight:900,fontSize:compact?18:24,lineHeight:1}}>×{it.q}</span>
+                              <span style={{color:"#222",fontSize:compact?13:15,fontWeight:800,letterSpacing:.3}}>{nomeBreve}</span>
+                            </div>
+                          </div>
+                          {/* 2. Nome completo — grande */}
+                          {nomeCompleto && (
+                            <div style={{color:"#111",fontSize:compact?15:22,fontWeight:900,lineHeight:1.2,
+                              marginBottom:4,letterSpacing:-.3}}>
+                              {nomeCompleto}
+                            </div>
+                          )}
+                          {!nomeCompleto && (
+                            <div style={{color:"#111",fontSize:compact?15:22,fontWeight:900,lineHeight:1.2,marginBottom:4}}>
+                              {nomeBreve}
+                            </div>
+                          )}
+                          {/* 3. Ingredienti — piccoli grigi */}
+                          {nomeIng && (
+                            <div style={{color:"#777",fontSize:compact?10:12,fontWeight:500,lineHeight:1.5,marginBottom:varSub?6:0}}>
+                              {nomeIng}
+                            </div>
+                          )}
+                          {/* 4. Variazione — IN FONDO, badge arancione */}
+                          {varSub && (
+                            <div style={{display:"inline-block",background:"#FF6B00",color:"#fff",
+                              borderRadius:8,padding: compact?"3px 8px":"4px 12px",fontSize:compact?11:14,fontWeight:800,
+                              marginTop:4,letterSpacing:.2}}>
+                              ⚠ {varSub}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {/* Note operatore — span entrambe le colonne in compact */}
+                    {notaCucinaOp&&(
+                      <div style={{background:"#E8341C",borderRadius:9,
+                        padding:"9px 13px",color:"#fff",fontSize:15,fontWeight:900,letterSpacing:.2,
+                        gridColumn: compact ? "1 / -1" : undefined}}>
+                        🍕 {notaCucinaOp}
+                      </div>
+                    )}
+                    {notaVisibile&&(
+                      <div style={{background:"rgba(232,52,28,0.12)",border:"2px solid rgba(232,52,28,0.45)",
+                        borderRadius:9,padding:"9px 13px",color:"#C0271A",fontSize:15,fontWeight:800,
+                        gridColumn: compact ? "1 / -1" : undefined}}>
+                        ⚠ {notaVisibile}
+                      </div>
+                    )}
+                      </div>
+                    );
+                    };
+
+  const renderLegacyCard = (o) => {
+              const t  = o._timer;
+              // [FDV1] DOMICILIO: colori dallo stato della deadline
+              const fc = o.isDelivery
+                ? (o.dl && o.dl.state === "late" ? FASE_CONFIG.tarde : o.dl && o.dl.state === "near" ? FASE_CONFIG.al_horno : FASE_CONFIG.espera)
+                : (FASE_CONFIG[t.fase] || FASE_CONFIG.espera);
+              const isUrgent = o.isDelivery ? !!(o.dl && o.dl.state !== "normal") : (t.fase==="tarde" || t.fase==="lista" || t.fase==="para_salir");
+              const timerStr = t ? `${t.scaduto&&t.conOrario?"-":""}${String(t.mm).padStart(2,"0")}:${String(t.ss).padStart(2,"0")}` : "";
+              const notaVisibile = notaCucina(o.nota);
+              const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
+              const isDelivery = o.tipo_consegna === "DOMICILIO";
+              const zonaColore = isDelivery
+                ? (ZONE_DELIVERY.find(z => z.id === o.zona)?.colore || "#F97316")
+                : null;
+              return (
+                <div key={o.id} style={{
+                  background:"#fff",
+                  borderRadius:16,
+                  border: isDelivery ? `4px solid ${zonaColore}` : `2px solid ${fc.border}`,
+                  display:"flex",flexDirection:"column",overflow:"hidden",
+                  boxShadow: isDelivery
+                    ? `0 0 0 4px ${zonaColore}88, 0 6px 24px ${zonaColore}55`
+                    : isUrgent
+                      ? `0 0 0 3px ${fc.border}44, 0 4px 20px ${fc.border}33`
+                      : "0 2px 10px rgba(0,0,0,0.12)",
+                  position:"relative"
+                }}>
+                  {/* Header colorato per fase — tema chiaro (full-screen pizzeria) */}
+                  <div style={{background:fc.bgLight, padding:"12px 16px",
+                    display:"flex",justifyContent:"space-between",alignItems:"flex-start",
+                    borderBottom:`1px solid ${fc.border}55`}}>
+                    <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
+                      <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:20,lineHeight:1}}>{o.id}</div>
+                      <div style={{color:fc.textLight,opacity:0.85,fontWeight:700,fontSize:14,marginTop:3,
+                        whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {o.nombre}</div>
+                      {/* [FDV1 R3] le card DOMICILIO usano renderDeliveryCard: qui solo RITIRO */}
+                      {!o.isDelivery && (o.horaForno || o.hora) && (
+                        <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:5,
+                          background:"#16A34A", border:"1.5px solid #78350F",
+                          borderRadius:20,padding:"4px 10px", boxShadow:"0 2px 8px rgba(120,53,15,.4)"}}>
+                          <span style={{fontSize:14}}>🕐</span>
+                          <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
+                            {o.horaForno || o.hora}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      {o.isDelivery ? (
+                        // [FDV1] límite de entrega: UN solo orario principale
+                        <div title="Límite de entrega (creación + 55 min)" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
+                          <div style={{fontFamily:"'DM Mono',monospace",fontSize:40,fontWeight:900,lineHeight:1,
+                            color: o.dl && o.dl.state === "late" ? "#DC2626" : o.dl && o.dl.state === "near" ? "#D97706" : "#065F46",
+                            animation: "none"}}>{o.dl ? o.dl.hhmm : "—"}</div>
+                          <div style={{color: o.dl && o.dl.state === "late" ? "#7F1D1D" : o.dl && o.dl.state === "near" ? "#7C2D12" : "#065F46",
+                            fontSize: o.dl && o.dl.state === "late" ? 14 : 11, fontWeight:900, letterSpacing:.5}}>
+                            {o.dl && o.dl.state === "late" ? "TARDE" : o.dl && o.dl.state === "near" ? "URGENTE" : "HORA LÍMITE"}
+                          </div>
+                        </div>
+                      ) : t.showCountdown ? (
+                        <>
+                          <div style={{fontFamily:"'DM Mono',monospace",fontSize:t.conOrario?40:34,
+                            fontWeight:900,color:fc.timerColorLight,lineHeight:1,
+                            animation:isUrgent?"blink 1s infinite":"none"}}>{timerStr}</div>
+                          <div style={{color:fc.textLight,opacity:0.55,fontSize:10,textAlign:"center",marginTop:2,letterSpacing:.5}}>
+                            {t.conOrario ? (t.scaduto ? "RETRASO" : "al retiro") : "desde orden"}
+                          </div>
+                          {fc.label&&<div style={{marginTop:4,color:fc.labelColorLight,fontSize:12,fontWeight:900,
+                            letterSpacing:.5,animation:isUrgent?"blink 1s infinite":"none"}}>{fc.label}</div>}
+                        </>
+                      ) : (
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                          <div style={{background:"rgba(5,150,105,0.12)",border:"1px solid rgba(5,150,105,0.35)",
+                            borderRadius:20,padding:"5px 12px",color:"#059669",fontSize:12,fontWeight:800}}>⏳ EN ESPERA</div>
+                          {t.mm>0&&<div style={{color:"rgba(0,0,0,0.4)",fontSize:11,
+                            fontFamily:"'DM Mono',monospace"}}>{t.mm} min</div>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {renderBody(o, fc)}
+                  {/* Nessun LISTO qui: lo porta la scheda Cocina, che vede l'ordine completo. */}
+                </div>
+              );
+  };
+
+  // [FDV1 R3] card DOMICILIO: zona persistente (banda + badge), HORA LÍMITE con stato, prodotto; ± solo se standalone.
+  const renderDeliveryCard = (o, control) => {
+    const zone = zoneMeta(o);
+    const fcNeutral = { border: "#9CA3AF" };
+    return (
+      <div key={o.id} data-testid="kitchen-card" data-zone={zone.id} data-state={(o.dl && o.dl.state) || "normal"} style={{
+        background: "#fff", borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column",
+        border: "2px solid #D1D5DB", borderLeft: `14px solid ${zone.color}`, boxShadow: "0 2px 10px rgba(0,0,0,0.12)", minWidth: 0
+      }}>
+        <DeadlineHeader o={o} zone={zone} light />
+        {control && <div style={{ padding: "8px 12px 0", display: "flex" }}>{control}</div>}
+        {renderBody(o, fcNeutral)}
+      </div>
+    );
+  };
 
   const nowStr = new Date(now).toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"});
   const dateStr = new Date(now).toLocaleDateString("es",{weekday:"short",day:"numeric",month:"short"});
@@ -215,186 +403,17 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
           </div>
         ) : (
           <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>
-            {activos.map((o) => {
-              const t  = o._timer;
-              // [FDV1] DOMICILIO: colori dallo stato della deadline
-              const fc = o.isDelivery
-                ? (o.dl && o.dl.state === "late" ? FASE_CONFIG.tarde : o.dl && o.dl.state === "near" ? FASE_CONFIG.al_horno : FASE_CONFIG.espera)
-                : (FASE_CONFIG[t.fase] || FASE_CONFIG.espera);
-              const isUrgent = o.isDelivery ? !!(o.dl && o.dl.state !== "normal") : (t.fase==="tarde" || t.fase==="lista" || t.fase==="para_salir");
-              const timerStr = t ? `${t.scaduto&&t.conOrario?"-":""}${String(t.mm).padStart(2,"0")}:${String(t.ss).padStart(2,"0")}` : "";
-              const notaVisibile = notaCucina(o.nota);
-              const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
-              const isDelivery = o.tipo_consegna === "DOMICILIO";
-              const zonaColore = isDelivery
-                ? (ZONE_DELIVERY.find(z => z.id === o.zona)?.colore || "#F97316")
-                : null;
-              return (
-                <div key={o.id} style={{
-                  background:"#fff",
-                  borderRadius:16,
-                  border: isDelivery ? `4px solid ${zonaColore}` : `2px solid ${fc.border}`,
-                  display:"flex",flexDirection:"column",overflow:"hidden",
-                  boxShadow: isDelivery
-                    ? `0 0 0 4px ${zonaColore}88, 0 6px 24px ${zonaColore}55`
-                    : isUrgent
-                      ? `0 0 0 3px ${fc.border}44, 0 4px 20px ${fc.border}33`
-                      : "0 2px 10px rgba(0,0,0,0.12)",
-                  position:"relative"
-                }}>
-                  {/* Header colorato per fase — tema chiaro (full-screen pizzeria) */}
-                  <div style={{background:fc.bgLight, padding:"12px 16px",
-                    display:"flex",justifyContent:"space-between",alignItems:"flex-start",
-                    borderBottom:`1px solid ${fc.border}55`}}>
-                    <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
-                      <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:fc.textLight,fontSize:20,lineHeight:1}}>{o.id}</div>
-                      <div style={{color:fc.textLight,opacity:0.85,fontWeight:700,fontSize:14,marginTop:3,
-                        whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {o.nombre}</div>
-                      {o.manualGiro && (
-                        <div style={{marginTop:6}}>
-                          <span style={manualGiroBadgeStyle(true)}>
-                            Giro {formatManualGiroLabel(o.manualGiro)}
-                          </span>
-                        </div>
-                      )}
-                      {/* [FDV1] DOMICILIO: solo il comando di priorità ± (il límite è a destra) */}
-                      {o.isDelivery && (
-                        <div style={{marginTop:6}}>
-                          {o._priorityHere && <PriorityControl orden={o} onUpdate={handleOffsetChange} light={true} label={o.manualGiro ? "Todo el giro" : null} />}
-                        </div>
-                      )}
-                      {!o.isDelivery && (o.horaForno || o.hora) && (
-                        <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:5,
-                          background:"#16A34A", border:"1.5px solid #78350F",
-                          borderRadius:20,padding:"4px 10px", boxShadow:"0 2px 8px rgba(120,53,15,.4)"}}>
-                          <span style={{fontSize:14}}>🕐</span>
-                          <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
-                            {o.horaForno || o.hora}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div style={{textAlign:"right",flexShrink:0}}>
-                      {o.isDelivery ? (
-                        // [FDV1] límite de entrega: UN solo orario principale
-                        <div title="Límite de entrega (creación + 55 min)" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
-                          <div style={{fontFamily:"'DM Mono',monospace",fontSize:40,fontWeight:900,lineHeight:1,
-                            color: o.dl && o.dl.state === "late" ? "#DC2626" : o.dl && o.dl.state === "near" ? "#D97706" : "#065F46",
-                            animation: "none"}}>{o.dl ? o.dl.hhmm : "—"}</div>
-                          <div style={{color: o.dl && o.dl.state === "late" ? "#7F1D1D" : o.dl && o.dl.state === "near" ? "#7C2D12" : "#065F46",
-                            fontSize: o.dl && o.dl.state === "late" ? 14 : 11, fontWeight:900, letterSpacing:.5}}>
-                            {o.dl && o.dl.state === "late" ? "TARDE" : o.dl && o.dl.state === "near" ? "URGENTE" : "HORA LÍMITE"}
-                          </div>
-                        </div>
-                      ) : t.showCountdown ? (
-                        <>
-                          <div style={{fontFamily:"'DM Mono',monospace",fontSize:t.conOrario?40:34,
-                            fontWeight:900,color:fc.timerColorLight,lineHeight:1,
-                            animation:isUrgent?"blink 1s infinite":"none"}}>{timerStr}</div>
-                          <div style={{color:fc.textLight,opacity:0.55,fontSize:10,textAlign:"center",marginTop:2,letterSpacing:.5}}>
-                            {t.conOrario ? (t.scaduto ? "RETRASO" : "al retiro") : "desde orden"}
-                          </div>
-                          {fc.label&&<div style={{marginTop:4,color:fc.labelColorLight,fontSize:12,fontWeight:900,
-                            letterSpacing:.5,animation:isUrgent?"blink 1s infinite":"none"}}>{fc.label}</div>}
-                        </>
-                      ) : (
-                        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                          <div style={{background:"rgba(5,150,105,0.12)",border:"1px solid rgba(5,150,105,0.35)",
-                            borderRadius:20,padding:"5px 12px",color:"#059669",fontSize:12,fontWeight:800}}>⏳ EN ESPERA</div>
-                          {t.mm>0&&<div style={{color:"rgba(0,0,0,0.4)",fontSize:11,
-                            fontFamily:"'DM Mono',monospace"}}>{t.mm} min</div>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Body — pizze */}
-                  {(()=>{
-                    const compact = o.items.length >= 5;
-                    return (
-                      <div style={{padding:"12px 16px",flex:1,
-                        display: compact ? "grid" : "flex",
-                        gridTemplateColumns: compact ? "1fr 1fr" : undefined,
-                        flexDirection: compact ? undefined : "column",
-                        gap: compact ? 8 : 12, background:"#fff"}}>
-                    {o.items.map((it,i)=>{
-                      const mi = lookupMenu(it);
-                      const nomeCompleto = mi?.sub || "";
-                      const nomeBreve    = it.n || "";
-                      const varSub       = it.sub || "";
-                      const nomeIng      = mi?.ing || it.ing || "";
-                      return (
-                        <div key={i} style={{
-                          borderBottom: !compact && i<o.items.length-1 ? `2px dashed ${fc.border}44` : "none",
-                          paddingBottom: !compact && i<o.items.length-1 ? 12 : 0,
-                          background: compact ? "#f7f7f7" : "transparent",
-                          borderRadius: compact ? 8 : 0,
-                          border: compact ? `1.5px solid ${fc.border}33` : "none",
-                          padding: compact ? "8px 8px" : 0,
-                          minWidth: 0,
-                          overflow: "hidden",
-                        }}>
-                          {/* 1. Pill qty + nome breve */}
-                          <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:compact?4:8}}>
-                            <div style={{display:"inline-flex",alignItems:"center",gap:8,
-                              background:"#f0f0f0",borderRadius:9,padding:"4px 10px"}}>
-                              <span style={{background:"#111",color:"#fff",
-                                borderRadius:7,padding:compact?"3px 11px":"5px 14px",fontFamily:"'DM Mono',monospace",
-                                fontWeight:900,fontSize:compact?18:24,lineHeight:1}}>×{it.q}</span>
-                              <span style={{color:"#222",fontSize:compact?13:15,fontWeight:800,letterSpacing:.3}}>{nomeBreve}</span>
-                            </div>
-                          </div>
-                          {/* 2. Nome completo — grande */}
-                          {nomeCompleto && (
-                            <div style={{color:"#111",fontSize:compact?15:22,fontWeight:900,lineHeight:1.2,
-                              marginBottom:4,letterSpacing:-.3}}>
-                              {nomeCompleto}
-                            </div>
-                          )}
-                          {!nomeCompleto && (
-                            <div style={{color:"#111",fontSize:compact?15:22,fontWeight:900,lineHeight:1.2,marginBottom:4}}>
-                              {nomeBreve}
-                            </div>
-                          )}
-                          {/* 3. Ingredienti — piccoli grigi */}
-                          {nomeIng && (
-                            <div style={{color:"#777",fontSize:compact?10:12,fontWeight:500,lineHeight:1.5,marginBottom:varSub?6:0}}>
-                              {nomeIng}
-                            </div>
-                          )}
-                          {/* 4. Variazione — IN FONDO, badge arancione */}
-                          {varSub && (
-                            <div style={{display:"inline-block",background:"#FF6B00",color:"#fff",
-                              borderRadius:8,padding: compact?"3px 8px":"4px 12px",fontSize:compact?11:14,fontWeight:800,
-                              marginTop:4,letterSpacing:.2}}>
-                              ⚠ {varSub}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {/* Note operatore — span entrambe le colonne in compact */}
-                    {notaCucinaOp&&(
-                      <div style={{background:"#E8341C",borderRadius:9,
-                        padding:"9px 13px",color:"#fff",fontSize:15,fontWeight:900,letterSpacing:.2,
-                        gridColumn: compact ? "1 / -1" : undefined}}>
-                        🍕 {notaCucinaOp}
-                      </div>
-                    )}
-                    {notaVisibile&&(
-                      <div style={{background:"rgba(232,52,28,0.12)",border:"2px solid rgba(232,52,28,0.45)",
-                        borderRadius:9,padding:"9px 13px",color:"#C0271A",fontSize:15,fontWeight:800,
-                        gridColumn: compact ? "1 / -1" : undefined}}>
-                        ⚠ {notaVisibile}
-                      </div>
-                    )}
-                      </div>
-                    );
-                  })()}
-                  {/* Nessun LISTO qui: lo porta la scheda Cocina, che vede l'ordine completo. */}
-                </div>
-              );
-            })}
+            <KitchenVisualStyles />
+            {groupKitchenSegments(activos).map((seg) => seg.type === "giro" ? (
+              <GiroGroup key={"g:" + seg.giroId} giro={seg.cards[0].manualGiro || { id: seg.giroId }}
+                label={formatManualGiroLabel(seg.cards[0].manualGiro || { id: seg.giroId })} count={seg.cards.length}
+                cols={Math.min(cols, Math.max(1, seg.cards.length))} light
+                control={<PriorityControl orden={seg.cards[0]} windowOrders={seg.cards} onUpdate={handleOffsetChange} light nowMs={now} />}>
+                {seg.cards.map((o) => renderDeliveryCard(o, null))}
+              </GiroGroup>
+            ) : seg.card.isDelivery
+              ? renderDeliveryCard(seg.card, <PriorityControl orden={seg.card} onUpdate={handleOffsetChange} light nowMs={now} />)
+              : renderLegacyCard(seg.card))}
           </div>
         )}
       </div>

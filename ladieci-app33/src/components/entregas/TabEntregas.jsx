@@ -178,6 +178,10 @@ const ZonaOrderRow = ({
       {/* Cliente + indirizzo */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {inGiroBlock && (
+            <span data-testid="entregas-zone" style={{ background: (zona && zona.colore) || "#6B7280", color: "#fff", borderRadius: 6,
+              padding: "1px 7px", fontSize: 11, fontWeight: 900, border: zona ? "none" : "1.5px dashed #fff" }}>{(zona && zona.id) || "SIN ZONA"}</span>
+          )}
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{o.nombre}</span>
           <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>{o.id}</span>
           {manualGiroWarnings.map(w => (
@@ -193,7 +197,7 @@ const ZonaOrderRow = ({
             return (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
                 <span style={{ color: "#FDBA74", fontWeight: 800 }} title="Hora límite de entrega (creación + 55 min)">
-                  Límite {deadlineCliente}
+                  Hora límite {deadlineCliente}
                 </span>
                 {o.hora && o.hora !== deadlineCliente && (
                   <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 600 }} title="Hora prometida al cliente">
@@ -341,7 +345,7 @@ const ZonaBlock = ({
               background: zona.colore, color: "#fff",
               borderRadius: 8, padding: "2px 10px",
               fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 900
-            }} title="Hora límite de entrega">Límite {giroHora}</span>
+            }} title="Hora límite de entrega">Hora límite {giroHora}</span>
           )}
           <span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 600, fontSize: 12 }}>
             {zona.nome}
@@ -438,27 +442,8 @@ const ManualGiroBlock = ({
             background: AMBER, color: "#1c1300",
             borderRadius: 8, padding: "2px 10px",
             fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 900
-          }} title="Hora límite más urgente del giro">Límite {hora}</span>
+          }} title="Hora límite más urgente del giro">Hora límite {hora}</span>
         )}
-        {/* Zone incluse */}
-        <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap" }}>
-          {zones.map(zid => {
-            const z = ZONE_DELIVERY.find(zz => zz.id === zid);
-            const col = z?.colore || "#888";
-            return (
-              <span key={zid} style={{
-                background: `${col}33`, border: `1.5px solid ${col}99`, color: "#fff",
-                borderRadius: 7, padding: "2px 8px", fontSize: 11, fontWeight: 800
-              }}>{zid}</span>
-            );
-          })}
-          {ordini.some(o => !o.zona) && (
-            <span style={{
-              background: "rgba(251,191,36,0.18)", border: "1.5px solid rgba(251,191,36,0.6)",
-              color: AMBER, borderRadius: 7, padding: "2px 8px", fontSize: 11, fontWeight: 800
-            }}>sin zona</span>
-          )}
-        </span>
         <span style={{ flex: 1 }} />
         {warnings.map(w => (
           <span key={w.key} style={warningStyle(w.level)}>{w.label}</span>
@@ -527,7 +512,7 @@ const GiroReviewModal = ({ review, orders = [], pending, onConfirm, onCancel }) 
               <div key={o.id} style={{ display: "flex", gap: 8, fontSize: 12.5, color: "#fff" }}>
                 <span style={{ fontWeight: 800, minWidth: 44 }}>{o.id}</span>
                 <span style={{ flex: 1, color: "rgba(255,255,255,0.7)" }}>{o.nombre}</span>
-                <span style={{ fontFamily: "'DM Mono',monospace", color: "rgba(255,255,255,0.6)" }}>{o.zona || "—"} · Límite {orderDeadlineHHMM(o) || "—"}</span>
+                <span style={{ fontFamily: "'DM Mono',monospace", color: "rgba(255,255,255,0.6)" }}>{o.zona || "—"} · Hora límite {orderDeadlineHHMM(o) || "—"}</span>
               </div>
             ))}
           </div>

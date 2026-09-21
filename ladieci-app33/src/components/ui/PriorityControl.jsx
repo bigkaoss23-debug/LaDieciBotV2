@@ -1,19 +1,35 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../../api';
-import { UI_OFFSET_MAX } from '../../utils/uiOffset';
+import { PRIORITY_STEPS_ALL } from '../../utils/uiOffset';
+import usePriorityContract from './usePriorityContract';
+import { maxPlusMinutes } from '../cocina/manualGiroCocina';
 
-// [FDV1] Priorità di produzione (ui_offset_min) per un pedido DOMICILIO o per un giro intero.
-// `−` = adelantar, `+` = retrasar: un tap apre la scelta rapida dei minuti (valore ASSOLUTO, non cumulativo).
-// Non crea orari visibili e non tocca mai la hora límite del cliente. In un giro il backend applica il valore a
-// tutto il blocco (un PATCH): il controllo va mostrato UNA sola volta per giro.
-export const PRIORITY_STEPS = [5, 10, 15, 20, 30].filter((m) => m <= UI_OFFSET_MAX);
+// [FDV1 R3] Priorità di produzione (ui_offset_min): sposta la card (o l'intero giro) avanti / indietro nella CODA DI
+// PRODUZIONE. Non ritarda la consegna: hora, delivery_deadline_at, timestamp e promessa al cliente non cambiano mai.
+//   − = adelantar (prima nella coda) · + = retrasar (dopo nella coda). I bottoni non portano minuti: un tap apre la
+//   scelta rapida 5 · 10 · 15 · 20 · 30 · 40 · 50 (valore ASSOLUTO), limitata dal contratto del backend.
+//   + oltre la finestra sicura (HORA LÍMITE più urgente − margine URGENTE; giro = membro più urgente) → disabilitato.
+//   Ridurre un + già applicato è sempre possibile.
+// In un giro il backend applica il valore a tutto il blocco: il controllo va mostrato UNA sola volta per giro.
 
-const isCertainFailure = (res) => !!res && res._status >= 400 && res._status < 500;
+const isSaved = (res) => !!res && res.success === true;
+const isCertainRefusal = (res) => !!res && (res.error === "offset_exceeds_window"
+  || (Number(res.status) >= 400 && Number(res.status) < 500) || (Number(res._status) >= 400 && Number(res._status) < 500));
 
-const PriorityControl = ({ orden, onUpdate, label = null, light = false }) => {
+export const priorityOptions = ({ dir, current, maxPlus, contract }) => {
+  const lim = dir === "sub" ? Math.abs(Number(contract.min) || 0) : Number(contract.max) || 0;
+  return PRIORITY_STEPS_ALL.filter((m) => m <= lim).map((m) => {
+    const value = dir === "sub" ? -m : m;
+    const allowed = dir === "sub" ? true : (m <= maxPlus || value < current);
+    return { minutes: m, value, allowed };
+  });
+};
+
+const PriorityControl = ({ orden, windowOrders = null, onUpdate, light = false, nowMs = null }) => {
+  const contract = usePriorityContract();
   const [open, setOpen] = useState(null); // null | 'sub' | 'add'
   const [saving, setSaving] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [note, setNote] = useState(null);
   const rootRef = useRef(null);
   const current = Number(orden?.ui_offset_min) || 0;
 
@@ -24,67 +40,75 @@ const PriorityControl = ({ orden, onUpdate, label = null, light = false }) => {
     return () => document.removeEventListener('pointerdown', close);
   }, [open]);
 
+  const maxPlus = maxPlusMinutes(windowOrders && windowOrders.length ? windowOrders : [orden],
+    Number.isFinite(nowMs) ? nowMs : Date.now(), contract);
+
   const apply = async (next) => {
     setOpen(null);
     if (saving || next === current) return;
-    setSaving(true); setFailed(false);
-    onUpdate?.(orden.id, next); // ottimistico (TabCocina lo tiene ~8 s, poi vince il dato realtime)
+    setSaving(true); setNote(null);
+    onUpdate?.(orden.id, next); // ottimistico (Cocina/Pizzeria lo tengono ~8 s, poi vince il dato realtime)
     try {
       const res = await api.setUiOffset(orden.id, next);
-      if (!(res?._ok || res?.success === true)) {
-        // errore certo → rollback; esito incerto (rete/5xx) → nessun rollback: decide il dato realtime
-        if (isCertainFailure(res)) onUpdate?.(orden.id, current);
-        setFailed(true);
+      if (!isSaved(res)) {
+        if (isCertainRefusal(res)) {
+          onUpdate?.(orden.id, current);           // rifiuto certo → rollback
+          setNote(res && res.error === "offset_exceeds_window" ? `Máx. +${Number(res.max_allowed) || 0} ahora` : "No aplicado");
+        } else {
+          setNote("Sin confirmar");                 // esito incerto → nessun rollback: decide il dato realtime
+        }
       }
     } catch (err) {
-      setFailed(true);
+      setNote("Sin confirmar");
     } finally {
       setSaving(false);
     }
   };
 
-  const ink = light ? '#1F2937' : '#FFFFFF';
+  const ink = light ? '#111827' : '#FFFFFF';
   const btn = {
-    minWidth: 38, height: 34, borderRadius: 9, fontSize: 20, fontWeight: 900, lineHeight: 1,
-    border: `1.5px solid ${light ? '#9CA3AF' : 'rgba(255,255,255,0.55)'}`,
-    background: light ? '#FFFFFF' : 'rgba(0,0,0,0.25)', color: ink,
+    minWidth: 44, height: 40, borderRadius: 10, fontSize: 24, fontWeight: 900, lineHeight: 1,
+    border: `2px solid ${light ? '#6B7280' : 'rgba(255,255,255,0.7)'}`,
+    background: light ? '#FFFFFF' : 'rgba(0,0,0,0.3)', color: ink,
     cursor: saving ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
   };
-  const chip = current !== 0 ? `${current > 0 ? '+' : '−'}${Math.abs(current)} min` : null;
+  const chip = current !== 0 ? `${current > 0 ? '+' : '−'}${Math.abs(current)}` : null;
+  const opts = open ? priorityOptions({ dir: open, current, maxPlus, contract }) : [];
 
   return (
     <div ref={rootRef} onClick={(e) => e.stopPropagation()} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      {label && <span style={{ fontSize: 11, fontWeight: 900, color: light ? '#92400E' : '#FDE68A' }}>{label}</span>}
-      <button type="button" aria-label="Adelantar" title="Adelantar" disabled={saving} style={btn}
+      <button type="button" aria-label="Adelantar en la cola" title="Adelantar en la cola de producción" disabled={saving} style={btn}
         onClick={() => setOpen(open === 'sub' ? null : 'sub')}>−</button>
       {chip && (
-        <span data-testid="priority-chip" style={{ fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 900,
-          color: light ? '#92400E' : '#FDE68A', background: light ? '#FEF3C7' : 'rgba(251,191,36,0.18)',
-          borderRadius: 7, padding: '3px 7px' }}>{chip}</span>
+        <span data-testid="priority-chip" title="Posición en la cola (no cambia la hora límite)" style={{ fontFamily: "'DM Mono',monospace", fontSize: 14, fontWeight: 900,
+          color: light ? '#92400E' : '#FDE68A', background: light ? '#FEF3C7' : 'rgba(251,191,36,0.22)', borderRadius: 7, padding: '4px 7px' }}>{chip}</span>
       )}
-      <button type="button" aria-label="Retrasar" title="Retrasar" disabled={saving} style={btn}
+      <button type="button" aria-label="Retrasar en la cola" title="Retrasar en la cola de producción" disabled={saving} style={btn}
         onClick={() => setOpen(open === 'add' ? null : 'add')}>+</button>
-      {failed && <span title="Prioridad sin confirmar" style={{ color: '#DC2626', fontWeight: 900 }}>!</span>}
+      {note && <span role="status" style={{ color: light ? '#B91C1C' : '#FCA5A5', fontWeight: 900, fontSize: 12 }}>{note}</span>}
       {open && (
-        <div role="menu" style={{ position: 'absolute', top: 40, left: 0, zIndex: 50, display: 'flex', flexDirection: 'column', gap: 6,
-          background: '#FFFFFF', border: '1.5px solid #9CA3AF', borderRadius: 10, padding: 8, boxShadow: '0 6px 20px rgba(0,0,0,0.3)' }}>
-          <div style={{ fontSize: 11, fontWeight: 900, color: '#374151' }}>{open === 'sub' ? 'Adelantar' : 'Retrasar'}</div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {PRIORITY_STEPS.map((m) => {
-              const v = open === 'sub' ? -m : m;
-              return (
-                <button key={m} type="button" role="menuitem" onClick={() => apply(v)}
-                  style={{ minWidth: 44, height: 40, borderRadius: 8, fontSize: 15, fontWeight: 900, cursor: 'pointer',
-                    border: `1.5px solid ${v === current ? '#D97706' : '#D1D5DB'}`, background: v === current ? '#FEF3C7' : '#F9FAFB', color: '#111827' }}>
-                  {m}
-                </button>
-              );
-            })}
+        <div role="menu" style={{ position: 'absolute', top: 46, left: 0, zIndex: 60, display: 'flex', flexDirection: 'column', gap: 8,
+          background: '#FFFFFF', border: '2px solid #6B7280', borderRadius: 12, padding: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', minWidth: 260 }}>
+          <div style={{ fontSize: 12, fontWeight: 900, color: '#111827' }}>{open === 'sub' ? 'Adelantar en la cola (min)' : 'Retrasar en la cola (min)'}</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {opts.map((op) => (
+              <button key={op.minutes} type="button" role="menuitem" disabled={!op.allowed} aria-disabled={!op.allowed}
+                onClick={() => op.allowed && apply(op.value)}
+                style={{ minWidth: 46, height: 44, borderRadius: 9, fontSize: 16, fontWeight: 900,
+                  cursor: op.allowed ? 'pointer' : 'not-allowed', opacity: op.allowed ? 1 : 0.35,
+                  border: `2px solid ${op.value === current ? '#D97706' : '#D1D5DB'}`,
+                  background: op.value === current ? '#FEF3C7' : '#F9FAFB', color: '#111827' }}>
+                {op.minutes}
+              </button>
+            ))}
           </div>
+          {open === 'add' && opts.some((op) => !op.allowed) && (
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#92400E' }}>Máx. +{maxPlus} ahora (hora límite cerca)</div>
+          )}
           {current !== 0 && (
             <button type="button" role="menuitem" onClick={() => apply(0)}
-              style={{ height: 36, borderRadius: 8, fontSize: 13, fontWeight: 800, cursor: 'pointer',
-                border: '1.5px solid #D1D5DB', background: '#FFFFFF', color: '#374151' }}>Sin prioridad</button>
+              style={{ height: 38, borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                border: '2px solid #D1D5DB', background: '#FFFFFF', color: '#374151' }}>Sin prioridad</button>
           )}
         </div>
       )}

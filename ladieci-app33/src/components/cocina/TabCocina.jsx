@@ -5,16 +5,16 @@ import Suoni from '../../sounds';
 import { lookupMenu, calcTimer, formatSub, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import PriorityControl from '../ui/PriorityControl';
+import { KitchenVisualStyles, DeadlineHeader, GiroGroup, zoneMeta } from './kitchenVisual';
 import { ORDER_STATES } from '../../core/orders';
 import { isDessertPizza } from '../../menu/dessertPizza';
 import {
   buildManualGiroMetaById,
   formatManualGiroLabel,
   getManualGiroForOrder,
-  manualGiroBadgeStyle,
   deadlineState,
   sortKitchenCards,
-  markPriorityHolders
+  groupKitchenSegments
 } from './manualGiroCocina';
 
 // hora = orario consegna cliente → horaForno = hora − tempoAndata(ordine)
@@ -184,18 +184,9 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
     .filter(o=>o.items.length>0 || o.extras.length>0);
 
   // [FDV1] A5: il giro è un BLOCCO ATOMICO anche nell'ordinamento (mai spezzato da uno standalone allo stesso minuto).
-  const activos = markPriorityHolders(sortKitchenCards(activosBase));
+  const activos = sortKitchenCards(activosBase, now);
 
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {activos.length===0
-        ?<div style={{background:"rgba(39,174,96,0.08)",borderRadius:14,
-            border:"1.5px solid rgba(39,174,96,0.25)",
-            padding:"50px 0",textAlign:"center",color:"#27AE60",fontSize:16,fontWeight:700}}>
-          ✅ Cocina al día — sin pedidos
-        </div>
-        :<div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>
-          {activos.map(o=>{
+  const renderCard = (o, control) => {
             const t  = o._timer;
             // [FDV1] DOMICILIO: colori dallo stato della deadline (normale / vicino al limite / superata)
             const fc = o.isDelivery
@@ -207,15 +198,15 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
             const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
             const oTel = String(o.tel||o.wa_id||"").replace("+","");
             const hasAggiunta = telConAggiunta.has(oTel);
-            const zonaColore = o.isDelivery ? (o.zonaObj?.colore || "#F97316") : null;
             return (
               <div key={o.id} style={{background:"#fff",borderRadius:16,
-                border: hasAggiunta ? `3px solid #E8341C` : (o.isDelivery ? `4px solid ${zonaColore}` : `2px solid ${fc.border}`),
+                border: hasAggiunta ? `3px solid #E8341C` : (o.isDelivery ? `2px solid #D1D5DB` : `2px solid ${fc.border}`),
+                ...(o.isDelivery ? { borderLeft: `14px solid ${zoneMeta(o).color}` } : {}),
                 display:"flex",flexDirection:"column",overflow:"hidden",
                 boxShadow: hasAggiunta
                   ? `0 0 0 3px #E8341C44, 0 4px 20px #E8341C33`
                   : o.isDelivery
-                    ? `0 0 0 4px ${zonaColore}88, 0 6px 24px ${zonaColore}55`
+                    ? `0 2px 10px rgba(0,0,0,0.15)`
                     : isUrgent?`0 0 0 3px ${fc.border}44,0 4px 20px ${fc.border}33`:`0 2px 10px rgba(0,0,0,0.15)`}}>
               {hasAggiunta && (
                 <div style={{background:"#E8341C",color:"#fff",textAlign:"center",
@@ -224,25 +215,18 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                   ⚠️ AGGIUNTA IN ATTESA ⚠️
                 </div>
               )}
+                {o.isDelivery ? (
+                  <>
+                    <DeadlineHeader o={o} zone={zoneMeta(o)} light={false} />
+                    {control && <div style={{padding:"8px 12px 0",background:"#fff"}}>{control}</div>}
+                  </>
+                ) : (
                 <div style={{background:fc.bg,padding:"12px 16px",
                   display:"flex",justifyContent:"space-between",alignItems:"flex-start",
                   borderBottom:`1px solid ${fc.border}55`}}>
                   <div>
                     <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:"#fff",fontSize:20,lineHeight:1}}>{o.id}</div>
                     <div style={{color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:14,marginTop:3}}>👤 {o.nombre}</div>
-                    {o.manualGiro && (
-                      <div style={{marginTop:6}}>
-                        <span style={manualGiroBadgeStyle(false)}>
-                          Giro {formatManualGiroLabel(o.manualGiro)}
-                        </span>
-                      </div>
-                    )}
-                    {/* [FDV1] DOMICILIO: nessun orario qui (il límite è a destra); solo il comando di priorità ± */}
-                    {o.isDelivery && (
-                      <div style={{marginTop:6}}>
-                        {o._priorityHere && <PriorityControl orden={o} onUpdate={handleOffsetChange} light={false} label={o.manualGiro ? "Todo el giro" : null} />}
-                      </div>
-                    )}
                     {/* RITIRO: orario di ritiro come prima */}
                     {!o.isDelivery && (o.horaForno || o.hora) && (
                       <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:5,marginTop:5}}>
@@ -291,6 +275,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                     )}
                   </div>
                 </div>
+                )}
                 {(()=>{
                     const compact = o.items.length >= 5;
                     return (
@@ -530,7 +515,27 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                 </div>
               </div>
             );
-          })}
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {activos.length===0
+        ?<div style={{background:"rgba(39,174,96,0.08)",borderRadius:14,
+            border:"1.5px solid rgba(39,174,96,0.25)",
+            padding:"50px 0",textAlign:"center",color:"#27AE60",fontSize:16,fontWeight:700}}>
+          ✅ Cocina al día — sin pedidos
+        </div>
+        :<div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>
+          <KitchenVisualStyles />
+          {groupKitchenSegments(activos).map((seg) => seg.type === "giro" ? (
+            <GiroGroup key={"g:" + seg.giroId} giro={seg.cards[0].manualGiro || { id: seg.giroId }}
+              label={formatManualGiroLabel(seg.cards[0].manualGiro || { id: seg.giroId })} count={seg.cards.length}
+              cols={Math.min(cols, Math.max(1, seg.cards.length))} light={false}
+              control={<PriorityControl orden={seg.cards[0]} windowOrders={seg.cards} onUpdate={handleOffsetChange} light={false} nowMs={now} />}>
+              {seg.cards.map((o) => renderCard(o, null))}
+            </GiroGroup>
+          ) : renderCard(seg.card, seg.card.isDelivery
+              ? <PriorityControl orden={seg.card} onUpdate={handleOffsetChange} light nowMs={now} /> : null))}
         </div>
       }
     </div>

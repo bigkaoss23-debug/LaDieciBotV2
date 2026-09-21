@@ -63,7 +63,7 @@ test("create senza warning: nessun input orario, 'Crear giro' chiama createManua
   expect(api.giroWarnings).toHaveBeenCalledWith({ order_ids: ["D-1", "D-2"] });
   expect(el.querySelector('input[placeholder="HH:MM"]')).toBeNull();
   expect(el.textContent).not.toContain("REVISAR");
-  expect(el.textContent).toContain("Límite 20:40");
+  expect(el.textContent).toContain("Hora límite 20:40");
   await click(btn(el, "Crear giro"));
   expect(api.createManualGiro).toHaveBeenCalledTimes(1);
   expect(api.createManualGiro.mock.calls[0]).toEqual([["D-1", "D-2"]]);

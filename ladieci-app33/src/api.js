@@ -334,6 +334,10 @@ const api = {
   },
   // Snooze visivo per-card DOMICILIO: sposta countdown +N min senza toccare hora/forno_out.
   // Cap backend [0, 20]. Reset naturale a chiusura serata.
+  // [FDV1 R3] contratto ± del backend (capability): v2 = −50..+50 con finestra prima della HORA LÍMITE.
+  priorityContract: function() {
+    return proxyPost({ action:'priorityContract' });
+  },
   setUiOffset: function(id, offset_min) {
     return proxyPost({ action:'setUiOffset', id, offset_min });
   },

@@ -130,8 +130,8 @@ describe("R3 — ± una sola volta per giro, scelta rapida, nessuna animazione",
   test("TabCocina: controllo ± sulla prima card del giro e sugli standalone, non sugli altri membri", async () => {
     const g = [o("#001", "21:30", { manual_giro_id: "g1" }), o("#002", "21:30"), o("#003", "21:45", { manual_giro_id: "g1" })];
     const el = await mount(<TabCocina ordenes={g} onListo={() => {}} />);
-    expect([...el.querySelectorAll('button[aria-label="Retrasar"]')]).toHaveLength(2);   // #001 (giro) + #002 (standalone)
-    expect(el.textContent).toMatch(/Todo el giro/);
+    expect([...el.querySelectorAll('button[aria-label="Retrasar en la cola"]')]).toHaveLength(2);   // #001 (giro) + #002 (standalone)
+    expect(el.querySelectorAll('[data-testid="giro-group"]')).toHaveLength(1);
     expect(el.textContent).not.toMatch(/Cancelar snooze|−5|\+5/);
     expect([...el.querySelectorAll("div")].filter((d) => /blink/.test(d.style.animation || ""))).toHaveLength(0);
   });
@@ -139,8 +139,8 @@ describe("R3 — ± una sola volta per giro, scelta rapida, nessuna animazione",
     const { api } = require("../api");
     api.setUiOffset.mockResolvedValue({ _ok: true, _status: 200 });
     const el = await mount(<TabCocina ordenes={[o("#001", "21:30", { ui_offset_min: 10 })]} onListo={() => {}} />);
-    expect(el.textContent).toMatch(/\+10 min/);
-    await act(async () => { el.querySelector('button[aria-label="Adelantar"]').click(); });
+    expect(el.querySelector('[data-testid="priority-chip"]').textContent).toBe("+10");
+    await act(async () => { el.querySelector('button[aria-label="Adelantar en la cola"]').click(); });
     expect([...el.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(["5", "10", "15", "20", "30", "Sin prioridad"]);
     await act(async () => { [...el.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "15").click(); await Promise.resolve(); });
     expect(api.setUiOffset).toHaveBeenCalledWith("#001", -15);

@@ -996,7 +996,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                       style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: 14, fontWeight: 700, width: 80, outline: "none", lineHeight: 1 }} />
                     {isFdv1Delivery && fdv1Preview?.hora_preview && (
                       <span title="Límite de entrega: creación + 55 min (fijado al guardar)" style={{ color: "#67e8f9", fontSize: 10, fontWeight: 800, lineHeight: 1, fontFamily: "'DM Mono',monospace" }}>
-                        Límite {fdv1Preview.hora_preview}
+                        Hora límite {fdv1Preview.hora_preview}
                       </span>
                     )}
                   </div>
@@ -1816,7 +1816,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   background: zona ? zona.colore : "rgba(249,115,22,0.7)",
                   color: "#fff", fontWeight: 900, fontSize: 16, cursor: "pointer", marginTop: 4
                 }}>
-                  {`✓ Confirmar entrega · cliente ${hora || "—"} · Límite ${(fdv1Preview && fdv1Preview.hora_preview) || "—"}${giroIntent ? (giroIntent.giro_id ? " · agregar a giro" : " · crear giro") : ""}`}
+                  {`✓ Confirmar entrega · cliente ${hora || "—"} · Hora límite ${(fdv1Preview && fdv1Preview.hora_preview) || "—"}${giroIntent ? (giroIntent.giro_id ? " · agregar a giro" : " · crear giro") : ""}`}
                 </button>
 
                 {/* Suggerimento giro esistente nella stessa zona — [FDV1] sostituito dall'asistente sopra */}
