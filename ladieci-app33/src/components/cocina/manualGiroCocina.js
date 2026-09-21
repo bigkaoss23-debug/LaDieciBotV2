@@ -8,12 +8,30 @@ export const formatManualGiroLabel = (giro) => {
   return m ? "G" + m[1] : "G?";
 };
 
-export const buildManualGiroMetaById = (manualGiros = []) => {
+// hora_ref / entrega_ref derivati da un ordine anchor che non è più membro del giro
+// (es. 3→2 togliendo proprio l'anchor): il backend LIVE non li ricalcola alla rimozione.
+// In sola lettura li trattiamo come assenti → i membri tornano al proprio forno_out /
+// alla propria ora cliente. Il DB non viene toccato. allOrders = lista COMPLETA ordenes.
+export const sanitizeGiroRefs = (giro, allOrders) => {
+  if (!giro || !giro.anchor_order_id || !Array.isArray(allOrders)) return giro;
+  const anchorIsMember = allOrders.some(o => o && o.id === giro.anchor_order_id && o.manual_giro_id === giro.id);
+  return anchorIsMember ? giro : { ...giro, hora_ref: null, entrega_ref: null, anchor_order_id: null };
+};
+
+export const buildManualGiroMetaById = (manualGiros = [], allOrders = null) => {
   const out = {};
   for (const giro of manualGiros || []) {
-    if (giro && giro.id && !giro.dissolved_at) out[giro.id] = giro;
+    if (giro && giro.id && !giro.dissolved_at) out[giro.id] = allOrders ? sanitizeGiroRefs(giro, allOrders) : giro;
   }
   return out;
+};
+
+// Ordinamento dentro lo stesso giro: prima per target di produzione, a parità per
+// promessa cliente (o.hora) — il cliente più urgente esce per primo.
+export const compareWithinGiro = (a, b) => {
+  const d = (orarioToMs(a?.horaForno || a?.hora) || 0) - (orarioToMs(b?.horaForno || b?.hora) || 0);
+  if (d !== 0) return d;
+  return (orarioToMs(a?.hora) || 0) - (orarioToMs(b?.hora) || 0);
 };
 
 // Target di produzione (⏱) della card. Membro di giro manuale: la base è hora_ref

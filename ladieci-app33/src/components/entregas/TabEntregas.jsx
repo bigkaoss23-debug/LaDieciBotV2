@@ -4,6 +4,7 @@ import { api } from '../../api';
 import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
 import { applyUiOffset } from '../../utils/uiOffset';
 import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
+import { sanitizeGiroRefs } from '../cocina/manualGiroCocina';
 
 // Helpers tempi: hora consegna ↔ horaForno (= partenza driver = uscita pizza forno)
 const _tm = (t) => { if (!t) return null; const [h,m] = t.split(":").map(Number); return h*60+m; };
@@ -895,7 +896,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   // non è ancora stato pulito da un tick di realtime.
   const giroMetaById = {};
   for (const giro of manualGiros) {
-    if (!giro.dissolved_at) giroMetaById[giro.id] = giro;
+    if (!giro.dissolved_at) giroMetaById[giro.id] = sanitizeGiroRefs(giro, ordenes);
   }
   const manualGiroByOrderId = {};
   for (const o of entregas) {

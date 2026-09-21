@@ -11,7 +11,8 @@ import {
   getManualGiroForOrder,
   manualGiroBadgeStyle,
   manualGiroSortAnchorMs,
-  resolveHoraFornoCard
+  resolveHoraFornoCard,
+  compareWithinGiro
 } from './manualGiroCocina';
 
 const subtractMinutes = (hora, min) => {
@@ -67,7 +68,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
     if (cat === "Postres") return isDessertPizza(it);
     return cat === "Pizzas";
   };
-  const manualGiroMetaById = buildManualGiroMetaById(manualGiros);
+  const manualGiroMetaById = buildManualGiroMetaById(manualGiros, ordenes);
 
   const activosBase = ordenes
     .filter(o => o.estado==="EN_COCINA")
@@ -105,7 +106,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
         const aSlot10 = Math.floor(aMs/(10*60*1000));
         const bSlot10 = Math.floor(bMs/(10*60*1000));
         if (a.manual_giro_id && a.manual_giro_id === b.manual_giro_id) {
-          return (orarioToMs(aH)||0) - (orarioToMs(bH)||0);
+          return compareWithinGiro(a, b);
         }
         if (aSlot10 === bSlot10 && a.isDelivery !== b.isDelivery) return a.isDelivery ? 1 : -1;
         return aMs - bMs;
