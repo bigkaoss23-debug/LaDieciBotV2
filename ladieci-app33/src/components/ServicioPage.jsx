@@ -17,7 +17,7 @@ import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrint
 import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
 import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
-import { ORDER_STATES, buildEnCocinaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isWaitingDriverState, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
+import { ORDER_STATES, buildEnCocinaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
 import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
 import { isDessertPizza } from '../menu/dessertPizza';
 
