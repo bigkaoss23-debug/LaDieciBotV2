@@ -203,7 +203,7 @@ const ZonaOrderRow = ({
             if (!deadlineCliente) return null;
             return (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
-                <span style={{ color: "#FDBA74", fontWeight: 800 }} title="Hora límite de entrega (creación + 55 min)">
+                <span style={{ color: "#FDBA74", fontWeight: 800 }} title="Hora límite de entrega: la más tardía entre creación + 55 min y la hora prometida al cliente">
                   Hora límite {deadlineCliente}
                 </span>
                 {o.hora && o.hora !== deadlineCliente && (

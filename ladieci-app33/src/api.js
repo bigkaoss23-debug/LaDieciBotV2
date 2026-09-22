@@ -516,7 +516,10 @@ const api = {
   giroWarnings: function(body = {}) {
     return proxyPost({ action: "giroWarnings", ...body });
   },
-  // [FDV1] Nuevo Pedido DOMICILIO: deadline (ora + 55') + suggerimento giro compatibile. Sola lettura.
+  // [FDV1] Nuevo Pedido DOMICILIO: deadline + suggerimento giro compatibile. Sola lettura.
+  // [DEADLINE-HORA 2026-09-22] `body.hora` (HH:MM, opzionale) fa restituire il límite
+  // canonico max(ora + 55', hora promessa): la stessa funzione che il backend userà
+  // nell'INSERT. Senza `hora` il comportamento è quello precedente (ora + 55').
   previewDeliveryV1: function(body = {}) {
     return proxyPost({ action: "previewDeliveryV1", ...body });
   },

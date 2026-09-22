@@ -244,7 +244,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                   <div style={{textAlign:"right",flexShrink:0}}>
                     {o.isDelivery ? (
                       // [FDV1] límite de entrega: UN solo orario principale, grande
-                      <div title="Límite de entrega (creación + 55 min)" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
+                      <div title="Hora límite de entrega: la más tardía entre creación + 55 min y la hora prometida al cliente" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
                         <div style={{fontFamily:"'DM Mono',monospace",fontSize:40,fontWeight:900,lineHeight:1,
                           color: o.dl && o.dl.state === "late" ? "#FF2222" : o.dl && o.dl.state === "near" ? "#F5C842" : "#FFFFFF",
                           animation: "none"}}>{o.dl ? o.dl.hhmm : "—"}</div>

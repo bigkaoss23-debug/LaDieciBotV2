@@ -72,7 +72,7 @@ export const DeadlineHeader = ({ o, zone, light, right = null }) => {
           <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 900 }}>{o.id}</span>{o.nombre ? ` · ${o.nombre}` : ""}
         </span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }} title="Hora límite de entrega (creación + 55 min)">
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }} title="Hora límite de entrega: la más tardía entre creación + 55 min y la hora prometida al cliente">
         <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 42, fontWeight: 900, lineHeight: 1, color: th.fg }}>{o.dl ? o.dl.hhmm : "—"}</div>
         <div style={{ fontSize: st === "normal" ? 11 : 15, fontWeight: 900, letterSpacing: .6, color: th.sub }}>{DEADLINE_LABEL[st]}</div>
         {right}

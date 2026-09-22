@@ -680,22 +680,42 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setHora(firstAvailable);
   }, [visible, tipoConsegna, backendTiming, horaTouchedByOperator, hora]);
 
-  // [FDV1] deadline preview (ora + 55') + giro compatibile (zona, deadline ±15', capienza, stato). Sola lettura;
-  // ricaricata ogni 30 s. La deadline vera la fissa il backend al salvataggio (ts server + 55').
+  // [FDV1] deadline preview + giro compatibile (zona, deadline ±15', capienza, stato). Sola lettura;
+  // ricaricata ogni 30 s.
+  //
+  // [DEADLINE-HORA 2026-09-22] La preview manda anche `hora`, così mostra lo STESSO
+  // límite che il backend scriverà: deadline = max(creazione + 55', hora promessa).
+  // La risoluzione Madrid / mezzanotte / DST vive SOLO nel backend
+  // (core/delivery/deadline.js): qui non si duplica nulla, si spedisce la hora grezza.
+  //
+  // Nessun feedback loop: `hora` alimenta la preview, ma la preview può riscrivere
+  // `hora` UNA sola volta (guardia fdv1HoraPrefilled) e mai dopo che l'operatore
+  // l'ha toccata (horaCustom / horaTouchedByOperator). Dopo quel momento la preview
+  // aggiorna soltanto il límite mostrato.
   const fdv1Zona = zonaAssegnata ? (zonaInfo?.zona?.id || null) : null;
   const fdv1HoraPrefilled = useRef(false);
   useEffect(() => { if (!visible) fdv1HoraPrefilled.current = false; }, [visible]);
+  // Solo una HH:MM valida viaggia nel payload: una hora a metà digitazione ("2", "21:")
+  // verrebbe scartata dal parser backend, quindi non vale una richiesta.
+  const fdv1HoraValida = /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(hora || "").trim()) ? hora.trim() : "";
+  // Debounce: senza, ogni tasto nel campo ora sarebbe una request.
+  const [fdv1HoraDebounced, setFdv1HoraDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setFdv1HoraDebounced(fdv1HoraValida), 350);
+    return () => clearTimeout(t);
+  }, [fdv1HoraValida]);
   useEffect(() => {
     if (!visible || !isFdv1Delivery) { setFdv1Preview(null); return; }
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await api.previewDeliveryV1({ zona: fdv1Zona });
+        const res = await api.previewDeliveryV1({ zona: fdv1Zona, hora: fdv1HoraDebounced || undefined });
         if (cancelled || !res || !res.ok) return;
         setFdv1Preview(res);
-        // Proposta iniziale per la promessa al cliente (UNA volta, solo se l'operatore non l'ha toccata):
-        // poi `hora` è un dato dell'operatore, indipendente dalla deadline.
-        if (res.hora_preview && !fdv1HoraPrefilled.current && !horaCustom.current) {
+        // Proposta iniziale per la promessa al cliente (UNA volta, solo se l'operatore
+        // non l'ha toccata): poi `hora` è un dato dell'operatore e la preview non lo
+        // sovrascrive più — aggiorna solo delivery_deadline_preview / hora_preview.
+        if (res.hora_preview && !fdv1HoraPrefilled.current && !horaCustom.current && !horaTouchedByOperator) {
           fdv1HoraPrefilled.current = true;
           setHora(res.hora_preview);
         }
@@ -706,7 +726,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     load();
     const t = setInterval(load, 30000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [visible, isFdv1Delivery, fdv1Zona]); // eslint-disable-line
+  }, [visible, isFdv1Delivery, fdv1Zona, fdv1HoraDebounced]); // eslint-disable-line
   useEffect(() => { setGiroIntent(null); }, [fdv1Zona]);
 
   // Prefill quando il modal si apre
@@ -953,7 +973,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)}
                       style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: 14, fontWeight: 700, width: 80, outline: "none", lineHeight: 1 }} />
                     {isFdv1Delivery && fdv1Preview?.hora_preview && (
-                      <span title="Límite de entrega: creación + 55 min (fijado al guardar)" style={{ color: "#67e8f9", fontSize: 10, fontWeight: 800, lineHeight: 1, fontFamily: "'DM Mono',monospace" }}>
+                      <span title="Hora límite: la más tardía entre creación + 55 min y la hora prometida (fijada al guardar)" style={{ color: "#67e8f9", fontSize: 10, fontWeight: 800, lineHeight: 1, fontFamily: "'DM Mono',monospace" }}>
                         Hora límite {fdv1Preview.hora_preview}
                       </span>
                     )}
@@ -1746,7 +1766,10 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                         <span style={{ color: "#67e8f9", fontWeight: 900, fontSize: 18, fontFamily: "'DM Mono',monospace" }}>{lim}</span>
                       </div>
                       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
-                        Creación + {(fdv1Preview && fdv1Preview.deadline_min) || 55} min · se fija al guardar el pedido
+                        {/* [DEADLINE-HORA 2026-09-22] La hora prometida manda cuando es más tardía. */}
+                        {fdv1Preview && fdv1Preview.hora_preview && hora && fdv1Preview.hora_preview === hora
+                          ? "Hora prometida al cliente · se fija al guardar el pedido"
+                          : `Creación + ${(fdv1Preview && fdv1Preview.deadline_min) || 55} min · se fija al guardar el pedido`}
                       </div>
                       {zona && !sugg && fdv1Preview && (
                         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>Sin giro compatible · pedido separado</div>
