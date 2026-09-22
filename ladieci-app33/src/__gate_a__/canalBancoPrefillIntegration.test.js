@@ -60,11 +60,12 @@ const VALID_CANAL_IDS = [...idsMatch[0].matchAll(/id:\s*"([A-Z]+)"/g)].map(m => 
 // La regola di persistenza reale (riga ~309): stesso identico pattern già
 // verificato da canalTelPersistence.test.js, qui trasformato in funzione pura
 // per poterlo eseguire su valori sintetici.
-if (!/canal:\s*canal === "BANCO" \? "BANCO" : canal === "TEL" \? "TEL" : "MANUAL"/.test(modalSrc)) {
+// [ORIGINE-ORDINI 2026-09-22] Il fallback è TEL, non più MANUAL.
+if (!/canal:\s*canal === "BANCO" \? "BANCO" : "TEL"/.test(modalSrc)) {
   throw new Error("Ternario di persistenza canal non trovato/cambiato in NuevoPedidoModal.jsx");
 }
 function persistCanal(canalState) {
-  return canalState === "BANCO" ? "BANCO" : canalState === "TEL" ? "TEL" : "MANUAL";
+  return canalState === "BANCO" ? "BANCO" : "TEL";
 }
 
 // Stato iniziale/di reset di `canal` nel modal (righe ~102 e ~187).
@@ -73,14 +74,15 @@ if (!/const \[canal,\s*setCanal\]\s*=\s*useState\("TEL"\)/.test(modalSrc)) {
 }
 const MODAL_DEFAULT_CANAL = "TEL";
 
-// La regola di switch-tab dopo la creazione (righe ~354-355 in ServicioPage).
-if (!/if \(o\.canal===\s*"MANUAL"\) setTab\("manual"\);\s*\n\s*else if \(o\.canal===\s*"BANCO"\) setTab\("banco"\);/.test(servicioSrc)) {
+// La regola di switch-tab dopo la creazione (ServicioPage, ~riga 354).
+// [ORIGINE-ORDINI 2026-09-22] Prima il ramo era su "MANUAL" e per un TEL non
+// scattava nulla; ora BANCO → Barra e tutto il resto → Tel.
+if (!/if \(o\.canal===\s*"BANCO"\) setTab\("banco"\);\s*\n\s*else setTab\("manual"\);/.test(servicioSrc)) {
   throw new Error("Regola di switch-tab post-creazione cambiata in ServicioPage.jsx");
 }
 function tabAfterCreation(currentTab, orderCanal) {
-  if (orderCanal === "MANUAL") return "manual";
   if (orderCanal === "BANCO") return "banco";
-  return currentTab; // nessun ramo per TEL/WA: il tab resta quello precedente
+  return "manual"; // TEL, e MANUAL legacy, vivono nel tab Tel
 }
 
 // ── Simulazione del ciclo di vita del modal per un click su NUEVO PEDIDO ───
@@ -95,8 +97,9 @@ function openModalCanal(externalTab, explicitClick /* "TEL" | "BANCO" | null */)
 }
 
 describe("Cross-check ServicioPage → NuevoPedidoModal: id di canale coerenti", () => {
-  test("il valore iniettato come prefill.canal è uno dei 3 id validi del modal", () => {
-    expect(VALID_CANAL_IDS).toEqual(["TEL", "WA", "BANCO"]);
+  test("il valore iniettato come prefill.canal è uno dei 2 id validi del modal", () => {
+    // [ORIGINE-ORDINI 2026-09-22] "WA" non è più un'opzione di Nuevo Pedido.
+    expect(VALID_CANAL_IDS).toEqual(["TEL", "BANCO"]);
     expect(VALID_CANAL_IDS).toContain(PREFILL_CANAL_WHEN_TAB_BANCO);
   });
 
@@ -136,7 +139,8 @@ describe("CASE 3 — sequenza TEL → BANCO → TEL: il terzo ordine deve produr
     const canal1 = openModalCanal(tab, null);
     const persisted1 = persistCanal(canal1);
     expect(persisted1).toBe("TEL");
-    tab = tabAfterCreation(tab, persisted1); // TEL non sposta il tab
+    tab = tabAfterCreation(tab, persisted1);
+    expect(tab).toBe("manual"); // [ORIGINE-ORDINI] ora un TEL porta sul tab Tel
 
     // Ordine 2: BANCO (operatore clicca esplicitamente "Barra" nel modal)
     const canal2 = openModalCanal(tab, "BANCO");

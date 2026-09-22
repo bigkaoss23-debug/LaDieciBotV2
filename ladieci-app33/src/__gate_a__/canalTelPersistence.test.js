@@ -5,10 +5,17 @@
  * bucket TEL di Economía non riceveva mai un ordine nuovo. Ora TEL viene
  * persistito come TEL.
  *
- * VINCOLO DA NON ROMPERE (hotfix prod-wa-orphan-visible, caso #014):
- * il tab "💬 WhatsApp" deve continuare a salvare MANUAL. Un ordine canal="WA"
- * CON wa_id non appartiene a Pedidos (belongsToPedidos → false) e non compare in
- * TabWA, che disegna solo dalla tabella wa_msgs: resterebbe invisibile ovunque.
+ * [ORIGINE-ORDINI 2026-09-22] Il tab "💬 WhatsApp" di Nuevo Pedido è stato
+ * RIMOSSO per decisione business: un ordine WhatsApp trascritto a mano è un TEL.
+ * Con quel bottone sparisce anche il motivo per cui il modal scriveva "MANUAL"
+ * (hotfix prod-wa-orphan-visible, caso #014): non esistendo più un percorso
+ * manuale con origine WhatsApp, non c'è più nulla da salvare come MANUAL.
+ *
+ * VINCOLO DA NON ROMPERE: la regola di visibilità resta invariata. Un ordine
+ * canal="WA" CON wa_id non appartiene a Pedidos (belongsToPedidos → false) e non
+ * compare in TabWA, che disegna solo dalla tabella wa_msgs: resterebbe invisibile
+ * ovunque. Per questo Nuevo Pedido non deve MAI produrre "WA" — ed è ora
+ * strutturalmente impossibile, perché il ternario collassa su TEL.
  */
 import { belongsToPedidos, isWaSinConversacion, isWaOrigen } from "../utils/pedidosVisibility";
 
@@ -29,6 +36,23 @@ describe("pedidosVisibility regge già canal=TEL", () => {
     expect(isWaOrigen({ canal: "TEL", wa_id: "" })).toBe(false);
   });
 
+  // [ORIGINE-ORDINI 2026-09-22] Il backend LIVE (agentOrdini.js:330) popola
+  // wa_id col telefono su OGNI ordine: il badge "💬 WhatsApp" non deve dedurre
+  // l'origine da wa_id, altrimenti ogni ordine telefonico si marchia come
+  // WhatsApp appena il polling lo rilegge dal DB.
+  test("TEL CON wa_id (popolato dal fallback backend) non porta il badge WhatsApp", () => {
+    expect(isWaOrigen({ canal: "TEL", wa_id: "34600111222" })).toBe(false);
+  });
+
+  test("BANCO con wa_id sintetico non porta il badge WhatsApp", () => {
+    expect(isWaOrigen({ canal: "BANCO", wa_id: "BARRA-K3F1" })).toBe(false);
+  });
+
+  test("il badge WhatsApp resta per il flusso bot (canal=WA con conversazione)", () => {
+    expect(isWaOrigen({ canal: "WA", wa_id: "34600111222" })).toBe(true);
+    expect(isWaOrigen({ canal: "WA", wa_id: "" })).toBe(false); // orfano: badge dedicato
+  });
+
   test("le altre appartenenze restano invariate", () => {
     expect(belongsToPedidos({ canal: "MANUAL" })).toBe(true);
     expect(belongsToPedidos({ canal: "BANCO" })).toBe(false);          // tab Barra
@@ -41,18 +65,23 @@ describe("NuevoPedidoModal persiste il canale scelto", () => {
   const src = read("components/NuevoPedidoModal.jsx");
 
   test("TEL viene salvato come TEL, non più appiattito su MANUAL", () => {
-    expect(src).toMatch(/canal === "TEL" \? "TEL"/);
+    expect(src).toMatch(/canal:\s*canal === "BANCO" \? "BANCO" : "TEL"/);
   });
 
   test("BANCO resta BANCO", () => {
     expect(src).toMatch(/canal === "BANCO" \? "BANCO"/);
   });
 
-  test("il tab WhatsApp continua a salvare MANUAL (hotfix orphan intatto)", () => {
-    // il ternario termina con MANUAL: è il ramo che raccoglie WA e ogni altro caso
-    expect(src).toMatch(/canal:\s*canal === "BANCO" \? "BANCO" : canal === "TEL" \? "TEL" : "MANUAL"/);
-    // e l'origine WhatsApp resta tracciata in wa_id
-    expect(src).toMatch(/wa_id:\s*canal === "WA"/);
+  // [ORIGINE-ORDINI 2026-09-22]
+  test("il ternario non può più produrre MANUAL né WA", () => {
+    const ternario = src.match(/canal:\s*canal === "BANCO"[^\n]*/)[0];
+    expect(ternario).not.toMatch(/MANUAL/);
+    expect(ternario).not.toMatch(/"WA"/);
+  });
+
+  test("wa_id non viene più usato come marcatore d'origine", () => {
+    expect(src).toMatch(/wa_id:\s*""/);
+    expect(src).not.toMatch(/wa_id:\s*canal === "WA"/);
   });
 });
 

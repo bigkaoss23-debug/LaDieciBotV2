@@ -25,8 +25,15 @@ export const belongsToPedidos = (o) => {
   return false; // BANCO, e WA con wa_id (flusso WhatsApp)
 };
 
-// Origine WhatsApp da mostrare come badge "💬 WhatsApp" su un ordine visibile in
-// Pedidos: ordine manuale creato dal bottone WhatsApp (canal non BANCO, wa_id
-// valorizzato col telefono). Esclude l'orfano, che ha un badge dedicato.
+// Origine WhatsApp da mostrare come badge "💬 WhatsApp" in Pedidos.
+//
+// [ORIGINE-ORDINI 2026-09-22] Ora si decide su `canal`, non più su `wa_id`.
+// `wa_id` NON è un marcatore d'origine: il backend LIVE (agentOrdini.js:330,
+// `wa_id: params.waId || params.tel || ""`) lo popola col telefono su OGNI
+// ordine, anche telefonico e da banco. La vecchia regola (canal !== BANCO &&
+// wa_id non vuoto) marchiava quindi come "💬 WhatsApp" tutti gli ordini TEL
+// appena il polling li rileggeva dal DB. Il bottone "💬 WhatsApp" di Nuevo
+// Pedido non esiste più, quindi l'unico vero WhatsApp è il canale bot.
+// Invariata la semantica per il flusso bot: l'orfano ha il suo badge dedicato.
 export const isWaOrigen = (o) =>
-  !!o && !isWaSinConversacion(o) && o.canal !== "BANCO" && !!String(o.wa_id || "").trim();
+  !!o && o.canal === "WA" && !isWaSinConversacion(o);

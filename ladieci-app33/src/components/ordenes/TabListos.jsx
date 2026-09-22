@@ -105,7 +105,9 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                     : <span style={{background:"rgba(0,0,0,0.25)",color:"#FFFFFF",
                         border:"1px solid rgba(255,255,255,0.30)",borderRadius:20,
                         padding:"2px 9px",fontSize:11,fontWeight:700}}>
-                        {o.canal==="WA"?"💬 WA":"📞 Tel"}
+                        {/* [ORIGINE-ORDINI 2026-09-22] Tre origini, non due: prima
+                            un ordine BANCO in Listos si leggeva "📞 Tel". */}
+                        {o.canal==="WA" ? "💬 WA" : o.canal==="BANCO" ? "🏪 Barra" : "📞 Tel"}
                       </span>}
                   {o.ya_pagado && (
                     <span style={{

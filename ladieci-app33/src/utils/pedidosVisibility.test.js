@@ -52,10 +52,19 @@ describe("badge helpers (OrdenCard)", () => {
     expect(isWaSinConversacion(o)).toBe(true);
     expect(isWaOrigen(o)).toBe(false);
   });
-  test("MANUAL con wa_id (creato dal bottone WhatsApp) → badge WhatsApp", () => {
-    const o = ord({ canal: "MANUAL", wa_id: "34600111222" });
+  test("WA con conversazione → badge WhatsApp", () => {
+    const o = ord({ canal: "WA", wa_id: "34600111222" });
     expect(isWaOrigen(o)).toBe(true);
     expect(isWaSinConversacion(o)).toBe(false);
+  });
+  // [ORIGINE-ORDINI 2026-09-22] Il badge si decide su `canal`, non su `wa_id`.
+  // Prima un MANUAL con wa_id era "l'ordine creato dal bottone 💬 WhatsApp": quel
+  // bottone non esiste più. E `wa_id` non è un marcatore d'origine affidabile,
+  // perché il backend LIVE (agentOrdini.js:330) lo popola col telefono su OGNI
+  // ordine — quindi la vecchia regola marchiava come WhatsApp anche i telefonici.
+  test("MANUAL/TEL con wa_id popolato dal backend → nessun badge WhatsApp", () => {
+    expect(isWaOrigen(ord({ canal: "MANUAL", wa_id: "34600111222" }))).toBe(false);
+    expect(isWaOrigen(ord({ canal: "TEL", wa_id: "34600111222" }))).toBe(false);
   });
   test("MANUAL/TEL puro (telefono, senza wa_id) → nessun badge WhatsApp", () => {
     expect(isWaOrigen(ord({ canal: "MANUAL", wa_id: "" }))).toBe(false);

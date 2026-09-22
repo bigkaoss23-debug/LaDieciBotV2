@@ -293,21 +293,23 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     onConfirm({
       id: genId(), client_req_id: reqIdRef.current, nombre: nombre.trim(), tel: telFinal,
       cliente_id: cidFinale || null,
-      // HOTFIX prod-wa-orphan-visible (base 777ae55): il bottone "💬 WhatsApp"
-      // del modal manuale NON deve salvare canal="WA". Un ordine canal=WA creato
-      // a mano resta INVISIBILE — TabManual/Pedidos scarta i WA e TabWA disegna
-      // solo dalla tabella wa_msgs, che qui non esiste (caso #014 / "ordine #1").
-      // Lo salviamo come MANUAL così è sempre visibile in Pedidos; l'origine
-      // WhatsApp resta tracciata in wa_id (telefono) e mostrata come badge 💬 in
-      // OrdenCard. NON crea riga wa_msgs: resta un ordine MANUAL a tutti gli effetti.
-      // [DELIVERY-REFACTOR 2026-09-22 / Phase 4] TEL viene finalmente persistito
-      // come TEL: prima finiva in MANUAL e il bucket TEL di Economía non riceveva
-      // mai un ordine nuovo. `pedidosVisibility.belongsToPedidos` accettava già
-      // "TEL", quindi la visibilità in Pedidos non cambia.
-      // Il ramo WhatsApp resta deliberatamente MANUAL (vedi il commento sopra):
-      // spostarlo su "WA" ricreerebbe il bug #014 degli ordini orfani invisibili.
-      canal: canal === "BANCO" ? "BANCO" : canal === "TEL" ? "TEL" : "MANUAL",
-      wa_id: canal === "WA" ? String(tel || "").replace(/\D/g, "") : "",
+      // [ORIGINE-ORDINI 2026-09-22] Nuevo Pedido ha due sole origini: TEL e BANCO.
+      //   TEL   = richiesta arrivata dall'esterno (telefonata, oppure messaggio
+      //           ricevuto sul telefono della pizzeria e trascritto dall'operatore).
+      //   BANCO = ordine nato in loco (banco, terrazza, consumazione locale).
+      // Il bottone "💬 WhatsApp" è stato rimosso per decisione business: un ordine
+      // WhatsApp trascritto a mano è un TEL. Di conseguenza questo percorso non
+      // produce più né "MANUAL" né "WA":
+      //   - "MANUAL" resta solo come valore LEGACY degli ordini storici (accettato
+      //     in lettura dal tab Tel via belongsToPedidos, mai più scritto da qui);
+      //   - "WA" resta riservato al flusso bot, che non passa da questo modal.
+      // Il fallback del ternario è TEL, non MANUAL: se un prefill inietta un valore
+      // sconosciuto (era il bug BARRA→MANUAL del microfix 3b14c6f) l'ordine finisce
+      // nel bucket telefonico corretto e nel tab Tel, non in una discarica.
+      // wa_id resta vuoto: NON è un marcatore d'origine. (Il backend LIVE ci scrive
+      // comunque il tel — difetto noto e documentato, fuori da questo ciclo.)
+      canal: canal === "BANCO" ? "BANCO" : "TEL",
+      wa_id: "",
       items: items.map(i => ({ ...i })),
       nota: notaFinale, hora, ts: Date.now(), estado: "POR_CONFIRMAR",
       tipo_consegna: tipoConsegna,
@@ -846,7 +848,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
             <div>
               <div style={{ color: C.bianco, fontWeight: 800, fontSize: 18 }}>Nuevo pedido</div>
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                {[{ id: "TEL", label: "📞 Teléfono" }, { id: "WA", label: "💬 WhatsApp" }, { id: "BANCO", label: "🏪 Barra" }].map(c => (
+                {/* [ORIGINE-ORDINI 2026-09-22] Due sole origini. "💬 WhatsApp"
+                    rimosso: un ordine WhatsApp trascritto a mano è un TEL. */}
+                {[{ id: "TEL", label: "📞 Teléfono" }, { id: "BANCO", label: "🏪 Barra" }].map(c => (
                   <button key={c.id} onClick={() => setCanal(c.id)} style={{
                     background: canal === c.id ? C.rosso : "transparent",
                     border: `1.5px solid ${canal === c.id ? C.rosso : C.fumo}`,

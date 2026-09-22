@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { C, useWidth, blockedTels, MAX_PIZZE_ORA, LOGO_RED_SRC, genId, tot, calcTotale } from '../constants';
 import { sb, api, auth } from '../api';
 import { parseEstadoTerminalError } from '../utils/orderModifyError';
+import { belongsToPedidos } from '../utils/pedidosVisibility';
 import Suoni from '../sounds';
 import TabWA from './wa/TabWA';
 import TabManual from './ordenes/TabManual';
@@ -351,8 +352,13 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     setOrdenes(p=>[{...o, _temp:true},...p]);
     const canalLabel = o.canal==="BANCO" ? "Barra" : "Tel";
     notify("✅ " + canalLabel + " (guardando…)");
-    if (o.canal==="MANUAL") setTab("manual");
-    else if (o.canal==="BANCO") setTab("banco");
+    // [ORIGINE-ORDINI 2026-09-22] Auto-switch sul tab che contiene davvero
+    // l'ordine appena creato. Prima il ramo era `canal==="MANUAL"`, quindi dopo
+    // il passaggio a TEL (7a5b09c) nessun ramo scattava più e l'operatore restava
+    // sul tab da cui aveva aperto il modal. BANCO → Barra, tutto il resto (TEL, e
+    // MANUAL legacy se mai ricomparisse) → Tel, coerente con belongsToPedidos.
+    if (o.canal==="BANCO") setTab("banco");
+    else setTab("manual");
     try {
       // STRICT: throw se Railway non risponde con un id valido. L'idempotency
       // key (o.client_req_id) protegge da duplicati in caso di retry.
@@ -786,7 +792,12 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
 
   // Tab — WA (con sub-tab interni), Tel, Banco, Listos, Cocina
   const bancoN  = useMemo(() => ordenes.filter(o=>o.canal==="BANCO" &&(o.estado===ORDER_STATES.POR_CONFIRMAR||o.estado===ORDER_STATES.EN_COCINA)).length, [ordenes]);
-  const manualN   = useMemo(() => ordenes.filter(o=>o.canal==="MANUAL"&& o.estado===ORDER_STATES.POR_CONFIRMAR).length, [ordenes]);
+  // [ORIGINE-ORDINI 2026-09-22] Il contatore del tab Tel usa lo STESSO criterio
+  // della lista (TabManual filtra con belongsToPedidos): prima contava solo
+  // canal==="MANUAL", quindi dopo il passaggio a TEL (7a5b09c) i nuovi ordini
+  // telefonici comparivano nella lista ma non nel badge. Accetta TEL + MANUAL
+  // legacy + canal vuoto legacy; esclude BANCO e i WA del flusso bot.
+  const manualN   = useMemo(() => ordenes.filter(o=>belongsToPedidos(o) && o.estado===ORDER_STATES.POR_CONFIRMAR).length, [ordenes]);
   const entregasN = useMemo(() => ordenes.filter(o=>
     isWaitingDriverState(o) || isDriverOnTheWayState(o)
   ).length, [ordenes]);
