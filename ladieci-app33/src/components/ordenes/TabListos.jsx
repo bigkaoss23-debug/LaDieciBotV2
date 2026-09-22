@@ -219,14 +219,16 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                       color:"#F97316", fontWeight:800, fontSize:13,
                       textAlign:"center", letterSpacing:.3
                     }}>
-                      {/* DOMICILIO: EN_ENTREGA = driver uscito dalla pizzeria (non "consegnato"). */}
-                      {o.estado === ORDER_STATES.EN_ENTREGA ? "🛵 Driver fuera" : "🛵 Esperando driver"}
+                      {/* [DELIVERY-REFACTOR 2026-09-22] Durante la consegna l'ordine resta LISTO:
+                          "fuori/dentro" non è più uno stato. EN_ENTREGA compare solo su ordini
+                          legacy creati da versioni precedenti. */}
+                      {o.estado === ORDER_STATES.EN_ENTREGA ? "En reparto (legacy)" : "En reparto"}
                     </div>
                     <div style={{
                       color:"rgba(255,255,255,0.25)", fontSize:10,
                       fontWeight:600, textAlign:"center"
                     }}>
-                      Gestión en página driver
+                      Entregado por el driver o desde Entregas
                     </div>
                     {o.estado === ORDER_STATES.LISTO && onVolverACocina && (() => { const vBusy = loadingIds.has(o.id); return (
                       <button

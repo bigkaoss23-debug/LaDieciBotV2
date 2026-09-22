@@ -11,13 +11,16 @@ export const ORDER_STATES = Object.freeze({
   CHIUSO_FORZATO: "CHIUSO_FORZATO",
 });
 
-// NB semantica DOMICILIO (confermata operativamente):
-//   EN_ENTREGA = il driver ESCE dalla pizzeria col giro (NON "consegnato").
-//   RETIRADO   = il driver RIENTRA in pizzeria (giro chiuso), NON consegna cliente.
-//   Consegna cliente = solo stimabile (en_entrega_at + durata_andata_min).
-// Queste label generiche restano valide per RITIRO (cliente ritira al banco).
-// Le viste operatore DOMICILIO mostrano label dedicate ("Driver fuera"/"Driver volvió")
-// inline nei componenti (TabListos, TabEntregas).
+// SEMANTICA CANONICA (DELIVERY-REFACTOR 2026-09-22):
+//   RETIRADO = il cliente ha RICEVUTO (DOMICILIO) o RITIRATO (RITIRO) l'ordine.
+//              È l'unico stato terminale, e significa un fatto di business.
+//              NON significa più "driver rientrato" né "giro rider chiuso".
+//   EN_ENTREGA = LEGACY. Nessuna UI lo produce più: il viaggio del driver non è
+//              uno stato dell'ordine, che durante la consegna resta LISTO.
+//              Resta nell'enum, e finalizzabile, per gli ordini in-flight creati
+//              da versioni precedenti.
+// Nelle viste l'azione finale si chiama "Entregado" per DOMICILIO e "Retirado"
+// per RITIRO — stesso stato DB, parola giusta per il contesto.
 export const ORDER_STATE_LABELS = Object.freeze({
   [ORDER_STATES.POR_CONFIRMAR]: "Por confirmar",
   [ORDER_STATES.EN_COCINA]: "En cocina",
@@ -62,6 +65,14 @@ export const DELIVERY_ORDER_STATES = Object.freeze([
   ORDER_STATES.EN_ENTREGA,
 ]);
 
+// [DELIVERY-REFACTOR 2026-09-22] Allineato al grafo del backend
+// (src/utils/orderStateMachine.js), che è l'autorità: prima il FE era più
+// permissivo (EN_COCINA → RETIRADO / EN_ENTREGA) e il BE avrebbe rifiutato.
+// Percorso moderno: POR_CONFIRMAR → EN_COCINA → LISTO → RETIRADO.
+// Unico undo operativo: LISTO → EN_COCINA ("Volver a cocina", il pulsante LISTO
+// non ha conferma e si preme per sbaglio).
+// EN_ENTREGA sopravvive SOLO in uscita, per gli ordini legacy in-flight: nessuna
+// transizione porta più verso di lui.
 export const VALID_ORDER_TRANSITIONS = Object.freeze({
   [ORDER_STATES.POR_CONFIRMAR]: Object.freeze([
     ORDER_STATES.EN_COCINA,
@@ -69,16 +80,14 @@ export const VALID_ORDER_TRANSITIONS = Object.freeze({
   ]),
   [ORDER_STATES.EN_COCINA]: Object.freeze([
     ORDER_STATES.LISTO,
-    ORDER_STATES.EN_ENTREGA,
-    ORDER_STATES.RETIRADO,
     ORDER_STATES.CHIUSO_FORZATO,
   ]),
   [ORDER_STATES.LISTO]: Object.freeze([
     ORDER_STATES.EN_COCINA,
-    ORDER_STATES.EN_ENTREGA,
     ORDER_STATES.RETIRADO,
     ORDER_STATES.CHIUSO_FORZATO,
   ]),
+  // Legacy in-flight: si esce, non si entra.
   [ORDER_STATES.EN_ENTREGA]: Object.freeze([
     ORDER_STATES.RETIRADO,
     ORDER_STATES.CHIUSO_FORZATO,

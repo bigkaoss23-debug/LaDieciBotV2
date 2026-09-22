@@ -22,6 +22,7 @@ jest.mock("../api", () => ({
 }));
 
 import TabEntregas from "../components/entregas/TabEntregas";
+import { ORDER_STATES, VALID_ORDER_TRANSITIONS, canTransition } from "../core/orders";
 import { api } from "../api";
 
 const fs = require("fs");
@@ -210,5 +211,43 @@ describe("un ordine ancora in cocina non si può consegnare", () => {
     await flush();
     expect(btnLike(el, /Entregado/)).toBeUndefined();
     expect(el.textContent).toMatch(/En cocina/);
+  });
+});
+
+
+// ─── 7) STATE MACHINE — parità col grafo del backend ─────────────────────────
+// Il backend (src/utils/orderStateMachine.js del repo ladieci_bot) è l'autorità.
+// Prima di questa release il FE era più permissivo e lasciava partire intenti
+// che il BE avrebbe rifiutato con invalid_state_transition.
+describe("state machine — percorso moderno e legacy in uscita", () => {
+  const { POR_CONFIRMAR, EN_COCINA, LISTO, EN_ENTREGA, RETIRADO } = ORDER_STATES;
+
+  test("catena moderna: POR_CONFIRMAR → EN_COCINA → LISTO → RETIRADO", () => {
+    expect(canTransition(POR_CONFIRMAR, EN_COCINA)).toBe(true);
+    expect(canTransition(EN_COCINA, LISTO)).toBe(true);
+    expect(canTransition(LISTO, RETIRADO)).toBe(true);
+  });
+
+  test("nessuna transizione porta più verso EN_ENTREGA", () => {
+    for (const from of Object.keys(VALID_ORDER_TRANSITIONS)) {
+      expect(VALID_ORDER_TRANSITIONS[from]).not.toContain(EN_ENTREGA);
+    }
+    expect(canTransition(LISTO, EN_ENTREGA)).toBe(false);
+    expect(canTransition(EN_COCINA, EN_ENTREGA)).toBe(false);
+  });
+
+  test("legacy in-flight: da EN_ENTREGA si esce verso RETIRADO", () => {
+    expect(canTransition(EN_ENTREGA, RETIRADO)).toBe(true);
+  });
+
+  test("salti illegali rifiutati come nel backend", () => {
+    expect(canTransition(EN_COCINA, RETIRADO)).toBe(false); // salta LISTO
+    expect(canTransition(POR_CONFIRMAR, LISTO)).toBe(false);
+  });
+
+  test("unico undo operativo: LISTO → EN_COCINA", () => {
+    expect(canTransition(LISTO, EN_COCINA)).toBe(true);
+    expect(canTransition(EN_ENTREGA, LISTO)).toBe(false);
+    expect(canTransition(RETIRADO, LISTO)).toBe(false);
   });
 });
