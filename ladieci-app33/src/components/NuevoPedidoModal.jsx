@@ -28,11 +28,10 @@ function buildClosingOverrideNota(nota, hora) {
   return base ? `${base}\n${marker}` : marker;
 }
 
-// Helper di PURA PRESENTAZIONE per la mini-tabella "Disponibilidad" del modal
-// delivery. NESSUN dato sensibile (niente nombre / #id / ticket): solo finestra
-// oraria, zona e stato operativo. Sorgente: ordenes delivery attivi + campi
-// driver separati (salida_driver_estimada / entrega_estimada) con fallback
-// legacy forno_out / hora. Nessun calcolo di scheduling: solo lettura.
+// [DELIVERY-REFACTOR 2026-09-22] La mini-tabella "Disponibilidad" leggeva i campi
+// della simulazione rider (salida_driver_estimada / entrega_estimada) e non esiste
+// più: vedi buildDisponibilidad poco sotto. Le costanti qui restano perché servono
+// ancora alla raccomandazione "Usar giro", che ragiona su deadline e zona.
 const GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN = 20;
 // Margine (min): la pizza nuova può uscire dal forno fino a N minuti DOPO la
 // partenza del giro esistente ed essere ancora agganciabile (il driver può

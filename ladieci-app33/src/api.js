@@ -492,9 +492,6 @@ const api = {
   marcarLlegado: function(id, llegado) {
     return proxyPost({ action:'marcarLlegado', id, llegado: llegado !== false });
   },
-  // NB: registrarSalidaDriver / chiudiGiro rimossi dal frontend — DRIVER_STATO è
-  // telemetria BACKEND-owned (side-effect di EN_ENTREGA/RETIRADO, d569163). Gli
-  // endpoint restano lato Railway per back-compat, ma il frontend non li chiama più.
   // ── Manual giros (DELIVERY-MANUAL-GIRO-01 P1C.1) ──────────────
   // Backend è la fonte di verità: ordenes.manual_giro_id + tabella
   // manual_giros con seq per service day. Vedi LaDieciBotV2_DELIVERY_MANUAL_GIRO_01BC_SPEC.md.
