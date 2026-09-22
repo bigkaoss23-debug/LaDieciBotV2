@@ -1312,7 +1312,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         background:`linear-gradient(to top, ${C.nero} 55%, transparent)`,
         zIndex:150,
         display:"flex",gap:10,alignItems:"stretch"}}>
-        <button onClick={()=>{ setPrefillCliente(tab==="banco"?{canal:"BARRA"}:null); setShowNuevo(true); }} style={{
+        <button onClick={()=>{ setPrefillCliente(tab==="banco"?{canal:"BANCO"}:null); setShowNuevo(true); }} style={{
           flex:1,background:C.rosso,color:"#fff",
           border:"none",borderRadius:16,
           padding:"16px 0",
