@@ -55,8 +55,11 @@ describe("giro manuale (assente nella linea orfana)", () => {
 });
 
 describe("telemetria rider e preview timing", () => {
-  test("getDriverStatus ancora esposto", () => {
-    expect(read("api.js")).toContain("getDriverStatus");
+  // [DELIVERY-REFACTOR 2026-09-22] Assunto INVERTITO: la telemetria rider è stata
+  // rimossa dal dominio, quindi il client NON deve più esporre getDriverStatus.
+  // Questo test passa da "non perdere la riga" a "non farla tornare".
+  test("getDriverStatus NON più esposto (telemetria rider rimossa)", () => {
+    expect(read("api.js")).not.toMatch(/getDriverStatus\s*:/);
   });
 
   test("previewOrderTiming ancora esposto", () => {
@@ -89,8 +92,16 @@ describe("validazioni data e ora", () => {
     expect(typeof clock.orarioToMs).toBe("function");
   });
 
-  test("validazione data (shadow preview) non rimossa", () => {
-    expect(read("components/ShadowPreviewPanel.jsx")).toMatch(/Fecha no v/);
+  // [DELIVERY-REFACTOR 2026-09-22 / D-4] ShadowPreviewPanel rimosso insieme al
+  // deep-link /shadow-preview e alla rotta backend: presentava la simulazione
+  // rider, che da questa release non viene più aggiornata.
+  test("shadow preview non più raggiungibile dal frontend", () => {
+    expect(exists("components/ShadowPreviewPanel.jsx")).toBe(false);
+    expect(exists("api/shadowPreview.js")).toBe(false);
+    // la stringa compare ancora nel commento che spiega la rimozione: qui
+    // controlliamo la ROTTA, cioè il literal confrontato con il pathname.
+    expect(read("App.jsx")).not.toMatch(/path === 'shadow-preview'/);
+    expect(read("App.jsx")).not.toMatch(/ShadowPreviewPanel/);
   });
 
   // [FDV1] l'input HH:MM del giro (hora_ref) è ritirato: il giro prende la deadline più urgente dei membri.

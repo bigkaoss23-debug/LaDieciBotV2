@@ -33,7 +33,6 @@ function buildClosingOverrideNota(nota, hora) {
 // oraria, zona e stato operativo. Sorgente: ordenes delivery attivi + campi
 // driver separati (salida_driver_estimada / entrega_estimada) con fallback
 // legacy forno_out / hora. Nessun calcolo di scheduling: solo lettura.
-const DISPONIBILIDAD_STATES = ["EN_COCINA", "POR_CONFIRMAR", "LISTO", "EN_ENTREGA"];
 const GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN = 20;
 // Margine (min): la pizza nuova può uscire dal forno fino a N minuti DOPO la
 // partenza del giro esistente ed essere ancora agganciabile (il driver può
@@ -72,63 +71,13 @@ function timeDiffMin(a, b) {
   return Math.abs(ma - mb);
 }
 
-// [FDV1] il rider non è una variabile del Planner: la disponibilità giro basata sulla simulazione rider è spenta.
-const FDV1_NO_RIDER_SIM = true;
-
-function buildDisponibilidad(ordenes, currentZonaId, newOrderFornoOut = null, marginMin = GIRO_AGGREGATION_MARGIN_MIN, nowMin = nowMinutes()) {
-  // [FDV1] nessuna simulazione rider (salida_driver_estimada / entrega_estimada / conflicto_driver) nel percorso FDV1.
-  if (FDV1_NO_RIDER_SIM) return [];
-  const toM = (t) => { if (!t) return null; const [h, m] = String(t).split(":").map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
-  // forno_out del NUOVO ordine: minuto in cui la sua pizza esce dal forno.
-  // Serve a decidere se è ancora in tempo per agganciarsi a un giro esistente.
-  const newFornoMin = toM(newOrderFornoOut);
-  // Soglia temporale: la partenza di un giro deve essere ancora abbastanza nel
-  // futuro per essere un'opzione reale.
-  const minStartMin = nowMin + MIN_DELIVERY_LEAD_MIN;
-  const rows = [];
-  const byKey = new Map();
-  for (const o of (ordenes || [])) {
-    if (!o || o.tipo_consegna !== "DOMICILIO") continue;
-    if (!DISPONIBILIDAD_STATES.includes(o.estado)) continue;
-    if (!o.zona || !o.hora) continue;
-    const start = o.salida_driver_estimada || o.forno_out || null;
-    const end = o.entrega_estimada || o.hora || null;
-    if (!start && !end) continue;
-    const startMin = toM(start) ?? toM(end);
-    // Gate temporale: scarta i giri già partiti / in corso / troppo vicini alla
-    // partenza. Non sono opzioni operative reali e confondono l'operatore (es.
-    // mostrare 21:05–21:20 quando sono già le 21:17). Se non riusciamo a leggere
-    // l'orario di partenza, per prudenza non proponiamo la riga.
-    if (startMin == null || startMin < minStartMin) continue;
-    const key = `${o.zona}|${start || end}`;
-    if (byKey.has(key)) { byKey.get(key).count += 1; continue; }
-    const sameZone = !!currentZonaId && o.zona === currentZonaId;
-    // Agganciabile SOLO se la pizza nuova esce dal forno entro la partenza del
-    // giro (+margine): il driver parte a `startMin`, la pizza deve essere pronta.
-    // Niente più ramo ottimistico "forno_out nuovo sconosciuto => compatibile":
-    // senza forno_out non possiamo garantire che la pizza arrivi in tempo, quindi
-    // il giro resta NON agganciabile (no_agregable) finché non lo conosciamo.
-    const aggregable = sameZone
-      && startMin != null
-      && startMin >= minStartMin
-      && newFornoMin != null
-      && newFornoMin <= startMin + marginMin;
-    const row = {
-      key,
-      zona: o.zona,
-      startMin,
-      range: (start && end && start !== end) ? `${start}–${end}` : (start || end),
-      slotHora: end || start, // hora da applicare cliccando un giro compatibile
-      kind: sameZone ? (aggregable ? "compatible" : "no_agregable") : "ocupado",
-      conflicto: o.conflicto_driver === true,
-      count: 1,
-    };
-    byKey.set(key, row);
-    rows.push(row);
-  }
-  rows.sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0));
-  return rows;
-}
+// [DELIVERY-REFACTOR 2026-09-22] buildDisponibilidad RIMOSSA.
+// Proponeva i giri "agganciabili" leggendo salida_driver_estimada / entrega_estimada /
+// conflicto_driver, cioè la simulazione rider. Il corpo era già irraggiungibile da
+// FDV1 (`const FDV1_NO_RIDER_SIM = true` + early return `[]`) e da questa release
+// quei campi non vengono nemmeno più scritti. La disponibilità reale è la capacità
+// di zona/slot, che sta nel backend (agentCucina.getCaricoDelivery).
+const buildDisponibilidad = () => [];
 
 function findRecommendedCompatibleGiro(disponibilidad, currentZonaId, referenceHora, nowMin = nowMinutes()) {
   if (!currentZonaId || !referenceHora) return null;
@@ -1612,7 +1561,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
         // forno_out del nuovo ordine (fonte più affidabile prima): backend → hint locale.
         const newOrderFornoOut = backendTiming?.forno_out || slotFeedback?.horaForno || null;
         const deliveryDisponibilidad = (!zonaLoading && zonaOkForDisponibilidad)
-          ? buildDisponibilidad(ordenes, zona.id, newOrderFornoOut)
+          ? buildDisponibilidad()
           : [];
         const giroRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_proposta || hora;
         const recommendedCompatibleGiro = !horaTouchedByOperator

@@ -137,10 +137,16 @@ describe("Static search — percorso FDV1", () => {
       expect(code(rel)).not.toMatch(/getDriverStatus\s*\(|registrarSalidaDriver|['"]chiudiGiro['"]/);
     }
   });
-  test("Nuevo Pedido: la disponibilità basata sulla simulazione rider è spenta", () => {
+  // [DELIVERY-REFACTOR 2026-09-22] Il guard FDV1_NO_RIDER_SIM non serve più:
+  // il corpo che disattivava è stato rimosso del tutto, quindi la disponibilità
+  // basata sulla simulazione rider non è "spenta" ma inesistente.
+  test("Nuevo Pedido: la disponibilità basata sulla simulazione rider non esiste più", () => {
     const src = code("components/NuevoPedidoModal.jsx");
-    expect(src).toMatch(/const FDV1_NO_RIDER_SIM = true;/);
-    expect(src).toMatch(/if \(FDV1_NO_RIDER_SIM\) return \[\];/);
+    expect(src).toMatch(/const buildDisponibilidad = \(\) => \[\];/);
+    for (const campo of ["salida_driver_estimada", "entrega_estimada", "conflicto_driver"]) {
+      const righeCodice = src.split("\n").filter((l) => !l.trim().startsWith("//"));
+      expect(righeCodice.some((l) => l.includes(campo))).toBe(false);
+    }
   });
 });
 

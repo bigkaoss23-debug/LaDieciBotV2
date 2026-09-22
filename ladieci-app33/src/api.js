@@ -395,23 +395,106 @@ const api = {
   marcarLlegado: function(id, llegado) {
     return proxyPost({ action:'marcarLlegado', id, llegado: llegado !== false });
   },
+  // [DELIVERY-REFACTOR 2026-09-22] getDriverStatus / registrarSalidaDriver /
+  // chiudiGiro RIMOSSI dal client insieme alle rispettive action del backend.
+  // Erano la telemetria rider (DRIVER_STATO, delivery_logs, ETA di rientro):
+  // concetti che il contratto Delivery non modella più. Dependency proof:
+  // zero chiamanti in dashboard e app driver già prima di questa release.
+
+  previewOrderTiming: function(input = {}) {
+    return proxyPost({ action: 'previewOrderTiming', ...input });
+  },
+
+  // Crea ordine. THROW se Railway non conferma la creazione con un id valido.
+  // Il chiamante DEVE wrappare in try/catch e fare rollback dello state ottimistico.
+  // `data.client_req_id` (UUID) abilita l'idempotency: retry sicuri senza duplicati.
+  createOrden: function(data) {
+    return proxyPostStrict({ action:'createOrden', data }, 'id');
+  },
+  updateOrden: function(id, patch) {
+    return proxyPost({ action:'updateOrden', id, ...patch });
+  },
+  updateEstado: function(id, estado, metodo_pago, descuento, extras) {
+    const body = { action:'updateEstado', id, estado };
+    if (metodo_pago !== undefined) body.metodo_pago = metodo_pago;
+    // [DELIVERY-REFACTOR] attore esplicito quando il chiamante lo conosce; il
+    // backend applica comunque il default "operator"/"dashboard" di questa route.
+    if (extras?.actor_type != null) body.actor_type = extras.actor_type;
+    if (extras?.origin     != null) body.origin     = extras.origin;
+    // Descuento applicato al cambio stato (es. RETIRADO con sconto last-minute).
+    // Il backend ricalcola `totale` server-side e salva i 3 campi DB.
+    if (descuento?.tipo)        body.descuento_tipo  = descuento.tipo;
+    if (descuento?.valor != null) body.descuento_valor = descuento.valor;
+    // Audit LISTO: il frontend invia solo origin/actor; listo_at è fallback server-side.
+    if (extras?.listo_origin != null) body.listo_origin = extras.listo_origin;
+    if (extras?.listo_actor  != null) body.listo_actor  = extras.listo_actor;
+    return proxyPost(body);
+  },
+  updateNotaCucina: function(id, nota_cucina) {
+    return proxyPost({ action:'updateNotaCucina', id, nota_cucina });
+  },
+  // Snooze visivo per-card DOMICILIO: sposta countdown +N min senza toccare hora/forno_out.
+  // Cap backend [0, 20]. Reset naturale a chiusura serata.
+  // [FDV1 R3] contratto ± del backend (capability): v2 = −50..+50 con finestra prima della HORA LÍMITE.
+  priorityContract: function() {
+    return proxyPost({ action:'priorityContract' });
+  },
+  setUiOffset: function(id, offset_min) {
+    return proxyPost({ action:'setUiOffset', id, offset_min });
+  },
+  updateWaStato: function(id, stato, ordine_ref) {
+    const body = { action:'updateWaStato', id, stato };
+    if (ordine_ref !== undefined) body.ordine_ref = ordine_ref;
+    return proxyPost(body);
+  },
+  aggiornaRispostaBot: function(id, bot_risposta) {
+    return proxyPost({ action:'aggiornaRispostaBot', id, bot_risposta });
+  },
+  eliminaOrdine: function(id) {
+    return proxyPost({ action:'eliminaOrdine', id });
+  },
+  eliminaConversazione: function(wa_id) {
+    return proxyPost({ action:'eliminaConversazione', wa_id });
+  },
+  // Conferma WA: crea ordine direttamente in EN_COCINA. STRICT come createOrden.
+  // `clientReqId` (UUID, opzionale ma raccomandato) abilita l'idempotency lato backend.
+  confirmarWa: function(id, items, hora, nombre, tel, clientReqId) {
+    const waId = String(tel||"").replace("+","");
+    return proxyPostStrict({ action:'createOrden', data:{
+      nombre, tel, wa_id: waId, canal:"WA",
+      items, hora, nota:"", wa_msg_id: id, estado:"EN_COCINA",
+      client_req_id: clientReqId || null
+    }}, 'id');
+  },
+
+  // ── Delivery / driver ──────────────────────────────────────────
+  // [DELIVERY-REFACTOR 2026-09-22] RIMOSSA: EN_ENTREGA non fa più parte del flusso
+  // operativo (POR_CONFIRMAR → EN_COCINA → LISTO → RETIRADO). Durante il viaggio
+  // l'ordine resta LISTO: è intenzionale, il rider non è uno stato dell'ordine.
+  // L'endpoint backend sopravvive solo per il FE di produzione non ancora aggiornato.
+  // [DELIVERY-REFACTOR 2026-09-22] Finalizzazione consegna: LISTO (o legacy
+  // EN_ENTREGA) → RETIRADO. Il FE raccoglie l'input, il BACKEND decide: `cobrado`
+  // non si manda più (lo deriva il backend dal metodo reale) e `metodo_pago` va
+  // omesso quando l'ordine è già pagato, così il metodo canonico resta intatto.
+  // `actor` distingue driver e operatore: la stessa azione business, due origini.
+  //   actor: "rider"    → app del repartidor  (origin driver_app)
+  //   actor: "operator" → dashboard           (origin entregas | dashboard)
+  marcarEntregado: function(id, { metodo_pago, actor, origin } = {}) {
+    const body = { action: 'marcarEntregado', id };
+    if (metodo_pago) body.metodo_pago = metodo_pago;
+    if (actor)       body.actor_type  = actor;
+    if (origin)      body.origin      = origin;
+    return proxyPost(body);
+  },
+  asignarRepartidor: function(id, repartidor) {
+    return proxyPost({ action:'asignarRepartidor', id, repartidor });
+  },
+  marcarLlegado: function(id, llegado) {
+    return proxyPost({ action:'marcarLlegado', id, llegado: llegado !== false });
+  },
   // NB: registrarSalidaDriver / chiudiGiro rimossi dal frontend — DRIVER_STATO è
   // telemetria BACKEND-owned (side-effect di EN_ENTREGA/RETIRADO, d569163). Gli
   // endpoint restano lato Railway per back-compat, ma il frontend non li chiama più.
-  // Rider return = TELEMETRIA VISIVA opzionale (read-only). Il backend (d569163)
-  // è la fonte: ritorna lo status normalizzato { stato,out,returning,zona,
-  // partito_alle,rientro_stimato,n_ordini,orders_remaining } oppure null se
-  // DRIVER_STATO è assente/LIBERO/malformato. Qualsiasi errore o forma inattesa
-  // → null: la dashboard degrada in silenzio (nessun banner). Mai throw.
-  getDriverStatus: async function() {
-    try {
-      const r = await proxyGet("getDriverStatus");
-      if (!r || typeof r !== "object" || r.error) return null;
-      if (r.out !== true) return null; // null/LIBERO/forma inattesa → niente banner
-      return r;
-    } catch (e) { console.warn("getDriverStatus failed:", e); return null; }
-  },
-
   // ── Manual giros (DELIVERY-MANUAL-GIRO-01 P1C.1) ──────────────
   // Backend è la fonte di verità: ordenes.manual_giro_id + tabella
   // manual_giros con seq per service day. Vedi LaDieciBotV2_DELIVERY_MANUAL_GIRO_01BC_SPEC.md.
