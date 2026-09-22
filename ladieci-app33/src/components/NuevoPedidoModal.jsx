@@ -301,7 +301,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       // Lo salviamo come MANUAL così è sempre visibile in Pedidos; l'origine
       // WhatsApp resta tracciata in wa_id (telefono) e mostrata come badge 💬 in
       // OrdenCard. NON crea riga wa_msgs: resta un ordine MANUAL a tutti gli effetti.
-      canal: canal === "BANCO" ? "BANCO" : "MANUAL",
+      // [DELIVERY-REFACTOR 2026-09-22 / Phase 4] TEL viene finalmente persistito
+      // come TEL: prima finiva in MANUAL e il bucket TEL di Economía non riceveva
+      // mai un ordine nuovo. `pedidosVisibility.belongsToPedidos` accettava già
+      // "TEL", quindi la visibilità in Pedidos non cambia.
+      // Il ramo WhatsApp resta deliberatamente MANUAL (vedi il commento sopra):
+      // spostarlo su "WA" ricreerebbe il bug #014 degli ordini orfani invisibili.
+      canal: canal === "BANCO" ? "BANCO" : canal === "TEL" ? "TEL" : "MANUAL",
       wa_id: canal === "WA" ? String(tel || "").replace(/\D/g, "") : "",
       items: items.map(i => ({ ...i })),
       nota: notaFinale, hora, ts: Date.now(), estado: "POR_CONFIRMAR",
