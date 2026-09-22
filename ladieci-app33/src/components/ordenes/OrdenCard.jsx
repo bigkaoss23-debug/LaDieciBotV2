@@ -6,7 +6,7 @@ import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
 import { ORDER_STATES } from '../../core/orders';
 import { isWaSinConversacion, isWaOrigen } from '../../utils/pedidosVisibility';
 
-const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onForzarEntrega, onOpenTicket, vipIds, loadingIds = new Set()}) => {
+const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onOpenTicket, vipIds, loadingIds = new Set()}) => {
   const busy = loadingIds.has(o.id);
   const isVip = !!(o.cliente_id && vipIds && vipIds.has && vipIds.has(o.cliente_id));
   const [confirmDel, setConfirmDel] = useState(false);
@@ -196,24 +196,9 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
         <span style={{flex:1}}>{o.direccion}{o.direccion_note && ` · ${o.direccion_note}`}</span>
       </div>
     )}
-    {/* ── Forzar entrega (DOMICILIO + LISTO, fallback operatore) ── */}
-    {onForzarEntrega && o.tipo_consegna === "DOMICILIO" && estado === ORDER_STATES.LISTO && (
-      <div style={{marginTop:8,display:"flex",justifyContent:"flex-end"}} onClick={e=>e.stopPropagation()}>
-        <button
-          onClick={()=>{ if (!busy) onForzarEntrega(o.id); }}
-          disabled={busy}
-          style={{
-            background:"rgba(249,115,22,0.10)",
-            color: busy ? "rgba(249,115,22,0.35)" : "rgba(249,115,22,0.75)",
-            border: `1px solid rgba(249,115,22,${busy ? 0.15 : 0.30})`,
-            borderRadius:9, padding:"5px 14px",
-            fontWeight:700, fontSize:12,
-            cursor: busy ? "wait" : "pointer",
-            opacity: busy ? 0.7 : 1,
-            display:"flex", alignItems:"center", gap:5
-        }}>{busy ? "Forzando…" : "🛵 Forzar entrega"}</button>
-      </div>
-    )}
+    {/* [DELIVERY-REFACTOR 2026-09-22] "Forzar entrega" RIMOSSO: produceva EN_ENTREGA,
+        stato che il contratto Delivery non modella più. La consegna si chiude da
+        Entregas o dall'app del repartidor con "Entregado". */}
     {/* ── Conferma → Cucina (solo POR_CONFIRMAR; disabilitato finché _temp:
             l'id è ancora client-side, updateEstado fallirebbe contro un id sconosciuto
             al backend e dopo il reassign dell'id il patch ottimistico resterebbe orfano,

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { calcTotale } from '../../constants';
 import { api } from '../../api';
 import { ZONE_DELIVERY, zonaBadgeStyle, tempoAndata } from '../../zones';
-import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
+import { ORDER_STATES, isDriverOnTheWayState, isWaitingDriverState, logRollback, logTransition } from '../../core/orders';
 import { orderDeadlineMs, orderDeadlineHHMM, giroEarliestDeadlineMs, formatMadridHHMM } from '../cocina/manualGiroCocina';
 import { filterFdv1Warnings } from './fdv1Warnings';
 import { withTimeout, classifyGiroResult, giroErrorText, intentApplied } from './giroOutcome';
@@ -104,15 +104,22 @@ const buildManualGiroWarnings = (orders, manualGiroByOrderId = {}) => {
 
 // ─── Card ordine dentro un blocco zona ────────────────────────────────────
 const ZonaOrderRow = ({
-  o, zona, onSendRepartidor, loadingId, onForzaEntregado,
+  o, zona, loadingId, onEntregado,
   manualGiro, manualGiroWarnings = [], isManualGiroSelected = false,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro,
   giroOptions = [], onMoveToGiro, inGiroBlock = false
 }) => {
+  // [DELIVERY-REFACTOR 2026-09-22] picker pagamento inline, stesso pattern di
+  // TabListos: niente modal nuovo. Aperto solo per gli ordini non ancora pagati.
+  const [pendingPago, setPendingPago] = useState(false);
   const isLoading   = loadingId === o.id;
   const isListo     = o.estado === ORDER_STATES.LISTO;
+  // Legacy in-flight: ordini già in EN_ENTREGA creati prima di questa release.
+  // Restano finalizzabili, ma la UI non ne produce di nuovi.
   const isEnEntrega = o.estado === ORDER_STATES.EN_ENTREGA;
   const isCocina    = o.estado === ORDER_STATES.EN_COCINA;
+  const finalizable = isListo || isEnEntrega;
+  const yaPagado    = o.ya_pagado === true;
   const selectableForManualGiro = isManualGiroSelectableOrder(o);
 
   const safeItems = (() => {
@@ -247,7 +254,7 @@ const ZonaOrderRow = ({
           fontSize: 11,
           flexShrink: 0,
           whiteSpace: "nowrap"
-        }} title="Se podrá enviar cuando esté listo">
+        }} title="Se podrá entregar cuando esté listo">
           En cocina
         </span>
       )}
@@ -265,39 +272,61 @@ const ZonaOrderRow = ({
         >Separar</button>
       )}
 
-      {/* Bottone manda repartidor */}
-      {isListo && (
-        <button disabled={isLoading} onClick={() => onSendRepartidor(o.id)}
-          style={{
-            padding: "6px 12px",
-            background: "rgba(249,115,22,0.12)", border: "1px solid rgba(249,115,22,0.35)",
-            borderRadius: 8, color: ORANGE, fontWeight: 700, fontSize: 12,
-            cursor: isLoading ? "not-allowed" : "pointer", flexShrink: 0
-          }}>
-          {isLoading ? "..." : "Enviar"}
-        </button>
-      )}
-
-      {/* Override: marcar driver de vuelta manualmente.
-          DOMICILIO: RETIRADO = driver rientrato in pizzeria (giro chiuso), NON consegna cliente. */}
+      {/* [DELIVERY-REFACTOR 2026-09-22] Fallback operatore: il driver segna la consegna
+          dalla sua app, ma l'operatore deve poter chiudere l'ordine se non l'ha fatto.
+          Stessa azione business del driver (LISTO → RETIRADO), actor diverso.
+          Il pulsante "Enviar" (ex 🛵 → EN_ENTREGA) non esiste più: durante il viaggio
+          l'ordine resta LISTO. */}
       {isEnEntrega && (
         <span style={{ padding: "5px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap",
-          background: "rgba(249,115,22,0.10)", border: "1px solid rgba(249,115,22,0.35)", color: ORANGE }}>En reparto</span>
+          background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.20)", color: "rgba(255,255,255,0.65)" }}
+          title="Estado heredado de una versión anterior — se puede finalizar igualmente">Legacy</span>
       )}
-      {isEnEntrega && (
-        <button disabled={isLoading} onClick={() => {
-          if (!window.confirm("¿Pedido entregado? Pasa a RETIRADO.")) return;
-          onForzaEntregado && onForzaEntregado(o);
-        }}
-          style={{
-            padding: "5px 10px",
-            background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.3)",
-            borderRadius: 8, color: "#22C55E", fontWeight: 700, fontSize: 11,
-            cursor: "pointer", flexShrink: 0
-          }}
-          title="Marcar pedido entregado (RETIRADO) desde el panel del operador">
-          ✓ Entregado
-        </button>
+
+      {finalizable && (
+        pendingPago ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.7)", whiteSpace: "nowrap" }}>¿Cómo paga?</span>
+            {[
+              { m: "efectivo", label: "💵", bg: "#16A34A" },
+              { m: "tarjeta",  label: "💳", bg: "#2563EB" },
+              { m: "bizum",    label: "📱", bg: "#0EA5E9" },
+            ].map(({ m, label, bg }) => (
+              <button key={m} type="button" disabled={isLoading}
+                onClick={() => { setPendingPago(false); onEntregado && onEntregado(o, m); }}
+                title={m}
+                style={{
+                  padding: "6px 9px", background: isLoading ? `${bg}55` : bg, border: "none",
+                  borderRadius: 8, color: "#fff", fontWeight: 800, fontSize: 12,
+                  cursor: isLoading ? "wait" : "pointer", flexShrink: 0
+                }}>{label}</button>
+            ))}
+            <button type="button" onClick={() => setPendingPago(false)}
+              style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 11, cursor: "pointer" }}>
+              cancelar
+            </button>
+          </div>
+        ) : (
+          <button disabled={isLoading}
+            onClick={() => {
+              // Già pagato → nessun secondo pagamento, solo conferma.
+              if (yaPagado) {
+                if (!window.confirm("¿Pedido entregado? Ya está pagado — pasa a RETIRADO.")) return;
+                onEntregado && onEntregado(o, null);
+                return;
+              }
+              setPendingPago(true);
+            }}
+            style={{
+              padding: "6px 12px",
+              background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.35)",
+              borderRadius: 8, color: "#22C55E", fontWeight: 700, fontSize: 12,
+              cursor: isLoading ? "not-allowed" : "pointer", flexShrink: 0, whiteSpace: "nowrap"
+            }}
+            title="Marcar pedido entregado al cliente (RETIRADO) desde el panel del operador">
+            {isLoading ? "..." : (yaPagado ? "✓ Entregado · pagado" : "✓ Entregado")}
+          </button>
+        )
       )}
     </div>
   );
@@ -305,7 +334,7 @@ const ZonaOrderRow = ({
 
 // ─── Blocco giro (zona + ora consegna) ───────────────────────────────────
 const ZonaBlock = ({
-  zona, ordini, giroHora, onSendRepartidor, loadingId, onForzaEntregado,
+  zona, ordini, giroHora, loadingId, onEntregado,
   manualGiroByOrderId, manualGiroWarningsById, selectedManualGiroOrderIds,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro,
   giroOptions = [], onMoveToGiro
@@ -391,7 +420,7 @@ const ZonaBlock = ({
       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
         {ordini.map(o => (
           <ZonaOrderRow key={o.id} o={o} zona={zona}
-            onSendRepartidor={onSendRepartidor} loadingId={loadingId} onForzaEntregado={onForzaEntregado}
+            loadingId={loadingId} onEntregado={onEntregado}
             manualGiro={manualGiroByOrderId[o.id] || null}
             manualGiroWarnings={manualGiroWarningsById[o.id] || []}
             isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
@@ -411,7 +440,7 @@ const ZonaBlock = ({
 // (deadline più urgente + offset di blocco) + zone incluse + deadline individuali per card.
 const ManualGiroBlock = ({
   giro, ordini, zones, hora, warnings = [],
-  onSendRepartidor, loadingId, onForzaEntregado,
+  loadingId, onEntregado,
   manualGiroByOrderId, manualGiroWarningsById, selectedManualGiroOrderIds,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro,
   giroOptions = [], onMoveToGiro
@@ -471,7 +500,7 @@ const ManualGiroBlock = ({
       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
         {ordini.map(o => (
           <ZonaOrderRow key={o.id} o={o} zona={ZONE_DELIVERY.find(z => z.id === o.zona)}
-            onSendRepartidor={onSendRepartidor} loadingId={loadingId} onForzaEntregado={onForzaEntregado}
+            loadingId={loadingId} onEntregado={onEntregado}
             manualGiro={manualGiroByOrderId[o.id] || null}
             manualGiroWarnings={manualGiroWarningsById[o.id] || []}
             isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
@@ -841,83 +870,61 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes, suspended = false }) =>
     if (o.zona) perZonaCount[o.zona] = (perZonaCount[o.zona] || 0) + 1;
   }
 
-  // LISTO → EN_ENTREGA
-  const handleSendRepartidor = async (id) => {
-    const current = ordenes.find(o => o.id === id);
-    const intent = buildEnEntregaTransition(current, {
-      component: "TabEntregas",
-      action: "handleSendRepartidor",
-    });
-    logTransition(intent);
-    setLoadingId(id);
-    setOrdenes(prev => prev.map(o =>
-      o.id === id ? { ...o, estado: ORDER_STATES.EN_ENTREGA, hora_salida: Date.now() } : o
-    ));
-    try {
-      await api.marcarEnEntrega(id);
-      if (notify) notify("🛵 Pedido en entrega", ORANGE);
-      // [FDV1] nessuna telemetria rider: EN_ENTREGA è solo un cambio di stato dell'ordine.
-    } catch(e) {
-      logRollback({
-        component: "TabEntregas",
-        action: "handleSendRepartidor.rollback",
-        orderId: id,
-        from: ORDER_STATES.EN_ENTREGA,
-        to: ORDER_STATES.LISTO,
-        metadata: { reason: "api.marcarEnEntrega failed" },
-      });
-      setOrdenes(prev => prev.map(o =>
-        o.id === id ? { ...o, estado: ORDER_STATES.LISTO } : o
-      ));
-      if (notify) notify("❌ Error al enviar", "#E8341C");
-    }
-    setLoadingId(null);
-  };
+  // [DELIVERY-REFACTOR 2026-09-22] handleSendRepartidor RIMOSSO col bottone "Enviar".
+  // Era l'ultimo writer di EN_ENTREGA della dashboard. Durante il viaggio l'ordine
+  // resta LISTO: il rider non è una variabile dell'ordine.
 
-  // Override operatore: la telemetria "driver fuori" è ora BACKEND-owned (side-effect
-  // di EN_ENTREGA, d569163). Il frontend non scrive più DRIVER_STATO — questo handler
-  // si limita a ri-leggere lo status backend (read-only) e riallineare il banner.
-
-  // Override operatore: marca entregado manualmente (driver dimenticò Entregado)
-  const handleForzaEntregado = async (ordine) => {
-    logLegacyBypass({
-      component: "TabEntregas",
-      action: "handleForzaEntregado",
-      orderId: ordine.id,
-      metadata: {
-        reason: "delivery_force_entregado_legacy_bypass",
-        estadoOriginale: ordine?.estado,
-        targetEstado: ORDER_STATES.RETIRADO,
-      },
-    });
+  // Fallback operatore: il driver segna la consegna dalla sua app; se non l'ha fatto,
+  // la chiude l'operatore. STESSA azione business (→ RETIRADO), actor diverso — non è
+  // più un "legacy bypass". Il metodo di pagamento lo sceglie l'operatore nel picker
+  // inline; per un ordine già pagato `metodo` arriva null e il backend preserva il
+  // metodo canonico. Se il pagamento manca o non è valido il backend RIFIUTA: qui
+  // rimettiamo lo stato com'era e lo diciamo all'operatore.
+  const handleEntregado = async (ordine, metodo) => {
+    const estadoOriginale = ordine?.estado;
     logTransition({
       component: "TabEntregas",
-      action: "handleForzaEntregado",
+      action: "handleEntregado",
       orderId: ordine.id,
-      from: ordine?.estado,
+      from: estadoOriginale,
       to: ORDER_STATES.RETIRADO,
+      metadata: { actor: "operator", metodo_pago: metodo || "(ya_pagado)" },
     });
     setLoadingId(ordine.id);
     setOrdenes(prev => prev.map(o => o.id === ordine.id ? { ...o, estado: ORDER_STATES.RETIRADO, hora_entrega: Date.now() } : o));
-    try {
-      await api.marcarEntregado(ordine.id, true, ordine, "manual");
-      // La chiusura del giro + ETA rientro sono ora un side-effect BACKEND del
-      // RETIRADO (d569163): il backend rileva l'ultima consegna del giro
-      // server-side. Niente decisione last-of-giro né chiudiGiro lato frontend.
-      if (notify) notify("✓ Entregado (operador)", "#22C55E");
-    } catch(e) {
+    const rollback = (reason, msg) => {
       logRollback({
         component: "TabEntregas",
-        action: "handleForzaEntregado.rollback",
+        action: "handleEntregado.rollback",
         orderId: ordine.id,
         from: ORDER_STATES.RETIRADO,
-        to: ORDER_STATES.EN_ENTREGA,
-        metadata: { reason: "api.marcarEntregado failed" },
+        to: estadoOriginale,
+        metadata: { reason },
       });
-      setOrdenes(prev => prev.map(o => o.id === ordine.id ? { ...o, estado: ORDER_STATES.EN_ENTREGA } : o));
-      if (notify) notify("❌ Error al marcar entregado", "#E8341C");
+      setOrdenes(prev => prev.map(o => o.id === ordine.id ? { ...o, estado: estadoOriginale } : o));
+      if (notify) notify(msg, "#E8341C");
+    };
+    try {
+      const res = await api.marcarEntregado(ordine.id, {
+        metodo_pago: metodo || undefined,
+        actor: "operator",
+        origin: "entregas",
+      });
+      if (res && res.success === false) {
+        rollback(
+          res.error || "backend_refused",
+          res.error === "payment_method_required"
+            ? "❌ Falta el método de pago"
+            : "❌ No se pudo marcar entregado"
+        );
+        return;
+      }
+      if (notify) notify(metodo ? "✓ Entregado (operador)" : "✓ Entregado — ya pagado", "#22C55E");
+    } catch(e) {
+      rollback("api.marcarEntregado failed", "❌ Error al marcar entregado");
+    } finally {
+      setLoadingId(null);
     }
-    setLoadingId(null);
   };
 
   // Riepilogo "esta noche" dei pedidos entregados.
@@ -1105,9 +1112,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes, suspended = false }) =>
               zones={block.zones}
               hora={block.hora}
               warnings={block.warnings}
-              onSendRepartidor={handleSendRepartidor}
               loadingId={loadingId}
-              onForzaEntregado={handleForzaEntregado}
+              onEntregado={handleEntregado}
               manualGiroByOrderId={manualGiroByOrderId}
               manualGiroWarningsById={manualGiroWarningsById}
               selectedManualGiroOrderIds={selectedManualGiroOrderIds}
@@ -1126,9 +1132,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes, suspended = false }) =>
             zona={zona}
             ordini={block.ordini}
             giroHora={block.hora}
-            onSendRepartidor={handleSendRepartidor}
             loadingId={loadingId}
-            onForzaEntregado={handleForzaEntregado}
+            onEntregado={handleEntregado}
             manualGiroByOrderId={manualGiroByOrderId}
             manualGiroWarningsById={manualGiroWarningsById}
             selectedManualGiroOrderIds={selectedManualGiroOrderIds}
@@ -1162,7 +1167,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes, suspended = false }) =>
           <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
             {senzaZona.map(o => (
               <ZonaOrderRow key={o.id} o={o}
-                onSendRepartidor={handleSendRepartidor} loadingId={loadingId} onForzaEntregado={handleForzaEntregado}
+                loadingId={loadingId} onEntregado={handleEntregado}
                 manualGiro={manualGiroByOrderId[o.id] || null}
                 manualGiroWarnings={manualGiroWarningsById[o.id] || []}
                 isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}

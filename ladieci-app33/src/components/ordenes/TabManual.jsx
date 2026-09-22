@@ -11,7 +11,7 @@ const sortOrdenes = (list) => list.sort((a,b) => {
   return Number(b.ts||0) - Number(a.ts||0);
 });
 
-const TabManual = ({ordenes, onModifica, onElimina, onConfirm, onForzarEntrega, onOpenTicket, vipIds, loadingIds = new Set()}) => {
+const TabManual = ({ordenes, onModifica, onElimina, onConfirm, onOpenTicket, vipIds, loadingIds = new Set()}) => {
   const [showDone, setShowDone] = useState(false);
 
   // HOTFIX prod-wa-orphan-visible: include anche gli ordini canal="WA" SENZA
@@ -23,7 +23,7 @@ const TabManual = ({ordenes, onModifica, onElimina, onConfirm, onForzarEntrega, 
 
   const cardProps = (o) => ({
     o, onModifica, accentColor:C.blu,
-    onElimina, onConfirm, onForzarEntrega, onOpenTicket, vipIds, loadingIds
+    onElimina, onConfirm, onOpenTicket, vipIds, loadingIds
   });
 
   if (all.length === 0) return (

@@ -32,11 +32,18 @@ const subtractMinutes = (hora, min) => {
 };
 
 // ─── Card singola ─────────────────────────────────────────────────────────
-const EntregaCard = ({ orden, onSalgo, onEntregado, loading }) => {
+const EntregaCard = ({ orden, onEntregado, loading }) => {
   const [pendingPago, setPendingPago] = useState(null); // null | orden.id
+  // [DELIVERY-REFACTOR 2026-09-22] Non esiste più "Salgo": durante il viaggio
+  // l'ordine resta LISTO. Il rider non è uno stato dell'ordine — è intenzionale.
+  // `isEnRoute` sopravvive solo per gli ordini legacy già in EN_ENTREGA, che
+  // devono restare finalizzabili.
   const isListo   = orden.estado === ORDER_STATES.LISTO;
-  const isEnRoute = orden.estado === ORDER_STATES.EN_ENTREGA;
+  const isEnRoute = orden.estado === ORDER_STATES.EN_ENTREGA; // legacy in-flight
   const isCocina  = orden.estado === ORDER_STATES.EN_COCINA;
+  const finalizable = isListo || isEnRoute;
+  // Già pagato → nessun secondo pagamento (il backend preserva il metodo canonico).
+  const yaPagado  = orden.ya_pagado === true;
   const zonaObj   = ZONE_DELIVERY.find(z => z.id === orden.zona) || null;
 
   const items = (Array.isArray(orden.items) ? orden.items : [])
@@ -198,21 +205,9 @@ const EntregaCard = ({ orden, onSalgo, onEntregado, loading }) => {
           </span>
         </div>
 
-        {/* Azione */}
-        {isListo && (
-          <button onClick={() => onSalgo(orden.id)} disabled={loading === orden.id}
-            style={{
-              width: "100%", marginTop: 12, padding: "16px 0",
-              background: loading === orden.id ? "#9CA3AF" : "#F97316",
-              border: "none", borderRadius: 12,
-              color: "#fff", fontWeight: 900, fontSize: 18,
-              cursor: loading === orden.id ? "not-allowed" : "pointer",
-            }}>
-            {loading === orden.id ? "..." : "Salgo"}
-          </button>
-        )}
-        {isEnRoute && (
-          pendingPago === orden.id ? (
+        {/* Azione — [DELIVERY-REFACTOR] LISTO → Entregado → (pagamento) → RETIRADO */}
+        {finalizable && (
+          (pendingPago === orden.id && !yaPagado) ? (
             <div style={{ marginTop: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#6B7280",
                 textAlign: "center", marginBottom: 8 }}>¿Cómo paga?</div>
@@ -249,7 +244,9 @@ const EntregaCard = ({ orden, onSalgo, onEntregado, loading }) => {
               </button>
             </div>
           ) : (
-            <button onClick={() => setPendingPago(orden.id)} disabled={loading === orden.id}
+            <button
+              onClick={() => { if (yaPagado) onEntregado(orden.id, null); else setPendingPago(orden.id); }}
+              disabled={loading === orden.id}
               style={{
                 width: "100%", marginTop: 12, padding: "16px 0",
                 background: loading === orden.id ? "#9CA3AF" : "#16A34A",
@@ -257,7 +254,7 @@ const EntregaCard = ({ orden, onSalgo, onEntregado, loading }) => {
                 color: "#fff", fontWeight: 900, fontSize: 18,
                 cursor: loading === orden.id ? "not-allowed" : "pointer",
               }}>
-              {loading === orden.id ? "..." : "Entregado"}
+              {loading === orden.id ? "..." : (yaPagado ? "Entregado · ya pagado" : "Entregado")}
             </button>
           )
         )}
@@ -422,37 +419,9 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
     });
   const nAttivi = entregas.filter(o => [ORDER_STATES.LISTO, ORDER_STATES.EN_ENTREGA].includes(o.estado)).length;
 
-  const handleSalgo = async (id) => {
-    const current = ordLocal.find(o => o.id === id);
-    logTransition({
-      component: "RepartidorPage",
-      action: "handleSalgo",
-      orderId: id,
-      from: current?.estado,
-      to: ORDER_STATES.EN_ENTREGA,
-    });
-    setLoading(id);
-    setOrdLocal(prev => prev.map(o => o.id === id ? { ...o, estado: ORDER_STATES.EN_ENTREGA, hora_salida: Date.now() } : o));
-    try {
-      await api.marcarEnEntrega(id);
-      // La telemetria "driver fuori" (DRIVER_STATO) è ora un side-effect BACKEND
-      // della transizione EN_ENTREGA (d569163). Nessuna rilevazione primo-giro né
-      // scrittura DRIVER_STATO lato repartidor: Salgo = solo cambio stato ordine.
-      if (notify) notify("🛵 Entrega iniciada", "#F97316");
-    } catch(e) {
-      logRollback({
-        component: "RepartidorPage",
-        action: "handleSalgo.rollback",
-        orderId: id,
-        from: ORDER_STATES.EN_ENTREGA,
-        to: current?.estado,
-        metadata: { reason: "api.marcarEnEntrega failed; restore props snapshot" },
-      });
-      setOrdLocal(ordenes);
-      if (notify) notify("Error al actualizar", "#EF4444");
-    }
-    setLoading(null);
-  };
+  // [DELIVERY-REFACTOR 2026-09-22] handleSalgo RIMOSSO insieme al bottone.
+  // Era l'unico writer di EN_ENTREGA dell'app driver e serviva soltanto a
+  // registrare "driver partito" — un fatto del rider, non dell'ordine.
 
   const handleEntregado = async (id, metodo_pago) => {
     const orden = ordLocal.find(o => o.id === id);
@@ -467,12 +436,20 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
     setLoading(id);
     setOrdLocal(prev => prev.map(o => o.id === id ? { ...o, estado: ORDER_STATES.RETIRADO, hora_entrega: Date.now() } : o));
     try {
-      await api.marcarEntregado(id, true, orden, metodo_pago || "");
-      // La chiusura del giro + ETA rientro sono ora un side-effect BACKEND del
-      // RETIRADO (d569163): il backend rileva l'ultima consegna del giro
-      // server-side. Niente decisione last-of-giro né chiudiGiro lato repartidor.
+      // [DELIVERY-REFACTOR] `cobrado` lo deriva il backend dal metodo reale.
+      // Ordine già pagato → metodo_pago omesso, così il metodo canonico resta intatto.
+      await api.marcarEntregado(id, {
+        metodo_pago: metodo_pago || undefined,
+        actor: "rider",
+        origin: "driver_app",
+      });
+      // La chiusura del giro è un side-effect BACKEND del RETIRADO: il backend
+      // rileva server-side l'ultima consegna. Niente decisione last-of-giro qui.
       if (notify) notify(
-        metodo_pago === "tarjeta" ? "💳 Entregado — Tarjeta" : "💵 Entregado — Efectivo",
+        !metodo_pago ? "✓ Entregado — ya pagado"
+          : metodo_pago === "tarjeta" ? "💳 Entregado — Tarjeta"
+          : metodo_pago === "bizum" ? "📱 Entregado — Bizum"
+          : "💵 Entregado — Efectivo",
         "#16A34A"
       );
     } catch(e) {
@@ -595,7 +572,7 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
                 </div>
                 {perZona[zona.id].map(o => (
                   <EntregaCard key={o.id} orden={o}
-                    onSalgo={handleSalgo} onEntregado={handleEntregado} loading={loading} />
+                    onEntregado={handleEntregado} loading={loading} />
                 ))}
               </div>
             ))}
@@ -612,7 +589,7 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
                 </div>
                 {senzaZona.map(o => (
                   <EntregaCard key={o.id} orden={o}
-                    onSalgo={handleSalgo} onEntregado={handleEntregado} loading={loading} />
+                    onEntregado={handleEntregado} loading={loading} />
                 ))}
               </div>
             )}

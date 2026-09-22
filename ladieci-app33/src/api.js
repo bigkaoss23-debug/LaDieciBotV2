@@ -320,6 +320,10 @@ const api = {
   updateEstado: function(id, estado, metodo_pago, descuento, extras) {
     const body = { action:'updateEstado', id, estado };
     if (metodo_pago !== undefined) body.metodo_pago = metodo_pago;
+    // [DELIVERY-REFACTOR] attore esplicito quando il chiamante lo conosce; il
+    // backend applica comunque il default "operator"/"dashboard" di questa route.
+    if (extras?.actor_type != null) body.actor_type = extras.actor_type;
+    if (extras?.origin     != null) body.origin     = extras.origin;
     // Descuento applicato al cambio stato (es. RETIRADO con sconto last-minute).
     // Il backend ricalcola `totale` server-side e salva i 3 campi DB.
     if (descuento?.tipo)        body.descuento_tipo  = descuento.tipo;
@@ -367,16 +371,23 @@ const api = {
   },
 
   // ── Delivery / driver ──────────────────────────────────────────
-  marcarEnEntrega: function(id) {
-    return proxyPost({ action:'marcarEnEntrega', id });
-  },
-  marcarEntregado: function(id, cobrado, _ordenData, metodo_pago) {
-    return proxyPost({
-      action: 'marcarEntregado',
-      id,
-      cobrado: cobrado !== false,
-      metodo_pago: metodo_pago || ""
-    });
+  // [DELIVERY-REFACTOR 2026-09-22] RIMOSSA: EN_ENTREGA non fa più parte del flusso
+  // operativo (POR_CONFIRMAR → EN_COCINA → LISTO → RETIRADO). Durante il viaggio
+  // l'ordine resta LISTO: è intenzionale, il rider non è uno stato dell'ordine.
+  // L'endpoint backend sopravvive solo per il FE di produzione non ancora aggiornato.
+  // [DELIVERY-REFACTOR 2026-09-22] Finalizzazione consegna: LISTO (o legacy
+  // EN_ENTREGA) → RETIRADO. Il FE raccoglie l'input, il BACKEND decide: `cobrado`
+  // non si manda più (lo deriva il backend dal metodo reale) e `metodo_pago` va
+  // omesso quando l'ordine è già pagato, così il metodo canonico resta intatto.
+  // `actor` distingue driver e operatore: la stessa azione business, due origini.
+  //   actor: "rider"    → app del repartidor  (origin driver_app)
+  //   actor: "operator" → dashboard           (origin entregas | dashboard)
+  marcarEntregado: function(id, { metodo_pago, actor, origin } = {}) {
+    const body = { action: 'marcarEntregado', id };
+    if (metodo_pago) body.metodo_pago = metodo_pago;
+    if (actor)       body.actor_type  = actor;
+    if (origin)      body.origin      = origin;
+    return proxyPost(body);
   },
   asignarRepartidor: function(id, repartidor) {
     return proxyPost({ action:'asignarRepartidor', id, repartidor });

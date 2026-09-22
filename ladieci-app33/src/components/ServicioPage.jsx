@@ -16,7 +16,7 @@ import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrint
 import { useOrderCreationQueue } from '../order/useOrderCreationQueue';
 import Badge from './ui/Badge';
 import DevPresence from './DevPresence';
-import { ORDER_STATES, buildEnCocinaTransition, buildEnEntregaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
+import { ORDER_STATES, buildEnCocinaTransition, buildListoTransition, buildOperatorOrderCreationIntent, buildRetiradoTransition, buildWaOrderCreationIntent, isCompletedState, isDriverOnTheWayState, isWaitingDriverState, logOrderCreation, logPaymentUpdate, logRollback, logTransition } from '../core/orders';
 import { buildVolverACocinaTransition } from '../core/orders/stateMachine';
 import { isDessertPizza } from '../menu/dessertPizza';
 
@@ -330,46 +330,11 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     } finally { endAction(id); }
   };
 
-  const forzaEntrega = async (id) => {
-    if (!beginAction(id)) return;
-    notify("🛵 " + id + " → Forzado a repartidor");
-    let failed = false;
-    const orden = ordenes.find(o => o.id === id);
-    const intent = buildEnEntregaTransition(orden, {
-      component: "ServicioPage",
-      action: "forzaEntrega",
-      metadata: { legacyBypass: true },
-    });
-    logLegacyBypass({
-      component: "ServicioPage",
-      action: "forzaEntrega",
-      orderId: id,
-      from: intent.from,
-      to: ORDER_STATES.EN_ENTREGA,
-      metadata: { reason: "operatore forza invio al repartidor" },
-    });
-    logTransition(intent);
-    await optimisticOrden(id, { estado: ORDER_STATES.EN_ENTREGA }, async () => {
-      try { await api.marcarEnEntrega(id); }
-      catch(err) {
-        failed = true;
-        console.error("forzaEntrega:", err);
-      }
-    });
-    if (failed) {
-      logRollback({
-        component: "ServicioPage",
-        action: "forzaEntrega.rollback",
-        orderId: id,
-        from: ORDER_STATES.EN_ENTREGA,
-        to: ORDER_STATES.LISTO,
-        metadata: { reason: "api.marcarEnEntrega failed" },
-      });
-      setOrdenes(p=>p.map(o=>o.id===id?{...o,estado:ORDER_STATES.LISTO}:o));
-      notify("❌ Error al forzar entrega", "#E8341C");
-    }
-    endAction(id);
-  };
+  // [DELIVERY-REFACTOR 2026-09-22] forzaEntrega RIMOSSA col bottone "Forzar entrega"
+  // di OrdenCard. Era il terzo writer di EN_ENTREGA (dopo Entregas e l'app driver):
+  // una scorciatoia per dichiarare "il driver è partito", fatto che il contratto
+  // Delivery non modella più sull'ordine. La consegna si chiude da Entregas o
+  // dall'app del repartidor con "Entregado".
 
   const addOrden  = async (o) => {
     // Ottimistico: ID locale temporaneo + _temp:true → il bottone "🚀 A Cocina"
@@ -776,9 +741,19 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     logTransition(intent);
 
     try {
-      const res = await api.updateEstado(id, ORDER_STATES.RETIRADO, metodo_pago || "", descuento);
-      if (!res || res.error) {
-        notify("❌ Errore — riprova", C.rosso);
+      const res = await api.updateEstado(id, ORDER_STATES.RETIRADO, metodo_pago || "", descuento, {
+        actor_type: "operator",
+        origin: "dashboard",
+      });
+      // [DELIVERY-REFACTOR] il backend può RIFIUTARE la finalizzazione se manca un
+      // metodo di pagamento reale e l'ordine non risulta già pagato.
+      if (!res || res.error || res.success === false) {
+        notify(
+          res && res.error === "payment_method_required"
+            ? "❌ Falta el método de pago"
+            : "❌ Errore — riprova",
+          C.rosso
+        );
         return;
       }
       // Il backend cascade in cambiaStato("RETIRADO") aggiorna estado + metodo_pago +
@@ -999,8 +974,8 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
         setGoToPreguntasSignal(s => s+1);
       }}
     />;
-    if(tab==="manual") return <TabManual ordenes={creationQueue.visibleOrders} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} onOpenTicket={setTicketOrder} vipIds={vipIds} loadingIds={loadingIds}/>;
-    if(tab==="banco")  return <TabBanco  ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onForzarEntrega={forzaEntrega} vipIds={vipIds} loadingIds={loadingIds}/>;
+    if(tab==="manual") return <TabManual ordenes={creationQueue.visibleOrders} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} onOpenTicket={setTicketOrder} vipIds={vipIds} loadingIds={loadingIds}/>;
+    if(tab==="banco")  return <TabBanco  ordenes={ordenes} onModifica={setOrdenModifica} onElimina={eliminaOrdine} onConfirm={confirmaOrdine} vipIds={vipIds} loadingIds={loadingIds}/>;
     if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} loadingIds={loadingIds}
       vipIds={vipIds}
       waMsgs={waMsgs}
@@ -1016,7 +991,7 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
           },
         });
         setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: nuovoMetodo} : o));
-        try { await api.updateEstado(id, ORDER_STATES.RETIRADO, nuovoMetodo); }
+        try { await api.updateEstado(id, ORDER_STATES.RETIRADO, nuovoMetodo, undefined, { actor_type: "operator", origin: "dashboard" }); }
         catch(err) { console.error("cambiaPago:", err); }
       }}
       onViewChat={(waId) => {
