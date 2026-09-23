@@ -81,12 +81,13 @@ export const DeadlineHeader = ({ o, zone, light, right = null }) => {
   );
 };
 
-// Contenitore del giro: occupa tutta la riga della griglia; i membri restano card con la propria zona.
+// Contenitore del giro: occupa `cols` colonne (= min(colonne griglia, membri)), così ogni membro è largo
+// quanto una card singola; i membri restano card con la propria zona.
 export const GiroGroup = ({ giro, label, count, cols, light, control, children }) => {
   const col = giroColor(giro);
   return (
     <div data-testid="giro-group" data-giro={label} style={{
-      gridColumn: "1 / -1", border: `4px solid ${col}`, borderRadius: 18, overflow: "hidden",
+      gridColumn: `span ${cols}`, border: `4px solid ${col}`, borderRadius: 18, overflow: "hidden",
       background: light ? `${col}0F` : `${col}33`,
     }}>
       <div style={{ background: col, color: "#FFFFFF", padding: "8px 12px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>

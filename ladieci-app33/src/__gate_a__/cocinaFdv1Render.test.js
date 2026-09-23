@@ -47,7 +47,7 @@ describe("C — Cocina: una sola deadline", () => {
   test("DOMICILIO: il solo orario visibile è il límite; niente forno_out / hora / rider / countdown", async () => {
     const el = await mount(<TabCocina ordenes={[o("#001", "21:45", { hora: "21:30" })]} onListo={() => {}} />);
     const txt = el.textContent;
-    expect(txt).toMatch(/21:45\s*HORA LÍMITE/);
+    expect(txt).toMatch(/21:45\s*LÍMITE/);                          // [KDS tablet] stesso banner della Pizzeria
     expect(txt.match(/\d\d:\d\d/g)).toEqual(["21:45"]);             // UN solo orario (no 21:30 cliente, no 20:40 forno_out, no rider)
     expect(txt).not.toMatch(RIDER);
     expect(txt).not.toMatch(/CLIENTE|⏱|-\d+:\d\d/);
@@ -55,7 +55,7 @@ describe("C — Cocina: una sola deadline", () => {
   test("stati: normale / LÍMITE CERCA (≤10 min) / ⚠ TARDE (superato)", async () => {
     const el = await mount(<TabCocina ordenes={[o("#001", "21:45"), o("#002", "21:08"), o("#003", "20:55")]} onListo={() => {}} />);
     const txt = el.textContent;
-    expect(txt).toMatch(/21:45\s*HORA LÍMITE/);
+    expect(txt).toMatch(/21:45\s*LÍMITE/);
     expect(txt).toMatch(/21:08\s*URGENTE/);
     expect(txt).toMatch(/20:55\s*TARDE/);
     expect(deadlineState(o("#9", "21:10"), NOW).state).toBe("near");

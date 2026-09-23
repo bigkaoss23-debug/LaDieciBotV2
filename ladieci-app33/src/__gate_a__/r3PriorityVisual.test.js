@@ -274,7 +274,8 @@ describe("Pizzeria — blocco = unità visiva", () => {
     const el = await mount(<PanelCocina ordenes={[pick("#501", "21:20"), o("#502", "21:30", { zona: "Q1" })]} onListo={() => {}} onClose={() => {}} />);
     const pb = blocks(el).find((b) => b.getAttribute("data-identity") === "RECOGIDA");
     expect(pb).toBeTruthy();
-    expect(pb.textContent).toMatch(/RECOGIDA EN LOCAL/);
+    expect(pb.textContent).toMatch(/RECOGIDA/);                          // [KDS tablet] etichetta breve
+    expect(pb.textContent).not.toMatch(/RECOGIDA EN LOCAL/);
     expect(pb.querySelector('[data-testid="block-main-time"]').textContent).toBe("21:20");   // hora de recogida mantenida
     expect(pb.querySelector('[data-testid="block-countdown"]')).toBeNull();
     expect(pb.querySelector('[data-testid="pickup-tag"]')).toBeTruthy();

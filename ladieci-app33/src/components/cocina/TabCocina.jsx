@@ -5,7 +5,8 @@ import Suoni from '../../sounds';
 import { lookupMenu, calcTimer, formatSub, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import PriorityControl from '../ui/PriorityControl';
-import { KitchenVisualStyles, DeadlineHeader, GiroGroup, zoneMeta } from './kitchenVisual';
+import { KitchenVisualStyles, GiroGroup, zoneMeta } from './kitchenVisual';
+import { BlockHeader, ItemRow, PICKUP } from './PizzeriaBlocks';
 import { ORDER_STATES } from '../../core/orders';
 import { isDessertPizza } from '../../menu/dessertPizza';
 import {
@@ -198,16 +199,24 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
             const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
             const oTel = String(o.tel||o.wa_id||"").replace("+","");
             const hasAggiunta = telConAggiunta.has(oTel);
+            // [KDS tablet] stessa grammatica della Pizzeria: banner zona/RECOGIDA ad altezza fissa (BlockHeader),
+            // ×N + NOME + dettagli piccoli (ItemRow), contenuto bianco. Logica, pannelli e LISTO invariati.
+            const identity = o.isDelivery ? zoneMeta(o) : PICKUP;
+            const pickupTimer = o.isDelivery || !t ? null : (t.showCountdown ? timerStr : "EN ESPERA");
+            const compact = o.items.length >= 4;
+            const narrow = cols >= 3 && w < 960;
             return (
-              <div key={o.id} style={{background:"#fff",borderRadius:16,
-                border: hasAggiunta ? `3px solid #E8341C` : (o.isDelivery ? `2px solid #D1D5DB` : `2px solid ${fc.border}`),
-                ...(o.isDelivery ? { borderLeft: `14px solid ${zoneMeta(o).color}` } : {}),
+              <div key={o.id} style={{background:"#fff",borderRadius:14,minWidth:0,
+                border: `3px solid ${hasAggiunta ? "#E8341C" : identity.color}`,
+                borderLeft: `9px solid ${identity.color}`,
                 display:"flex",flexDirection:"column",overflow:"hidden",
                 boxShadow: hasAggiunta
                   ? `0 0 0 3px #E8341C44, 0 4px 20px #E8341C33`
-                  : o.isDelivery
-                    ? `0 2px 10px rgba(0,0,0,0.15)`
-                    : isUrgent?`0 0 0 3px ${fc.border}44,0 4px 20px ${fc.border}33`:`0 2px 10px rgba(0,0,0,0.15)`}}>
+                  : isUrgent ? `0 0 0 3px ${fc.border}44,0 4px 20px ${fc.border}33` : `0 2px 10px rgba(0,0,0,0.25)`}}>
+                <BlockHeader testId={o.isDelivery ? "deadline-header" : "pickup-header"} identity={identity}
+                  subtitle={`${o.id}${o.nombre ? " · " + o.nombre : ""}`}
+                  dl={o.isDelivery ? o.dl : null} nowMs={now} control={control}
+                  pickupHora={o.horaForno || o.hora || null} pickupTimer={pickupTimer} />
               {hasAggiunta && (
                 <div style={{background:"#E8341C",color:"#fff",textAlign:"center",
                   padding:"5px",fontSize:13,fontWeight:900,letterSpacing:.5,
@@ -215,134 +224,29 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                   ⚠️ AGGIUNTA IN ATTESA ⚠️
                 </div>
               )}
-                {o.isDelivery ? (
-                  <>
-                    <DeadlineHeader o={o} zone={zoneMeta(o)} light={false} />
-                    {control && <div style={{padding:"8px 12px 0",background:"#fff"}}>{control}</div>}
-                  </>
-                ) : (
-                <div style={{background:fc.bg,padding:"12px 16px",
-                  display:"flex",justifyContent:"space-between",alignItems:"flex-start",
-                  borderBottom:`1px solid ${fc.border}55`}}>
-                  <div>
-                    <div style={{fontFamily:"'DM Mono',monospace",fontWeight:900,color:"#fff",fontSize:20,lineHeight:1}}>{o.id}</div>
-                    <div style={{color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:14,marginTop:3}}>👤 {o.nombre}</div>
-                    {/* RITIRO: orario di ritiro come prima */}
-                    {!o.isDelivery && (o.horaForno || o.hora) && (
-                      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:5,marginTop:5}}>
-                        <div style={{display:"inline-flex",alignItems:"center",gap:6,
-                          background:"#16A34A", border:"1.5px solid #78350F",
-                          borderRadius:20,padding:"4px 10px", boxShadow:"0 2px 8px rgba(120,53,15,.4)"}}>
-                          <span style={{fontSize:14}}>🕐</span>
-                          <span style={{color:"#fff",fontWeight:900,fontSize:17,fontFamily:"'DM Mono',monospace"}}>
-                            {o.horaForno || o.hora}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div style={{textAlign:"right",flexShrink:0}}>
-                    {o.isDelivery ? (
-                      // [FDV1] límite de entrega: UN solo orario principale, grande
-                      <div title="Hora límite de entrega: la más tardía entre creación + 55 min y la hora prometida al cliente" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
-                        <div style={{fontFamily:"'DM Mono',monospace",fontSize:40,fontWeight:900,lineHeight:1,
-                          color: o.dl && o.dl.state === "late" ? "#FF2222" : o.dl && o.dl.state === "near" ? "#F5C842" : "#FFFFFF",
-                          animation: "none"}}>{o.dl ? o.dl.hhmm : "—"}</div>
-                        <div style={{color: o.dl && o.dl.state === "late" ? "#FF8888" : o.dl && o.dl.state === "near" ? "#FFE080" : "rgba(255,255,255,.55)",
-                          fontSize: o.dl && o.dl.state === "late" ? 14 : 11, fontWeight:900, letterSpacing:.5}}>
-                          {o.dl && o.dl.state === "late" ? "TARDE" : o.dl && o.dl.state === "near" ? "URGENTE" : "HORA LÍMITE"}
-                        </div>
-                      </div>
-                    ) : t.showCountdown ? (
-                      <>
-                        <div style={{fontFamily:"'DM Mono',monospace",fontSize:t.conOrario?40:34,
-                          fontWeight:900,color:fc.timerColor,lineHeight:1,
-                          textShadow:`0 0 16px ${fc.timerColor}88`,
-                          animation:isUrgent?"blink 1s infinite":"none"}}>{timerStr}</div>
-                        <div style={{color:"rgba(255,255,255,.45)",fontSize:10,textAlign:"center",marginTop:2,letterSpacing:.5}}>
-                          {t.conOrario ? "al retiro" : "desde orden"}
-                        </div>
-                        {fc.label&&<div style={{marginTop:4,color:fc.labelColor,fontSize:12,fontWeight:900,
-                          letterSpacing:.5,animation:isUrgent?"blink 1s infinite":"none"}}>{fc.label}</div>}
-                      </>
-                    ) : (
-                      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                        <div style={{background:"rgba(82,214,138,0.15)",border:"1px solid rgba(82,214,138,0.4)",
-                          borderRadius:20,padding:"5px 12px",color:"#52D68A",fontSize:12,fontWeight:800}}>⏳ EN ESPERA</div>
-                        {t.mm>0&&<div style={{color:"rgba(255,255,255,.3)",fontSize:11,
-                          fontFamily:"'DM Mono',monospace"}}>{t.mm} min</div>}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                )}
-                {(()=>{
-                    const compact = o.items.length >= 5;
-                    return (
-                <div style={{padding:"12px 16px",flex:1,
-                  display: compact ? "grid" : "flex",
-                  gridTemplateColumns: compact ? "1fr 1fr" : undefined,
-                  flexDirection: compact ? undefined : "column",
-                  gap: compact ? 8 : 12, background:"#fff"}}>
+                <div style={{padding:"8px 10px 10px",flex:1,display:"flex",flexDirection:"column",
+                  gap: compact ? 6 : 8, background:"#fff"}}>
                   {o.items.map((it,i)=>{
                     const mi=lookupMenu(it);
                     const _cat = mi?.cat || it.cat || "Pizzas";
                     const _isSize = mi?.sub && /^[\d,.]+\s*(cl|ml|l)$/i.test(mi.sub.trim());
                     const nomeSub = (_cat==="Bebidas"||_cat==="Postres"||_isSize) ? "" : (mi?.sub || "");
                     const sizeInfo = _isSize ? ` ${mi.sub}` : "";
-                    const varSub  = it.sub || "";
-                    const nomeIng = mi?.ing || it.ing || "";
+                    const nome = `${nomeSub || it.n || ""}${sizeInfo}`;
+                    const alias = nomeSub && it.n && it.n.toUpperCase() !== nomeSub.toUpperCase() ? it.n : "";
                     return (
-                      <div key={i} style={{
-                        borderBottom: !compact && i<o.items.length-1 ? `2px dashed ${fc.border}44` : "none",
-                        paddingBottom: !compact && i<o.items.length-1 ? 12 : 0,
-                        background: compact ? "#f7f7f7" : "transparent",
-                        borderRadius: compact ? 8 : 0,
-                        border: compact ? `1.5px solid ${fc.border}33` : "none",
-                        padding: compact ? "8px 8px" : 0,
-                      }}>
-                        {/* Pill: quantità + nome pizzaiolo */}
-                        <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:compact?4:8}}>
-                          <div style={{display:"inline-flex",alignItems:"center",gap:8,
-                            background:"#f0f0f0",borderRadius:9,padding:"4px 10px"}}>
-                            <span style={{background:"#111",color:"#fff",
-                              borderRadius:7,padding:compact?"3px 11px":"5px 14px",fontFamily:"'DM Mono',monospace",
-                              fontWeight:900,fontSize:compact?18:24,lineHeight:1}}>×{it.q}</span>
-                            <span style={{color:"#222",fontSize:compact?13:15,fontWeight:800,letterSpacing:.3}}>{it.n}</span>
-                          </div>
-                        </div>
-                        {/* Nome italiano — grande e marcato */}
-                        {(nomeSub || (!varSub && !nomeIng)) && (
-                          <div style={{color:"#111",fontSize:compact?17:24,fontWeight:900,lineHeight:1.2,marginBottom:5,letterSpacing:-.3,
-                            textShadow:"0 1px 0 rgba(255,255,255,0.5)"}}>
-                            {(nomeSub || it.n)}{sizeInfo}
-                          </div>
-                        )}
-                        {/* Variazione ingredienti cliente — evidenziata in arancione */}
-                        {varSub && (
-                          <div style={{display:"inline-block",background:"#FF6B00",color:"#fff",
-                            borderRadius:8,padding:"4px 12px",fontSize:compact?12:15,fontWeight:800,
-                            marginBottom:5,letterSpacing:.2}}>
-                            ⚠ {formatSub(varSub)}
-                          </div>
-                        )}
-                        {/* Ingredienti — piccoli e grigi */}
-                        {nomeIng && (
-                          <div style={{color:"#555",fontSize:compact?11:13,fontWeight:500,lineHeight:1.5}}>
-                            {nomeIng}
-                          </div>
-                        )}
-                      </div>
+                      <ItemRow key={i} qty={it.q} name={nome} alias={alias} ing={mi?.ing || it.ing || ""}
+                        variant={it.sub ? formatSub(it.sub) : ""} accent={identity.color}
+                        compact={compact} narrow={narrow} divider={i > 0 ? "#D1D5DB" : null} />
                     );
                   })}
                   {o.extras && o.extras.length > 0 && (
                     <div style={{
-                      marginTop: o.items.length > 0 ? 4 : 0,
+                      marginTop: o.items.length > 0 ? 2 : 0,
                       background:"#FFF7E6",
                       border:"1.5px dashed #F0B000",
                       borderRadius:10,
                       padding:"8px 12px",
-                      gridColumn: compact ? "1 / -1" : undefined
                     }}>
                       <div style={{fontSize:10,fontWeight:900,letterSpacing:1.2,
                         color:"#A06900",textTransform:"uppercase",marginBottom:6}}>
@@ -371,21 +275,17 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                   )}
                   {notaCucinaOp&&(
                     <div style={{background:"#E8341C",borderRadius:9,
-                      padding:"9px 13px",color:"#fff",fontSize:15,fontWeight:900,letterSpacing:.2,
-                      gridColumn: compact?"1 / -1":undefined}}>
+                      padding:"9px 13px",color:"#fff",fontSize:15,fontWeight:900,letterSpacing:.2}}>
                       🍕 {notaCucinaOp}
                     </div>
                   )}
                   {notaVisibile&&(
                     <div style={{background:"rgba(232,52,28,0.15)",border:"2px solid rgba(232,52,28,0.5)",
-                      borderRadius:9,padding:"9px 13px",color:"#FF8888",fontSize:15,fontWeight:800,
-                      gridColumn: compact?"1 / -1":undefined}}>
+                      borderRadius:9,padding:"9px 13px",color:"#C0271A",fontSize:15,fontWeight:800}}>
                       ⚠ {notaVisibile}
                     </div>
                   )}
                 </div>
-                    );
-                  })()}
                 {/* Panel modifica nota + ora */}
                 {editId === o.id && (
                   <div style={{padding:"12px 16px",background:"#f5f5f5",
@@ -497,7 +397,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                     </div>
                   </div>
                 )}
-                <div style={{padding:"11px 16px 14px",borderTop:`1px solid ${fc.border}44`,background:"#f5f5f5"}}>
+                <div style={{padding:"4px 10px 10px",background:"#fff"}}>
                   {(() => { const busy = loadingIds.has(o.id); return (
                   <button
                     onClick={()=>{ if (busy) return; Suoni.campanellaDieci(); handleListo(o); }}
@@ -535,7 +435,7 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
               {seg.cards.map((o) => renderCard(o, null))}
             </GiroGroup>
           ) : renderCard(seg.card, seg.card.isDelivery
-              ? <PriorityControl orden={seg.card} onUpdate={handleOffsetChange} light nowMs={now} /> : null))}
+              ? <PriorityControl orden={seg.card} onUpdate={handleOffsetChange} light={false} nowMs={now} /> : null))}
         </div>
       }
     </div>

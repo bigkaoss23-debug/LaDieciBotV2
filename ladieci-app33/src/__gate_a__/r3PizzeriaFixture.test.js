@@ -113,7 +113,8 @@ describe("[FDV1 R3 §24] fixture visiva Pizzeria (16 ordini)", () => {
     expect(container.textContent).toMatch(/MARINAS/);
     expect(container.textContent).toMatch(/CORTIJOS/);
     expect(container.textContent).toMatch(/SIN ZONA/);
-    expect(container.textContent).toMatch(/RECOGIDA EN LOCAL/);
+    expect(container.textContent).toMatch(/RECOGIDA/);                   // [KDS tablet] etichetta breve: "RECOGIDA"
+    expect(container.textContent).not.toMatch(/RECOGIDA EN LOCAL/);
     expect(container.textContent).not.toMatch(/\bQ[1-5]\b/);
   });
 
@@ -167,6 +168,7 @@ describe("[FDV1 R3 §24] fixture visiva Pizzeria (16 ordini)", () => {
     const b = blocks()[0];
     expect(b.querySelector('[data-testid="block-main-time"]').parentElement)
       .toBe(b.querySelector('[data-testid="block-countdown"]').parentElement);
-    expect(b.querySelector('[data-testid="block-header"]').textContent).toMatch(/LÍMITE/);
+    // [KDS tablet] l'etichetta accanto all'ora è lo stato: LÍMITE (normale) · URGENTE · TARDE
+    expect(b.querySelector('[data-testid="block-header"]').textContent).toMatch(/LÍMITE|URGENTE|TARDE/);
   });
 });

@@ -4,13 +4,14 @@ import { caricoTotale, lookupMenu, calcTimer, FASE_CONFIG, notaCucina } from '..
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import PriorityControl from '../ui/PriorityControl';
 import { KitchenVisualStyles, zoneMeta } from './kitchenVisual';
-import { KitchenBlock, CardIdentity } from './PizzeriaBlocks';
+import { KitchenBlock, CardIdentity, ItemRow } from './PizzeriaBlocks';
 import { packKitchenSegments } from './kitchenPacking';
 import { api } from '../../api';
 import { isDessertPizza } from '../../menu/dessertPizza';
 import {
   buildManualGiroMetaById,
   getManualGiroForOrder,
+  formatManualGiroLabel,
   deadlineState,
   orderDeadlineMs,
   sortKitchenCards,
@@ -121,51 +122,19 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
     const notaVisibile = notaCucina(o.nota);
     const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
     const compact = o.items.length >= 4;
+    // colonna stretta (tablet verticale, 3 colonne sotto 960px): nome e badge scalano per non spezzare le parole
+    const narrow = cols >= 3 && w < 960;
     return (
       <div style={{ padding: "7px 9px 8px", display: "flex", flexDirection: "column", gap: compact ? 6 : 8, background: "#fff" }}>
         {o.items.map((it, i) => {
           const mi = lookupMenu(it);
           const alias = it.n || "";                       // nome commerciale (El Pelusa, Divino Codino…)
           const pizza = (mi?.sub || alias || "").trim();  // nome pizza vero (Margherita, Prosciutto…)
-          const nomeIng = mi?.ing || it.ing || "";
-          const varSub = it.sub || "";
           const mostraAlias = alias && alias.toUpperCase() !== pizza.toUpperCase();
           return (
-            <div key={i} style={{
-              borderTop: i > 0 ? `1px dashed ${fc.border}44` : "none",
-              paddingTop: i > 0 ? (compact ? 5 : 7) : 0, minWidth: 0,
-            }}>
-              {/* riga d'attacco: quantità + nome pizza + alias */}
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", rowGap: 2 }}>
-                <span data-testid="qty-badge" style={{
-                  background: accent, color: "#fff", borderRadius: 8,
-                  padding: compact ? "2px 9px" : "3px 11px",
-                  fontFamily: "'DM Mono',monospace", fontWeight: 900,
-                  fontSize: compact ? 20 : 24, lineHeight: 1.15, flexShrink: 0,
-                }}>×{it.q}</span>
-                <span data-testid="pizza-name" style={{
-                  color: "#0B0B0B", fontSize: compact ? 20 : 25, fontWeight: 900,
-                  lineHeight: 1.1, letterSpacing: -.2, textTransform: "uppercase", minWidth: 0,
-                }}>{pizza}</span>
-                {mostraAlias && (
-                  <span data-testid="pizza-alias" style={{
-                    color: "#9CA3AF", fontSize: compact ? 11 : 12, fontWeight: 700, whiteSpace: "nowrap",
-                  }}>{alias}</span>
-                )}
-              </div>
-              {nomeIng && (
-                <div style={{
-                  color: "#6B7280", fontSize: compact ? 10 : 11.5, fontWeight: 500, lineHeight: 1.35,
-                  marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-                }}>{nomeIng}</div>
-              )}
-              {varSub && (
-                <div style={{
-                  display: "inline-block", background: "#FF6B00", color: "#fff", borderRadius: 7,
-                  padding: "2px 9px", fontSize: compact ? 11 : 13, fontWeight: 800, marginTop: 4,
-                }}>⚠ {varSub}</div>
-              )}
-            </div>
+            <ItemRow key={i} qty={it.q} name={pizza} alias={mostraAlias ? alias : ""}
+              ing={mi?.ing || it.ing || ""} variant={it.sub || ""} accent={accent}
+              compact={compact} narrow={narrow} divider={i > 0 ? `${fc.border}44` : null} />
           );
         })}
         {notaCucinaOp && (
@@ -199,8 +168,8 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
         disabled={busy}
         style={{
           width: "100%", background: busy ? "rgba(39,174,96,0.35)" : "linear-gradient(145deg,#27AE60,#1A7A44)",
-          border: "none", color: "#fff", borderRadius: 9, padding: "10px 0",
-          fontWeight: 900, fontSize: 14, letterSpacing: .3,
+          border: "none", color: "#fff", borderRadius: 10, padding: "13px 0", minHeight: 48,
+          fontWeight: 900, fontSize: 16, letterSpacing: .4,
           cursor: busy ? "wait" : "pointer", opacity: busy ? 0.7 : 1,
         }}
       >
@@ -252,6 +221,12 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
         <div style={{ padding: "0 9px 9px" }}>{renderListoButton(o)}</div>
       </div>
     );
+  };
+
+  // etichetta del giro nell'header del blocco: "GIRO G3" (seq/id), "GIRO" se non ricavabile
+  const giroTag = (c, gid) => {
+    const l = formatManualGiroLabel((c && c.manualGiro) || { id: gid });
+    return l === "G?" ? "GIRO" : `GIRO ${l}`;
   };
 
   const nowStr = new Date(now).toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"});
@@ -353,6 +328,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
               return (
                 <KitchenBlock key={key} cards={cards} width={width} cols={cols} nowMs={now}
                   giroId={seg.type === "giro" ? seg.giroId : null}
+                  giroLabel={seg.type === "giro" ? giroTag(cards[0], seg.giroId) : null}
                   control={<PriorityControl orden={cards[0]} windowOrders={cards} onUpdate={handleOffsetChange} light={false} nowMs={now} />}>
                   {cards.map((o) => renderDeliveryCard(o, {
                     blockMs: Number.isFinite(blockMs) ? blockMs : null,
