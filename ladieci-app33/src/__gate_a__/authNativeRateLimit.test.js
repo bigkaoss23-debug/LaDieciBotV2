@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  *
- * [PIN-RATE-LIMIT 2026-09-23] Rate limit NATIVO Netlify su /api/auth (10 richieste / 180 s, ip+domain).
+ * [PIN-RATE-LIMIT 2026-09-23] Rate limit NATIVO Netlify su /api/auth (30 richieste / 60 s, ip+domain).
  * Il vecchio contatore AUTH_BLOCK_* in Supabase `config` (scritto con la chiave publishable, rifiutato
  * dalla RLS, mai bloccante) è rimosso. Il 429 lo emette Netlify prima della Function: qui si verificano
  * config dichiarata, comportamento reale della Function in Node e gestione del 429 nel FE.
@@ -34,8 +34,8 @@ function runFn(calls, env = {}) {
 }
 
 describe("config nativa Netlify", () => {
-  test("path /api/auth + rateLimit 10/180 per ip+domain, dichiarati come letterale statico", () => {
-    expect(SRC).toMatch(/export const config = \{\s*path: "\/api\/auth",\s*rateLimit: \{\s*windowLimit: 10,\s*windowSize: 180,\s*aggregateBy: \["ip", "domain"\],\s*\},\s*\};/);
+  test("path /api/auth + rateLimit 30/60 per ip+domain, dichiarati come letterale statico", () => {
+    expect(SRC).toMatch(/export const config = \{\s*path: "\/api\/auth",\s*rateLimit: \{\s*windowLimit: 30,\s*windowSize: 60,\s*aggregateBy: \["ip", "domain"\],\s*\},\s*\};/);
   });
   test("formato moderno: export default (Functions API v2), niente exports.handler", () => {
     expect(SRC).toMatch(/export default async \(req, context\)/);

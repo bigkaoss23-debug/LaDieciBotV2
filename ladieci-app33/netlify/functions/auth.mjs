@@ -5,7 +5,7 @@
 // is honored only OUTSIDE the production context.
 //
 // [PIN-RATE-LIMIT 2026-09-23] Rate limiting is Netlify's NATIVE rule declared in
-// `config` below (max 10 requests per 180 s per IP+domain → Netlify answers 429
+// `config` below (max 30 requests per 60 s per IP+domain → Netlify answers 429
 // before this code runs). The old AUTH_BLOCK_* counters in Supabase `config` are
 // gone: they were written with the publishable key, rejected by RLS, and never
 // blocked anything. Public path unchanged: /api/auth (the netlify.toml rewrite to
@@ -16,8 +16,8 @@ import crypto from "node:crypto";
 export const config = {
   path: "/api/auth",
   rateLimit: {
-    windowLimit: 10,
-    windowSize: 180,
+    windowLimit: 30,
+    windowSize: 60,
     aggregateBy: ["ip", "domain"],
   },
 };
