@@ -38,6 +38,7 @@ export default function App() {
   const [showPin,      setShowPin]      = useState(false);
   const [pinInput,     setPinInput]     = useState("");
   const [pinError,     setPinError]     = useState(false);
+  const [pinErrorMsg,  setPinErrorMsg]  = useState("PIN incorrecto");
   const [pinLoading,   setPinLoading]   = useState(false);
   const [pendingAction,setPendingAction] = useState(null);
 
@@ -97,8 +98,11 @@ export default function App() {
       setShowPin(false);
       if (pendingAction) { pendingAction(); setPendingAction(null); }
     } else {
+      // 429 = rate limit Netlify: messaggio dedicato e più lungo, non "PIN incorrecto".
+      const limited = result.status === 429;
+      setPinErrorMsg(limited ? result.error : "PIN incorrecto");
       setPinError(true); setPinInput("");
-      setTimeout(() => setPinError(false), 1200);
+      setTimeout(() => setPinError(false), limited ? 5000 : 1200);
     }
   };
 
@@ -431,7 +435,7 @@ export default function App() {
           )}
           {pinError && !pinLoading && (
             <div style={{color:"#E8341C", fontSize:13, fontWeight:600, marginTop:-18}}>
-              PIN incorrecto
+              {pinErrorMsg}
             </div>
           )}
 

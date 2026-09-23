@@ -3,10 +3,8 @@
   publish = "build"
   functions = "netlify/functions"
 
-[[redirects]]
-  from = "/api/auth"
-  to = "/.netlify/functions/auth"
-  status = 200
+# /api/auth is served by the auth Function itself (config.path in
+# netlify/functions/auth.mjs), ahead of redirects; no rewrite needed here.
 
 [[redirects]]
   from = "/api/proxy"

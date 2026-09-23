@@ -106,6 +106,9 @@ const sb = {
 };
 
 // ═══ AUTH TOKEN MANAGEMENT ═══
+// [PIN-RATE-LIMIT] risposta 429 del rate limit nativo Netlify su /api/auth.
+export const RATE_LIMIT_MSG = "Troppi tentativi. Riprova tra poco.";
+
 const auth = {
   getToken() {
     try { return sessionStorage.getItem("ld_token") || ""; } catch(e) { return ""; }
@@ -143,14 +146,18 @@ const auth = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin, role: role || "operador" })
       });
-      const data = await res.json();
+      // 429 arriva dal rate limit NATIVO Netlify, prima della Function: il corpo
+      // non è il nostro JSON. Non è un errore di rete.
+      if (res.status === 429) return { error: RATE_LIMIT_MSG, status: 429 };
+      let data = {};
+      try { data = await res.json(); } catch(e) { data = {}; }
       if (res.ok && data.token) {
         this.setToken(data.token);
         this.setRole(data.role);
         try { sessionStorage.setItem("ld_pin_ok", "1"); } catch(e) {}
         return { success: true, role: data.role };
       }
-      return { error: data.error || "PIN incorrecto" };
+      return { error: data.error || (res.status === 401 ? "PIN incorrecto" : "Servicio no disponible"), status: res.status };
     } catch(err) {
       return { error: "Errore di rete" };
     }

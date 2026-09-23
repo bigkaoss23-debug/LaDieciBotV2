@@ -280,6 +280,7 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
   });
   const [repPin, setRepPin] = useState("");
   const [repPinError, setRepPinError] = useState(false);
+  const [repPinErrorMsg, setRepPinErrorMsg] = useState("PIN incorrecto");
   const [repPinLoading, setRepPinLoading] = useState(false);
 
   const handleRepPinKey = (k) => {
@@ -302,8 +303,11 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
     if (result.success) {
       setRepUnlocked(true);
     } else {
+      // 429 = rate limit Netlify: messaggio dedicato e più lungo.
+      const limited = result.status === 429;
+      setRepPinErrorMsg(limited ? result.error : "PIN incorrecto");
       setRepPinError(true); setRepPin("");
-      setTimeout(() => setRepPinError(false), 1200);
+      setTimeout(() => setRepPinError(false), limited ? 5000 : 1200);
     }
   };
 
@@ -351,7 +355,7 @@ const RepartidorPage = ({ ordenes = [], onBack, notify }) => {
         </div>
 
         {repPinLoading && <div style={{color:"rgba(255,255,255,0.5)",fontSize:13,marginBottom:12}}>Verificando…</div>}
-        {repPinError && !repPinLoading && <div style={{color:"#E8341C",fontSize:13,marginBottom:12}}>PIN incorrecto</div>}
+        {repPinError && !repPinLoading && <div style={{color:"#E8341C",fontSize:13,marginBottom:12}}>{repPinErrorMsg}</div>}
 
         {/* Tastierino */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,maxWidth:240}}>
