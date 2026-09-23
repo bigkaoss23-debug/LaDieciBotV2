@@ -42,7 +42,10 @@ describe("FDV1 — hora e deadline separate", () => {
     const src = read("components/NuevoPedidoModal.jsx");
     expect(src).not.toMatch(/delivery_contract/);
     expect(src).toMatch(/nota: notaFinale, hora, ts: Date\.now\(\)/);
-    expect(src).toMatch(/Hora prometida al cliente/);
+    // [ENTREGA-MODAL 2026-09-23] l'etichetta "Hora prometida al cliente" è stata rimossa dal popup per
+    // decisione di prodotto; la hora resta un dato dell'operatore scelto in DIRECTO/PROGRAMADO/GIRO.
+    expect(src).not.toMatch(/Hora prometida al cliente/);
+    expect(src).toMatch(/elegirEntrega\("PROGRAMADO", programadoHora\.trim\(\), null\)/);
     // la proposta iniziale della hora è una sola volta e mai sopra una scelta dell'operatore
     expect(src).toMatch(/!fdv1HoraPrefilled\.current && !horaCustom\.current/);
   });

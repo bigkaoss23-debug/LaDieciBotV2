@@ -142,7 +142,9 @@ describe("Static search — percorso FDV1", () => {
   // basata sulla simulazione rider non è "spenta" ma inesistente.
   test("Nuevo Pedido: la disponibilità basata sulla simulazione rider non esiste più", () => {
     const src = code("components/NuevoPedidoModal.jsx");
-    expect(src).toMatch(/const buildDisponibilidad = \(\) => \[\];/);
+    // [ENTREGA-MODAL 2026-09-23] Lo stub `buildDisponibilidad = () => []` è stato rimosso insieme
+    // al vecchio popup: nessuna definizione e nessun caller devono tornare.
+    expect(src).not.toMatch(/buildDisponibilidad|findRecommendedCompatibleGiro/);
     for (const campo of ["salida_driver_estimada", "entrega_estimada", "conflicto_driver"]) {
       const righeCodice = src.split("\n").filter((l) => !l.trim().startsWith("//"));
       expect(righeCodice.some((l) => l.includes(campo))).toBe(false);

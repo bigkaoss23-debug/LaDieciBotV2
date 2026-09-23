@@ -7,6 +7,7 @@ import { applyUiOffset } from '../utils/uiOffset';
 import { createLatestOnly, shouldGeocode, GEOCODE_DEBOUNCE_MS } from '../utils/nuevoPedidoGeocode';
 import DescuentoInput from './ui/DescuentoInput';
 import { getKitchenCapacityStatus, isPizzaItem } from '../core/kitchen/capacity';
+import { formatManualGiroLabel, giroEarliestDeadlineMs, orderDeadlineHHMM, formatMadridHHMM } from './cocina/manualGiroCocina';
 
 const CLOSING_TIME_MIN = 23 * 60;
 const CLOSING_TIME_ERROR = "Hora inválida.";
@@ -21,76 +22,20 @@ function horaToMinStrict(hora) {
   return h * 60 + min;
 }
 
+// [ENTREGA-MODAL] ▲/▼ del selettore PROGRAMADO: sposta un HH:MM di `delta` minuti (giro dell'orologio).
+// Solo input dell'operatore: nessuna deadline derivata qui.
+function shiftHoraHHMM(hora, delta) {
+  const min = horaToMinStrict(hora);
+  if (min == null) return null;
+  const t = (((min + delta) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+}
+
 function buildClosingOverrideNota(nota, hora) {
   const base = String(nota || "").trim();
   if (base.includes(CLOSING_TIME_OVERRIDE_MARKER)) return base;
   const marker = `[${CLOSING_TIME_OVERRIDE_MARKER} ${hora}]`;
   return base ? `${base}\n${marker}` : marker;
-}
-
-// [DELIVERY-REFACTOR 2026-09-22] La mini-tabella "Disponibilidad" leggeva i campi
-// della simulazione rider (salida_driver_estimada / entrega_estimada) e non esiste
-// più: vedi buildDisponibilidad poco sotto. Le costanti qui restano perché servono
-// ancora alla raccomandazione "Usar giro", che ragiona su deadline e zona.
-const GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN = 20;
-// Margine (min): la pizza nuova può uscire dal forno fino a N minuti DOPO la
-// partenza del giro esistente ed essere ancora agganciabile (il driver può
-// attendere un paio di minuti). Oltre questo, il giro NON è aggregabile.
-const GIRO_AGGREGATION_MARGIN_MIN = 2;
-// Lead minimo (min) tra ADESSO e la partenza di un giro perché sia ancora
-// proponibile. Sotto questa soglia il giro è già partito / in corso / troppo
-// vicino: non c'è tempo materiale per preparazione + forno + assegnazione del
-// rider, quindi non è un'opzione operativa reale. Coerente in spirito col gate
-// `now + 5` di suggerisciOrario (zones.js), ma qui un filo più conservativo (10)
-// perché `startMin` è la PARTENZA del driver, non la sola disponibilità forno.
-const MIN_DELIVERY_LEAD_MIN = 10;
-
-// Minuti dall'inizio del giorno per l'ora corrente. Stessa convenzione naive
-// (HH:MM locale) già usata altrove nel file e in suggerisciOrario; non gestisce
-// il wrap oltre mezzanotte, ma il delivery è chiuso a quell'ora quindi i giri
-// post-mezzanotte non sono uno scenario reale.
-function nowMinutes() {
-  const d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
-}
-
-function timeDiffMin(a, b) {
-  const toM = (t) => {
-    if (!t) return null;
-    const m = String(t).trim().match(/^(\d{1,2}):([0-5]\d)$/);
-    if (!m) return null;
-    const h = Number(m[1]);
-    const min = Number(m[2]);
-    if (!Number.isFinite(h) || h < 0 || h > 23) return null;
-    return h * 60 + min;
-  };
-  const ma = toM(a);
-  const mb = toM(b);
-  if (ma == null || mb == null) return null;
-  return Math.abs(ma - mb);
-}
-
-// [DELIVERY-REFACTOR 2026-09-22] buildDisponibilidad RIMOSSA.
-// Proponeva i giri "agganciabili" leggendo salida_driver_estimada / entrega_estimada /
-// conflicto_driver, cioè la simulazione rider. Il corpo era già irraggiungibile da
-// FDV1 (`const FDV1_NO_RIDER_SIM = true` + early return `[]`) e da questa release
-// quei campi non vengono nemmeno più scritti. La disponibilità reale è la capacità
-// di zona/slot, che sta nel backend (agentCucina.getCaricoDelivery).
-const buildDisponibilidad = () => [];
-
-function findRecommendedCompatibleGiro(disponibilidad, currentZonaId, referenceHora, nowMin = nowMinutes()) {
-  if (!currentZonaId || !referenceHora) return null;
-  // Stesso gate di buildDisponibilidad: non raccomandare "Usar giro" per giri
-  // già partiti / in corso / troppo vicini alla partenza. Difesa ridondante (le
-  // righe arrivano già filtrate), ma esplicita per non regredire se la sorgente
-  // delle righe cambiasse.
-  const minStartMin = nowMin + MIN_DELIVERY_LEAD_MIN;
-  return (disponibilidad || [])
-    .filter(r => r.kind === "compatible" && r.zona === currentZonaId && r.slotHora)
-    .filter(r => r.startMin != null && r.startMin >= minStartMin)
-    .map(r => ({ ...r, diffMin: timeDiffMin(referenceHora, r.slotHora) }))
-    .filter(r => r.diffMin != null && r.diffMin <= GIRO_COMPATIBLE_RECOMMENDATION_WINDOW_MIN)
-    .sort((a, b) => (a.diffMin - b.diffMin) || ((a.startMin ?? 0) - (b.startMin ?? 0)))[0] || null;
 }
 
 const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }) => {
@@ -148,6 +93,17 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [fdv1Preview, setFdv1Preview] = useState(null);
   const [giroIntent,  setGiroIntent]  = useState(null);
 
+  // [ENTREGA-MODAL 2026-09-23] Popup "Entrega a domicilio": tre modalità esclusive.
+  //   DIRECTO    → hora = proposta ASAP del backend (hora_preview della preview senza hora)
+  //   PROGRAMADO → hora = ora scelta dall'operatore (unica ora modificabile a mano)
+  //   GIRO       → hora = proposta ASAP + giro_intent sul giro compatibile scelto
+  // entregaAsap = previewDeliveryV1 SENZA hora: deadline/compatibilità di un ordine "appena possibile".
+  const [entregaModo,    setEntregaModo]    = useState("DIRECTO");
+  const [entregaAsap,    setEntregaAsap]    = useState(null);
+  const [programadoHora, setProgramadoHora] = useState("");
+  const [giroSelKey,     setGiroSelKey]     = useState("");
+  const [ahoraMs,        setAhoraMs]        = useState(() => Date.now());
+
   // ItemPickerModal state
   const [pickerVisible,   setPickerVisible]   = useState(false);
   const [editingItem,     setEditingItem]     = useState(null); // null = nuovo, item = modifica
@@ -193,6 +149,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setZonaInfo(null); setZonaLoading(false); setZonaManuale(false);
     setBackendTiming(null); setBackendTimingLoading(false);
     setFdv1Preview(null); setGiroIntent(null);
+    setEntregaModo("DIRECTO"); setEntregaAsap(null); setProgramadoHora(""); setGiroSelKey("");
     horaCustom.current = false;
     setHoraTouchedByOperator(false);
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
@@ -449,6 +406,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     horaCustom.current = true;
     setHoraTouchedByOperator(true);
     setHora(nextHora);
+    // [ENTREGA-MODAL] un'ora digitata a mano è una hora programmata: esce da DIRECTO/GIRO.
+    setEntregaModo("PROGRAMADO");
+    setGiroIntent(null);
   };
 
   // ── Geocoding zona — debounce 800ms sull'indirizzo ─────────────────────
@@ -728,6 +688,65 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     return () => { cancelled = true; clearInterval(t); };
   }, [visible, isFdv1Delivery, fdv1Zona, fdv1HoraDebounced]); // eslint-disable-line
   useEffect(() => { setGiroIntent(null); }, [fdv1Zona]);
+
+  // [ENTREGA-MODAL 2026-09-23] AHORA: orologio informativo, tick solo a popup aperto.
+  useEffect(() => {
+    if (!showDeliveryPopup) return;
+    setAhoraMs(Date.now());
+    const t = setInterval(() => setAhoraMs(Date.now()), 5000);
+    return () => clearInterval(t);
+  }, [showDeliveryPopup]);
+  const ahoraMinuto = Math.floor(ahoraMs / 60000);
+
+  // Preview ASAP (senza hora): hora_preview = proposta DIRECTO, giro_candidates/giro_suggestion = GIRO.
+  // Ricaricata a ogni cambio di minuto di AHORA, così DIRECTO segue l'orologio. Solo lettura.
+  useEffect(() => {
+    if (!showDeliveryPopup || !isFdv1Delivery) return;
+    let cancelled = false;
+    const zonaRichiesta = fdv1Zona;
+    api.previewDeliveryV1({ zona: zonaRichiesta })
+      .then(res => { if (!cancelled && res && res.ok) setEntregaAsap({ ...res, _zona: zonaRichiesta }); })
+      .catch(e => { if (!cancelled) console.warn("[previewDeliveryV1 asap] failed:", e?.message || e); });
+    return () => { cancelled = true; };
+  }, [showDeliveryPopup, isFdv1Delivery, fdv1Zona, ahoraMinuto]); // eslint-disable-line
+
+  // Giri compatibili = SOLO quelli restituiti dal backend per la zona corrente.
+  // `giro_candidates` (lista completa) se il backend la espone, altrimenti il solo `giro_suggestion`.
+  const entregaGiroCandidates = useMemo(() => {
+    if (!entregaAsap || !fdv1Zona || entregaAsap._zona !== fdv1Zona) return [];
+    if (Array.isArray(entregaAsap.giro_candidates)) return entregaAsap.giro_candidates.filter(Boolean);
+    return entregaAsap.giro_suggestion ? [entregaAsap.giro_suggestion] : [];
+  }, [entregaAsap, fdv1Zona]);
+  const giroCandKey = (c) => (c.kind === "GIRO" ? `g:${c.giro_id}` : `o:${c.order_id}`);
+  const giroCandIntent = (c) => (c.kind === "GIRO" ? { giro_id: c.giro_id } : { with_order_id: c.order_id });
+  const giroOptionLabel = (c) => {
+    if (c.kind === "GIRO") {
+      const ms = giroEarliestDeadlineMs(c.giro_id, ordenes);
+      return [c.label || formatManualGiroLabel({ id: c.giro_id }), fdv1Zona, formatMadridHHMM(ms)].filter(Boolean).join(" · ");
+    }
+    const o = (ordenes || []).find(x => x && x.id === c.order_id);
+    return [c.order_id, fdv1Zona, o ? orderDeadlineHHMM(o) : null].filter(Boolean).join(" · ");
+  };
+
+  // All'apertura del popup: PROGRAMADO parte dalla hora corrente, GIRO dal giro già scelto (se ancora compatibile).
+  useEffect(() => {
+    if (!showDeliveryPopup) return;
+    setProgramadoHora(hora || "");
+    setGiroSelKey(giroIntent ? (giroIntent.giro_id ? `g:${giroIntent.giro_id}` : `o:${giroIntent.with_order_id}`) : "");
+  }, [showDeliveryPopup]); // eslint-disable-line
+
+  // Scelta dell'operatore: fissa hora (+ giro_intent solo per GIRO) e chiude il popup.
+  // Il backend calcola la deadline al salvataggio: max(ts + 55', hora). Qui nessun calcolo.
+  const elegirEntrega = (modo, horaElegida, intent) => {
+    if (!horaElegida) return;
+    fdv1HoraPrefilled.current = true;
+    horaCustom.current = true;
+    setForzaHora(false);
+    setHora(horaElegida);
+    setGiroIntent(modo === "GIRO" ? intent : null);
+    setEntregaModo(modo);
+    setShowDeliveryPopup(false);
+  };
 
   // Prefill quando il modal si apre
   useEffect(() => {
@@ -1577,702 +1596,259 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
       </div>
 
       {/* ── Delivery Popup ─────────────────────────────────────────────── */}
+      {/* [ENTREGA-MODAL 2026-09-23] Tre modalità, una scelta: DIRECTO · PROGRAMADO · GIRO.
+          AHORA è solo informativa (orologio, non cliccabile). Nessun calcolo di deadline qui:
+          l'ora di DIRECTO e i giri compatibili arrivano da previewDeliveryV1 (backend). */}
       {showDeliveryPopup && (() => {
         const zona = zonaInfo?.zona;
-        const sf   = slotFeedback;
-        const sc   = sf?.scenario;
-        const isOk   = ["A","C","D"].includes(sc);
-        const isWarn = sc === "E";
-        const bgCol  = isOk ? "rgba(34,197,94,0.08)" : isWarn ? "rgba(251,191,36,0.08)" : "rgba(249,115,22,0.10)";
-        const bdCol  = isOk ? "rgba(34,197,94,0.35)" : isWarn ? "rgba(251,191,36,0.40)" : "rgba(249,115,22,0.45)";
-        const txCol  = isOk ? "#86efac"              : isWarn ? "#fde68a"               : "#fed7aa";
-        const zonaOkForDisponibilidad = !!zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
-        // forno_out del nuovo ordine (fonte più affidabile prima): backend → hint locale.
-        const newOrderFornoOut = backendTiming?.forno_out || slotFeedback?.horaForno || null;
-        const deliveryDisponibilidad = (!zonaLoading && zonaOkForDisponibilidad)
-          ? buildDisponibilidad()
-          : [];
-        const giroRecommendationRef = backendTiming?.suggested_hora || backendTiming?.hora_proposta || hora;
-        const recommendedCompatibleGiro = !horaTouchedByOperator
-          ? findRecommendedCompatibleGiro(deliveryDisponibilidad, zona?.id, giroRecommendationRef)
-          : null;
+        const zonaConfermata = !!zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
+        const directoHora = entregaAsap?.hora_preview || null;
+        const programadoValida = /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(programadoHora || "").trim());
+        const giroCands = entregaGiroCandidates;
+        const giroSel = giroCands.find(c => giroCandKey(c) === giroSelKey) || giroCands[0] || null;
+        const modoActivo = entregaModo === "GIRO" && !giroIntent ? "DIRECTO" : entregaModo;
+
+        const card = (accent, bg, active, disabled) => ({
+          display: "flex", flexDirection: "column", gap: 14, padding: 16, borderRadius: 16,
+          background: bg, border: `${active ? 2.5 : 1.5}px solid ${accent}`,
+          boxShadow: active ? `0 0 0 3px ${accent}33, 0 8px 28px ${accent}22` : "none",
+          opacity: disabled ? 0.4 : 1, minWidth: 0,
+        });
+        const icono = (accent) => ({
+          width: 46, height: 46, borderRadius: "50%", flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22,
+          background: `${accent}22`, border: `1.5px solid ${accent}`,
+        });
+        const titulo = { color: "#fff", fontWeight: 900, fontSize: 17, letterSpacing: 0.5, lineHeight: 1.1 };
+        const subtitulo = { color: "rgba(255,255,255,0.6)", fontSize: 13, marginTop: 3 };
+        const valorBox = {
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          minHeight: 58, borderRadius: 12, background: "rgba(0,0,0,0.22)",
+          border: "1.5px solid rgba(255,255,255,0.18)", boxSizing: "border-box", width: "100%",
+        };
+        const accion = (bg, enabled) => ({
+          width: "100%", padding: "14px 10px", border: "none", borderRadius: 12,
+          background: enabled ? bg : "rgba(255,255,255,0.08)",
+          color: enabled ? "#fff" : "rgba(255,255,255,0.35)",
+          fontWeight: 900, fontSize: 17, cursor: enabled ? "pointer" : "default", marginTop: "auto",
+        });
+        const etiqueta = { color: "rgba(255,255,255,0.55)", fontSize: 11, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 8 };
 
         return (
           <div style={{
             position: "fixed", inset: 0, zIndex: 10000,
             background: "rgba(0,0,0,0.65)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            padding: "20px"
+            padding: "16px"
           }} onClick={() => setShowDeliveryPopup(false)}>
-            <div onClick={e => e.stopPropagation()} style={{
-              background: "#1a1a2e",
+            <div data-testid="entrega-modal" onClick={e => e.stopPropagation()} style={{
+              background: "linear-gradient(160deg, #2a2560 0%, #1c1b44 45%, #16162e 100%)",
+              border: "1px solid rgba(255,255,255,0.10)",
               borderRadius: 20,
-              width: "100%", maxWidth: 880,
-              padding: "0 0 24px",
+              width: "100%", maxWidth: 900,
+              padding: "0 0 20px",
               boxShadow: "0 8px 60px rgba(0,0,0,0.7)",
-              maxHeight: "85vh", overflowY: "auto"
+              maxHeight: "92vh", overflowY: "auto", boxSizing: "border-box"
             }}>
-              {/* Spacer top */}
-              <div style={{ height: 4 }} />
-
               {/* Header */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "8px 20px 16px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 20 }}>🛵</span>
-                  <span style={{ color: "#fff", fontWeight: 900, fontSize: 18 }}>Entrega a domicilio</span>
+                  <span style={{ fontSize: 22 }}>🛵</span>
+                  <span style={{ color: "#fff", fontWeight: 900, fontSize: 20 }}>Entrega a domicilio</span>
                 </div>
-                <button onClick={() => setShowDeliveryPopup(false)} style={{
-                  background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 8,
-                  color: "#fff", width: 32, height: 32, fontSize: 16, cursor: "pointer"
+                <button type="button" aria-label="Cerrar" onClick={() => setShowDeliveryPopup(false)} style={{
+                  background: "rgba(255,255,255,0.10)", border: "none", borderRadius: 10,
+                  color: "#fff", width: 40, height: 40, fontSize: 18, cursor: "pointer"
                 }}>✕</button>
               </div>
 
-              <div style={{ padding: "20px 20px 0", display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
-
-                {/* ── Columna izquierda: dirección, hora, zona, status, confirmar ── */}
-                <div style={{ flex: "1 1 320px", minWidth: 280, display: "flex", flexDirection: "column", gap: 14 }}>
-
-                {/* Dirección */}
-                <div>
-                  <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700,
-                    letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Dirección</div>
+              {/* ── Parte alta: dirección · zona · AHORA ── */}
+              <div style={{ padding: "18px 20px 0", display: "flex", flexWrap: "wrap", gap: 16, alignItems: "stretch" }}>
+                <div style={{ flex: "1 1 300px", minWidth: 0 }}>
+                  <div style={etiqueta}>Dirección</div>
                   <input value={direccion} onChange={e => setDireccion(e.target.value)}
-                    placeholder="Calle, número..."
+                    placeholder="📍 Calle, número..."
                     autoFocus
                     style={{
                       width: "100%", background: "rgba(255,255,255,0.07)",
-                      border: "1.5px solid rgba(249,115,22,0.5)",
-                      borderRadius: 10, color: "#fff", padding: "11px 14px",
-                      fontSize: 15, fontWeight: 500, boxSizing: "border-box", outline: "none"
+                      border: "1.5px solid rgba(255,255,255,0.22)",
+                      borderRadius: 12, color: "#fff", padding: "12px 14px",
+                      fontSize: 16, fontWeight: 700, boxSizing: "border-box", outline: "none"
                     }} />
                   <input value={direccionNote} onChange={e => setDireccionNote(e.target.value)}
                     placeholder="🏠 Planta, timbre, referencias (opcional)"
                     style={{
                       width: "100%", background: "rgba(255,255,255,0.04)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 10, color: "#fff", padding: "9px 14px",
-                      fontSize: 13, marginTop: 8, boxSizing: "border-box", outline: "none"
+                      border: "1px solid rgba(255,255,255,0.14)",
+                      borderRadius: 12, color: "#fff", padding: "10px 14px",
+                      fontSize: 14, marginTop: 8, boxSizing: "border-box", outline: "none"
                     }} />
                 </div>
 
-                {/* Hora — [FDV1] promessa al cliente (dato dell'operatore), separata dal límite de entrega sotto */}
-                {(
-                <div>
-                  <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700,
-                    letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Hora prometida al cliente</div>
-                  <input type="time" value={hora}
-                    onChange={e => { setForzaHora(false); setHoraFromOperator(e.target.value); }}
-                    style={{
-                      background: forzaHora ? "rgba(251,191,36,0.15)" : "rgba(255,255,255,0.07)",
-                      border: forzaHora ? "2px solid rgba(251,191,36,0.7)" : "1.5px solid rgba(255,255,255,0.2)",
-                      borderRadius: 10, color: "#fff", padding: "10px 14px",
-                      fontSize: 18, fontWeight: 700, outline: "none"
-                    }} />
-                  {forzaHora && (
-                    <div style={{ marginTop: 4, fontSize: 11, color: "#fde68a", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-                      <span>⚠️</span> Hora forzada por operador
+                {/* Zona */}
+                <div data-testid="entrega-zona" style={{ flex: zonaConfermata || zonaLoading || !zonaInfo ? "0 0 auto" : "1 1 100%", minWidth: 0 }}>
+                  <div style={etiqueta}>Zona</div>
+                  {direccion.trim().length >= 3 && zonaLoading && !zonaManuale && (
+                    <span style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>…</span>
+                  )}
+                  {direccion.trim().length >= 3 && !zonaLoading && zonaConfermata && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <ZonaBadge zona={zona} size="lg" />
+                      {zonaManuale && (
+                        <button type="button" onClick={() => { setZonaManuale(false); setZonaInfo(null); }} style={{
+                          background: "transparent", border: "1px solid rgba(255,255,255,0.2)",
+                          color: "rgba(255,255,255,0.45)", borderRadius: 6,
+                          padding: "3px 10px", fontSize: 11, cursor: "pointer"
+                        }}>↺ auto</button>
+                      )}
+                    </div>
+                  )}
+                  {/* Zona non trovata o solo keyword — selezione manuale obbligatoria */}
+                  {direccion.trim().length >= 3 && !zonaLoading && (!zona || (zonaInfo?.metodo === "keyword" && !zonaManuale)) && zonaInfo !== null && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 16 }}>⚠️</span>
+                      {ZONE_DELIVERY.map(z => (
+                        <button type="button" key={z.id} onClick={() => {
+                          setZonaInfo({ zona: z, lat: null, lon: null, metodo: "manuale" });
+                          setZonaManuale(true);
+                        }} style={{
+                          background: "transparent", border: `2px solid ${z.colore}`,
+                          color: z.colore, borderRadius: 8,
+                          padding: "5px 12px", cursor: "pointer",
+                          display: "inline-flex", flexDirection: "column",
+                          alignItems: "center", lineHeight: 1, gap: 2
+                        }}>
+                          <span style={{ fontSize: 13, fontWeight: 900 }}>{z.id}</span>
+                          <span style={{ fontSize: 9, fontWeight: 700, opacity: 0.8 }}>
+                            {(z.nomeBreve || z.nome).toUpperCase()}
+                          </span>
+                        </button>
+                      ))}
+                      {direccion.trim() && (
+                        <a href={`https://www.google.com/maps/dir/${encodeURIComponent("Plaza Italica 8, Roquetas de Mar")}/${encodeURIComponent(direccion.trim() + ", Roquetas de Mar")}`}
+                          target="_blank" rel="noopener noreferrer"
+                          style={{ background: "#1D4ED8", color: "#fff", borderRadius: 6,
+                            padding: "4px 12px", fontSize: 12, fontWeight: 800, textDecoration: "none" }}>
+                          🗺
+                        </a>
+                      )}
                     </div>
                   )}
                 </div>
-                )}
 
-                {/* Zona */}
-                {direccion.trim().length >= 3 && (
-                  <div>
-                    <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700,
-                      letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Zona</div>
-                    {zonaLoading && !zonaManuale && (
-                      <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", fontStyle: "italic" }}>Detectando zona...</span>
-                    )}
-                    {/* Zona confermata: polygon o manuale */}
-                    {!zonaLoading && zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache") && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <ZonaBadge zona={zona} size="lg" />
-                          {zonaManuale && (
-                            <button onClick={() => { setZonaManuale(false); setZonaInfo(null); }} style={{
-                              background: "transparent", border: "1px solid rgba(255,255,255,0.2)",
-                              color: "rgba(255,255,255,0.4)", borderRadius: 6,
-                              padding: "3px 10px", fontSize: 11, cursor: "pointer"
-                            }}>↺ auto</button>
-                          )}
-                        </div>
-                        {zonaInfo?.displayName && !zonaManuale && (
-                          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", lineHeight: 1.4 }}>
-                            📍 {zonaInfo.displayName.split(",").slice(0,2).join(",")}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {/* Zona non trovata o solo keyword — selezione manuale obbligatoria */}
-                    {!zonaLoading && (!zona || (zonaInfo?.metodo === "keyword" && !zonaManuale)) && zonaInfo !== null && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {zonaInfo?.metodo === "keyword" && zona ? (
-                          <span style={{ fontSize: 12, color: "rgba(255,200,50,0.9)", fontWeight: 700 }}>
-                            ⚠️ Calle no encontrada — selecciona zona manualmente
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 12, color: "rgba(255,200,50,0.8)", fontWeight: 600 }}>⚠️ No detectada —</span>
-                        )}
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          {ZONE_DELIVERY.map(z => (
-                            <button key={z.id} onClick={() => {
-                              setZonaInfo({ zona: z, lat: null, lon: null, metodo: "manuale" });
-                              setZonaManuale(true);
-                            }} style={{
-                              background: "transparent", border: `2px solid ${z.colore}`,
-                              color: z.colore, borderRadius: 8,
-                              padding: "5px 12px", cursor: "pointer",
-                              display: "inline-flex", flexDirection: "column",
-                              alignItems: "center", lineHeight: 1, gap: 2
-                            }}>
-                              <span style={{ fontSize: 13, fontWeight: 900 }}>{z.id}</span>
-                              <span style={{ fontSize: 9, fontWeight: 700, opacity: 0.8 }}>
-                                {(z.nomeBreve || z.nome).toUpperCase()}
-                              </span>
-                            </button>
-                          ))}
-                          {direccion.trim() && (
-                            <a href={`https://www.google.com/maps/dir/${encodeURIComponent("Plaza Italica 8, Roquetas de Mar")}/${encodeURIComponent(direccion.trim() + ", Roquetas de Mar")}`}
-                              target="_blank" rel="noopener noreferrer"
-                              style={{ background: "#1D4ED8", color: "#fff", borderRadius: 6,
-                                padding: "4px 12px", fontSize: 12, fontWeight: 800, textDecoration: "none" }}>
-                              🗺 Ver ruta
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                {/* AHORA — solo informativa: orologio reale, NON cliccabile, NON è un orario di consegna */}
+                <div style={{ flex: "0 0 auto", display: "flex", alignItems: "stretch", gap: 16 }}>
+                  <div aria-hidden="true" style={{ width: 1, background: "rgba(255,255,255,0.12)" }} />
+                  <div data-testid="entrega-ahora" role="status" style={{
+                    pointerEvents: "none", userSelect: "none", cursor: "default",
+                    minWidth: 170, padding: "10px 18px", borderRadius: 14,
+                    border: "1.5px solid rgba(255,255,255,0.16)", background: "rgba(255,255,255,0.03)",
+                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4
+                  }}>
+                    <span style={{ ...etiqueta, marginBottom: 0 }}>Ahora</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 10, color: "rgba(255,255,255,0.92)" }}>
+                      <span style={{ fontSize: 22, opacity: 0.7 }}>🕐</span>
+                      <span style={{ fontSize: 38, fontWeight: 900, fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>
+                        {formatMadridHHMM(ahoraMs) || "—"}
+                      </span>
+                    </span>
                   </div>
-                )}
+                </div>
+              </div>
 
-                {/* [FDV1] Límite de entrega + asistente giro (AGREGAR / CREAR GIRO / SEPARADO). Sin rider. */}
-                {(() => {
-                  const sugg = fdv1Preview && fdv1Preview.giro_suggestion;
-                  const lim = (fdv1Preview && fdv1Preview.hora_preview) || "—";
-                  const chip = (active) => ({
-                    background: active ? "rgba(0,151,167,0.35)" : "rgba(255,255,255,0.05)",
-                    border: `1.5px solid ${active ? "rgba(103,232,249,0.9)" : "rgba(255,255,255,0.18)"}`,
-                    color: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 800, cursor: "pointer"
-                  });
-                  const suggIntent = sugg ? (sugg.kind === "GIRO" ? { giro_id: sugg.giro_id } : { with_order_id: sugg.order_id }) : null;
-                  const intentActive = !!(giroIntent && suggIntent && JSON.stringify(giroIntent) === JSON.stringify(suggIntent));
-                  return (
-                    <div style={{ borderRadius: 10, padding: "12px 14px", background: "rgba(0,151,167,0.08)",
-                      border: "1.5px solid rgba(0,151,167,0.45)", display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ color: "#fff", fontWeight: 800, fontSize: 14, flex: 1 }}>Hora límite</span>
-                        <span style={{ color: "#67e8f9", fontWeight: 900, fontSize: 18, fontFamily: "'DM Mono',monospace" }}>{lim}</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
-                        {/* [DEADLINE-HORA 2026-09-22] La hora prometida manda cuando es más tardía. */}
-                        {fdv1Preview && fdv1Preview.hora_preview && hora && fdv1Preview.hora_preview === hora
-                          ? "Hora prometida al cliente · se fija al guardar el pedido"
-                          : `Creación + ${(fdv1Preview && fdv1Preview.deadline_min) || 55} min · se fija al guardar el pedido`}
-                      </div>
-                      {zona && !sugg && fdv1Preview && (
-                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>Sin giro compatible · pedido separado</div>
-                      )}
-                      {sugg && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <div style={{ fontSize: 12.5, color: "#67e8f9", fontWeight: 700 }}>
-                            {sugg.kind === "GIRO"
-                              ? `Giro compatible ${sugg.label || sugg.giro_id}: ${sugg.member_ids.join(", ")} · Δ ${sugg.delta_min} min · ${sugg.used}/${sugg.max}`
-                              : `Pedido compatible ${sugg.order_id} · Δ ${sugg.delta_min} min`}
-                          </div>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            <button type="button" onClick={() => setGiroIntent(suggIntent)} style={chip(intentActive)}>
-                              {sugg.kind === "GIRO" ? `Agregar a ${sugg.label || "giro"}` : `Crear giro con ${sugg.order_id}`}
-                            </button>
-                            <button type="button" onClick={() => setGiroIntent(null)} style={chip(!giroIntent)}>Dejar separado</button>
-                          </div>
-                        </div>
-                      )}
+              {/* ── Tre modalità ── */}
+              <div style={{ padding: "18px 20px 0", display: "grid", gap: 14,
+                gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
+
+                {/* 1 — DIRECTO */}
+                <div data-testid="entrega-directo" style={card("#34d399", "rgba(16,185,129,0.07)", modoActivo === "DIRECTO", false)}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={icono("#34d399")}>⚡</span>
+                    <div>
+                      <div style={titulo}>DIRECTO</div>
+                      <div style={subtitulo}>Enviar ahora</div>
                     </div>
-                  );
-                })()}
-                <button type="button" onClick={() => setShowDeliveryPopup(false)} style={{
-                  width: "100%", padding: "15px", border: "none", borderRadius: 12,
-                  background: zona ? zona.colore : "rgba(249,115,22,0.7)",
-                  color: "#fff", fontWeight: 900, fontSize: 16, cursor: "pointer", marginTop: 4
-                }}>
-                  {`✓ Confirmar entrega · cliente ${hora || "—"} · Hora límite ${(fdv1Preview && fdv1Preview.hora_preview) || "—"}${giroIntent ? (giroIntent.giro_id ? " · agregar a giro" : " · crear giro") : ""}`}
-                </button>
-
-                {/* Suggerimento giro esistente nella stessa zona — [FDV1] sostituito dall'asistente sopra */}
-                {false && !zonaLoading && zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache") && (() => {
-                  const sugg = suggerisciOrario(zona.id, ordenes);
-                  if (!sugg) return null;
-                  const toM = (t) => { const [h,m]=t.split(":").map(Number); return h*60+m; };
-                  const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
-                  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
-                  const tgReal = risolviTempoAndata(zonaInfo?.durataAndataMin, zonaInfo?.lat, zonaInfo?.lon, zona);
-                  const horaFornoMin = toM(sugg.orario) - tgReal;
-                  const fattibile = horaFornoMin >= nowMin + 5;
-
-                  if (fattibile) {
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(0,151,167,0.1)", border: "1.5px solid rgba(0,151,167,0.5)",
-                        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 16 }}>🛵</span>
-                        <span style={{ color: "#67e8f9", fontWeight: 700, fontSize: 13, flex: 1 }}>
-                          Ya hay {sugg.nOrdini} pedido{sugg.nOrdini !== 1 ? "s" : ""} en {zona.id} a las {sugg.orario}
-                        </span>
-                        <button onClick={() => setHoraFromOperator(sugg.orario)} style={{
-                          background: "rgba(0,151,167,0.3)", border: "1px solid rgba(0,151,167,0.7)",
-                          color: "#fff", borderRadius: 8, padding: "6px 14px",
-                          fontSize: 13, fontWeight: 800, cursor: "pointer"
-                        }}>→ Añadir a este giro</button>
-                      </div>
-                    );
-                  } else {
-                    // Slot troppo vicino — trova il prossimo slot fattibile
-                    const toH10 = (m) => { const r = Math.ceil(m/10)*10; return toH(r); };
-                    const minForno = nowMin + 5;
-                    const minConsegna = minForno + tgReal;
-                    const prossimoSlot = toH10(minConsegna);
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(251,191,36,0.08)", border: "1.5px solid rgba(251,191,36,0.45)",
-                        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 16 }}>⚠️</span>
-                        <span style={{ color: "#fde68a", fontWeight: 700, fontSize: 13, flex: 1 }}>
-                          Giro {zona.id} {sugg.orario} demasiado cerca — siguiente slot: {prossimoSlot}
-                        </span>
-                        <button onClick={() => setHoraFromOperator(prossimoSlot)} style={{
-                          background: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.6)",
-                          color: "#fde68a", borderRadius: 8, padding: "6px 14px",
-                          fontSize: 13, fontWeight: 800, cursor: "pointer"
-                        }}>→ {prossimoSlot}</button>
-                      </div>
-                    );
-                  }
-                })()}
-
-                {/* ── Status unificato: forno + driver (schedule-aware cascade) ── */}
-                {false && (deliveryStatus.fromBackend || (!backendTimingLoading && sf)) && hora && zona && (() => {
-                  if (deliveryStatus.fromBackend && backendTiming) {
-                    const selectedH = deliveryStatus.selectedH || hora;
-                    const firstAvailableH = deliveryStatus.firstAvailableH || deliveryStatus.sugeridoH;
-                    const driverConflict = !!deliveryStatus.isBlocked;
-                    const hasAlternative = driverConflict && firstAvailableH && firstAvailableH !== selectedH;
-                    const fornoOut = backendTiming.forno_out || sf?.horaForno || "—";
-                    const load = sf?.load != null ? ` (${sf.load}/4)` : "";
-
-                    if (deliveryStatus.outOfServiceWindow) {
-                      return (
-                        <div style={{ borderRadius: 10, padding: "12px 14px",
-                          background: forzaHora ? "rgba(251,191,36,0.10)" : "rgba(239,68,68,0.12)",
-                          border: forzaHora ? "1.5px solid rgba(251,191,36,0.5)" : "2px solid rgba(239,68,68,0.6)",
-                          display: "flex", flexDirection: "column", gap: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 18 }}>{forzaHora ? "⚠️" : "🚨"}</span>
-                            <span style={{ color: forzaHora ? "#fde68a" : "#fca5a5", fontWeight: 800, fontSize: 14 }}>
-                              Delivery no disponible después de las 23:00. Puedes forzarlo solo como excepción especial.
-                            </span>
-                          </div>
-                          <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, paddingLeft: 26, lineHeight: 1.45 }}>
-                            No se aplicará ninguna sugerencia automática fuera del horario normal.
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    if (driverConflict) {
-                      return (
-                        <div style={{ borderRadius: 10, padding: "12px 14px",
-                          background: forzaHora ? "rgba(251,191,36,0.10)" : "rgba(239,68,68,0.12)",
-                          border: forzaHora ? "1.5px solid rgba(251,191,36,0.5)" : "2px solid rgba(239,68,68,0.6)",
-                          display: "flex", flexDirection: "column", gap: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 18 }}>{forzaHora ? "⚠️" : "🚨"}</span>
-                            <span style={{ color: forzaHora ? "#fde68a" : "#fca5a5", fontWeight: 800, fontSize: 14 }}>
-                              Hora pedida: {selectedH}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", paddingLeft: 26, lineHeight: 1.45 }}>
-                            {backendTiming.driver?.message || "Driver ocupado"}
-                          </div>
-                          {hasAlternative && (
-                            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", paddingLeft: 26 }}>
-                              Primera hora disponible: <strong style={{ color: "#86efac", fontWeight: 900, fontSize: 15 }}>{firstAvailableH}</strong>
-                            </div>
-                          )}
-                          {!forzaHora && (
-                            <div style={{ paddingLeft: 26 }}>
-                              <button onClick={() => setForzaHora(true)} style={{
-                                background: "rgba(251,191,36,0.12)", border: "1.5px solid rgba(251,191,36,0.6)",
-                                color: "#fde68a", borderRadius: 8, padding: "5px 12px",
-                                fontSize: 12, fontWeight: 800, cursor: "pointer"
-                              }}>
-                                ⚠️ Confirmar {selectedH} forzado
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(34,197,94,0.08)", border: "1.5px solid rgba(34,197,94,0.45)",
-                        display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 16 }}>✅</span>
-                          <span style={{ color: "#86efac", fontWeight: 800, fontSize: 14 }}>
-                            {recommendedCompatibleGiro
-                              ? `Entrega separada seleccionada: ${selectedH}`
-                              : `${horaTouchedByOperator ? "Propón al cliente" : "Primera hora disponible"}: ${selectedH}`}
-                          </span>
-                        </div>
-                        {recommendedCompatibleGiro && (
-                          <div style={{ fontSize: 12, color: "#67e8f9", fontWeight: 600, paddingLeft: 24, lineHeight: 1.4 }}>
-                            🛵 Giro recomendado: {recommendedCompatibleGiro.slotHora} · pulsa «Usar giro» para usarlo
-                          </div>
-                        )}
-                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
-                          Salida horno {fornoOut}{load}
-                        </div>
-                        <div style={{ fontSize: 12, color: "#86efac", fontWeight: 600, paddingLeft: 24 }}>
-                          🛵 Driver disponible
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  const toM = (t) => { if (!t) return null; const [h,m]=String(t).split(":").map(Number); return h*60+(m||0); };
-                  const toH = (m) => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
-                  const horaMin = toM(hora);
-                  const isOutOfService = deliveryStatus.outOfServiceWindow || sf.propose?.outOfServiceWindow;
-
-                  if (isOutOfService) {
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: forzaHora ? "rgba(251,191,36,0.10)" : "rgba(239,68,68,0.12)",
-                        border: forzaHora ? "1.5px solid rgba(251,191,36,0.5)" : "2px solid rgba(239,68,68,0.6)",
-                        display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 18 }}>{forzaHora ? "⚠️" : "🚨"}</span>
-                          <span style={{ color: forzaHora ? "#fde68a" : "#fca5a5", fontWeight: 800, fontSize: 14 }}>
-                            Delivery no disponible después de las 23:00. Puedes forzarlo solo como excepción especial.
-                          </span>
-                        </div>
-                        <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, paddingLeft: 26, lineHeight: 1.45 }}>
-                          No se aplicará ninguna sugerencia automática fuera del horario normal.
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // ── Sintesi vincoli per il render (display) ─────────────────────
-                  // Costruiti da: sf.propose (driver schedule cascade) + forno
-                  const driverConflicts = []; // {zona, hora, rientroH, rientroM} — giri bloccanti
-                  const constraints = [];
-
-                  // Vincolo forno (slot pizze pieno)
-                  if (!sf.slotOk && sf.consegnaSuggerita) {
-                    constraints.push({
-                      kind: "forno",
-                      minHora: toM(sf.consegnaSuggerita),
-                      reason: `Horno lleno a las ${sf.slotSuggerito} (${sf.load}/4)`
-                    });
-                  }
-
-                  // Vincolo driver: usa sf.propose (schedule-aware con cascade reale)
-                  if (sf.propose && !sf.propose.ok) {
-                    // Estrai giri bloccanti dalla simulazione (cascadeati realisticamente)
-                    const giriBloccanti = (sf.propose.sim?.giri || [])
-                      .filter(g => g.horaMin < horaMin);
-                    giriBloccanti.forEach(g => {
-                      driverConflicts.push({
-                        zona: g.zona, hora: toH(g.horaMin),
-                        // rientro REALE cascadeato, non teorico
-                        rientroM: g.rientroMin, rientroH: toH(g.rientroMin)
-                      });
-                    });
-                    constraints.push({
-                      kind: "driverFuture",
-                      minHora: sf.propose.consegnaPropostaMin,
-                      reason: driverConflicts.length === 0 ? sf.propose.motivo : null,
-                    });
-                  }
-
-                  // Override real-time driver IN_GIRO (DRIVER_STATO config) —
-                  // aggiunge il check solo se non già coperto da propose
-                  if (sf.isInGiro && sf.driverRientro && (!sf.propose || sf.propose.ok)) {
-                    const driverMin = Math.ceil((toM(sf.driverRientro) + (sf.tgNew || zona.tempoGiro)) / 5) * 5;
-                    const driverZona = driverStato?.zona || "otra zona";
-                    constraints.push({
-                      kind: "driverNow",
-                      minHora: driverMin,
-                      reason: `Driver en ${driverZona} ahora · vuelve ~${sf.driverRientro}`
-                    });
-                  }
-
-                  // ── STATO OK ─────────────────────────────────────
-                  if (constraints.length === 0) {
-                    // Driver line dipende dall'aggregazione same-zone-slot e da DRIVER_STATO
-                    let driverLine = `🛵 Driver disponible`;
-                    if (sf.propose?.aggregato) {
-                      driverLine = `🛵 Agregar al giro ${zona.id} ${sf.propose.giroEsistente?.hora} (${(sf.propose.giroEsistente?.count || 0) + 1}/${zona.maxOrdiniPerGiro})`;
-                    } else if (sf.isInGiro && sf.driverRientro) {
-                      driverLine = `🛵 Driver vuelve ~${sf.driverRientro} · OK`;
-                    }
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(34,197,94,0.08)", border: "1.5px solid rgba(34,197,94,0.45)",
-                        display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 16 }}>✅</span>
-                          <span style={{ color: "#86efac", fontWeight: 800, fontSize: 14 }}>
-                            Propón al cliente: {hora}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>
-                          Salida horno {sf.horaForno} ({sf.load}/4)
-                        </div>
-                        <div style={{ fontSize: 12, color: "#86efac", fontWeight: 600, paddingLeft: 24 }}>
-                          {driverLine}
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // ── Stato non OK: blocco o warning ───────────────
-                  // sugeridoH già calcolato in deliveryStatus useMemo (single source of truth)
-                  const sugeridoH = deliveryStatus.sugeridoH || "??:??";
-                  const isBlocked = deliveryStatus.isBlocked;
-
-                  // Helper: una riga per ogni "tipo" di vincolo, aggregando i driverFuture
-                  const renderConstraintLines = (color) => {
-                    const lines = [];
-                    constraints.forEach((c, i) => {
-                      if (c.kind === "driverFuture" && driverConflicts.length > 0) {
-                        const maxRientro = driverConflicts.reduce((a, b) => a.rientroM > b.rientroM ? a : b);
-                        const elenco = driverConflicts
-                          .map(d => `${d.zona} ${d.hora}`)
-                          .join(" · ");
-                        lines.push(
-                          <div key={`c-${i}`} style={{ fontSize: 12, color, paddingLeft: 24, lineHeight: 1.5 }}>
-                            🛵 Driver ocupado hasta ~{maxRientro.rientroH}
-                            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 11, marginTop: 2 }}>
-                              Pedidos en curso: {elenco}
-                            </div>
-                          </div>
-                        );
-                      } else if (c.reason) {
-                        lines.push(
-                          <div key={`c-${i}`} style={{ fontSize: 12, color, paddingLeft: 24 }}>
-                            · {c.reason}
-                          </div>
-                        );
-                      }
-                    });
-                    return lines;
-                  };
-
-                  // ── STATO BLOCCATO ───────────────────────────────
-                  // Se l'operatore ha forzato → box ridotto, conferma forzata in basso
-                  if (isBlocked && forzaHora) {
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(251,191,36,0.10)", border: "1.5px solid rgba(251,191,36,0.5)",
-                        display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 16 }}>⚠️</span>
-                          <span style={{ color: "#fde68a", fontWeight: 800, fontSize: 13 }}>
-                            Hora {hora} forzada — el driver puede llegar tarde
-                          </span>
-                        </div>
-                        <div style={{ paddingLeft: 24 }}>
-                          <button onClick={() => setForzaHora(false)} style={{
-                            background: "transparent", border: "1px solid rgba(255,255,255,0.25)",
-                            color: "rgba(255,255,255,0.7)", borderRadius: 6, padding: "4px 12px",
-                            fontSize: 12, fontWeight: 700, cursor: "pointer"
-                          }}>↩ Usar sugerencia {sugeridoH}</button>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  if (isBlocked) {
-                    return (
-                      <div style={{ borderRadius: 10, padding: "12px 14px",
-                        background: "rgba(239,68,68,0.12)", border: "2px solid rgba(239,68,68,0.6)",
-                        display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 18 }}>🚨</span>
-                          <span style={{ color: "#fca5a5", fontWeight: 800, fontSize: 14 }}>
-                            {hora} no es posible
-                          </span>
-                        </div>
-                        {renderConstraintLines("rgba(255,255,255,0.75)")}
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, paddingLeft: 24, flexWrap: "wrap" }}>
-                          <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 13 }}>
-                            Hora sugerida: <strong style={{ color: "#86efac", fontWeight: 900, fontSize: 15 }}>{sugeridoH}</strong>
-                          </span>
-                          <button onClick={() => setForzaHora(true)} style={{
-                            background: "rgba(251,191,36,0.12)", border: "1.5px solid rgba(251,191,36,0.6)",
-                            color: "#fde68a", borderRadius: 8, padding: "5px 12px",
-                            fontSize: 12, fontWeight: 800, cursor: "pointer",
-                            display: "inline-flex", alignItems: "center", gap: 5
-                          }} title="Forzar la hora original — el driver puede llegar tarde">
-                            ⚠️ Forzar {hora}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // ── STATO ATTENZIONE: hora OK ma con vincoli noti ─────
-                  return (
-                    <div style={{ borderRadius: 10, padding: "12px 14px",
-                      background: "rgba(251,191,36,0.10)", border: "1.5px solid rgba(251,191,36,0.5)",
-                      display: "flex", flexDirection: "column", gap: 6 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 16 }}>⚠️</span>
-                        <span style={{ color: "#fde68a", fontWeight: 800, fontSize: 14 }}>
-                          Propón al cliente: {hora} <span style={{ fontWeight: 500, color: "rgba(255,255,255,0.55)", fontSize: 12 }}>· ajustado</span>
-                        </span>
-                      </div>
-                      {renderConstraintLines("rgba(255,255,255,0.7)")}
-                    </div>
-                  );
-                })()}
-
-                {/* Tasto conferma — 3 stati visivi:
-                    1. OK / sin zona     → verde (colore zona) "Entrega en {Q} confirmada"
-                    2. BLOCKED no forzato → verde, APPLICA la sugerencia al click
-                    3. BLOCKED forzato    → arancione/giallo, conferma hora forzata
-                */}
-                {false && (() => {
-                  const { isBlocked, selectedH, sugeridoH, outOfServiceWindow } = deliveryStatus;
-                  const zonaOk = zona && (zonaManuale || zonaInfo?.metodo === "polygon" || zonaInfo?.metodo === "cache");
-                  let bg, label, onClick;
-                  if (isBlocked && forzaHora) {
-                    // Caso forzato — visivamente arancione/giallo per segnalare scelta non standard
-                    bg = "linear-gradient(135deg, #F59E0B, #D97706)";
-                    label = `⚠️ Confirmar ${selectedH || hora} forzado`;
-                    onClick = () => {
-                      if (deliveryStatus.fromBackend && selectedH && selectedH !== hora) {
-                        setHoraFromOperator(selectedH);
-                      }
-                      setShowDeliveryPopup(false);
-                    };
-                  } else if (isBlocked && outOfServiceWindow) {
-                    // Fuori orario servizio: nessuna sugerencia da applicare, solo forzatura esplicita.
-                    bg = "linear-gradient(135deg, #F59E0B, #D97706)";
-                    label = "⚠️ Forzar como excepción";
-                    onClick = () => setForzaHora(true);
-                  } else if (isBlocked && sugeridoH) {
-                    // Caso BLOCKED non forzato — il click applica la prima disponibilità backend
-                    bg = "linear-gradient(135deg, #16A34A, #15803D)";
-                    label = `✅ Aplicar primera disponible ${sugeridoH} y confirmar`;
-                    onClick = () => { setHoraFromOperator(sugeridoH); setShowDeliveryPopup(false); };
-                  } else {
-                    // Caso OK normale
-                    bg = zonaOk ? zona.colore : "rgba(249,115,22,0.7)";
-                    label = recommendedCompatibleGiro && selectedH
-                      ? `✓ Confirmar entrega separada ${selectedH}`
-                      : deliveryStatus.fromBackend && selectedH
-                      ? `✓ Confirmar entrega ${selectedH}`
-                      : zonaOk ? `✓ Entrega en ${zona.id} confirmada` : "✓ Confirmar dirección";
-                    onClick = () => {
-                      if (deliveryStatus.fromBackend && selectedH && selectedH !== hora) {
-                        setHora(selectedH);
-                      }
-                      setShowDeliveryPopup(false);
-                    };
-                  }
-                  return (
-                    <button onClick={onClick} style={{
-                      width: "100%", padding: "15px",
-                      background: bg,
-                      border: "none", borderRadius: 12,
-                      color: "#fff", fontWeight: 900, fontSize: 16,
-                      cursor: "pointer", marginTop: 4,
-                      boxShadow: zonaOk && !isBlocked ? `0 4px 20px ${zona.colore}55`
-                        : isBlocked && forzaHora ? "0 4px 20px rgba(245,158,11,0.45)"
-                        : isBlocked ? "0 4px 20px rgba(22,163,74,0.45)"
-                        : "none"
-                    }}>
-                      {label}
-                    </button>
-                  );
-                })()}
+                  </div>
+                  <div data-testid="entrega-directo-hora" style={{ ...valorBox, background: "transparent", border: "1.5px solid transparent",
+                    color: "#6ee7b7", fontSize: 44, fontWeight: 900, fontFamily: "'DM Mono',monospace" }}>
+                    {directoHora || "—"}
+                  </div>
+                  <button type="button" data-testid="entrega-directo-elegir" disabled={!directoHora}
+                    onClick={() => elegirEntrega("DIRECTO", directoHora, null)}
+                    style={accion("linear-gradient(135deg, #22c55e, #16a34a)", !!directoHora)}>Elegir</button>
                 </div>
 
-                {/* ── Columna derecha: card Disponibilidad (lateral en desktop/tablet,
-                    debajo en móvil via flex-wrap). Misma lógica de presentación. ── */}
-                {false && !zonaLoading && zonaOkForDisponibilidad && (
-                  <div style={{ flex: "1 1 300px", minWidth: 260 }}>
-                    {(() => {
-                      const disp = deliveryDisponibilidad;
-                      return (
-                        <div>
-                          <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, fontWeight: 800,
-                            letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>Disponibilidad</div>
-                          {disp.length === 0 ? (
-                            <span style={{ fontSize: 14, color: "#86efac" }}>Sin giros activos · todo libre</span>
-                          ) : (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                              {disp.slice(0, 3).map(r => {
-                                const isCompat = r.kind === "compatible";
-                                const isNoAgg  = r.kind === "no_agregable";
-                                const statusLabel = isCompat
-                                  ? `Usar giro ${r.slotHora} →`
-                                  : isNoAgg
-                                  ? "No agregable"
-                                  : (r.conflicto ? "Ocupado ⚠" : "Ocupado");
-                                const statusColor = isCompat
-                                  ? "#67e8f9"
-                                  : isNoAgg
-                                  ? "rgba(255,255,255,0.45)"
-                                  : (r.conflicto ? "#fca5a5" : "rgba(255,255,255,0.5)");
-                                return (
-                                  <div key={r.key}
-                                    onClick={isCompat ? () => setHoraFromOperator(r.slotHora) : undefined}
-                                    title={isCompat
-                                      ? `Agregar al giro ${r.zona} ${r.slotHora}`
-                                      : isNoAgg
-                                      ? `Giro ${r.zona} ${r.slotHora}: la pizza nueva saldría del horno demasiado tarde para este giro`
-                                      : undefined}
-                                    style={{
-                                      display: "flex", alignItems: "center", gap: 10, fontSize: 15,
-                                      padding: "10px 12px", borderRadius: 10,
-                                      cursor: isCompat ? "pointer" : "default",
-                                      background: isCompat ? "rgba(0,151,167,0.20)" : "rgba(255,255,255,0.04)",
-                                      border: isCompat ? "1.5px solid rgba(0,151,167,0.75)" : "1px solid rgba(255,255,255,0.10)",
-                                      opacity: isNoAgg ? 0.7 : 1,
-                                    }}>
-                                    <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 16, fontWeight: 700, color: "#fff", minWidth: 104 }}>{r.range}</span>
-                                    <span style={{
-                                      fontSize: 14, fontWeight: 800, color: "#a5f3fc",
-                                      background: isCompat ? "rgba(0,151,167,0.30)" : "rgba(0,151,167,0.12)",
-                                      border: "1.5px solid rgba(0,151,167,0.85)", borderRadius: 7, padding: "2px 9px",
-                                      cursor: isCompat ? "pointer" : "default"
-                                    }}>[{r.zona}]</span>
-                                    <span style={{
-                                      marginLeft: "auto", fontWeight: 800, fontSize: 14,
-                                      color: isCompat ? "#0b1220" : statusColor,
-                                      background: isCompat ? "#67e8f9" : "transparent",
-                                      borderRadius: isCompat ? 8 : 0,
-                                      padding: isCompat ? "5px 12px" : 0,
-                                    }}>
-                                      {statusLabel}{r.count > 1 ? ` ·${r.count}` : ""}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+                {/* 2 — PROGRAMADO: l'unica ora modificabile a mano */}
+                <div data-testid="entrega-programado" style={card("#fb923c", "rgba(249,115,22,0.07)", modoActivo === "PROGRAMADO", false)}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={icono("#fb923c")}>🗓️</span>
+                    <div>
+                      <div style={titulo}>PROGRAMADO</div>
+                      <div style={subtitulo}>Elegir hora de entrega</div>
+                    </div>
                   </div>
-                )}
+                  <div style={{ ...valorBox, padding: "0 6px 0 14px", border: "1.5px solid rgba(251,146,60,0.55)" }}>
+                    {/* ▲/▼ sostituiscono l'icona nativa del picker (Chrome); su iPad il tap apre comunque la ruota */}
+                    <style>{`[data-testid="entrega-programado-hora"]::-webkit-calendar-picker-indicator{display:none}`}</style>
+                    <input type="time" data-testid="entrega-programado-hora" value={programadoHora}
+                      onChange={e => setProgramadoHora(e.target.value)}
+                      style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none",
+                        color: "#fff", fontSize: 32, fontWeight: 900, fontFamily: "'DM Mono',monospace", textAlign: "center" }} />
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                      {[["▲", 5, "+5"], ["▼", -5, "-5"]].map(([sym, delta, lbl]) => (
+                        <button type="button" key={lbl} aria-label={lbl}
+                          onClick={() => setProgramadoHora(h => shiftHoraHHMM(h || directoHora, delta) || h)}
+                          style={{ background: "transparent", border: "none", color: "#fdba74",
+                            fontSize: 14, lineHeight: 1, padding: "4px 8px", cursor: "pointer" }}>{sym}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <button type="button" data-testid="entrega-programado-elegir" disabled={!programadoValida}
+                    onClick={() => elegirEntrega("PROGRAMADO", programadoHora.trim(), null)}
+                    style={accion("linear-gradient(135deg, #f97316, #ea580c)", programadoValida)}>Elegir</button>
+                </div>
+
+                {/* 3 — GIRO: solo i giri compatibili calcolati dal backend; nessun auto-grouping */}
+                <div data-testid="entrega-giro" aria-disabled={giroCands.length === 0 ? "true" : undefined}
+                  style={card("#38bdf8", "rgba(14,165,233,0.07)", modoActivo === "GIRO", giroCands.length === 0)}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={icono("#38bdf8")}>👥</span>
+                    <div>
+                      <div style={titulo}>GIRO</div>
+                      <div style={subtitulo}>Unir con otro pedido</div>
+                    </div>
+                  </div>
+                  {giroCands.length === 0 && (
+                    <div data-testid="entrega-giro-vacio" style={{ ...valorBox, color: "rgba(255,255,255,0.5)", fontSize: 30, fontWeight: 900 }}>—</div>
+                  )}
+                  {giroCands.length === 1 && (
+                    <div data-testid="entrega-giro-unico" style={{ ...valorBox, border: "1.5px solid rgba(56,189,248,0.55)",
+                      color: "#7dd3fc", fontSize: 19, fontWeight: 900, fontVariantNumeric: "tabular-nums", padding: "0 10px", textAlign: "center" }}>
+                      {giroOptionLabel(giroCands[0])}
+                    </div>
+                  )}
+                  {giroCands.length > 1 && (
+                    <div style={{ ...valorBox, border: "1.5px solid rgba(56,189,248,0.55)", position: "relative", padding: "0 10px" }}>
+                      <select data-testid="entrega-giro-select" value={giroSel ? giroCandKey(giroSel) : ""}
+                        onChange={e => setGiroSelKey(e.target.value)}
+                        style={{ width: "100%", appearance: "none", WebkitAppearance: "none", background: "transparent",
+                          border: "none", outline: "none", color: "#7dd3fc", fontSize: 18, fontWeight: 900,
+                          fontFamily: "inherit", fontVariantNumeric: "tabular-nums", textAlign: "center", textAlignLast: "center",
+                          padding: "14px 20px 14px 0", cursor: "pointer", textOverflow: "ellipsis" }}>
+                        {giroCands.map(c => (
+                          <option key={giroCandKey(c)} value={giroCandKey(c)} style={{ background: "#1c1b44", color: "#fff" }}>
+                            {giroOptionLabel(c)}
+                          </option>
+                        ))}
+                      </select>
+                      <span aria-hidden="true" style={{ position: "absolute", right: 14, color: "#7dd3fc", fontSize: 14, pointerEvents: "none" }}>▼</span>
+                    </div>
+                  )}
+                  <button type="button" data-testid="entrega-giro-unir" disabled={!giroSel || !directoHora}
+                    onClick={() => giroSel && elegirEntrega("GIRO", directoHora, giroCandIntent(giroSel))}
+                    style={accion("linear-gradient(135deg, #38bdf8, #0284c7)", !!giroSel && !!directoHora)}>Unir</button>
+                </div>
               </div>
             </div>
           </div>
