@@ -57,7 +57,8 @@ const asapHoraAt = () => {
   return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d);
 };
 const previewImpl = async (body) => {
-  if (body.hora) return { ok: true, deadline_min: 55, hora_preview: body.hora, giro_suggestion: null };
+  // Preview CON hora (prefill del form): il backend risponde max(now + 55, hora).
+  if (body.hora) { const asap = asapHoraAt(); return { ok: true, deadline_min: 55, hora_preview: body.hora > asap ? body.hora : asap, giro_suggestion: null }; }
   const c = body.zona === "Q1" ? scenario.candidates : [];
   const sugg = c.length ? { ...c[0], alternatives: c.length - 1 } : null;
   return { ok: true, deadline_min: 55, hora_preview: asapHoraAt(), giro_suggestion: sugg, ...(scenario.exposeList ? { giro_candidates: c } : {}) };
@@ -79,22 +80,27 @@ const setValue = async (el, value) => {
   await flush();
 };
 
-async function openPopup({ candidates = [], exposeList = true } = {}) {
+async function mountModal({ candidates = [], exposeList = true, direccion = "Plaza de Toros 1" } = {}) {
   scenario = { candidates, exposeList };
   onConfirm = jest.fn();
   container = document.createElement("div"); document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
     root.render(<NuevoPedidoModal visible onClose={() => {}} onConfirm={onConfirm} ordenes={ORDENES}
-      prefill={{ nombre: "Ana", direccion: "Plaza de Toros 1" }} />);
+      prefill={{ nombre: "Ana", ...(direccion ? { direccion } : {}) }} />);
   });
   await flush(1000);                 // debounce geocode → zona Q1
-  await flush(500);                  // preview con hora (prefill iniziale)
-  const trigger = [...container.querySelectorAll("button")].find(b => b.textContent.includes("Plaza de Toros 1"));
-  await click(trigger);
+  await flush(500);                  // preview con hora (prefill DIRECTO iniziale)
+  return container;
+}
+const trigger = () => [...container.querySelectorAll("button")].find(b => b.textContent.includes("Plaza de Toros 1"));
+async function openPopup(opts) {
+  await mountModal(opts);
+  await click(trigger());
   await flush();
   return container;
 }
+const timeInputs = () => [...container.querySelectorAll("input[type='time']")];
 async function submit() {
   const addBtn = [...container.querySelectorAll("button")].find(b => b.textContent.includes("Añadir") && !b.textContent.includes("dirección"));
   await click(addBtn);                                                               // apre il picker (stub)
@@ -267,6 +273,99 @@ describe("10 — nessun auto-grouping", () => {
     const payload = await submit();
     expect(payload.hora).toBe("21:30");
     expect(payload).not.toHaveProperty("giro_intent");
+  });
+});
+
+describe("form di creazione DOMICILIO — un solo controllo hora (PROGRAMADO)", () => {
+  test("popup chiuso: nessun campo hora editabile, nessun Hora límite / Hora cliente, sintesi read-only", async () => {
+    await mountModal({ candidates: [C_002] });
+    expect(q("entrega-modal")).toBeNull();
+    expect(timeInputs()).toHaveLength(0);
+    expect(q("hora-ritiro")).toBeNull();
+    const txt = container.textContent;
+    for (const s of ["Hora límite", "Hora cliente", "Hora prometida", "Creación + 55"]) expect(txt).not.toContain(s);
+    // DIRECTO impostato automaticamente dal backend (prefill), senza aprire il popup
+    expect(q("entrega-resumen").textContent).toBe("DIRECTO · 20:45");
+    expect(q("entrega-resumen").querySelectorAll("input, button, select").length).toBe(0);
+  });
+
+  test("popup aperto: in tutto il form esiste UN solo input hora, ed è PROGRAMADO", async () => {
+    await openPopup({ candidates: [C_002, C_007] });
+    const inputs = timeInputs();
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0].getAttribute("data-testid")).toBe("entrega-programado-hora");
+  });
+
+  test("DIRECTO senza aprire il popup: payload con la hora proposta, nessun giro", async () => {
+    await mountModal({ candidates: [C_002] });
+    const payload = await submit();
+    expect(payload.hora).toBe("20:45");
+    expect(payload).not.toHaveProperty("giro_intent");
+  });
+
+  test("sintesi dopo PROGRAMADO / GIRO / DIRECTO", async () => {
+    await openPopup({ candidates: [C_GIRO, C_002, C_007] });
+    await setValue(q("entrega-programado-hora"), "21:30");
+    await click(q("entrega-programado-elegir"));
+    expect(q("entrega-resumen").textContent).toBe("PROGRAMADO · 21:30");
+    await click(trigger());
+    await click(q("entrega-giro-unir"));
+    expect(q("entrega-resumen").textContent).toBe("GIRO · G3");
+    await click(trigger());
+    await setValue(q("entrega-giro-select"), "o:#007");
+    await click(q("entrega-giro-unir"));
+    expect(q("entrega-resumen").textContent).toBe("GIRO · #007");
+    await click(trigger());
+    await click(q("entrega-directo-elegir"));
+    expect(q("entrega-resumen").textContent).toBe("DIRECTO · 20:45");
+    const txt = container.textContent;
+    expect(txt).not.toContain("Hora límite");
+  });
+});
+
+describe("RITIRO invariato", () => {
+  test("senza dirección il campo «Retirar a las» resta l'unico controllo hora e finisce nel payload", async () => {
+    await mountModal({ direccion: "" });
+    expect(q("hora-ritiro")).not.toBeNull();
+    expect(q("hora-ritiro").textContent).toContain("Retirar a las");
+    expect(timeInputs()).toHaveLength(1);
+    await setValue(timeInputs()[0], "21:10");
+    const payload = await submit();
+    expect(payload.tipo_consegna).toBe("RITIRO");
+    expect(payload.hora).toBe("21:10");
+    expect(payload).not.toHaveProperty("giro_intent");
+  });
+});
+
+describe("payload invariati", () => {
+  // Chiavi di onConfirm identiche a dbcebf6 (handleConfirm non è stato toccato): solo `giro_intent`
+  // compare, come prima, quando l'operatore sceglie un giro.
+  const BASE_KEYS = ["canal", "cliente_id", "client_req_id", "descuento_tipo", "descuento_valor", "direccion", "direccion_note",
+    "durata_andata_min", "durata_google_min", "durata_haversine_min", "estado", "forzado", "geo_source", "hora", "id", "items",
+    "metodo_pago", "nombre", "nota", "tel", "tipo_consegna", "ts", "wa_id", "ya_pagado", "zona", "zona_lat", "zona_lon", "zona_manuale"];
+  const keysOf = (p) => Object.keys(p).filter(k => k !== "giro_intent").sort();
+
+  test("DIRECTO / PROGRAMADO / GIRO producono lo stesso insieme di chiavi", async () => {
+    await openPopup({ candidates: [C_GIRO] });
+    await click(q("entrega-directo-elegir"));
+    const p1 = await submit();
+    expect(keysOf(p1)).toEqual([...BASE_KEYS].sort());
+    expect(p1).not.toHaveProperty("giro_intent");
+    act(() => root.unmount()); root = null; container.remove(); container = null;
+
+    await openPopup({ candidates: [C_GIRO] });
+    await click(q("entrega-giro-unir"));
+    const p3 = await submit();
+    expect(keysOf(p3)).toEqual(keysOf(p1));
+    expect(p3.giro_intent).toEqual({ giro_id: "mg_260921_3" });
+    act(() => root.unmount()); root = null; container.remove(); container = null;
+
+    await openPopup({ candidates: [C_GIRO] });
+    await setValue(q("entrega-programado-hora"), "21:30");
+    await click(q("entrega-programado-elegir"));
+    const p2 = await submit();
+    expect(keysOf(p2)).toEqual(keysOf(p1));
+    expect(p2).not.toHaveProperty("giro_intent");
   });
 });
 

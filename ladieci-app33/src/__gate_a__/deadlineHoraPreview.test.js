@@ -98,7 +98,12 @@ describe("4 — la risoluzione oraria resta nel backend", () => {
     expect(modalSrc).not.toMatch(/55\s*\*\s*60000/);
   });
 
-  test("il límite mostrato viene sempre dalla risposta del backend", () => {
-    expect(modalSrc).toMatch(/fdv1Preview\.hora_preview/);
+  // [ENTREGA-MODAL 2026-09-23] Il form di creazione non mostra più alcun "Hora límite": l'unica ora
+  // proposta (DIRECTO) arriva comunque dalla risposta del backend, mai da un calcolo locale.
+  test("nessun límite mostrato nel form; la proposta DIRECTO viene dal backend", () => {
+    const codice = modalSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(codice).not.toMatch(/Hora límite/);
+    expect(modalSrc).toMatch(/const directoHora = entregaAsap\?\.hora_preview \|\| null;/);
+    expect(modalSrc).toMatch(/setHora\(res\.hora_preview\)/);
   });
 });

@@ -88,9 +88,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   // ── Stato driver (fetch quando il modal si apre) ──────────────────────────
   const [driverStato]    = useState(null);   // [FDV1] sempre null: nessuna telemetria rider
 
-  // [FDV1] anteprima deadline + suggerimento giro (previewDeliveryV1) e scelta operatore
+  // Scelta giro dell'operatore (popup GIRO → Unir)
   // giroIntent: null = pedido separado · { giro_id } = AGREGAR · { with_order_id } = CREAR GIRO
-  const [fdv1Preview, setFdv1Preview] = useState(null);
   const [giroIntent,  setGiroIntent]  = useState(null);
 
   // [ENTREGA-MODAL 2026-09-23] Popup "Entrega a domicilio": tre modalità esclusive.
@@ -103,6 +102,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
   const [programadoHora, setProgramadoHora] = useState("");
   const [giroSelKey,     setGiroSelKey]     = useState("");
   const [ahoraMs,        setAhoraMs]        = useState(() => Date.now());
+  const [giroResumenId,  setGiroResumenId]  = useState("");
 
   // ItemPickerModal state
   const [pickerVisible,   setPickerVisible]   = useState(false);
@@ -148,8 +148,8 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     setPickerVisible(false); setEditingItem(null);
     setZonaInfo(null); setZonaLoading(false); setZonaManuale(false);
     setBackendTiming(null); setBackendTimingLoading(false);
-    setFdv1Preview(null); setGiroIntent(null);
-    setEntregaModo("DIRECTO"); setEntregaAsap(null); setProgramadoHora(""); setGiroSelKey("");
+    setGiroIntent(null);
+    setEntregaModo("DIRECTO"); setEntregaAsap(null); setProgramadoHora(""); setGiroSelKey(""); setGiroResumenId("");
     horaCustom.current = false;
     setHoraTouchedByOperator(false);
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
@@ -665,16 +665,15 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     return () => clearTimeout(t);
   }, [fdv1HoraValida]);
   useEffect(() => {
-    if (!visible || !isFdv1Delivery) { setFdv1Preview(null); return; }
+    if (!visible || !isFdv1Delivery) return;
     let cancelled = false;
     const load = async () => {
       try {
         const res = await api.previewDeliveryV1({ zona: fdv1Zona, hora: fdv1HoraDebounced || undefined });
         if (cancelled || !res || !res.ok) return;
-        setFdv1Preview(res);
-        // Proposta iniziale per la promessa al cliente (UNA volta, solo se l'operatore
-        // non l'ha toccata): poi `hora` è un dato dell'operatore e la preview non lo
-        // sovrascrive più — aggiorna solo delivery_deadline_preview / hora_preview.
+        // Proposta iniziale DIRECTO (UNA volta, solo se l'operatore non l'ha toccata): così
+        // un DOMICILIO salvato senza aprire il popup parte con la hora ASAP del backend.
+        // [ENTREGA-MODAL 2026-09-23] Nessun "Hora límite" viene più mostrato nel form.
         if (res.hora_preview && !fdv1HoraPrefilled.current && !horaCustom.current && !horaTouchedByOperator) {
           fdv1HoraPrefilled.current = true;
           setHora(res.hora_preview);
@@ -728,6 +727,14 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     return [c.order_id, fdv1Zona, o ? orderDeadlineHHMM(o) : null].filter(Boolean).join(" · ");
   };
 
+  // Sintesi read-only fuori dal popup (una sola, nessun secondo orologio, nessuna deadline).
+  // DIRECTO prima che la preview abbia proposto l'ora: "—" (la hora di apertura non è una proposta).
+  const modoResumen = entregaModo === "GIRO" && !giroIntent ? "DIRECTO" : entregaModo;
+  const horaResumenPronta = horaCustom.current || fdv1HoraPrefilled.current;
+  const entregaResumen = modoResumen === "GIRO"
+    ? `GIRO · ${giroResumenId || (giroIntent && (giroIntent.with_order_id || formatManualGiroLabel({ id: giroIntent.giro_id }))) || "—"}`
+    : `${modoResumen} · ${(horaResumenPronta && hora) || "—"}`;
+
   // All'apertura del popup: PROGRAMADO parte dalla hora corrente, GIRO dal giro già scelto (se ancora compatibile).
   useEffect(() => {
     if (!showDeliveryPopup) return;
@@ -737,8 +744,9 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
 
   // Scelta dell'operatore: fissa hora (+ giro_intent solo per GIRO) e chiude il popup.
   // Il backend calcola la deadline al salvataggio: max(ts + 55', hora). Qui nessun calcolo.
-  const elegirEntrega = (modo, horaElegida, intent) => {
+  const elegirEntrega = (modo, horaElegida, intent, resumenId = "") => {
     if (!horaElegida) return;
+    setGiroResumenId(modo === "GIRO" ? resumenId : "");
     fdv1HoraPrefilled.current = true;
     horaCustom.current = true;
     setForzaHora(false);
@@ -979,7 +987,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     border: "1.5px solid rgba(255,255,255,0.18)",
                     borderRadius: 9, color: "#fff", padding: "9px 12px", fontSize: 14
                   }} />
-                <div style={{
+                {/* [ENTREGA-MODAL 2026-09-23] Il campo hora qui è SOLO RITIRO ("Retirar a las").
+                    In DOMICILIO l'unico controllo editabile di `hora` è PROGRAMADO nel popup:
+                    niente "Hora cliente", niente "Hora límite", niente secondo orologio. */}
+                {tipoConsegna !== "DOMICILIO" ? (
+                <div data-testid="hora-ritiro" style={{
                   display: "flex", alignItems: "center", gap: 6,
                   background: C.carbone2, border: "1.5px solid rgba(255,255,255,0.22)",
                   borderRadius: 9, padding: "7px 12px", minWidth: 130
@@ -987,19 +999,15 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                   <span style={{ fontSize: 16 }}>🕐</span>
                   <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                     <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 9, fontWeight: 800, letterSpacing: .8, textTransform: "uppercase", lineHeight: 1 }}>
-                      {tipoConsegna === "DOMICILIO" ? "Hora cliente" : "Retirar a las"}
+                      Retirar a las
                     </span>
                     <input type="time" value={hora} onChange={e => setHoraFromOperator(e.target.value)}
                       style={{ background: "transparent", border: "none", color: "#fff", padding: 0, fontSize: 14, fontWeight: 700, width: 80, outline: "none", lineHeight: 1 }} />
-                    {isFdv1Delivery && fdv1Preview?.hora_preview && (
-                      <span title="Hora límite: la más tardía entre creación + 55 min y la hora prometida (fijada al guardar)" style={{ color: "#67e8f9", fontSize: 10, fontWeight: 800, lineHeight: 1, fontFamily: "'DM Mono',monospace" }}>
-                        Hora límite {fdv1Preview.hora_preview}
-                      </span>
-                    )}
                   </div>
-                  {tipoConsegna === "DOMICILIO" && zonaInfo?.durataAndataMin != null && (
+                </div>
+                ) : zonaInfo?.durataAndataMin != null && (
                     <span title="Tiempo de ida en coche (Google)" style={{
-                      marginLeft: 4,
+                      alignSelf: "center",
                       display: "inline-flex", alignItems: "center", gap: 3,
                       color: "#fdba74", fontSize: 11, fontWeight: 700,
                       fontFamily: "'DM Mono',monospace",
@@ -1009,8 +1017,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     }}>
                       ida ~{zonaInfo.durataAndataMin} min
                     </span>
-                  )}
-                </div>
+                )}
               </div>
 
               {/* ── Step 2 anti-cerotto: timing AUTORITATIVO dal backend ──────── */}
@@ -1127,12 +1134,11 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {direccion}
                         </span>
-                        {hora && (
-                          <span style={{ color: "rgba(249,115,22,0.9)", fontSize: 13,
-                            fontWeight: 800, fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
-                            {hora}
-                          </span>
-                        )}
+                        {/* [ENTREGA-MODAL] sintesi read-only della scelta: DIRECTO · HH:MM | PROGRAMADO · HH:MM | GIRO · <id> */}
+                        <span data-testid="entrega-resumen" style={{ color: "rgba(249,115,22,0.9)", fontSize: 13,
+                          fontWeight: 800, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+                          {entregaResumen}
+                        </span>
                         <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 12, flexShrink: 0 }}>✏️</span>
                       </>
                     ) : (
@@ -1846,7 +1852,7 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     </div>
                   )}
                   <button type="button" data-testid="entrega-giro-unir" disabled={!giroSel || !directoHora}
-                    onClick={() => giroSel && elegirEntrega("GIRO", directoHora, giroCandIntent(giroSel))}
+                    onClick={() => giroSel && elegirEntrega("GIRO", directoHora, giroCandIntent(giroSel), giroSel.kind === "GIRO" ? (giroSel.label || formatManualGiroLabel({ id: giroSel.giro_id })) : giroSel.order_id)}
                     style={accion("linear-gradient(135deg, #38bdf8, #0284c7)", !!giroSel && !!directoHora)}>Unir</button>
                 </div>
               </div>
