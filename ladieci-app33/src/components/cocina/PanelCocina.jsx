@@ -186,6 +186,29 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
   // [FDV1 R3] renderLegacyCard rimosso: in Pizzeria ogni ordine vive dentro un blocco
   //   (DOMICILIO = blocco zona/giro, RITIRO = blocco "Recogida en local").
 
+  // Bottone LISTO per-card (ordine singolo o membro di un GIRO): usa la stessa transizione
+  // canonica EN_COCINA→LISTO già cablata da Cocina (onListo → setListo → api.updateEstado).
+  // Nessuna nuova logica: solo il rendering mancante nel pannello Pizzeria.
+  const renderListoButton = (o) => {
+    const busy = loadingIds.has(o.id);
+    return (
+      <button
+        key="listo"
+        data-testid="pizzeria-listo"
+        onClick={() => { if (busy) return; onListo(o.id, { origin: "PanelCocina", actor: "pizzeria" }); }}
+        disabled={busy}
+        style={{
+          width: "100%", background: busy ? "rgba(39,174,96,0.35)" : "linear-gradient(145deg,#27AE60,#1A7A44)",
+          border: "none", color: "#fff", borderRadius: 9, padding: "10px 0",
+          fontWeight: 900, fontSize: 14, letterSpacing: .3,
+          cursor: busy ? "wait" : "pointer", opacity: busy ? 0.7 : 1,
+        }}
+      >
+        {busy ? "Confirmando…" : "✅ LISTO"}
+      </button>
+    );
+  };
+
   // [FDV1 R3] card DOMICILIO DENTRO il blocco: l'orario grande sta nell'header del blocco (§10), qui restano
   // identità, zona (quando il blocco è misto) e il proprio límite solo se diverso da quello del blocco.
   const renderDeliveryCard = (o, { blockMs = null, showZone = false, accent = null } = {}) => {
@@ -198,6 +221,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       }}>
         <CardIdentity o={o} zone={zone} blockMs={blockMs} showZone={showZone} />
         {renderBody(o, fcNeutral, accent || zone.color)}
+        <div style={{ padding: "0 9px 9px" }}>{renderListoButton(o)}</div>
       </div>
     );
   };
@@ -225,6 +249,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
           )}
         </div>
         {renderBody(o, fc, PICKUP_INK)}
+        <div style={{ padding: "0 9px 9px" }}>{renderListoButton(o)}</div>
       </div>
     );
   };

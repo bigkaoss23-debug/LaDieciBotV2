@@ -4,8 +4,9 @@
  * Contratto verificato qui:
  * - i piatti Cocina si ordinano come ogni altro prodotto e totalizzano giusto;
  * - carico forno ZERO: non contano come pizze né consumano capacità;
- * - Pizzeria (PanelCocina) mostra SOLO le pizze da forno e non ha LISTO;
- * - Cocina (TabCocina) vede l'ordine completo e resta l'unica a portarlo a LISTO;
+ * - Pizzeria (PanelCocina) mostra SOLO le pizze da forno e ha LISTO per-card (stessa
+ *   transizione canonica EN_COCINA→LISTO di Cocina, nessuna nuova state machine);
+ * - Cocina (TabCocina) vede l'ordine completo e ha LISTO anch'essa;
  * - Economía "Comparar semanas": pizze = solo cat "Pizzas".
  */
 import fs from "fs";
@@ -161,7 +162,7 @@ describe("Cocina — carico forno ZERO", () => {
 });
 
 describe("Pizzeria vs Cocina — ordine misto Pizza + Coca-Cola + Lasagna", () => {
-  test("Pizzeria (PanelCocina) vede SOLO la pizza e non ha LISTO", () => {
+  test("Pizzeria (PanelCocina) vede SOLO la pizza e ha LISTO su ogni card", () => {
     const onListo = jest.fn();
     const el = mount(
       <PanelCocina ordenes={[mixedOrder]} convConfermata={[]} onListo={onListo} onClose={() => {}} loadingIds={new Set()} pizzeFatte={0} />
@@ -170,7 +171,7 @@ describe("Pizzeria vs Cocina — ordine misto Pizza + Coca-Cola + Lasagna", () =
     expect(el.textContent).not.toContain("Coca Cola");
     expect(el.textContent).not.toContain("Lasagna");
     expect(el.textContent).not.toContain("Bebidas / Postres");
-    expect(buttons(el).some((b) => /LISTO/.test(b.textContent))).toBe(false);
+    expect(buttons(el).some((b) => /LISTO/.test(b.textContent))).toBe(true);
     expect(el.textContent).toContain("1 pedido · 1 pizza");
   });
 
