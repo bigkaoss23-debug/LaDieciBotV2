@@ -15,8 +15,12 @@
 // correction went further than fixing the payment-outcome check — it removed the ability
 // to collect from this control entirely: only the physical rider can know a delivery
 // happened, so the operator's control now calls ONLY close_rider_trip (a trip-lifecycle
-// action, not a collection one) and never references marcarEntregado at all. See the
-// dedicated block below, which proves that removal, not merely a guarded collection.
+// action, not a collection one) and never references marcarEntregado at all. Since
+// DELIVERY x ECONOMY DECOUPLING (B3) that call lives in closeActiveTrip, shared with the
+// trip-level "Driver volvió" control, and the handler only delegates to it: the dedicated
+// block below therefore checks the WHOLE trip-close path. It proves that removal, not
+// merely a guarded collection. (The inventory of every collection surface, and the contract
+// of the newer ones, is collectionSurfaceInventory.static.test.mjs.)
 //
 // This test is source-static on purpose: these handlers live inside 1000+ line components
 // with heavy context, and the contract being protected is structural (guard BEFORE the
@@ -91,19 +95,32 @@ for (const [label, source, handler] of [
   });
 }
 
-console.log("\n[TabEntregas.handleForzaEntregado is no longer a collection surface at all]");
+console.log("\n[TabEntregas 'Driver volvió' is a trip action, never a collection surface]");
 
-check("the handler never references marcarEntregado — the #723 risk is removed, not guarded", () => {
+// DELIVERY x ECONOMY DECOUPLING (B3): the per-row control ("Driver volvió" on a delivery row) and the trip-level control
+// (banner "Giro en curso") now end in ONE function, closeActiveTrip; the per-row handler only delegates to it. The
+// contract is therefore about the WHOLE trip-close path, not about the text of one handler: a handler that merely
+// delegates would satisfy any check on its own body (and did: the old "never references marcarEntregado" check became
+// vacuous the moment the body was three lines). Every function of the path is checked, so the property survives the
+// indirection instead of being stated about the wrong function.
+const PER_ROW_HANDLER = "handleForzaEntregado";
+const TRIP_CLOSE_PATH = [PER_ROW_HANDLER, "handleDriverVolvio", "closeActiveTrip"];
+// Everything that can collect money or confirm a delivery from this component (the operator's own delivery
+// confirmation handleConfirmarEntrega included): none of it may be reachable from the trip-close path.
+const COLLECTING = /marcarEntregado|confirmarEntregaOperador|updateEstado|cashApi|mesaApi|CheckCashPanel|createCashRequestId|handleConfirmarEntrega|[Pp]ayment/;
+
+check("no function of the trip-close path references a collection or delivery-confirmation action — the #723 risk is removed, not guarded", () => {
   // The strongest possible fix to "a collection could be invented here": there is no
-  // collection call left to invent one from. If this ever regresses (someone re-adds a
-  // marcarEntregado call to this handler), the isPaymentFailure/describePaymentFailure
+  // collection call left to invent one from. If this ever regresses (someone adds a
+  // collection call anywhere on the path), the isPaymentFailure/describePaymentFailure
   // guard above must come back with it — this assertion is the tripwire for that.
-  const forced = handlerBody(ENTREGAS, "handleForzaEntregado");
-  assert.doesNotMatch(forced, /marcarEntregado/,
-    "TabEntregas.handleForzaEntregado references marcarEntregado again — it must either stay a non-collection trip action, or regain the isPaymentFailure guard");
+  for (const name of TRIP_CLOSE_PATH) {
+    assert.doesNotMatch(handlerBody(ENTREGAS, name), COLLECTING,
+      `TabEntregas.${name} (trip-close path) references a collection / delivery-confirmation action — Driver volvió must stay a trip action, distinct from any payment`);
+  }
 });
 
-check("the handler calls the canonical trip-closure action, not a payment one", () => {
+check("the trip-close path reaches the canonical trip-closure action through ONE function (closeActiveTrip), calls nothing else, and is not a payment one", () => {
   // The canonical action name is assembled at runtime (same idiom as
   // servicioPageLiveTimeClockIsPurePresentation.static.test.js's LEGACY_CLOSE_ACTION and
   // serviceEnsureOutcome.test.js's KIND_TOKENS): scripts/check-domain-language.js
@@ -111,9 +128,20 @@ check("the handler calls the canonical trip-closure action, not a payment one", 
   // forbidden-symbol literal as new legacy vocabulary. The regex built from it still
   // matches exactly that runtime symbol, proven just below.
   const CLOSE_TRIP_ACTION = ["chi", "udi", "Giro"].join("");
-  const forced = handlerBody(ENTREGAS, "handleForzaEntregado");
-  assert.match(forced, new RegExp(`api\\.${CLOSE_TRIP_ACTION}\\(\\)`),
-    `expected the handler to call the canonical close_rider_trip action (api.${CLOSE_TRIP_ACTION})`);
+  const closeFn = handlerBody(ENTREGAS, "closeActiveTrip");
+  assert.match(handlerBody(ENTREGAS, PER_ROW_HANDLER), /\bcloseActiveTrip\(\)/,
+    "the per-row control no longer delegates to closeActiveTrip: the single trip-close path was split");
+  assert.match(handlerBody(ENTREGAS, "handleDriverVolvio"), /\bcloseActiveTrip\(\)/,
+    "the trip-level control no longer delegates to closeActiveTrip: the single trip-close path was split");
+  assert.match(closeFn, new RegExp(`api\\.${CLOSE_TRIP_ACTION}\\(\\)`),
+    `expected closeActiveTrip to call the canonical close_rider_trip action (api.${CLOSE_TRIP_ACTION})`);
+  // ONE path: this is the only call of the close action in the component, and the only api call anywhere on the path.
+  assert.equal((ENTREGAS.match(new RegExp(`api\\.${CLOSE_TRIP_ACTION}\\(`, "g")) || []).length, 1,
+    "the canonical trip-closure action is called from more than one place in TabEntregas");
+  for (const name of TRIP_CLOSE_PATH) {
+    const calls = [...handlerBody(ENTREGAS, name).matchAll(/\bapi\.(\w+)\(/g)].map((m) => m[1]);
+    assert.ok(calls.every((c) => c === CLOSE_TRIP_ACTION), `TabEntregas.${name} calls api.${calls.join(", api.")} — the trip-close path may call only the trip-closure action`);
+  }
 });
 
 console.log("\n[the frontend never invents a collection]");

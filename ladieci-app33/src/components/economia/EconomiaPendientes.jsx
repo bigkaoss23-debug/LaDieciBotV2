@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { C } from '../../constants';
+import { auth } from '../../api';
+import { canCollectOrderPayment } from '../../utils/adminRbac';
+import CheckCashPanel from '../cash/CheckCashPanel';
 import useEconomyPendencies, {
   describeChannel, describeRevisionReason,
 } from '../../economy/useEconomyPendencies';
@@ -7,17 +10,22 @@ import useEconomyPendencies, {
 // ===============================================================
 // EconomiaPendientes — PENDENCIAS ECONÓMICAS SLICE 1, the operator surface.
 //
-// A READ-ONLY window onto the unresolved economic exposures the backend
-// already derives:
+// A window onto the unresolved economic exposures the backend already derives:
 //   Por cobrar        the customer still owes money
 //   Por devolver      the restaurant owes money back to the customer
 //   Requiere revisión ledger-evidenced money whose target is not safe to
 //                     identify automatically — NOT an actionable balance
 //
-// There is NO action here, by design: no "cobrar saldo", no refund, no
-// "marcar resuelto", no close/reopen of an old Mesa. A closed Mesa stays
-// closed; a pendencia clears later only because canonical backend economic
-// truth changed. This slice shows the exposure and nothing more.
+// ONE action, and only where the backend says so: "Registrar cobro" on a Por cobrar item whose
+// `allowedActions` contains 'COLLECT' (a delivered, non-Mesa order that is still unpaid). It opens the EXISTING Cash
+// V1 surface (CheckCashPanel → POST /api/cash/v1/checks/:orderUid/payments → order_post_payment_v1) with delivery,
+// refund and adjustment switched OFF: it records money and nothing else -- it never confirms a delivery, closes a
+// trip, reopens a service or moves the sale. There is no "marcar resuelto", no refund, no close/reopen of an old
+// Mesa. A pendencia clears because canonical backend economic truth changed (the payment), never because of a
+// client-side flag: after a payment this list is simply re-read.
+//
+// An "Entrega sin confirmar" item (EN_ENTREGA of a closed service) never offers it: a plain collection there would
+// read as a delivery confirmation; its money is collected together with the delivery, in Entregas.
 //
 // It renders WHATEVER the API returns — the amounts, dates and identities are
 // the reader's, never recomputed or invented here. Presentation-only totals
@@ -96,6 +104,10 @@ function identityOf(item) {
 
 function metaOf(item) {
   const bits = [];
+  // DELIVERY x ECONOMY DECOUPLING (B1): the DELIVERY fact next to the money fact. A pendency of a service that was
+  // finalized while the delivery was still out says so; it is not a statement about the driver.
+  if (item.deliveryState === 'SIN_CONFIRMAR') bits.push('Entrega sin confirmar');
+  if (item.deliveryState === 'ENTREGADO') bits.push('Entregado');
   const chan = describeChannel(item.channel);
   if (chan && item.channel !== 'MESA') bits.push(chan);
   const phone = realPhone(item);
@@ -119,7 +131,20 @@ const SummaryTile = ({ label, value, tone, testId }) => (
   </div>
 );
 
-const AmountItem = ({ item, tone, testId }) => (
+// The collection is offered only when ALL of these hold: the backend named the action for THIS item, the delivery is
+// not an unconfirmed one and the order is not a Mesa (defence in depth: never a plain collection on "Entrega sin
+// confirmar", never a table settled outside its Payment Hub), the item has its permanent identity, and the signed-in
+// role is one the payment writer accepts (UX only -- the server decides).
+const canCollect = (item, role) => Boolean(
+  item
+  && Array.isArray(item.allowedActions) && item.allowedActions.includes('COLLECT')
+  && item.deliveryState !== 'SIN_CONFIRMAR'
+  && item.channel !== 'MESA'
+  && typeof item.orderUid === 'string' && item.orderUid
+  && canCollectOrderPayment(role),
+);
+
+const AmountItem = ({ item, tone, testId, onCollect }) => (
   <div data-testid={testId} style={{
     display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0',
     borderBottom: '1px solid rgba(255,255,255,.055)',
@@ -132,6 +157,16 @@ const AmountItem = ({ item, tone, testId }) => (
         <span style={{ display: 'block', color: MUTED, fontSize: 11, fontWeight: 600, marginTop: 2 }}>
           {metaOf(item)}
         </span>
+      )}
+      {onCollect && (
+        <button type="button" data-testid="pendientes-collect" onClick={() => onCollect(item)}
+          style={{
+            marginTop: 8, background: 'rgba(249,115,22,.15)', border: `1px solid ${ACCENT}`,
+            color: '#ffd9b8', borderRadius: 999, padding: '6px 14px', minHeight: 34,
+            fontSize: 12, fontWeight: 800, cursor: 'pointer',
+          }}>
+          Registrar cobro
+        </button>
       )}
     </span>
     <span style={{ flexShrink: 0, color: tone, fontWeight: 900, fontSize: 14.5, fontFamily: "'DM Mono',monospace" }}>
@@ -198,8 +233,12 @@ function Group({ title, count, total, tone, icon, items, emptyText, testId, rend
 //   scopeLabel   short human label for the active filter chip ("Hoy", "Ayer",
 //                "Servicio", "Personalizado").
 //   onClearScope clears the filter → back to GLOBAL / Todos.
-export default function EconomiaPendientes({ scope = null, scopeLabel = null, onClearScope } = {}) {
+//   onCollected  optional: called after a collection changed the server's account of an order, so the shell can
+//                refresh anything else that counts pendencies (the bottom-nav badge).
+export default function EconomiaPendientes({ scope = null, scopeLabel = null, onClearScope, onCollected } = {}) {
   const [rawQuery, setRawQuery] = useState('');
+  // The pendency whose "Registrar cobro" is open (the Cash V1 surface). null = closed.
+  const [collectItem, setCollectItem] = useState(null);
   // The value that actually goes on the wire only changes when the operator
   // pauses typing, so the reader is not re-hit on every keystroke.
   const [committedQuery, setCommittedQuery] = useState('');
@@ -218,6 +257,14 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
 
   const loading = status === 'loading' || status === 'incomplete';
   const failed = status === 'error';
+
+  const role = auth.getRole();
+  // The server's account of the order changed (paid now, or already settled elsewhere): re-read the list -- the
+  // pendency leaves it only because the canonical read says so.
+  const handlePaid = () => {
+    reload();
+    if (onCollected) { try { onCollected(); } catch (_) { /* the shell's refresh, not the payment */ } }
+  };
 
   return (
     <div data-testid="economia-pendientes">
@@ -309,8 +356,10 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
             <>
               {/* POST_OPUS_REVIEW_REMEDIATION Scope C -- this page only ever lists
                   post-operational exposures (isOperationallyOver, pendingExposures.js):
-                  an order still LISTO/EN_ENTREGA or on an open Mesa never appears here,
-                  by design, even while genuinely unpaid. The unqualified "Sin saldos
+                  an order still LISTO/EN_ENTREGA of a LIVE service or on an open Mesa never appears here,
+                  by design, even while genuinely unpaid. (DELIVERY x ECONOMY DECOUPLING B1: an EN_ENTREGA
+                  order whose service is already CLOSED is historical money and IS listed here, flagged
+                  "Entrega sin confirmar".) The unqualified "Sin saldos
                   pendientes." used to read as "nothing is owed" when a live service
                   could owe real money the operator would only see in Economía General's
                   "Por cobrar ahora" KPI. Qualifying the scope in the empty text itself
@@ -319,7 +368,8 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
                 count={counts.porCobrar} total={totals.porCobrar} tone={ACCENT} icon={I_IN}
                 items={porCobrar} emptyText="Sin saldos pendientes tras cierre operativo."
                 renderItem={(it, i) => (
-                  <AmountItem key={it.orderUid || `c-${i}`} item={it} tone={ACCENT} testId="pendientes-item-cobrar" />
+                  <AmountItem key={it.orderUid || `c-${i}`} item={it} tone={ACCENT} testId="pendientes-item-cobrar"
+                    onCollect={canCollect(it, role) ? setCollectItem : undefined} />
                 )} />
 
               <Group testId="pendientes-group-devolver" title="Por devolver"
@@ -338,6 +388,21 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
             </>
           )}
         </>
+      )}
+
+      {/* ── REGISTRAR COBRO — the existing Cash V1 surface, opened on ONE delivered order. Rendered outside the
+          loaded branch on purpose: the list re-reads itself after a payment (loading state) and the panel must not
+          unmount under the operator's hands. Delivery, refund and adjustment are OFF: it only records money. */}
+      {collectItem && (
+        <CheckCashPanel
+          orderUid={collectItem.orderUid}
+          displayOrderId={collectItem.display && collectItem.display.orderNumber ? collectItem.display.orderNumber : undefined}
+          allowDelivery={false}
+          canRefund={false}
+          canAdjust={false}
+          onClose={() => setCollectItem(null)}
+          onPaid={handlePaid}
+        />
       )}
     </div>
   );

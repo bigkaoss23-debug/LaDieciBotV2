@@ -132,6 +132,33 @@ test("B · a POR_COBRAR item renders in its own group with amount and Mesa ident
   unmount(container, root);
 });
 
+// ── B1 · DELIVERY x ECONOMY DECOUPLING — a closed service's EN_ENTREGA credit ─────────────────
+test("B1 · an unconfirmed delivery of a CLOSED service is listed as a pendency and says so; a delivered one does not", async () => {
+  const DOMICILIO_SIN_CONFIRMAR = Object.freeze({
+    direction: "POR_COBRAR", orderUid: "uid-017", amount: 12.5, currentObligation: 12.5, netCollected: 0,
+    originalDate: "2026-09-17T20:00:00.000Z", originalBusinessDate: "2026-09-17", lastMovementAt: null, ageDays: 1,
+    channel: "DOMICILIO", deliveryState: "SIN_CONFIRMAR",
+    display: { orderNumber: "#017", tableNumber: null, tableName: null, commandNumber: null },
+    customer: { name: "Ana", phone: "600111222" }, allowedActions: [], identityConfidence: "STABLE",
+  });
+  const DOMICILIO_ENTREGADO = Object.freeze({ ...DOMICILIO_SIN_CONFIRMAR, orderUid: "uid-018", deliveryState: null,
+    display: { orderNumber: "#018", tableNumber: null, tableName: null, commandNumber: null } });
+  economyApi.pendencies.mockResolvedValue({
+    ...FULL, porCobrar: [DOMICILIO_SIN_CONFIRMAR, DOMICILIO_ENTREGADO], porDevolver: [], requiereRevision: [],
+    counts: { porCobrar: 2, porDevolver: 0, requiereRevision: 0 }, totals: { porCobrar: 25, porDevolver: 0 },
+  });
+  const { container, root } = await mount();
+  const rows = allById(container, "pendientes-item-cobrar");
+  expect(rows).toHaveLength(2);
+  expect(rows[0].textContent).toContain("Entrega sin confirmar");
+  expect(rows[0].textContent).toMatch(/12,50\s?€/);
+  expect(rows[1].textContent).not.toContain("Entrega sin confirmar");
+  // still a read-only list, and the stable uid stays internal
+  expect(rows[0].querySelector("button")).toBeNull();
+  expect(container.textContent).not.toContain("uid-017");
+  unmount(container, root);
+});
+
 // ── C · POR_DEVOLVER ─────────────────────────────────────────────────────
 test("C · a POR_DEVOLVER Mesa item renders in its own group, distinct from cobrar", async () => {
   const { container, root } = await mount();

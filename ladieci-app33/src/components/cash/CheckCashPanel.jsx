@@ -34,9 +34,15 @@ const METHODS = [
 
 const eur = (value) => `${(Number(value) || 0).toFixed(2).replace('.', ',')} €`;
 
+// POST-CLOSE OPERATOR COLLECTION (Economía → Pendientes → "Registrar cobro"): this SAME surface, opened on a
+// delivered order of an already-closed service with allowDelivery={false} / canRefund={false} / canAdjust={false} --
+// it can only record the money. `onPaid` (optional) fires when the server's account of the order changed under this
+// panel: a payment was just recorded, or the server answered that the order is ALREADY settled (the rider or another
+// tablet got there first). The caller uses it to refresh whatever listed the order; the panel already reloads its
+// own account.
 export default function CheckCashPanel({
   orderUid, displayOrderId, canRefund = false, canAdjust = false,
-  allowDelivery = true, onClose, onDelivered,
+  allowDelivery = true, onClose, onDelivered, onPaid,
 }) {
   const [account, setAccount] = useState(null);
   const [loadError, setLoadError] = useState('');
@@ -49,6 +55,10 @@ export default function CheckCashPanel({
   const [deliverBusy, setDeliverBusy] = useState(false);
   const [deliverError, setDeliverError] = useState('');
   const requestIdRef = useRef(createCashRequestId('cashpay'));
+  // Synchronous in-flight latch: `busy` (state) only disables the button after the next render, so two clicks landing
+  // in the same tick would both reach the server. (The server is idempotent on clientRequestId and refuses an
+  // over/double payment anyway -- this only avoids sending the second request at all.)
+  const chargingRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoadError('');
@@ -60,7 +70,12 @@ export default function CheckCashPanel({
   const outstanding = account ? Number(account.outstanding) || 0 : 0;
   const isSettled = !!account && outstanding <= 0;
 
+  // A caller's refresh must never turn a recorded payment into a "payment failed" message.
+  const notifyPaid = () => { try { if (onPaid) onPaid(); } catch (_) { /* the caller's refresh, not the payment */ } };
+
   const charge = async (body, { confirmed = false } = {}) => {
+    if (chargingRef.current) return;
+    chargingRef.current = true;
     setBusy(true); setPayError('');
     try {
       await cashApi.pay(orderUid, {
@@ -75,6 +90,7 @@ export default function CheckCashPanel({
       setDuplicate(null);
       setCustomAmount('');
       await load();
+      notifyPaid();
     } catch (err) {
       if (!confirmed && err?.code === CASH_DUPLICATE_PAYMENT_CODE) {
         setDuplicate({ body, amount: body.mode === 'full' ? outstanding : Number(body.amount) || 0 });
@@ -84,6 +100,14 @@ export default function CheckCashPanel({
       setBusy(false);
       setDuplicate(null);
       setPayError(describeCashError(err));
+      // Already settled elsewhere: the server's truth moved -- show it (the account reloads to "settled") and let the
+      // caller refresh its list. No second payment was created.
+      if (err?.code === 'ORDER_PAYMENT_ALREADY_SETTLED') {
+        await load();
+        notifyPaid();
+      }
+    } finally {
+      chargingRef.current = false;
     }
   };
 

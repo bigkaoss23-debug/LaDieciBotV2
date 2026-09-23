@@ -21,6 +21,8 @@ jest.mock('../api', () => ({
     getEconomiaLedger: jest.fn(), getOrdenes: jest.fn(), getOrdenesArchivadosSesion: jest.fn(),
   },
   sb: { select: jest.fn(async () => []) },
+  // EconomiaPendientes (mounted, hidden off-tab, by EconomiaPage) reads the signed-in role to decide whether to offer "Registrar cobro".
+  auth: { getRole: () => '' },
 }));
 
 // The shell's Pendientes badge + General's canonical reads go through

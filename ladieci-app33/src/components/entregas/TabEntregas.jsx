@@ -6,6 +6,8 @@ import { applyUiOffset } from '../../utils/uiOffset';
 import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitingDriverState, logLegacyBypass, logRollback, logTransition } from '../../core/orders';
 import { formatOrderNumber, buildVisibleOrderLabels, resolveVisibleOrderLabel } from '../../utils/orderNumber';
 import { formatClockTime } from '../../components/mesa/mesaFormat';
+import { createCashRequestId } from '../../cash/cashApi';
+import { describeDeliveryConfirmError } from './deliveryConfirmationMessages';
 
 // Helpers tempi: hora consegna ↔ horaForno (= partenza driver = uscita pizza forno)
 const _tm = (t) => { if (!t) return null; const [h,m] = t.split(":").map(Number); return h*60+m; };
@@ -130,7 +132,7 @@ const buildManualGiroWarnings = (orders, manualGiroByOrderId = {}) => {
 
 // ─── Card ordine dentro un blocco zona ────────────────────────────────────
 const ZonaOrderRow = ({
-  o, zona, onSendRepartidor, loadingId, tripState, onForzaSalida, onForzaEntregado,
+  o, zona, onSendRepartidor, loadingId, tripState, onForzaSalida, onForzaEntregado, onConfirmarEntrega,
   manualGiro, manualGiroWarnings = [], isManualGiroSelected = false,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro,
   // DISPLAY-ONLY (Patch B): true cuando la fila se renderiza DENTRO de un
@@ -141,6 +143,8 @@ const ZonaOrderRow = ({
   insideGiroBlock = false
 }) => {
   const isLoading   = loadingId === o.id;
+  // DELIVERY x ECONOMY DECOUPLING -- the operator's "Marcar como entregado" chooser (delivery only / delivery + cobro).
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const isListo     = o.estado === ORDER_STATES.LISTO;
   const isEnEntrega = o.estado === ORDER_STATES.EN_ENTREGA;
   const isCocina    = o.estado === ORDER_STATES.EN_COCINA;
@@ -408,13 +412,60 @@ const ZonaOrderRow = ({
         </button>
       )}
 
-      {/* "Driver de vuelta": intenta cerrar el giro (trip lifecycle), nunca declara una
-          entrega -- solo el repartidor puede confirmar que una entrega ocurrió. El
-          backend rechaza el cierre (EARLY_CLOSE/MISSING_TRIP_MEMBER) si aún faltan
-          entregas por confirmar por el repartidor real. */}
+      {/* "Marcar como entregado": la PIZZERÍA confirma que el cliente recibió el pedido (EN_ENTREGA -> RETIRADO),
+          opcionalmente junto con el cobro. Se registra como el OPERADOR, nunca como el repartidor. NO significa que
+          el driver haya vuelto (eso es "Driver volvió", abajo) ni que el dinero esté ya en caja (cobro = deuda del
+          cliente saldada; Caja/arqueo es otra cuestión). Dos hechos independientes: "Solo entregado" deja el
+          importe pendiente tal cual. */}
+      {isEnEntrega && onConfirmarEntrega && (
+        <button data-testid="entrega-confirmar-toggle" disabled={isLoading} onClick={() => setConfirmOpen(v => !v)}
+          style={{
+            padding: "5px 10px",
+            background: "rgba(59,130,246,0.10)", border: "1px solid rgba(59,130,246,0.35)",
+            borderRadius: 8, color: "#60A5FA", fontWeight: 700, fontSize: 11,
+            cursor: "pointer", flexShrink: 0
+          }}
+          title="La pizzería confirma que el cliente recibió el pedido (no significa que el repartidor haya vuelto)">
+          📦 Marcar como entregado
+        </button>
+      )}
+      {isEnEntrega && onConfirmarEntrega && confirmOpen && (
+        <div data-testid="entrega-confirmar-panel" style={{
+          flexBasis: "100%", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6,
+          background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 8, padding: "8px 10px"
+        }}>
+          <div style={{ flexBasis: "100%", color: "rgba(255,255,255,0.75)", fontSize: 11.5, lineHeight: 1.4 }}>
+            El cliente recibió el pedido.{" "}
+            {o.cobrado
+              ? "El cobro ya está registrado."
+              : `Total ${(Number(o.financial && o.financial.currentObligation) > 0 ? Number(o.financial.currentObligation) : totaleNum).toFixed(2)}€ · aún sin cobrar.`}
+          </div>
+          <button data-testid="entrega-confirmar-solo" disabled={isLoading}
+            onClick={() => { setConfirmOpen(false); onConfirmarEntrega(o, null); }}
+            style={{ padding: "5px 10px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+            Solo entregado
+          </button>
+          {!o.cobrado && [["efectivo", "Efectivo"], ["tarjeta", "Tarjeta"], ["bizum", "Bizum"]].map(([method, label]) => (
+            <button key={method} data-testid={`entrega-confirmar-${method}`} disabled={isLoading}
+              onClick={() => { setConfirmOpen(false); onConfirmarEntrega(o, { method }); }}
+              style={{ padding: "5px 10px", background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 8, color: "#22C55E", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+              Entregado y cobrado · {label}
+            </button>
+          ))}
+          <button data-testid="entrega-confirmar-cancelar" onClick={() => setConfirmOpen(false)}
+            style={{ padding: "5px 10px", background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      {/* "Driver volvió": intenta cerrar el giro (trip lifecycle, acción OPERATIVA), nunca declara una
+          entrega -- las entregas se confirman una a una (el repartidor con su Entregado, o la pizzería con
+          "Marcar como entregado"). El backend rechaza el cierre (EARLY_CLOSE/MISSING_TRIP_MEMBER) si aún
+          faltan entregas por confirmar. La economía NO depende de esta acción. */}
       {isEnEntrega && (
         <button disabled={isLoading} onClick={() => {
-          if (!window.confirm("¿Driver de vuelta? Se intentará cerrar el giro. Si quedan entregas sin confirmar por el repartidor, se rechazará.")) return;
+          if (!window.confirm("¿Driver de vuelta? Se intentará cerrar el giro. Si quedan entregas sin confirmar, se rechazará.")) return;
           onForzaEntregado && onForzaEntregado(o);
         }}
           style={{
@@ -423,7 +474,7 @@ const ZonaOrderRow = ({
             borderRadius: 8, color: "#22C55E", fontWeight: 700, fontSize: 11,
             cursor: "pointer", flexShrink: 0
           }}
-          title="Registrar el regreso del repartidor y cerrar el giro (no marca ninguna entrega)">
+          title="Registrar el regreso del repartidor y cerrar el giro (operativo: no marca ninguna entrega y no afecta a la economía)">
           ✓ Driver volvió
         </button>
       )}
@@ -433,7 +484,7 @@ const ZonaOrderRow = ({
 
 // ─── Blocco giro (zona + ora consegna) ───────────────────────────────────
 const ZonaBlock = ({
-  zona, ordini, giroHora, onSendRepartidor, loadingId, tripState, onForzaSalida, onForzaEntregado,
+  zona, ordini, giroHora, onSendRepartidor, loadingId, tripState, onForzaSalida, onForzaEntregado, onConfirmarEntrega,
   manualGiroByOrderId, manualGiroWarningsById, selectedManualGiroOrderIds,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro
 }) => {
@@ -529,7 +580,7 @@ const ZonaBlock = ({
         {ordini.map(o => (
           <ZonaOrderRow key={o.id} o={o} zona={zona}
             onSendRepartidor={onSendRepartidor} loadingId={loadingId}
-            tripState={tripState} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado}
+            tripState={tripState} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado} onConfirmarEntrega={onConfirmarEntrega}
             manualGiro={manualGiroByOrderId[o.id] || null}
             manualGiroWarnings={manualGiroWarningsById[o.id] || []}
             isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
@@ -548,7 +599,7 @@ const ZonaBlock = ({
 // (hora_ref) + zone incluse + orari cliente individuali per card.
 const ManualGiroBlock = ({
   giro, ordini, zones, hora, warnings = [],
-  onSendRepartidor, loadingId, tripState, onForzaSalida, onForzaEntregado,
+  onSendRepartidor, loadingId, tripState, onForzaSalida, onForzaEntregado, onConfirmarEntrega,
   manualGiroByOrderId, manualGiroWarningsById, selectedManualGiroOrderIds,
   onToggleManualGiro, onRemoveFromManualGiro, onDissolveManualGiro
 }) => {
@@ -640,7 +691,7 @@ const ManualGiroBlock = ({
         {ordini.map(o => (
           <ZonaOrderRow key={o.id} o={o} zona={ZONE_DELIVERY.find(z => z.id === o.zona)}
             onSendRepartidor={onSendRepartidor} loadingId={loadingId}
-            tripState={tripState} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado}
+            tripState={tripState} onForzaSalida={onForzaSalida} onForzaEntregado={onForzaEntregado} onConfirmarEntrega={onConfirmarEntrega}
             manualGiro={manualGiroByOrderId[o.id] || null}
             manualGiroWarnings={manualGiroWarningsById[o.id] || []}
             isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}
@@ -826,6 +877,8 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
   // from a genuine no-active-trip read (available:true, has_active_trip:false)
   // so a failed canonical read never gets rendered as "rider free".
   const [tripState, setTripState] = useState(null);
+  // DELIVERY x ECONOMY DECOUPLING (B3): true while the TRIP-level "Driver volvió" call is in flight.
+  const [closingTrip, setClosingTrip] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -1148,33 +1201,86 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     setLoadingId(null);
   };
 
-  // Operador: "Driver de vuelta" -- registra el REGRESO del repartidor al giro, NO la
-  // entrega de un pedido concreto. Corrección de producto (POST_OPUS_REVIEW_REMEDIATION,
-  // Scope A, 2026-09-18): esto llamaba antes a api.marcarEntregado, la MISMA acción que
-  // la confirmación de entrega del propio repartidor -- solo el repartidor físico puede
-  // saber que una entrega realmente ocurrió, así que el operador nunca debe poder
-  // declararla. Ahora llama solo a close_rider_trip: una acción canónica ya
-  // autorizada para el operador, sin mutar ningún pedido, cuyo propio guard
-  // (EARLY_CLOSE/MISSING_TRIP_MEMBER) falla cerrado hasta que CADA entrega del giro fue
-  // confirmada por el repartidor real -- nunca por este botón.
-  const handleForzaEntregado = async (ordine) => {
-    setLoadingId(ordine.id);
+  // Operador: "Driver volvió" -- registra el REGRESO del repartidor al giro (acción OPERATIVA: close_rider_trip),
+  // NO la entrega de un pedido concreto y NO afecta a la economía (Finalizar/Caja no dependen del driver).
+  // Las entregas se confirman una a una: el repartidor con su Entregado, o la pizzería con "Marcar como
+  // entregado" (handleConfirmarEntrega, abajo). close_rider_trip falla cerrado (EARLY_CLOSE/MISSING_TRIP_MEMBER)
+  // hasta que CADA entrega del giro esté confirmada, por quien sea.
+  //
+  // DELIVERY x ECONOMY DECOUPLING (B3): es un control del GIRO, no de un pedido. `closeActiveTrip` es el ÚNICO
+  // camino: lo usan el control del giro (banner "Giro en curso", visible mientras el giro esté ACTIVO aunque ya no
+  // quede ninguna fila EN_ENTREGA) y el botón por fila de siempre. Nunca marca entregado, nunca cobra, nunca
+  // toca un pedido: la lista y el estado del giro se releen del backend (sin mutación optimista).
+  const closeActiveTrip = async () => {
     try {
+      // language-guard: allow-legacy chiudiGiro is the existing api method name for close_rider_trip, not new vocabulary
       const res = await api.chiudiGiro();
       if (!res || res._ok === false) {
         const reason = res && res.error;
         const message = reason === "EARLY_CLOSE" || reason === "MISSING_TRIP_MEMBER"
-          ? "Quedan entregas sin confirmar por el repartidor"
+          ? "Quedan entregas sin confirmar"
           : reason === "NO_ACTIVE_TRIP"
             ? "No hay ningún giro activo que cerrar"
             : "Error al cerrar el giro";
         if (notify) notify("❌ " + message, "#EF4444");
+        return false;
+      }
+      if (notify) notify("✓ Driver volvió — giro cerrado", "#22C55E");
+      return true;
+    } catch (e) {
+      if (notify) notify("❌ Error al cerrar el giro", "#E8341C");
+      return false;
+    }
+  };
+
+  const reloadTripState = async () => {
+    try {
+      const res = await api.getTripOperationalState();
+      if (res && typeof res === "object") setTripState(res);
+    } catch (e) { /* the 10 s poll will catch up; never crashes the tab */ }
+  };
+
+  const handleForzaEntregado = async (ordine) => {
+    setLoadingId(ordine.id);
+    await closeActiveTrip();
+    setLoadingId(null);
+  };
+
+  // B3 -- the TRIP-level control ("Giro en curso -- [Driver volvió]").
+  const handleDriverVolvio = async () => {
+    setClosingTrip(true);
+    const closed = await closeActiveTrip();
+    if (closed) await reloadTripState();
+    setClosingTrip(false);
+  };
+
+  // DELIVERY x ECONOMY DECOUPLING (migration 139) -- "Marcar como entregado": la PIZZERÍA confirma que el cliente
+  // recibió el pedido, opcionalmente con el cobro (efectivo / tarjeta / bizum), en UNA transacción del backend.
+  // Se registra como el OPERADOR (nunca como el repartidor). El cliente NO calcula ningún importe (lo deriva el
+  // backend de la obligación canónica) ni muta el estado del pedido: la lista se refresca desde el backend.
+  // clientRequestId: cada pulsación de "Entregado y cobrado" genera uno NUEVO (createCashRequestId); este handler no
+  // reutiliza ids entre pulsaciones. Lo que evita un segundo cobro tras un doble clic o un reintento manual NO es el
+  // id, es el saldo canónico del backend: con el importe ya saldado, ORDER_PAYMENT_ALREADY_SETTLED se tolera (la
+  // entrega se confirma, sin segundo cobro), y el botón queda bloqueado (loadingId) mientras la petición está en
+  // vuelo. El id solo protege una petición reenviada CON el mismo id (p. ej. por la red).
+  const handleConfirmarEntrega = async (ordine, payment) => {
+    setLoadingId(ordine.id);
+    try {
+      const res = await api.confirmarEntregaOperador(
+        ordine.id,
+        payment ? { method: payment.method, mode: "full", clientRequestId: createCashRequestId() } : null,
+      );
+      if (!res || res._ok === false) {
+        if (notify) notify("❌ " + describeDeliveryConfirmError(res), "#EF4444");
         setLoadingId(null);
         return;
       }
-      if (notify) notify("✓ Driver volvió — giro cerrado", "#22C55E");
+      const paidNote = payment ? ` · cobro ${payment.method}` : "";
+      if (notify) notify(`✓ Entrega confirmada${paidNote}`, "#22C55E");
+      // The trip stays ACTIVE (a delivery is not the driver's return); only its progress changed.
+      reloadTripState();
     } catch (e) {
-      if (notify) notify("❌ Error al cerrar el giro", "#E8341C");
+      if (notify) notify("❌ No se pudo confirmar la entrega", "#E8341C");
     }
     setLoadingId(null);
   };
@@ -1227,24 +1333,12 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
     </div>
   ) : null;
 
-  if (entregas.length === 0) return (
-    <div>
-      <div style={{ textAlign: "center", padding: "60px 24px", color: "rgba(255,255,255,0.2)" }}>
-        <div style={{ fontSize: 48, marginBottom: 12, opacity: .35 }}>🛵</div>
-        <div style={{ fontSize: 15, fontWeight: 600 }}>Sin entregas a domicilio</div>
-        <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.6 }}>
-          Los pedidos con entrega aparecerán aquí.<br />
-          Crea un pedido → elige <strong style={{ color: ORANGE }}>🛵 Entrega</strong>
-        </div>
-      </div>
-      {ResumenEntregados}
-    </div>
-  );
-
-  return (
-    <div>
-      <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}`}</style>
-
+  // Planner W6.6 / DELIVERY x ECONOMY DECOUPLING (B3) -- the canonical Trip Authority status + the TRIP-level control.
+  // Defined ONCE and rendered in BOTH returns below: with zero delivery orders left on the board (every stop already
+  // RETIRADO) the tab takes the empty-state return, and the trip -- which is still ACTIVE until the driver is back --
+  // must remain visible and closable there too.
+  const TripStatus = (
+    <>
       {/* Planner W6.6 — canonical Trip Authority status. DEGRADED (available
           false) is shown explicitly and must never be silently absent: a
           failed canonical read must never look identical to "sin giro en
@@ -1261,7 +1355,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
         </div>
       )}
       {tripState && tripState.available === true && tripState.has_active_trip === true && (
-        <div style={{
+        <div data-testid="entregas-trip-banner" style={{
           marginBottom: 12, padding: "8px 12px",
           background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.3)",
           borderRadius: 10, fontSize: 12, color: "#93c5fd", fontWeight: 700,
@@ -1273,8 +1367,50 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
           <span style={{ color: "rgba(147,197,253,0.6)", fontWeight: 600 }}>
             {tripState.eta_status === "UNKNOWN" ? "ETA no disponible" : "ETA no disponible (degradado)"}
           </span>
+          {/* DELIVERY x ECONOMY DECOUPLING (B3): the trip is an operational object of its own. Delivering the last stop
+              (the rider's Entregado, or the pizzeria's "Marcar como entregado") does NOT close it, so this control stays
+              while the trip is ACTIVE even with ZERO EN_ENTREGA rows left on the board -- otherwise nothing could close
+              it and every new dispatch would be refused. It calls the same canonical close_rider_trip as the per-row
+              button: never Entregado, never a payment, never Economía. The backend stays the authority (EARLY_CLOSE
+              while a stop is still unconfirmed). */}
+          <button data-testid="entregas-trip-driver-volvio" disabled={closingTrip} onClick={() => {
+            if (!window.confirm("¿Driver de vuelta? Se intentará cerrar el giro. Si quedan entregas sin confirmar, se rechazará.")) return;
+            handleDriverVolvio();
+          }}
+            style={{
+              marginLeft: "auto", padding: "5px 10px",
+              background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.35)",
+              borderRadius: 8, color: "#22C55E", fontWeight: 700, fontSize: 11,
+              cursor: closingTrip ? "default" : "pointer", flexShrink: 0
+            }}
+            title="Registrar el regreso del repartidor y cerrar el giro (operativo: no marca ninguna entrega y no afecta a la economía)">
+            ✓ Driver volvió
+          </button>
         </div>
       )}
+    </>
+  );
+
+  if (entregas.length === 0) return (
+    <div>
+      {TripStatus}
+      <div style={{ textAlign: "center", padding: "60px 24px", color: "rgba(255,255,255,0.2)" }}>
+        <div style={{ fontSize: 48, marginBottom: 12, opacity: .35 }}>🛵</div>
+        <div style={{ fontSize: 15, fontWeight: 600 }}>Sin entregas a domicilio</div>
+        <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.6 }}>
+          Los pedidos con entrega aparecerán aquí.<br />
+          Crea un pedido → elige <strong style={{ color: ORANGE }}>🛵 Entrega</strong>
+        </div>
+      </div>
+      {ResumenEntregados}
+    </div>
+  );
+
+  return (
+    <div>
+      <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}`}</style>
+
+      {TripStatus}
 
       {/* Giro manual persistente (P1C.1): selezione locale, mutazioni via api.createManualGiro. */}
       {selectedManualGiroOrderIds.length > 0 && (
@@ -1394,7 +1530,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
               loadingId={loadingId}
               tripState={tripState}
               onForzaSalida={handleForzaSalida}
-              onForzaEntregado={handleForzaEntregado}
+              onForzaEntregado={handleForzaEntregado} onConfirmarEntrega={handleConfirmarEntrega}
               manualGiroByOrderId={manualGiroByOrderId}
               manualGiroWarningsById={manualGiroWarningsById}
               selectedManualGiroOrderIds={selectedManualGiroOrderIds}
@@ -1416,7 +1552,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
             loadingId={loadingId}
             tripState={tripState}
             onForzaSalida={handleForzaSalida}
-            onForzaEntregado={handleForzaEntregado}
+            onForzaEntregado={handleForzaEntregado} onConfirmarEntrega={handleConfirmarEntrega}
             manualGiroByOrderId={manualGiroByOrderId}
             manualGiroWarningsById={manualGiroWarningsById}
             selectedManualGiroOrderIds={selectedManualGiroOrderIds}
@@ -1450,7 +1586,7 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
             {senzaZona.map(o => (
               <ZonaOrderRow key={o.id} o={o}
                 onSendRepartidor={handleSendRepartidor} loadingId={loadingId}
-                tripState={tripState} onForzaSalida={handleForzaSalida} onForzaEntregado={handleForzaEntregado}
+                tripState={tripState} onForzaSalida={handleForzaSalida} onForzaEntregado={handleForzaEntregado} onConfirmarEntrega={handleConfirmarEntrega}
                 manualGiro={manualGiroByOrderId[o.id] || null}
                 manualGiroWarnings={manualGiroWarningsById[o.id] || []}
                 isManualGiroSelected={selectedManualGiroOrderIds.includes(o.id)}

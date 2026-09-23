@@ -127,8 +127,10 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,onOpenCash,l
                     ? <span style={{background:"rgba(255,255,255,0.20)",color:"#FFFFFF",
                         border:"1px solid rgba(255,255,255,0.35)",borderRadius:20,
                         padding:"2px 9px",fontSize:11,fontWeight:700}}>
-                        {/* DOMICILIO: RETIRADO = driver rientrato, NON consegnato al cliente. */}
-                        {o.tipo_consegna === "DOMICILIO" ? "🛵 Driver volvió" : "✅ Entregado"}
+                        {/* DELIVERY x ECONOMY DECOUPLING: RETIRADO = the delivery was CONFIRMED (by the rider's Entregado or by
+                            the pizzeria's "Marcar como entregado"). It says nothing about the driver: "Driver volvió" is the
+                            closing of a real ACTIVE trip and lives only in Entregas (trip-level control). */}
+                        ✅ Entregado
                       </span>
                     : <span style={{background:"rgba(0,0,0,0.25)",color:"#FFFFFF",
                         border:"1px solid rgba(255,255,255,0.30)",borderRadius:20,

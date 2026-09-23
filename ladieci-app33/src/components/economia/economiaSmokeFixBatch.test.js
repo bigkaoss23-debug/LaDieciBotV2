@@ -32,6 +32,8 @@ jest.mock('../../api', () => ({
   // language-guard: allow-legacy getStorico/getSerata are the existing api.js method names being mocked, not new vocabulary
   api: { getStorico: jest.fn(), getSerata: jest.fn(), getEconomiaLedger: jest.fn(), getOrdenes: jest.fn(), getOrdenesArchivadosSesion: jest.fn(), },
   sb: { select: jest.fn(async () => []) },
+  // EconomiaPendientes (mounted, hidden off-tab, by EconomiaPage) reads the signed-in role to decide whether to offer "Registrar cobro".
+  auth: { getRole: () => '' },
 }));
 
 jest.mock('../../economy/economyApi', () => ({

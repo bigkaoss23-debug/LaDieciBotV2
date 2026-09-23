@@ -1551,6 +1551,7 @@ const EconomiaPage = ({onBack}) => {
             scope={pendientesScope}
             scopeLabel={pendientesScopeLabel}
             onClearScope={() => { setPendientesScope(null); setPendientesScopeLabel(null); }}
+            onCollected={badgePend.reload}
           />
         </div>
 

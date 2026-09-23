@@ -599,6 +599,14 @@ const api = {
   chiudiGiro: function() {
     return proxyPost({ action:'chiudiGiro' });
   },
+  // DELIVERY x ECONOMY DECOUPLING (migration 139) -- la PIZZERÍA confirma que el cliente recibió el pedido
+  // (EN_ENTREGA -> RETIRADO), opcionalmente junto con el cobro por el escritor canónico de Cash V1, en UNA
+  // transacción. Se registra como el OPERADOR, nunca como el repartidor (que conserva su marcarEntregado).
+  // `payment` = null (solo entrega) | { method, mode?, amount?, clientRequestId, confirmDuplicate? }. El
+  // importe nunca lo deriva el cliente en modo "full". No cierra ningún giro.
+  confirmarEntregaOperador: function(id, payment) {
+    return proxyPost(payment ? { action:'confirmarEntregaOperador', id, payment } : { action:'confirmarEntregaOperador', id });
+  },
 
   // ── Manual giros (DELIVERY-MANUAL-GIRO-01 P1C.1) ──────────────
   // Backend è la fonte di verità: ordenes.manual_giro_id + tabella

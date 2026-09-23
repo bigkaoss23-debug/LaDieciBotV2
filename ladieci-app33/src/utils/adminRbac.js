@@ -33,6 +33,15 @@ export function canAccessCurrentCloseout(role) {
   return r === ROLE.ADMIN || r === ROLE.OPERATOR;
 }
 
+// Registering a customer's payment for a check (Economía → Pendientes → "Registrar cobro"). Mirrors the backend's
+// ORDER_PAYMENT_ROLES (cashService.js) and the DB gate of order_post_payment_v1 EXACTLY: admin and operator. It is
+// deliberately NOT the wider Economía READ audience (owner/cashier/legacy_operator can read the list but cannot take
+// the money -- Cash V1 brief §25: no authorization widening). A control they could not use is never shown.
+export function canCollectOrderPayment(role) {
+  const r = normalize(role);
+  return r === ROLE.ADMIN || r === ROLE.OPERATOR;
+}
+
 // Opening the service is the same audience as inspecting the closeout: the
 // person who opens the pizzeria is the operator on shift.
 export function canOpenService(role) {

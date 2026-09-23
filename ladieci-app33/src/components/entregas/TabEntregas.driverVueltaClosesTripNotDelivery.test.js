@@ -1,14 +1,18 @@
-// B1 completion-path correction (POST_OPUS_REVIEW_REMEDIATION, Scope A, 2026-09-18).
+// B1 completion-path correction (POST_OPUS_REVIEW_REMEDIATION, Scope A, 2026-09-18), amended by
+// DELIVERY x ECONOMY DECOUPLING (migration 139, 2026-09-19).
 //
-// Product correction: the operator/owner "Delivery" page (TabEntregas) may register that
-// the driver LEFT (marcarEnEntrega) and that the driver is BACK (close the trip), but must
-// NEVER declare a specific delivery "Entregado" -- only the physical rider can know a
-// delivery actually happened. Before this fix, the "Driver de vuelta" control called
-// api.marcarEntregado (the SAME action the rider's own confirmation uses) and force-wrote
-// the order to RETIRADO client-side. This test proves the corrected wiring: the control now
-// calls ONLY close_rider_trip (the legacy action name below), which is already
-// operator-authorized and has no role check of its own, and never mutates any order's
-// estado from this surface.
+// "Driver volvió" is an OPERATIONAL action: it records that the driver is BACK and closes the trip
+// (close_rider_trip). It must NEVER declare a specific delivery "Entregado" and must never mutate an
+// order's estado from this control. Before the 2026-09-18 fix the control called api.marcarEntregado
+// (the SAME action the rider's own confirmation uses) and force-wrote the order to RETIRADO client-side.
+// This test proves the wiring stays corrected: the control calls ONLY close_rider_trip (the legacy action
+// name below).
+//
+// What migration 139 changed is the PRODUCT RULE around it, not this control: the pizzeria may now confirm
+// a delivery itself through the SEPARATE "Marcar como entregado" control (confirmarEntregaOperador, recorded
+// as the operator -- see TabEntregas.operatorDeliveryConfirmation.test.js), and neither Finalizar nor the
+// economy depends on "Driver volvió" any more. So the refusal copy no longer blames the rider: deliveries
+// are "sin confirmar", whoever confirms them.
 //
 // react-dom + react-dom/test-utils, same house style as
 // src/components/pinManagementFlow.test.js -- no @testing-library dependency.
@@ -120,7 +124,7 @@ test('EARLY_CLOSE / MISSING_TRIP_MEMBER: fails closed with an honest message, st
 
   expect(closeGiroMock).toHaveBeenCalledTimes(1);
   expect(api.marcarEntregado).not.toHaveBeenCalled();
-  expect(notify).toHaveBeenCalledWith(expect.stringMatching(/sin confirmar por el repartidor/i), expect.any(String));
+  expect(notify).toHaveBeenCalledWith(expect.stringMatching(/Quedan entregas sin confirmar/i), expect.any(String));
   expect(setOrdenes).not.toHaveBeenCalled();
   unmount(container, root);
 });

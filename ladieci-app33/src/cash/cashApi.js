@@ -85,7 +85,8 @@ const ERROR_MESSAGES = Object.freeze({
   ORDER_PAYMENT_AMOUNT_INVALID: "El importe no es válido.",
   ORDER_PAYMENT_POSSIBLE_DUPLICATE: "Ya se registró un pago idéntico hace poco.",
   ORDER_PAYMENT_FORBIDDEN: "Tu rol no puede registrar cobros.",
-  ORDER_PAYMENT_NO_OPEN_SERVICE: "No hay un servicio abierto para registrar el cobro.",
+  // Since migration 139 (B2) a payment no longer needs a service to be open; this code now only means the order has no service at all.
+  ORDER_PAYMENT_NO_OPEN_SERVICE: "Este pedido no tiene un servicio asociado; no se puede registrar el cobro.",
   ORDER_REFUND_REASON_REQUIRED: "Indica el motivo del reembolso.",
   ORDER_REFUND_ALREADY_FULL: "Este pago ya fue reembolsado por completo.",
   ORDER_REFUND_EXCEEDS_REMAINING: "El importe supera lo que queda por reembolsar.",

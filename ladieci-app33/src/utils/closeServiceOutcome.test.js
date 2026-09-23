@@ -42,7 +42,9 @@ describe("classifyCloseOutcome — no false success", () => {
 
   test("known operational codes map to clean Spanish", () => {
     expect(closeFailureMessage({ error: "ordenes_delete_failed" })).toMatch(/no se pudieron eliminar los pedidos/i);
-    expect(closeFailureMessage({ error: "active_rider_trip" })).toMatch(/reparto en curso/i);
+    // DELIVERY x ECONOMY DECOUPLING (migration 139): a rider trip is no longer a close blocker, so no message tells the
+    // operator to wait for the driver. The retired trip codes degrade to the generic sentence (never a false instruction).
+    expect(closeFailureMessage({ error: "active_rider_trip" })).toBe("No se pudo cerrar el servicio.");
     expect(closeFailureMessage({ error: "NO_SERVICE_SESSION" })).toMatch(/no hay un servicio abierto/i);
     // S2-7D5: the DB trigger raises the NO_OPEN_ variant; it must map too.
     expect(closeFailureMessage({ error: "NO_OPEN_SERVICE_SESSION" })).toMatch(/no hay un servicio abierto/i);

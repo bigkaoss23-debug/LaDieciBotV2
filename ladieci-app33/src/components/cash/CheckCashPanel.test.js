@@ -278,3 +278,98 @@ test("passes canRefund/canAdjust through to the reused Mesa components (no capab
   expect(container.querySelector('[data-testid="mesa-commercial-adjustments"]')).toBeFalsy();
   unmount(container, root);
 });
+
+// ── POST-CLOSE OPERATOR COLLECTION: `onPaid` (the caller refreshes what listed the order) + the in-flight latch ──────
+describe("onPaid — the server's account of the order changed under the panel", () => {
+  test("fires once after a recorded payment, AFTER the account was reloaded", async () => {
+    const order = [];
+    cashApi.checkAccount.mockImplementation(async () => { order.push("load"); return UNPAID_ACCOUNT; });
+    cashApi.pay.mockImplementation(async () => { order.push("pay"); return { ok: true }; });
+    const onPaid = jest.fn(() => order.push("onPaid"));
+    const { container, root } = await mount({ orderUid: ORDER_UID, onClose: jest.fn(), allowDelivery: false, onPaid });
+    await flush();
+    click(byTestId(container, "check-cash-pay-submit"));
+    await flush();
+    expect(onPaid).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["load", "pay", "load", "onPaid"]);
+    unmount(container, root);
+  });
+
+  test("fires when the server says the order is ALREADY settled (no second payment), and the account is reloaded", async () => {
+    cashApi.checkAccount.mockResolvedValueOnce(UNPAID_ACCOUNT).mockResolvedValue(PAID_ACCOUNT);
+    cashApi.pay.mockRejectedValue(Object.assign(new Error("ORDER_PAYMENT_ALREADY_SETTLED"), { code: "ORDER_PAYMENT_ALREADY_SETTLED" }));
+    const onPaid = jest.fn();
+    const { container, root } = await mount({ orderUid: ORDER_UID, onClose: jest.fn(), allowDelivery: false, onPaid });
+    await flush();
+    click(byTestId(container, "check-cash-pay-submit"));
+    await flush();
+    expect(cashApi.pay).toHaveBeenCalledTimes(1);
+    expect(cashApi.checkAccount).toHaveBeenCalledTimes(2);
+    expect(onPaid).toHaveBeenCalledTimes(1);
+    expect(byTestId(container, "check-cash-pay-submit")).toBeNull();   // settled: nothing left to pay
+    unmount(container, root);
+  });
+
+  test("does NOT fire on any other refusal, nor on the possible-duplicate prompt", async () => {
+    cashApi.checkAccount.mockResolvedValue(UNPAID_ACCOUNT);
+    const onPaid = jest.fn();
+    const { container, root } = await mount({ orderUid: ORDER_UID, onClose: jest.fn(), allowDelivery: false, onPaid });
+    await flush();
+    cashApi.pay.mockRejectedValueOnce(Object.assign(new Error("CASH_FORBIDDEN"), { code: "CASH_FORBIDDEN" }));
+    click(byTestId(container, "check-cash-pay-submit"));
+    await flush();
+    cashApi.pay.mockRejectedValueOnce(Object.assign(new Error("ORDER_PAYMENT_POSSIBLE_DUPLICATE"), { code: "ORDER_PAYMENT_POSSIBLE_DUPLICATE" }));
+    click(byTestId(container, "check-cash-pay-submit"));
+    await flush();
+    expect(byTestId(container, "check-cash-duplicate")).toBeTruthy();
+    expect(onPaid).not.toHaveBeenCalled();
+    unmount(container, root);
+  });
+
+  test("a throwing caller never turns a recorded payment into a 'payment failed' message", async () => {
+    cashApi.checkAccount.mockResolvedValue(UNPAID_ACCOUNT);
+    cashApi.pay.mockResolvedValue({ ok: true });
+    const onPaid = jest.fn(() => { throw new Error("caller bug"); });
+    const { container, root } = await mount({ orderUid: ORDER_UID, onClose: jest.fn(), allowDelivery: false, onPaid });
+    await flush();
+    click(byTestId(container, "check-cash-pay-submit"));
+    await flush();
+    expect(onPaid).toHaveBeenCalledTimes(1);
+    expect(byTestId(container, "check-cash-pay-error")).toBeNull();
+    unmount(container, root);
+  });
+
+  test("is optional: without it the panel behaves exactly as before", async () => {
+    cashApi.checkAccount.mockResolvedValue(UNPAID_ACCOUNT);
+    cashApi.pay.mockResolvedValue({ ok: true });
+    const { container, root } = await mount({ orderUid: ORDER_UID, onClose: jest.fn() });
+    await flush();
+    click(byTestId(container, "check-cash-pay-submit"));
+    await flush();
+    expect(cashApi.pay).toHaveBeenCalledTimes(1);
+    expect(byTestId(container, "check-cash-pay-error")).toBeNull();
+    unmount(container, root);
+  });
+});
+
+test("two clicks in the SAME tick send ONE payment request (synchronous in-flight latch), and the button works again afterwards", async () => {
+  cashApi.checkAccount.mockResolvedValue(UNPAID_ACCOUNT);
+  let release;
+  cashApi.pay.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve({ ok: true }); }));
+  const { container, root } = await mount({ orderUid: ORDER_UID, onClose: jest.fn(), allowDelivery: false });
+  await flush();
+  const submit = byTestId(container, "check-cash-pay-submit");
+  act(() => {
+    submit.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    submit.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  expect(cashApi.pay).toHaveBeenCalledTimes(1);
+  await act(async () => { release(); await Promise.resolve(); });
+  await flush();
+  // the latch is released: the operator can act again (e.g. a real second payment gets its own request)
+  cashApi.pay.mockResolvedValueOnce({ ok: true });
+  click(byTestId(container, "check-cash-pay-submit"));
+  await flush();
+  expect(cashApi.pay).toHaveBeenCalledTimes(2);
+  unmount(container, root);
+});
