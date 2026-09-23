@@ -735,12 +735,29 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
     ? `GIRO · ${giroResumenId || (giroIntent && (giroIntent.with_order_id || formatManualGiroLabel({ id: giroIntent.giro_id }))) || "—"}`
     : `${modoResumen} · ${(horaResumenPronta && hora) || "—"}`;
 
-  // All'apertura del popup: PROGRAMADO parte dalla hora corrente, GIRO dal giro già scelto (se ancora compatibile).
+  // All'apertura del popup: GIRO parte dal giro già scelto (se ancora compatibile).
+  // [ENTREGA-MODAL microfix 2026-09-23] PROGRAMADO parte dalla STESSA hora proposta da DIRECTO
+  // (hora_preview del backend), mai dall'ora corrente. Se l'operatore aveva già scelto PROGRAMADO,
+  // si riapre sulla sua hora. La preview ASAP viene azzerata alla chiusura e riletta all'apertura:
+  // DIRECTO e PROGRAMADO non mostrano mai un valore vecchio; finché non arriva, PROGRAMADO resta
+  // vuoto (Elegir disabilitato).
+  const programadoTocado = useRef(false);
   useEffect(() => {
-    if (!showDeliveryPopup) return;
-    setProgramadoHora(hora || "");
+    if (!showDeliveryPopup) { setEntregaAsap(null); return; } // alla chiusura: la prossima apertura riparte da zero
+    const giaProgramado = entregaModo === "PROGRAMADO";
+    programadoTocado.current = giaProgramado;
+    setProgramadoHora(giaProgramado ? (hora || "") : "");
     setGiroSelKey(giroIntent ? (giroIntent.giro_id ? `g:${giroIntent.giro_id}` : `o:${giroIntent.with_order_id}`) : "");
   }, [showDeliveryPopup]); // eslint-disable-line
+  // Finché l'operatore non la tocca, PROGRAMADO segue la proposta DIRECTO del backend.
+  useEffect(() => {
+    if (!showDeliveryPopup || programadoTocado.current) return;
+    setProgramadoHora(entregaAsap?.hora_preview || "");
+  }, [showDeliveryPopup, entregaAsap]);
+  const setProgramadoHoraOperatore = (next) => {
+    programadoTocado.current = true;
+    setProgramadoHora(next);
+  };
 
   // Scelta dell'operatore: fissa hora (+ giro_intent solo per GIRO) e chiude il popup.
   // Il backend calcola la deadline al salvataggio: max(ts + 55', hora). Qui nessun calcolo.
@@ -1798,13 +1815,13 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     {/* ▲/▼ sostituiscono l'icona nativa del picker (Chrome); su iPad il tap apre comunque la ruota */}
                     <style>{`[data-testid="entrega-programado-hora"]::-webkit-calendar-picker-indicator{display:none}`}</style>
                     <input type="time" data-testid="entrega-programado-hora" value={programadoHora}
-                      onChange={e => setProgramadoHora(e.target.value)}
+                      onChange={e => setProgramadoHoraOperatore(e.target.value)}
                       style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none",
                         color: "#fff", fontSize: 32, fontWeight: 900, fontFamily: "'DM Mono',monospace", textAlign: "center" }} />
                     <div style={{ display: "flex", flexDirection: "column" }}>
                       {[["▲", 5, "+5"], ["▼", -5, "-5"]].map(([sym, delta, lbl]) => (
                         <button type="button" key={lbl} aria-label={lbl}
-                          onClick={() => setProgramadoHora(h => shiftHoraHHMM(h || directoHora, delta) || h)}
+                          onClick={() => setProgramadoHoraOperatore(shiftHoraHHMM(programadoHora || directoHora, delta) || programadoHora)}
                           style={{ background: "transparent", border: "none", color: "#fdba74",
                             fontSize: 14, lineHeight: 1, padding: "4px 8px", cursor: "pointer" }}>{sym}</button>
                       ))}

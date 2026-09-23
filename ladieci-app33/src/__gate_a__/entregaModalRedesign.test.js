@@ -369,6 +369,65 @@ describe("payload invariati", () => {
   });
 });
 
+describe("microfix — PROGRAMADO parte dalla proposta DIRECTO del backend, non da AHORA", () => {
+  test("AHORA 10:12 · DIRECTO 11:07 · PROGRAMADO iniziale 11:07 → modificato 12:00 → payload 12:00", async () => {
+    jest.setSystemTime(Date.parse("2026-09-21T08:12:00.000Z"));                  // 10:12 Madrid
+    await openPopup({ candidates: [] });
+    expect(q("entrega-ahora").textContent).toContain("10:12");
+    expect(q("entrega-directo-hora").textContent).toBe("11:07");                   // hora_preview del backend (mock)
+    expect(q("entrega-programado-hora").value).toBe("11:07");                      // stessa proposta, NON 10:12
+    await setValue(q("entrega-programado-hora"), "12:00");
+    await click(q("entrega-programado-elegir"));
+    expect(q("entrega-resumen").textContent).toBe("PROGRAMADO · 12:00");
+    const payload = await submit();
+    expect(payload.hora).toBe("12:00");
+    expect(payload).not.toHaveProperty("giro_intent");
+  });
+
+  test("senza preview backend PROGRAMADO resta vuoto e non selezionabile (nessuna ora corrente inventata)", async () => {
+    jest.setSystemTime(Date.parse("2026-09-21T08:12:00.000Z"));
+    api.previewDeliveryV1.mockImplementation((body) => body.hora ? previewImpl(body) : new Promise(() => {}));   // ASAP mai risolta
+    await openPopup({ candidates: [] });
+    expect(q("entrega-directo-hora").textContent).toBe("—");
+    expect(q("entrega-programado-hora").value).toBe("");
+    expect(q("entrega-programado-elegir").disabled).toBe(true);
+  });
+
+  test("finché non toccato PROGRAMADO segue DIRECTO; dopo la modifica resta il valore dell'operatore", async () => {
+    await openPopup({ candidates: [] });
+    expect(q("entrega-programado-hora").value).toBe("20:45");
+    await flush(60 * 1000);                                                         // nuovo minuto → nuova preview
+    expect(q("entrega-directo-hora").textContent).toBe("20:46");
+    expect(q("entrega-programado-hora").value).toBe("20:46");
+    await click(container.querySelector("[aria-label='+5']"));
+    expect(q("entrega-programado-hora").value).toBe("20:51");
+    await flush(60 * 1000);
+    expect(q("entrega-directo-hora").textContent).toBe("20:47");
+    expect(q("entrega-programado-hora").value).toBe("20:51");                      // scelta operatore non sovrascritta
+  });
+
+  test("riaprendo il popup non ricompare una proposta vecchia: DIRECTO/PROGRAMADO aspettano la nuova preview", async () => {
+    await openPopup({ candidates: [] });
+    expect(q("entrega-directo-hora").textContent).toBe("20:45");
+    await click(q("entrega-modal").parentElement);                                 // chiude dal backdrop, nessuna scelta
+    await flush(10 * 60 * 1000);                                                     // 10 minuti dopo
+    api.previewDeliveryV1.mockImplementation((body) => body.hora ? previewImpl(body) : new Promise(() => {}));
+    await click(trigger());
+    expect(q("entrega-directo-hora").textContent).toBe("—");                       // non la 20:45 di 10 minuti fa
+    expect(q("entrega-programado-hora").value).toBe("");
+    expect(q("entrega-directo-elegir").disabled).toBe(true);
+  });
+
+  test("riaprendo dopo una scelta PROGRAMADO si ritrova la hora scelta, non la proposta", async () => {
+    await openPopup({ candidates: [] });
+    await setValue(q("entrega-programado-hora"), "21:30");
+    await click(q("entrega-programado-elegir"));
+    await click(trigger());
+    expect(q("entrega-programado-hora").value).toBe("21:30");
+    expect(q("entrega-directo-hora").textContent).toBe("20:45");
+  });
+});
+
 describe("11 — contratto deadline invariato (nessuna logica BE nel FE)", () => {
   test("il popup non calcola deadline né compatibilità", () => {
     expect(modalSrc).not.toMatch(/madridWallToInstant|legacyDeadlineFromHora|effectiveDeadline|suggestGiro|listGiroCandidates/);
