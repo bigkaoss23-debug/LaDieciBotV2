@@ -137,6 +137,9 @@ describe("Listos · cambio pago esplicito", () => {
     expect(block).not.toMatch(/updateEstado/);
     expect(block).toContain("beginAction(id)");
     expect(block).toContain("endAction(id)");
+    // esito sconosciuto della RPC: nessun update locale, avviso dedicato
+    expect(block).toMatch(/res\.outcome_unknown\)\s*\{[\s\S]*?notify\("⚠️ Respuesta incierta/);
+    expect(block.slice(block.indexOf("res.outcome_unknown"), block.indexOf("} else {", block.indexOf("res.outcome_unknown")))).not.toMatch(/setOrdenes/);
   });
   test("api.cambiarMetodoPago invia l'azione dedicata con metodo atteso", async () => {
     const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({ status: 200, ok: true, json: async () => ({ success: true, metodo_pago: "bizum" }) });

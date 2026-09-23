@@ -1026,6 +1026,10 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
               setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: res.metodo_pago_actual} : o));
             }
             notify("⚠️ El pago ya fue cambiado desde otro dispositivo", C.rosso);
+          } else if (res && res.outcome_unknown) {
+            // Timeout / risposta illeggibile: la transazione può essere avvenuta o no
+            // (mai a metà). Nessun update locale: il polling mostrerà lo stato reale.
+            notify("⚠️ Respuesta incierta — comprueba el pago en unos segundos", C.rosso);
           } else {
             notify("❌ No se pudo cambiar el pago", C.rosso);
           }
