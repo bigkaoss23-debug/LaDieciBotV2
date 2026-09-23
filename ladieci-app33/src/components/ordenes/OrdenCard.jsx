@@ -3,7 +3,7 @@ import { C, tot, calcTotale, DELIVERY_FEE } from '../../constants';
 import Chip from '../ui/Chip';
 import TicketQuickAction from '../ui/TicketQuickAction';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
-import { ORDER_STATES } from '../../core/orders';
+import { ORDER_STATES, PAYMENT_METHOD_UI, terminalLabel } from '../../core/orders';
 import { isWaSinConversacion, isWaOrigen } from '../../utils/pedidosVisibility';
 
 const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, onOpenTicket, vipIds, loadingIds = new Set()}) => {
@@ -85,7 +85,7 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
       tel:    "rgba(80,110,180,0.40)",
       ora:    "rgba(100,90,160,0.40)",
       opacity:0.72,
-      badge: <span style={{background:"rgba(20,35,90,0.50)",color:"rgba(120,150,200,0.70)",border:"1px solid rgba(50,80,160,0.30)",borderRadius:20,padding:"3px 11px",fontSize:12,fontWeight:600}}>✅ Entregado</span>,
+      badge: <span style={{background:"rgba(20,35,90,0.50)",color:"rgba(120,150,200,0.70)",border:"1px solid rgba(50,80,160,0.30)",borderRadius:20,padding:"3px 11px",fontSize:12,fontWeight:600}}>✅ {terminalLabel(o)}</span>,
     },
   };
   const s = styles[estado] || styles[ORDER_STATES.POR_CONFIRMAR];
@@ -146,16 +146,18 @@ const OrdenCard = ({o, onModifica, accentColor, hasAlert, onElimina, onConfirm, 
         }}>💬 WhatsApp</span>
       )}
       {s.badge}
-      {o.ya_pagado && (
+      {/* [PAYMENT-IDEMPOTENCY 2026-09-23] icona/colore dal metodo reale (Bizum
+          prima appariva come 💵 Efectivo). */}
+      {o.ya_pagado && (() => { const pm = PAYMENT_METHOD_UI[o.metodo_pago]; return (
         <span style={{
-          background: o.metodo_pago === "tarjeta" ? "rgba(37,99,235,0.30)" : "rgba(22,163,74,0.30)",
-          color: o.metodo_pago === "tarjeta" ? "#93C5FD" : "#4ADE80",
-          border: o.metodo_pago === "tarjeta" ? "1.5px solid rgba(96,165,250,0.55)" : "1.5px solid rgba(74,222,128,0.55)",
+          background: pm ? `${pm.color}4D` : "rgba(255,255,255,0.10)",
+          color: "#fff",
+          border: `1.5px solid ${pm ? `${pm.color}8C` : "rgba(255,255,255,0.3)"}`,
           borderRadius:20, padding:"3px 10px", fontSize:12, fontWeight:800
         }}>
-          {o.metodo_pago === "tarjeta" ? "💳" : "💵"} Ya pagado
+          {pm ? pm.icon : "❓"} Ya pagado
         </span>
-      )}
+      ); })()}
       {hasAlert&&<span style={{background:"#E8341C",color:"#fff",borderRadius:20,padding:"3px 10px",fontSize:13,fontWeight:900,animation:"livePulse 1s infinite",boxShadow:"0 0 12px #E8341Ccc",letterSpacing:.5}}>⚠️⚠️ AGGIUNTA!</span>}
       <span style={{marginLeft:"auto",background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.28)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:600}}>✏️ Editar</span>
     </div>

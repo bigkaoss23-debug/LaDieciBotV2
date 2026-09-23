@@ -43,3 +43,12 @@ export {
   buildOperatorOrderCreationIntent,
   buildWaOrderCreationIntent,
 } from "./creationIntents";
+
+export {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_UI,
+  isAlreadyPaid,
+  isValidPaymentMethod,
+  normalizePaymentMethod,
+  terminalLabel,
+} from "./payment";

@@ -5,7 +5,7 @@ import Badge from '../ui/Badge';
 import DescuentoInput from '../ui/DescuentoInput';
 import TicketQuickAction from '../ui/TicketQuickAction';
 import { ZONE_DELIVERY, ZonaBadge } from '../../zones';
-import { ORDER_STATES } from '../../core/orders';
+import { ORDER_STATES, PAYMENT_METHOD_UI, isAlreadyPaid, terminalLabel } from '../../core/orders';
 import { orarioToMs } from '../../utils/serviceClock';
 import { isDessertPizza } from '../../menu/dessertPizza';
 
@@ -30,6 +30,14 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
   const getDescuentoFor = (id) => descuentoPago[id] || { tipo: null, valor: 0 };
   const handleRetirado = (o, metodo, descuento) => {
     onRetirado(o.id, metodo, descuento);
+  };
+  // [PAYMENT-IDEMPOTENCY 2026-09-23] Correzione ESPLICITA del metodo su un ordine
+  // RETIRADO: passa il metodo che l'operatore vede (atteso), così una tab stale
+  // non sovrascrive una correzione fatta da un altro device. Stesso metodo → niente.
+  const cambiaPago = (o, metodo) => {
+    setPendingCambioPago(null);
+    if (metodo === o.metodo_pago) return;
+    onCambiaPago(o.id, metodo, o.metodo_pago || "");
   };
   const handleVolverACocina = (o) => {
     if (!window.confirm("¿Volver el pedido a cocina? Esta acción quitará el pedido de Listos y lo devolverá a Cocina.")) return;
@@ -99,8 +107,10 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                     ? <span style={{background:"rgba(255,255,255,0.20)",color:"#FFFFFF",
                         border:"1px solid rgba(255,255,255,0.35)",borderRadius:20,
                         padding:"2px 9px",fontSize:11,fontWeight:700}}>
-                        {/* [FDV1] nessuna rappresentazione rider: stato finale neutro. */}
-                        ✅ Entregado
+                        {/* [FDV1] nessuna rappresentazione rider: stato finale neutro.
+                            [PAYMENT-IDEMPOTENCY 2026-09-23] stesso stato RETIRADO, copy per tipo:
+                            DOMICILIO "Entregado", RITIRO "Retirado". */}
+                        ✅ {terminalLabel(o)}
                       </span>
                     : <span style={{background:"rgba(0,0,0,0.25)",color:"#FFFFFF",
                         border:"1px solid rgba(255,255,255,0.30)",borderRadius:20,
@@ -109,16 +119,15 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                             un ordine BANCO in Listos si leggeva "📞 Tel". */}
                         {o.canal==="WA" ? "💬 WA" : o.canal==="BANCO" ? "🏪 Barra" : "📞 Tel"}
                       </span>}
-                  {o.ya_pagado && (
+                  {o.ya_pagado && (() => { const pm = PAYMENT_METHOD_UI[o.metodo_pago]; return (
                     <span style={{
-                      background: o.metodo_pago==="tarjeta" ? "rgba(37,99,235,0.35)" : "rgba(22,163,74,0.35)",
-                      color:"#fff", border: o.metodo_pago==="tarjeta"
-                        ? "1px solid rgba(96,165,250,0.6)" : "1px solid rgba(74,222,128,0.6)",
+                      background: pm ? `${pm.color}59` : "rgba(255,255,255,0.10)",
+                      color:"#fff", border: `1px solid ${pm ? `${pm.color}99` : "rgba(255,255,255,0.3)"}`,
                       borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700
                     }}>
-                      {o.metodo_pago==="tarjeta" ? "💳" : "💵"} Ya pagado
+                      {pm ? pm.icon : "❓"} Ya pagado
                     </span>
-                  )}
+                  ); })()}
                   {/* Badge zona */}
                   {o.tipo_consegna==="DOMICILIO" && o.zona && (() => {
                     const zona = ZONE_DELIVERY.find(z => z.id === o.zona);
@@ -153,21 +162,21 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                     <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.8)",marginBottom:2}}>¿Cambiar pago?</div>
                     <div style={{display:"flex",gap:7}}>
                       <button
-                        onClick={e=>{e.stopPropagation();onCambiaPago(o.id,"efectivo");setPendingCambioPago(null);}}
+                        onClick={e=>{e.stopPropagation();cambiaPago(o,"efectivo");}}
                         style={{background:"#16A34A",color:"#fff",border:"none",
                           borderRadius:10,padding:"9px 12px",fontWeight:800,fontSize:12,cursor:"pointer",
                           opacity:o.metodo_pago==="efectivo"?0.45:1}}>
                         💵 Efectivo
                       </button>
                       <button
-                        onClick={e=>{e.stopPropagation();onCambiaPago(o.id,"tarjeta");setPendingCambioPago(null);}}
+                        onClick={e=>{e.stopPropagation();cambiaPago(o,"tarjeta");}}
                         style={{background:"#2563EB",color:"#fff",border:"none",
                           borderRadius:10,padding:"9px 12px",fontWeight:800,fontSize:12,cursor:"pointer",
                           opacity:o.metodo_pago==="tarjeta"?0.45:1}}>
                         💳 Tarjeta
                       </button>
                       <button
-                        onClick={e=>{e.stopPropagation();onCambiaPago(o.id,"bizum");setPendingCambioPago(null);}}
+                        onClick={e=>{e.stopPropagation();cambiaPago(o,"bizum");}}
                         style={{background:"#0EA5E9",color:"#fff",border:"none",
                           borderRadius:10,padding:"9px 12px",fontWeight:800,fontSize:12,cursor:"pointer",
                           opacity:o.metodo_pago==="bizum"?0.45:1}}>
@@ -248,7 +257,7 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                       </button>
                     ); })()}
                   </div>
-                ) : o.ya_pagado ? (
+                ) : isAlreadyPaid(o) ? (
                   <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,alignItems:"stretch"}}>
                     <TicketQuickAction order={o} onOpenTicket={onOpenTicket} variant="compact" />
                     {o.estado === ORDER_STATES.LISTO && onVolverACocina && (() => { const vBusy = loadingIds.has(o.id); return (
@@ -268,7 +277,9 @@ const TabListos = ({ordenes,onRetirado,onVolverACocina,onOpenTicket,loadingIds=n
                     ); })()}
                     {(() => { const busy = loadingIds.has(o.id); return (
                     <button
-                      onClick={e=>{ e.stopPropagation(); if (busy) return; handleRetirado(o, o.metodo_pago); }}
+                      // [PAYMENT-IDEMPOTENCY] già pagato: nessun metodo inviato, nessun
+                      // secondo pagamento — il backend conserva quello registrato.
+                      onClick={e=>{ e.stopPropagation(); if (busy) return; handleRetirado(o); }}
                       disabled={busy}
                       style={{
                         background: busy ? `${C.verde}55` : C.verde, color:"#fff", border:"none",

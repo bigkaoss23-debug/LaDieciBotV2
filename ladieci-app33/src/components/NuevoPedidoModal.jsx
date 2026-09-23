@@ -1601,6 +1601,14 @@ const NuevoPedidoModal = ({ onClose, onConfirm, visible, prefill, ordenes = [] }
                     color: "#fff", borderRadius: 8, padding: "4px 12px",
                     fontSize: 12, fontWeight: 700, cursor: "pointer"
                   }}>💳 Tarjeta</button>
+                  {/* [PAYMENT-IDEMPOTENCY 2026-09-23] Bizum mancava: i metodi sono
+                      esattamente efectivo | tarjeta | bizum, come nel backend. */}
+                  <button onClick={() => setMetodoPago("bizum")} style={{
+                    background: metodoPago === "bizum" ? "#0EA5E9" : "rgba(255,255,255,0.06)",
+                    border: `1.5px solid ${metodoPago === "bizum" ? "#0EA5E9" : "rgba(255,255,255,0.15)"}`,
+                    color: "#fff", borderRadius: 8, padding: "4px 12px",
+                    fontSize: 12, fontWeight: 700, cursor: "pointer"
+                  }}>📱 Bizum</button>
                 </>)}
               </div>
             </div>

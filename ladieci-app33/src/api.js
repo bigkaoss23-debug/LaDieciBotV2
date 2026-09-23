@@ -486,6 +486,17 @@ const api = {
     if (origin)      body.origin      = origin;
     return proxyPost(body);
   },
+  // [PAYMENT-IDEMPOTENCY 2026-09-23] Correzione ESPLICITA del metodo di pagamento
+  // di un ordine già RETIRADO (badge ✎ in Listos). NON è una finalizzazione: un
+  // secondo updateEstado(RETIRADO) è sempre un no-op e non cambia più il metodo.
+  // `metodo_pago_esperado` = il metodo che l'operatore vedeva: se nel frattempo è
+  // cambiato, il backend risponde payment_method_conflict invece di sovrascrivere.
+  // Il backend scrive l'audit (orden_estado_logs, event_type payment_method_changed).
+  cambiarMetodoPago: function(id, metodo_pago, metodo_pago_esperado) {
+    const body = { action: 'cambiarMetodoPago', id, metodo_pago, actor_type: 'operator', origin: 'dashboard' };
+    if (metodo_pago_esperado !== undefined) body.metodo_pago_esperado = metodo_pago_esperado;
+    return proxyPost(body);
+  },
   asignarRepartidor: function(id, repartidor) {
     return proxyPost({ action:'asignarRepartidor', id, repartidor });
   },

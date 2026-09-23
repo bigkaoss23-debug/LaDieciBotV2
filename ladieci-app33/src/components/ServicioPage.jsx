@@ -747,7 +747,8 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     logTransition(intent);
 
     try {
-      const res = await api.updateEstado(id, ORDER_STATES.RETIRADO, metodo_pago || "", descuento, {
+      // [PAYMENT-IDEMPOTENCY] metodo omesso (undefined) per un ordine già pagato.
+      const res = await api.updateEstado(id, ORDER_STATES.RETIRADO, metodo_pago || undefined, descuento, {
         actor_type: "operator",
         origin: "dashboard",
       });
@@ -766,7 +767,15 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
       // cobrado + hora_entrega + eventuale descuento (totale ricalcolato), e marca
       // conv→ritirata + wa_msgs→COMPLETATO atomicamente.
       // Update ottimistico: il backend è autoritativo sul totale finale — il polling lo riallinea.
-      setOrdenes(prev => prev.map(o => o.id === id ? {...o, estado:ORDER_STATES.RETIRADO, metodo_pago} : o));
+      // [PAYMENT-IDEMPOTENCY 2026-09-23] noop = l'ordine era già RETIRADO (altro
+      // device, retry): il backend non ha cambiato nulla, neanche il metodo — non
+      // lo simuliamo in locale. Ordine già pagato: nessun metodo inviato, si
+      // conserva quello registrato.
+      if (!res.noop) {
+        setOrdenes(prev => prev.map(o => o.id === id
+          ? { ...o, estado: ORDER_STATES.RETIRADO, ...(metodo_pago ? { metodo_pago, cobrado: true } : { cobrado: true }) }
+          : o));
+      }
       if (orden && orden.canal === "WA" && telNorm) {
         setWaMsgs(prev => prev.map(m => {
           const mTel = String(m.tel||"").replace("+","");
@@ -990,20 +999,42 @@ const ServicioPage = ({onBack,ordenes,setOrdenes,waMsgs,setWaMsgs,notify,syncSta
     if(tab==="listos") return <TabListos ordenes={ordenes} onRetirado={setRetirado} onVolverACocina={volverACocina} onOpenTicket={setTicketOrder} loadingIds={loadingIds}
       vipIds={vipIds}
       waMsgs={waMsgs}
-      onCambiaPago={async (id, nuovoMetodo) => {
+      onCambiaPago={async (id, nuovoMetodo, metodoAtteso) => {
+        // [PAYMENT-IDEMPOTENCY 2026-09-23] Correzione ESPLICITA: azione dedicata
+        // cambiarMetodoPago (audit lato backend), non più un secondo RETIRADO.
+        // Nessun update ottimistico: il bucket di Caja cambia solo dopo la
+        // conferma del backend. beginAction blocca il doppio click.
+        if (!beginAction(id)) return;
         logPaymentUpdate({
           component: "ServicioPage",
           action: "onCambiaPago",
           orderId: id,
           metadata: {
-            reason: "updateEstado usato anche per modificare metodo pagamento",
+            reason: "cambiarMetodoPago (correzione esplicita)",
             estado: ORDER_STATES.RETIRADO,
             nuovoMetodo,
+            metodoAtteso,
           },
         });
-        setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: nuovoMetodo} : o));
-        try { await api.updateEstado(id, ORDER_STATES.RETIRADO, nuovoMetodo, undefined, { actor_type: "operator", origin: "dashboard" }); }
-        catch(err) { console.error("cambiaPago:", err); }
+        try {
+          const res = await api.cambiarMetodoPago(id, nuovoMetodo, metodoAtteso);
+          if (res && res.success) {
+            setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: res.metodo_pago || nuovoMetodo, cobrado: true} : o));
+            if (!res.noop) notify("✎ Pago corregido", C.blu);
+          } else if (res && res.error === "payment_method_conflict") {
+            if (res.metodo_pago_actual) {
+              setOrdenes(prev => prev.map(o => o.id===id ? {...o, metodo_pago: res.metodo_pago_actual} : o));
+            }
+            notify("⚠️ El pago ya fue cambiado desde otro dispositivo", C.rosso);
+          } else {
+            notify("❌ No se pudo cambiar el pago", C.rosso);
+          }
+        } catch(err) {
+          console.error("cambiaPago:", err);
+          notify("❌ Error de red — el pago no cambió", C.rosso);
+        } finally {
+          endAction(id);
+        }
       }}
       onViewChat={(waId) => {
         const msg = waMsgs.find(m => String(m.wa_id||m.tel||"").replace("+","") === String(waId||"").replace("+",""));
