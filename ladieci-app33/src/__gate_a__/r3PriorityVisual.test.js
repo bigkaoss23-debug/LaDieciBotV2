@@ -43,7 +43,8 @@ const pizza = [{ n: "Margherita", q: 1, cat: "Pizzas" }];
 const o = (id, deadline, extra = {}) => ({ id, nombre: "Cliente " + id.replace("#", "n"), tipo_consegna: "DOMICILIO", estado: "EN_COCINA", zona: "Q1",
   hora: deadline, delivery_deadline_at: iso(deadline), ui_offset_min: 0, manual_giro_id: null, items: pizza, ts: 1, ...extra });
 const openPicker = async (el, dir) => { await act(async () => { el.querySelector(`button[aria-label="${dir === "add" ? "Retrasar" : "Adelantar"} en la cola"]`).click(); }); };
-const menu = (el) => [...el.querySelectorAll('[role="menu"] button')].map((b) => ({ t: b.textContent, on: !b.disabled }));
+const menu = () => [...document.querySelectorAll('[role="menu"] button')]   // menu in portal su document.body
+  .map((b) => ({ t: b.textContent, on: !b.disabled }));
 
 describe("contratto ± (pure)", () => {
   test("v2: + options 5..50, allowed only ≤ window; lowering an existing + allowed; − always allowed", () => {
@@ -95,7 +96,7 @@ describe("PriorityControl mounted", () => {
     expect(btns).toEqual(["−", "+"]);
     await openPicker(el, "add");
     expect(menu(el)).toEqual([["5", true], ["10", true], ["15", true], ["20", true], ["30", true], ["40", false], ["50", false]].map(([t, on]) => ({ t, on })));
-    expect(el.textContent).toMatch(/Máx\. \+30 ahora/);
+    expect(document.body.textContent).toMatch(/Máx\. \+30 ahora/);
   });
   test("giro window = most urgent member; applying sends the absolute value once", async () => {
     api.priorityContract.mockResolvedValue(V2);
@@ -104,7 +105,7 @@ describe("PriorityControl mounted", () => {
     const el = await mount(<PriorityControl orden={members[0]} windowOrders={members} nowMs={NOW} />);
     await openPicker(el, "add");
     expect(menu(el).filter((x) => x.on).map((x) => x.t)).toEqual(["5", "10", "15", "20"]);   // #2 = 25 min reali
-    await act(async () => { [...el.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "15").click(); await Promise.resolve(); });
+    await act(async () => { [...document.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "15").click(); await Promise.resolve(); });
     expect(api.setUiOffset).toHaveBeenCalledTimes(1);
     expect(api.setUiOffset).toHaveBeenCalledWith("#1", 15);
   });
@@ -114,7 +115,7 @@ describe("PriorityControl mounted", () => {
     const onUpdate = jest.fn();
     const el = await mount(<PriorityControl orden={o("#1", "21:30")} nowMs={NOW} onUpdate={onUpdate} />);
     await openPicker(el, "add");
-    await act(async () => { [...el.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "10").click(); await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { [...document.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "10").click(); await Promise.resolve(); await Promise.resolve(); });
     expect(onUpdate.mock.calls).toEqual([["#1", 10], ["#1", 0]]);
     expect(el.textContent).toMatch(/Máx\. \+5 ahora/);
   });
@@ -124,7 +125,7 @@ describe("PriorityControl mounted", () => {
     const onUpdate = jest.fn();
     const el = await mount(<PriorityControl orden={o("#1", "22:30")} nowMs={NOW} onUpdate={onUpdate} />);
     await openPicker(el, "sub");
-    await act(async () => { [...el.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "20").click(); await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { [...document.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "20").click(); await Promise.resolve(); await Promise.resolve(); });
     expect(onUpdate.mock.calls).toEqual([["#1", -20]]);
     expect(el.textContent).toMatch(/Sin confirmar/);
   });

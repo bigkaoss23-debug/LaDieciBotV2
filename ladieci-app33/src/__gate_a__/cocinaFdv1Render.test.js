@@ -149,8 +149,8 @@ describe("R3 — ± una sola volta per giro, scelta rapida, nessuna animazione",
     const el = await mount(<TabCocina ordenes={[o("#001", "21:30", { ui_offset_min: 10 })]} onListo={() => {}} />);
     expect(el.querySelector('[data-testid="priority-chip"]').textContent).toBe("+10");
     await act(async () => { el.querySelector('button[aria-label="Adelantar en la cola"]').click(); });
-    expect([...el.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(["5", "10", "15", "20", "30", "Sin prioridad"]);
-    await act(async () => { [...el.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "15").click(); await Promise.resolve(); });
+    expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(["5", "10", "15", "20", "30", "Sin prioridad"]);
+    await act(async () => { [...document.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "15").click(); await Promise.resolve(); });
     expect(api.setUiOffset).toHaveBeenCalledWith("#001", -15);
   });
 });
