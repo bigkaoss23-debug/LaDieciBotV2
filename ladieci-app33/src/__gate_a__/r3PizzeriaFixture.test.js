@@ -97,7 +97,7 @@ describe("[FDV1 R3 §24] fixture visiva Pizzeria (16 ordini)", () => {
   test("un solo orario grande e un solo ± per blocco; i giri non sono mai spezzati", () => {
     for (const b of blocks()) {
       expect(b.querySelectorAll('[data-testid="block-main-time"]')).toHaveLength(1);
-      expect(b.querySelectorAll('button[aria-label="Retrasar en la cola"]').length).toBeLessThanOrEqual(1);
+      expect(b.querySelectorAll('button[aria-label="Prioridad en la cola"]').length).toBeLessThanOrEqual(1);
     }
     const g = (id) => blocks().find((b) => b.getAttribute("data-giro") === id);
     expect((g("mg_260921_1").textContent.match(/#0\d\d/g) || []).sort()).toEqual(["#001", "#003", "#004"]);
@@ -166,8 +166,9 @@ describe("[FDV1 R3 §24] fixture visiva Pizzeria (16 ordini)", () => {
     expect(container.textContent).not.toMatch(/faltan|minutos|min tarde/i);   // TARDE resta come etichetta di stato
     // l'ora e il countdown stanno nello stesso gruppo, non dispersi
     const b = blocks()[0];
-    expect(b.querySelector('[data-testid="block-main-time"]').parentElement)
-      .toBe(b.querySelector('[data-testid="block-countdown"]').parentElement);
+    expect(b.querySelector('[data-testid="block-main-time"]').closest('[data-testid="block-time-row"]'))
+      .toBe(b.querySelector('[data-testid="block-countdown"]').closest('[data-testid="block-time-row"]'));
+    expect(b.querySelector('[data-testid="block-time-row"]')).toBeTruthy();
     // [KDS tablet] l'etichetta accanto all'ora è lo stato: LÍMITE (normale) · URGENTE · TARDE
     expect(b.querySelector('[data-testid="block-header"]').textContent).toMatch(/LÍMITE|URGENTE|TARDE/);
   });

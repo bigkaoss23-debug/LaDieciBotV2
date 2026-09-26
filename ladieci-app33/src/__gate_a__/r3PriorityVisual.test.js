@@ -171,10 +171,15 @@ describe.each([["Cocina", TabCocina]])("%s — contratto visivo (10 card)", (nam
       expect([hexToRgb(ZONE_COLOR[v.zone]), ZONE_COLOR[v.zone].toLowerCase()]).toContain(v.zbg.toLowerCase());                           // badge = colore zona, indipendente dallo stato
       const band = v.card.style.borderLeft.toLowerCase();
       expect(band.includes(ZONE_COLOR[v.zone].toLowerCase()) || band.includes(hexToRgb(ZONE_COLOR[v.zone]))).toBe(true);   // banda = colore zona
-      if (v.state === "late") expect(cards.find((h) => h.textContent.includes(id)).textContent).toMatch(/TARDE/);
+      // [KDS] TARDE una sola volta: sull'header della card, o — per un membro di GIRO — sull'header del giro
+      if (v.state === "late") {
+        const h = cards.find((x) => x.textContent.includes(id));
+        const scope = h.getAttribute("data-member") === "1" ? h.closest('[data-testid="giro-group"]').firstElementChild : h;
+        expect(scope.textContent).toMatch(/TARDE/);
+      }
     }
   });
-  test("due giri = due blocchi distinguibili (G1/G2, colori diversi), membri contigui, un solo ± per giro", async () => {
+  test("due giri = due blocchi distinguibili (G1/G2, colori diversi), membri contigui, un solo 🕐 per giro", async () => {
     api.priorityContract.mockResolvedValue(V2);
     const el = await mount(<Comp ordenes={SERVICE()} onListo={() => {}} onClose={() => {}} />);
     const groups = [...el.querySelectorAll('[data-testid="giro-group"]')];
@@ -185,9 +190,9 @@ describe.each([["Cocina", TabCocina]])("%s — contratto visivo (10 card)", (nam
     const inG = (g) => (g.textContent.match(/#0\d\d/g) || []);
     expect(inG(groups.find((g) => g.getAttribute("data-giro") === "G1")).sort()).toEqual(["#002", "#003"]);
     expect(inG(groups.find((g) => g.getAttribute("data-giro") === "G2")).sort()).toEqual(["#006", "#007", "#008"]);
-    for (const g of groups) expect(g.querySelectorAll('button[aria-label="Retrasar en la cola"]')).toHaveLength(1);
+    for (const g of groups) expect(g.querySelectorAll('button[aria-label="Prioridad en la cola"]')).toHaveLength(1);
     // standalone DOMICILIO: #001 #004 #005 #009 #010 → 5 controlli + 2 giri
-    expect(el.querySelectorAll('button[aria-label="Retrasar en la cola"]')).toHaveLength(7);
+    expect(el.querySelectorAll('button[aria-label="Prioridad en la cola"]')).toHaveLength(7);
     expect(el.textContent).not.toMatch(/giro manual|🛵|Repartidor|salida|al horno/i);
   });
 });
@@ -280,20 +285,24 @@ describe("Pizzeria — blocco = unità visiva", () => {
     expect(pb.querySelector('[data-testid="block-main-time"]').textContent).toBe("21:20");   // hora de recogida mantenida
     expect(pb.querySelector('[data-testid="block-countdown"]')).toBeNull();
     expect(pb.querySelector('[data-testid="pickup-tag"]')).toBeTruthy();
-    expect(pb.querySelectorAll('button[aria-label="Retrasar en la cola"]')).toHaveLength(0);
+    expect(pb.querySelectorAll('button[aria-label="Prioridad en la cola"]')).toHaveLength(0);
     const db = blocks(el).find((b) => b.getAttribute("data-identity") === "Q1");
     expect(db.querySelector('[data-testid="block-countdown"]')).toBeTruthy();
     expect(pb.style.border).not.toBe(db.style.border);
   });
 
-  test("§15 un solo controllo ± per blocco (giro o standalone); nessun '−5/+5' scritto", async () => {
+  test("§15 un solo controllo priorità (🕐) per blocco (giro o standalone); nessun '−5/+5' scritto", async () => {
     api.priorityContract.mockResolvedValue(V2);
     const el = await mount(<PanelCocina ordenes={SERVICE()} onListo={() => {}} onClose={() => {}} />);
-    for (const b of blocks(el)) expect(b.querySelectorAll('button[aria-label="Retrasar en la cola"]').length).toBeLessThanOrEqual(1);
-    expect(el.querySelectorAll('button[aria-label="Retrasar en la cola"]')).toHaveLength(7);   // 5 standalone + 2 giri
+    for (const b of blocks(el)) expect(b.querySelectorAll('button[aria-label="Prioridad en la cola"]').length).toBeLessThanOrEqual(1);
+    expect(el.querySelectorAll('button[aria-label="Prioridad en la cola"]')).toHaveLength(7);   // 5 standalone + 2 giri
     // nessun minuto scritto sui bottoni di priorità (il countdown "−5 min" nell'header è un'altra cosa)
-    for (const btn of el.querySelectorAll('button[aria-label^="Retrasar"], button[aria-label^="Adelantar"]')) {
-      expect(btn.textContent.trim()).toMatch(/^[−+]$/);
+    // [KDS 🕐] niente più ± nella testata: il bottone è un orologio senza testo, nel footer accanto a LISTO
+    expect(el.querySelectorAll('button[aria-label="Retrasar en la cola"],button[aria-label="Adelantar en la cola"]')).toHaveLength(0);
+    for (const btn of el.querySelectorAll('button[aria-label="Prioridad en la cola"]')) {
+      expect(btn.textContent.trim()).toBe("");
+      expect(btn.closest('[data-testid="card-footer"]').querySelector('[data-testid="pizzeria-listo"]')).toBeTruthy();
+      expect(btn.closest('[data-testid="block-header"]')).toBeNull();
     }
     expect(el.textContent).not.toMatch(/giro manual|GIRO MANUAL|🛵|Repartidor|al horno/i);
   });

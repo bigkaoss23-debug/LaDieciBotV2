@@ -138,7 +138,7 @@ describe("R3 — ± una sola volta per giro, scelta rapida, nessuna animazione",
   test("TabCocina: controllo ± sulla prima card del giro e sugli standalone, non sugli altri membri", async () => {
     const g = [o("#001", "21:30", { manual_giro_id: "g1" }), o("#002", "21:30"), o("#003", "21:45", { manual_giro_id: "g1" })];
     const el = await mount(<TabCocina ordenes={g} onListo={() => {}} />);
-    expect([...el.querySelectorAll('button[aria-label="Retrasar en la cola"]')]).toHaveLength(2);   // #001 (giro) + #002 (standalone)
+    expect([...el.querySelectorAll('button[aria-label="Prioridad en la cola"]')]).toHaveLength(2);   // #001 (giro) + #002 (standalone)
     expect(el.querySelectorAll('[data-testid="giro-group"]')).toHaveLength(1);
     expect(el.textContent).not.toMatch(/Cancelar snooze|−5|\+5/);
     expect([...el.querySelectorAll("div")].filter((d) => /blink/.test(d.style.animation || ""))).toHaveLength(0);
@@ -148,9 +148,13 @@ describe("R3 — ± una sola volta per giro, scelta rapida, nessuna animazione",
     api.setUiOffset.mockResolvedValue({ _ok: true, _status: 200 });
     const el = await mount(<TabCocina ordenes={[o("#001", "21:30", { ui_offset_min: 10 })]} onListo={() => {}} />);
     expect(el.querySelector('[data-testid="priority-chip"]').textContent).toBe("+10");
-    await act(async () => { el.querySelector('button[aria-label="Adelantar en la cola"]').click(); });
-    expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(["5", "10", "15", "20", "30", "Sin prioridad"]);
-    await act(async () => { [...document.querySelectorAll('[role="menu"] button')].find((b) => b.textContent === "15").click(); await Promise.resolve(); });
+    await act(async () => { el.querySelector('button[aria-label="Prioridad en la cola"]').click(); });
+    // [KDS 🕐] un solo menu con le due direzioni, stesse opzioni di prima per ciascuna
+    const dirOpts = (dir) => [...document.querySelectorAll(`[role="menu"] button[data-dir="${dir}"]`)].map((b) => b.textContent);
+    expect(dirOpts("sub")).toEqual(["5", "10", "15", "20", "30"]);
+    expect(dirOpts("add")).toEqual(["5", "10", "15", "20", "30"]);
+    expect([...document.querySelectorAll('[role="menu"] button')].filter((b) => !b.dataset.dir).map((b) => b.textContent)).toEqual(["Sin prioridad"]);
+    await act(async () => { document.querySelector('[role="menu"] button[data-dir="sub"][aria-label="Adelantar 15 min"]').click(); await Promise.resolve(); });
     expect(api.setUiOffset).toHaveBeenCalledWith("#001", -15);
   });
 });

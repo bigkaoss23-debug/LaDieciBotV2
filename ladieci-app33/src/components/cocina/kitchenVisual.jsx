@@ -83,7 +83,8 @@ export const DeadlineHeader = ({ o, zone, light, right = null }) => {
 
 // Contenitore del giro: occupa `cols` colonne (= min(colonne griglia, membri)), così ogni membro è largo
 // quanto una card singola; i membri restano card con la propria zona.
-export const GiroGroup = ({ giro, label, count, cols, light, control, children }) => {
+// [KDS] `time` = ORA + countdown del membro più urgente (stesso blockDeadline della Pizzeria): unico allarme del giro.
+export const GiroGroup = ({ giro, label, count, cols, light, control = null, time = null, children }) => {
   const col = giroColor(giro);
   return (
     <div data-testid="giro-group" data-giro={label} style={{
@@ -94,6 +95,7 @@ export const GiroGroup = ({ giro, label, count, cols, light, control, children }
         <span style={{ fontSize: 22, fontWeight: 900, letterSpacing: .5 }}>{label}</span>
         <span style={{ fontSize: 13, fontWeight: 800, opacity: .85 }}>Giro · {count} pedidos</span>
         <span style={{ flex: 1 }} />
+        {time}
         {control}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols},1fr)`, gap: 10, padding: 10 }}>{children}</div>

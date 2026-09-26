@@ -4,7 +4,7 @@ import { caricoTotale, lookupMenu, calcTimer, FASE_CONFIG, notaCucina } from '..
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import PriorityControl from '../ui/PriorityControl';
 import { KitchenVisualStyles, zoneMeta } from './kitchenVisual';
-import { KitchenBlock, CardIdentity, ItemRow } from './PizzeriaBlocks';
+import { KitchenBlock, CardIdentity, ItemRow, pickupCountdown } from './PizzeriaBlocks';
 import { packKitchenSegments } from './kitchenPacking';
 import { api } from '../../api';
 import { isDessertPizza } from '../../menu/dessertPizza';
@@ -180,7 +180,8 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
 
   // [FDV1 R3] card DOMICILIO DENTRO il blocco: l'orario grande sta nell'header del blocco (§10), qui restano
   // identità, zona (quando il blocco è misto) e il proprio límite solo se diverso da quello del blocco.
-  const renderDeliveryCard = (o, { blockMs = null, showZone = false, accent = null } = {}) => {
+  // Footer: [ LISTO ][ 🕐 ] — l'orologio (priorità) solo sulla card che porta il controllo del blocco (una volta per giro).
+  const renderDeliveryCard = (o, { blockMs = null, showZone = false, accent = null, control = null } = {}) => {
     const zone = zoneMeta(o);
     const fcNeutral = { border: "#9CA3AF" };
     return (
@@ -190,17 +191,20 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
       }}>
         <CardIdentity o={o} zone={zone} blockMs={blockMs} showZone={showZone} />
         {renderBody(o, fcNeutral, accent || zone.color)}
-        <div style={{ padding: "0 9px 9px" }}>{renderListoButton(o)}</div>
+        <div data-testid="card-footer" style={{ padding: "0 9px 9px", display: "flex", alignItems: "center", gap: 7 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>{renderListoButton(o)}</div>
+          {control}
+        </div>
       </div>
     );
   };
 
   // [FDV1 R3 §12] RITIRO: il cliente viene al locale — nessun countdown di entrega. Resta l'orario di
   // preparación/recogida (comportamento Pizzeria invariato), dentro il contenitore "Recogida en local".
+  // Il timer di ritiro (stesso calcTimer, stesso testo) è ora GRANDE nell'header del blocco, accanto all'ora.
   const renderPickupCard = (o) => {
     const t = o._timer;
     const fc = FASE_CONFIG[t && t.fase] || FASE_CONFIG.espera;
-    const timerStr = t ? `${t.scaduto && t.conOrario ? "-" : ""}${String(t.mm).padStart(2, "0")}:${String(t.ss).padStart(2, "0")}` : "";
     return (
       <div key={o.id} data-testid="kitchen-card" data-pickup="1" style={{
         background: "#fff", borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column",
@@ -210,12 +214,6 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
           <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 900, fontSize: 18, color: "#111827" }}>{o.id}</span>
           <span style={{ fontSize: 12, fontWeight: 700, color: "#4B5563", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>{o.nombre || ""}</span>
           <span style={{ flex: 1, minWidth: 4 }} />
-          {t && t.showCountdown && (
-            <span data-testid="pickup-prep" title={t.conOrario ? "Tiempo hasta la recogida" : "Desde la orden"} style={{
-              fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 900, color: fc.textLight,
-              background: "#F1F5F9", borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap",
-            }}>{timerStr}</span>
-          )}
         </div>
         {renderBody(o, fc, PICKUP_INK)}
         <div style={{ padding: "0 9px 9px" }}>{renderListoButton(o)}</div>
@@ -315,7 +313,7 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
               if (isPickup) {
                 return (
                   <KitchenBlock key={key} cards={cards} width={width} cols={cols} nowMs={now}
-                    pickupHora={cards[0].horaForno || cards[0].hora || null}>
+                    pickupHora={cards[0].horaForno || cards[0].hora || null} pickupTimer={pickupCountdown(cards[0]._timer)}>
                     {cards.map(renderPickupCard)}
                   </KitchenBlock>
                 );
@@ -328,12 +326,16 @@ const PanelCocina = ({ordenes, convConfermata=[], onListo, onClose, loadingIds=n
               return (
                 <KitchenBlock key={key} cards={cards} width={width} cols={cols} nowMs={now}
                   giroId={seg.type === "giro" ? seg.giroId : null}
-                  giroLabel={seg.type === "giro" ? giroTag(cards[0], seg.giroId) : null}
-                  control={<PriorityControl orden={cards[0]} windowOrders={cards} onUpdate={handleOffsetChange} light={false} nowMs={now} />}>
-                  {cards.map((o) => renderDeliveryCard(o, {
+                  giroLabel={seg.type === "giro" ? giroTag(cards[0], seg.giroId) : null}>
+                  {cards.map((o, i) => renderDeliveryCard(o, {
                     blockMs: Number.isFinite(blockMs) ? blockMs : null,
                     showZone: zones.size > 1,
                     accent: zones.size > 1 ? zoneMeta(o).color : blockAccent,
+                    // un solo controllo per blocco: sulla prima card (= cards[0], il membro a cui va l'offset del giro)
+                    control: i === 0 ? (
+                      <PriorityControl variant="clock" orden={cards[0]} windowOrders={cards} onUpdate={handleOffsetChange} light={false} nowMs={now}
+                        title={seg.type === "giro" ? `Prioridad del ${giroTag(cards[0], seg.giroId)} (todo el giro)` : null} />
+                    ) : null,
                   }))}
                 </KitchenBlock>
               );

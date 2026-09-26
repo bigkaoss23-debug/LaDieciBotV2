@@ -6,7 +6,8 @@ import { lookupMenu, calcTimer, formatSub, FASE_CONFIG, notaCucina } from '../or
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import PriorityControl from '../ui/PriorityControl';
 import { KitchenVisualStyles, GiroGroup, zoneMeta } from './kitchenVisual';
-import { BlockHeader, ItemRow, PICKUP } from './PizzeriaBlocks';
+import { BlockHeader, ItemRow, PICKUP, pickupCountdown, TimeCountdown } from './PizzeriaBlocks';
+import { blockDeadline } from './kitchenPacking';
 import { ORDER_STATES } from '../../core/orders';
 import { isDessertPizza } from '../../menu/dessertPizza';
 import {
@@ -14,6 +15,7 @@ import {
   formatManualGiroLabel,
   getManualGiroForOrder,
   deadlineState,
+  orderDeadlineMs,
   sortKitchenCards,
   groupKitchenSegments
 } from './manualGiroCocina';
@@ -187,14 +189,14 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
   // [FDV1] A5: il giro è un BLOCCO ATOMICO anche nell'ordinamento (mai spezzato da uno standalone allo stesso minuto).
   const activos = sortKitchenCards(activosBase, now);
 
-  const renderCard = (o, control) => {
+  // `giroMs` (membro di un GIRO): header compatto a una riga; ora + countdown + stato stanno nell'header del giro
+  const giroBlockMs = (cards) => { const v = cards.map(orderDeadlineMs).filter(Number.isFinite); return v.length ? Math.min(...v) : NaN; };
+  const renderCard = (o, control, giroMs = null) => {
             const t  = o._timer;
             // [FDV1] DOMICILIO: colori dallo stato della deadline (normale / vicino al limite / superata)
             const fc = o.isDelivery
               ? (o.dl && o.dl.state === "late" ? FASE_CONFIG.tarde : o.dl && o.dl.state === "near" ? FASE_CONFIG.al_horno : FASE_CONFIG.espera)
               : (FASE_CONFIG[t.fase] || FASE_CONFIG.espera);
-            const isUrgent = o.isDelivery ? !!(o.dl && o.dl.state !== "normal") : (t.fase==="tarde" || t.fase==="lista" || t.fase==="para_salir");
-            const timerStr = t ? `${t.scaduto&&t.conOrario?"-":""}${String(t.mm).padStart(2,"0")}:${String(t.ss).padStart(2,"0")}` : "";
             const notaVisibile = o.isDelivery ? "" : notaCucina(o.nota);
             const notaCucinaOp = o.nota_cucina ? String(o.nota_cucina).trim() : "";
             const oTel = String(o.tel||o.wa_id||"").replace("+","");
@@ -202,7 +204,8 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
             // [KDS tablet] stessa grammatica della Pizzeria: banner zona/RECOGIDA ad altezza fissa (BlockHeader),
             // ×N + NOME + dettagli piccoli (ItemRow), contenuto bianco. Logica, pannelli e LISTO invariati.
             const identity = o.isDelivery ? zoneMeta(o) : PICKUP;
-            const pickupTimer = o.isDelivery || !t ? null : (t.showCountdown ? timerStr : "EN ESPERA");
+            // RECOGIDA: timer di ritiro esistente (calcTimer, stesso testo MM:SS), grande nell'header come il delivery
+            const pickupTimer = o.isDelivery ? null : pickupCountdown(t);
             const compact = o.items.length >= 4;
             const narrow = cols >= 3 && w < 960;
             return (
@@ -212,11 +215,19 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                 display:"flex",flexDirection:"column",overflow:"hidden",
                 boxShadow: hasAggiunta
                   ? `0 0 0 3px #E8341C44, 0 4px 20px #E8341C33`
-                  : isUrgent ? `0 0 0 3px ${fc.border}44,0 4px 20px ${fc.border}33` : `0 2px 10px rgba(0,0,0,0.25)`}}>
+                  : `0 2px 10px rgba(0,0,0,0.25)`}}>{/* niente glow di urgenza: il segnale è il countdown */}
                 <BlockHeader testId={o.isDelivery ? "deadline-header" : "pickup-header"} identity={identity}
                   subtitle={`${o.id}${o.nombre ? " · " + o.nombre : ""}`}
-                  dl={o.isDelivery ? o.dl : null} nowMs={now} control={control}
+                  dl={o.isDelivery ? o.dl : null} nowMs={now} member={giroMs != null}
                   pickupHora={o.horaForno || o.hora || null} pickupTimer={pickupTimer} />
+              {giroMs != null && o.dl && Number.isFinite(giroMs) && o.dl.ms !== giroMs && (
+                <div style={{padding:"5px 10px 0",background:"#fff"}}>
+                  <span data-testid="card-own-limit" title="Hora límite propia de este pedido" style={{fontFamily:"'DM Mono',monospace",
+                    fontSize:12,fontWeight:800,color:"#374151",background:"#F3F4F6",borderRadius:5,padding:"1px 6px",whiteSpace:"nowrap"}}>
+                    límite {o.dl.hhmm}
+                  </span>
+                </div>
+              )}
               {hasAggiunta && (
                 <div style={{background:"#E8341C",color:"#fff",textAlign:"center",
                   padding:"5px",fontSize:13,fontWeight:900,letterSpacing:.5,
@@ -397,7 +408,9 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                     </div>
                   </div>
                 )}
-                <div style={{padding:"4px 10px 10px",background:"#fff"}}>
+                {/* footer: [ LISTO ][ 🕐 ] — l'orologio (priorità) solo dove c'è il controllo: una volta per giro */}
+                <div data-testid="card-footer" style={{padding:"4px 10px 10px",background:"#fff",display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{flex:1,minWidth:0}}>
                   {(() => { const busy = loadingIds.has(o.id); return (
                   <button
                     onClick={()=>{ if (busy) return; Suoni.campanellaDieci(); handleListo(o); }}
@@ -412,6 +425,8 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                     {busy ? "Confirmando…" : "✅ LISTO"}
                   </button>
                   ); })()}
+                  </div>
+                  {control}
                 </div>
               </div>
             );
@@ -431,11 +446,15 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
             <GiroGroup key={"g:" + seg.giroId} giro={seg.cards[0].manualGiro || { id: seg.giroId }}
               label={formatManualGiroLabel(seg.cards[0].manualGiro || { id: seg.giroId })} count={seg.cards.length}
               cols={Math.min(cols, Math.max(1, seg.cards.length))} light={false}
-              control={<PriorityControl orden={seg.cards[0]} windowOrders={seg.cards} onUpdate={handleOffsetChange} light={false} nowMs={now} />}>
-              {seg.cards.map((o) => renderCard(o, null))}
+              time={<TimeCountdown dl={blockDeadline(seg.cards, now)} nowMs={now} fit={false} />}>
+              {/* un solo controllo per giro: sulla prima card (seg.cards[0], a cui va l'offset di tutto il blocco) */}
+              {seg.cards.map((o, i) => renderCard(o, i === 0
+                ? <PriorityControl variant="clock" orden={seg.cards[0]} windowOrders={seg.cards} onUpdate={handleOffsetChange} light={false} nowMs={now}
+                    title={`Prioridad del GIRO ${formatManualGiroLabel(seg.cards[0].manualGiro || { id: seg.giroId })} (todo el giro)`} />
+                : null, giroBlockMs(seg.cards)))}
             </GiroGroup>
           ) : renderCard(seg.card, seg.card.isDelivery
-              ? <PriorityControl orden={seg.card} onUpdate={handleOffsetChange} light={false} nowMs={now} /> : null))}
+              ? <PriorityControl variant="clock" orden={seg.card} onUpdate={handleOffsetChange} light={false} nowMs={now} /> : null))}
         </div>
       }
     </div>

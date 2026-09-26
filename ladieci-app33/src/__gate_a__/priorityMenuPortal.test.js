@@ -1,7 +1,8 @@
 /**
  * [KDS tablet] Regressione 58fb386: il menu ± (5…50) era figlio del BlockHeader (height 88, overflow:hidden) e veniva
  * tagliato → l'operatore non lo vedeva. Il menu ora vive in un portal su document.body, position:fixed.
- * Contratto: bottoni invariati nell'header, menu fuori da ogni contenitore clippante, outside-click chiude, un tocco
+ * [KDS 🕐] il controllo è ora un solo bottone orologio nel footer della card (accanto a LISTO).
+ * Contratto: menu fuori da ogni contenitore clippante, outside-click chiude, un tocco
  * DENTRO il menu non lo chiude prima della scelta, valore assoluto inviato una volta (anche per il GIRO).
  */
 import React from "react";
@@ -54,15 +55,22 @@ const pointerdown = (target) => act(async () => { target.dispatchEvent(new Event
 const tap = async (target) => { await pointerdown(target); await act(async () => { target.click(); await Promise.resolve(); await Promise.resolve(); }); };
 const HEADERS = '[data-testid="block-header"],[data-testid="deadline-header"],[data-testid="giro-group"],[data-testid="kitchen-block"]';
 
+const CLOCK = 'button[aria-label="Prioridad en la cola"]';
+const opt = (dir, m) => menuEl().querySelector(`button[data-dir="${dir}"][aria-label="${dir === "sub" ? "Adelantar" : "Retrasar"} ${m} min"]`);
+const IN_GIRO = '[data-giro="mg_260921_1"],[data-testid="giro-group"]';
+
 describe.each([
   ["Pizzeria", () => <PanelCocina ordenes={ORDERS()} onListo={() => {}} onClose={() => {}} />],
   ["Cocina", () => <TabCocina ordenes={ORDERS()} onListo={() => {}} />],
-])("%s — menu ± fuori dal clipping del banner", (name, view) => {
-  test("− e + aprono un menu in portal su body (fixed), mai dentro header/card con overflow:hidden", async () => {
+])("%s — menu priorità fuori dal clipping del banner", (name, view) => {
+  test("🕐 nel footer (non nell'header) apre UN menu in portal su body (fixed) con entrambe le direzioni", async () => {
     const el = await mount(view());
-    for (const label of ["Adelantar en la cola", "Retrasar en la cola"]) {
-      const btn = el.querySelector(`button[aria-label="${label}"]`);
-      expect(btn.closest(HEADERS)).toBeTruthy();                        // il bottone resta dov'era
+    expect(el.querySelectorAll('button[aria-label="Adelantar en la cola"],button[aria-label="Retrasar en la cola"]')).toHaveLength(0);
+    const clocks = [...el.querySelectorAll(CLOCK)];
+    expect(clocks).toHaveLength(2);                                      // 1 per il GIRO + 1 per #003
+    for (const btn of clocks) {
+      expect(btn.closest('[data-testid="card-footer"]')).toBeTruthy();   // accanto a LISTO
+      expect(btn.closest('[data-testid="block-header"],[data-testid="deadline-header"]')).toBeNull();
       await tap(btn);
       const m = menuEl();
       expect(m).toBeTruthy();
@@ -71,44 +79,43 @@ describe.each([
       expect(container.contains(m)).toBe(false);
       expect(m.style.position).toBe("fixed");
       expect(Number(m.style.zIndex)).toBeGreaterThan(800);              // sopra l'overlay Pizzeria (zIndex 800)
+      expect(m.querySelectorAll('button[data-dir="sub"]').length).toBeGreaterThan(0);
+      expect(m.querySelectorAll('button[data-dir="add"]').length).toBeGreaterThan(0);
       await pointerdown(document.body);                                  // outside click → chiude
       expect(menuEl()).toBeNull();
     }
   });
 
-  test("tocco dentro il menu non lo chiude prima della scelta; 5 / −10 / Sin prioridad inviano il valore assoluto", async () => {
+  test("tocco dentro il menu non lo chiude prima della scelta; +5 / −10 / Sin prioridad inviano il valore assoluto", async () => {
     const el = await mount(view());
-    const btns = [...el.querySelectorAll('button[aria-label="Retrasar en la cola"]')];
-    expect(btns).toHaveLength(2);                                        // 1 per il GIRO + 1 per #003
-    const single = btns.find((b) => !b.closest('[data-giro="mg_260921_1"],[data-testid="giro-group"]'));
-    const sub = single.parentElement.querySelector('button[aria-label="Adelantar en la cola"]');
+    const single = [...el.querySelectorAll(CLOCK)].find((b) => !b.closest(IN_GIRO));
 
     await tap(single);
-    await pointerdown(item("5"));
+    await pointerdown(opt("add", 5));
     expect(menuEl()).toBeTruthy();                                       // pointerdown nel portal ≠ outside
-    await act(async () => { item("5").click(); await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { opt("add", 5).click(); await Promise.resolve(); await Promise.resolve(); });
     expect(api.setUiOffset).toHaveBeenLastCalledWith("#003", 5);
     expect(menuEl()).toBeNull();
 
-    await tap(sub); await tap(item("10"));
+    await tap(single); await tap(opt("sub", 10));
     expect(api.setUiOffset).toHaveBeenLastCalledWith("#003", -10);
 
-    await tap(sub); await tap(item("Sin prioridad"));
+    await tap(single); await tap(item("Sin prioridad"));
     expect(api.setUiOffset).toHaveBeenLastCalledWith("#003", 0);
     expect(api.setUiOffset).toHaveBeenCalledTimes(3);
   });
 
-  test("GIRO: un solo controllo, valore applicato una volta sul primo membro; orari e header invariati", async () => {
+  test("GIRO: un solo 🕐, valore applicato una volta sul primo membro; orari e header invariati", async () => {
     const el = await mount(view());
-    const giroBtn = [...el.querySelectorAll('button[aria-label="Retrasar en la cola"]')]
-      .find((b) => b.closest('[data-giro="mg_260921_1"],[data-testid="giro-group"]'));
+    const giroBtns = [...el.querySelectorAll(CLOCK)].filter((b) => b.closest(IN_GIRO));
+    expect(giroBtns).toHaveLength(1);
     const timesBefore = [...el.querySelectorAll('[data-testid="block-main-time"]')].map((t) => t.textContent).sort();
-    await tap(giroBtn); await tap(item("10"));
+    await tap(giroBtns[0]); await tap(opt("add", 10));
     expect(api.setUiOffset).toHaveBeenCalledTimes(1);
     expect(api.setUiOffset).toHaveBeenCalledWith("#001", 10);
     expect([...el.querySelectorAll('[data-testid="block-main-time"]')].map((t) => t.textContent).sort()).toEqual(timesBefore);
     for (const h of el.querySelectorAll('[data-testid="block-header"],[data-testid="deadline-header"]')) {
-      expect(h.style.height).toBe("88px");
+      expect(h.style.height).toBe(h.getAttribute("data-member") === "1" ? "36px" : "88px");   // membro GIRO Cocina = 1 riga
       expect(h.style.overflow).toBe("hidden");                           // il banner NON è stato toccato
     }
   });

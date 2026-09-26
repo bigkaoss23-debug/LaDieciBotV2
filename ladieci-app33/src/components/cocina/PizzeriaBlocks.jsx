@@ -1,4 +1,5 @@
-import { zoneMeta, ZONA_MIXTA, DEADLINE_LABEL } from './kitchenVisual';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { zoneMeta, ZONA_MIXTA } from './kitchenVisual';
 import { orderDeadlineMs, formatMadridHHMM } from './manualGiroCocina';
 import { blockZone, blockDeadline, countdownLabel } from './kitchenPacking';
 
@@ -9,8 +10,9 @@ import { blockZone, blockDeadline, countdownLabel } from './kitchenPacking';
 //     È lo stesso delivery_deadline_at già usato dalla Pizzeria per la singola card, preso al minimo sul
 //     blocco: nessuna formula nuova, nessun secondo timestamp di business. Le deadline individuali restano
 //     intatte nei dati e, quando differiscono, compaiono in piccolo sulla card del membro.
-// §11 countdown COMPATTO ("−43 min" / "+8 min") attaccato all'ora, non disperso altrove.
-// §12 RITIRO → "RECOGIDA": contrasto dedicato, orario di preparación, NESSUN countdown di entrega.
+// §11 countdown COMPATTO ("−43 min" / "+8 min") attaccato all'ora, non disperso altrove: box grande quanto l'ora.
+// §12 RITIRO → "RECOGIDA": contrasto dedicato, orario di preparación, NESSUN countdown di entrega: al suo posto,
+//     grande come quello del delivery, il timer di ritiro già esistente (calcTimer).
 
 export const PICKUP = Object.freeze({ id: "RECOGIDA", nome: "RECOGIDA", color: "#0369A1", pickup: true });
 
@@ -21,28 +23,130 @@ export const blockIdentity = (cards = []) => {
   return z.mixed ? ZONA_MIXTA : z;
 };
 
-const stateTheme = (state) => (state === "late"
-  ? { chip: "#B91C1C", ink: "#FFFFFF" }
-  : state === "near" ? { chip: "#B45309", ink: "#FFFFFF" } : null);
+// Colore del COUNTDOWN: pura presentazione sui ms rimanenti allo stesso delivery_deadline_at. deadlineState (e
+// quindi LÍMITE / URGENTE / TARDE, ordinamento, finestra del +) NON cambia: qui si sceglie solo il colore della pillola.
+//   > 15 min neutro · ≤ 15 giallo · ≤ 10 rosso · oltre la deadline rosso scuro. Niente bordi, niente glow.
+// È l'UNICO segnale temporale forte: la card non si colora, l'etichetta URGENTE/TARDE resta piccola e testuale.
+export const COUNTDOWN_WARN_MIN = 15;
+export const COUNTDOWN_ALERT_MIN = 10;
+export const countdownTheme = (remainingMs) => {
+  if (!Number.isFinite(remainingMs) || remainingMs > COUNTDOWN_WARN_MIN * 60000) {
+    return { level: "normal", bg: "rgba(0,0,0,0.22)", ink: "#FFFFFF", shadow: true };
+  }
+  if (remainingMs > COUNTDOWN_ALERT_MIN * 60000) return { level: "warn", bg: "#FACC15", ink: "#1A1200", shadow: false };
+  if (remainingMs >= 0) return { level: "alert", bg: "#DC2626", ink: "#FFFFFF", shadow: false };
+  return { level: "late", bg: "#7F1D1D", ink: "#FFFFFF", shadow: false };
+};
+
+// RECOGIDA: il countdown è ESATTAMENTE il timer di ritiro già esistente (calcTimer di TabListos, invariato):
+// stesso testo "MM:SS" ("-MM:SS" = oltre l'orario), qui solo reso leggibile. I ms rimanenti servono SOLO al colore
+// della pillola (stesse soglie del delivery); senza orario il timer conta dall'ordine → nessuna soglia, TARDE se scaduto.
+export const pickupCountdown = (t) => {
+  if (!t) return null;
+  const text = `${t.scaduto && t.conOrario ? "-" : ""}${String(t.mm).padStart(2, "0")}:${String(t.ss).padStart(2, "0")}`;
+  const abs = (t.mm * 60 + t.ss) * 1000;
+  const ms = t.conOrario ? (t.scaduto ? -abs : abs) : (t.scaduto ? -1 : NaN);
+  return { text, ms, late: !!t.scaduto, conOrario: !!t.conOrario };
+};
+
+const CAP_H = 11;
+const NUM_H = 34;
+const PILL_H = 34;
+const CH = 0.62;    // larghezza carattere monospace in em (DM Mono 0.6 + margine)
+const TIME_PX = 31, CD_PX = 22, UNIT_PX = 13, MIN_TIME = 24, MIN_CD = 17, GAP = 10, PILL_PAD = 9;
+const STATE_TEXT = { normal: "LÍMITE", near: "URGENTE", late: "TARDE" };
+
+// larghezza reale disponibile (ResizeObserver; assente in jsdom → dimensioni base)
+const useWidthOf = () => {
+  const ref = useRef(null);
+  const [w, setW] = useState(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el); setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w];
+};
+
+// Riga orari (header blocco / card Cocina / header GIRO Cocina):   LÍMITE            ← etichetta piccola
+//                                                                  18:08  [ −19 min ] ← ora 31px · countdown 22px
+// La pillola sta ACCANTO all'ora ed è chiaramente secondaria; i numeri scalano sulla larghezza reale (mai tagliati).
+// `fit={false}` (header GIRO Cocina, spazio abbondante): niente adattamento — la riga misurerebbe solo se stessa.
+export const TimeCountdown = ({ pickup = false, dl = null, nowMs = null, pickupHora = null, pickupTimer = null, height = 48, fit = true }) => {
+  const st = (dl && dl.state) || "normal";
+  const cd = pickup ? null : countdownLabel(dl && dl.ms, nowMs);
+  const pk = pickup ? pickupTimer : null;
+  const cdt = countdownTheme(pickup ? (pk ? pk.ms : NaN) : (dl && Number.isFinite(dl.ms) && Number.isFinite(nowMs) ? dl.ms - nowMs : NaN));
+  const [ref, w] = useWidthOf();
+
+  const timeText = pickup ? (pickupHora || "—") : (dl ? dl.hhmm : "—");
+  const cdNum = pickup ? (pk ? pk.text : "") : (cd ? cd.text.replace(/ min$/, "") : "");
+  const unitW = !pickup && cd ? UNIT_PX * CH * 4 : 0;
+  let timePx = TIME_PX, cdPx = CD_PX;
+  if (fit && Number.isFinite(w) && w > 0) {
+    const tChars = Math.max(5, timeText.length), cChars = Math.max(3, cdNum.length);
+    const pillW = (px) => (cdNum ? 2 * PILL_PAD + cChars * CH * px + unitW : 0);
+    const room = w - tChars * CH * TIME_PX - (cdNum ? GAP : 0);
+    if (cdNum && pillW(CD_PX) > room) cdPx = Math.max(MIN_CD, Math.floor((room - 2 * PILL_PAD - unitW) / (cChars * CH)));
+    const left = w - pillW(cdPx) - (cdNum ? GAP : 0);
+    if (tChars * CH * TIME_PX > left) timePx = Math.max(MIN_TIME, Math.floor(left / (tChars * CH)));
+  }
+  const num = { whiteSpace: "nowrap", fontFamily: "'DM Mono',monospace", fontWeight: 900, lineHeight: `${NUM_H}px`, letterSpacing: -.5 };
+  const cap = { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0,
+    fontSize: 10, fontWeight: 900, letterSpacing: .6, lineHeight: `${CAP_H}px`, height: CAP_H, opacity: st === "normal" ? .8 : 1 };
+  // ordine DOM storico: delivery "19:08 URGENTE −43 min", RECOGIDA "HORA 🕐 21:20 07:59"; l'etichetta sale sopra con `order`
+  const caption = pickup ? (
+    <span style={{ ...cap, display: "flex", alignItems: "center", gap: 4, order: -1, opacity: .8 }}>
+      <span style={{ order: 1 }}>HORA</span><span data-testid="pickup-tag" style={{ fontSize: 10 }}>🕐</span>
+    </span>
+  ) : (
+    <span data-testid="block-state" style={{ ...cap, order: -1 }}>{STATE_TEXT[st]}</span>
+  );
+  return (
+    <div ref={ref} data-testid="block-time-row" style={{ display: "flex", alignItems: "center", gap: GAP, height, minWidth: 0, overflow: "hidden" }}>
+      <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 0 }}>
+        {pickup && caption}
+        <span data-testid="block-main-time" title={pickup ? "Hora de recogida" : "Hora límite de entrega"}
+          style={{ ...num, fontSize: timePx }}>{timeText}</span>
+        {!pickup && caption}
+      </div>
+      {cdNum && (
+        <div data-testid="block-countdown-box" data-level={cdt.level}
+          title={pickup ? (pk && !pk.conOrario ? "Desde la orden" : "Tiempo hasta la recogida") : "Tiempo hasta la hora límite"} style={{
+          height: PILL_H, marginTop: CAP_H, boxSizing: "border-box", borderRadius: 8, padding: `0 ${PILL_PAD}px`, flexShrink: 0,   // in asse con l'ora
+          display: "flex", alignItems: "center", background: cdt.bg, color: cdt.ink,
+          textShadow: cdt.shadow ? "0 1px 2px rgba(0,0,0,0.35)" : "none",
+        }}>
+          <span data-testid={pickup ? "pickup-prep" : "block-countdown"} style={{ ...num, lineHeight: `${PILL_H}px` }}>
+            <span style={{ fontSize: cdPx }}>{cdNum}</span>
+            {unitW > 0 && <span style={{ fontSize: UNIT_PX, letterSpacing: 0 }}> min</span>}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // Header del blocco (Pizzeria e Cocina): ALTEZZA FISSA, identica per zona, GIRO e RECOGIDA — mai va a capo.
-//   riga 1 (24px):  📍 CENTRO · 3 pedidos / #id · cliente        [GIRO G1]
-//   riga 2 (48px):  LÍMITE|URGENTE|TARDE  −43 min                [−][+]
-//                   19:08
-// Ordine DOM del gruppo orario = ora → stato → countdown (il testo resta "19:08 URGENTE −43 min"); la posizione
-// visiva la decide la griglia. Testi eccezionalmente lunghi → ellissi, la geometria non cambia.
+//   riga 1 (24px):  📍 CENTRO · 3 pedidos / #id · cliente        [GIRO G1]      ← DOVE / TIPO
+//   riga 2 (48px):  LÍMITE                                                      ← QUANTO / QUANDO
+//                   18:08  [ −19 min ]
+// Il controllo di priorità NON sta nell'header: è il bottone 🕐 nel footer della card, accanto a LISTO.
+// `member` (card dentro un GIRO in Cocina): SOLO riga 1 (zona + #id · cliente) — ora, countdown e stato vivono una
+// volta sola, nell'header del giro; il proprio límite, se diverso, è una mini-riga nella card (TabCocina).
 export const HEADER_H = 88;
+export const MEMBER_H = 36;
 const ROW1_H = 24;
 const ROW2_H = 48;
-const STATE_TEXT = { normal: "LÍMITE", near: "URGENTE", late: "TARDE" };
-export const BlockHeader = ({ identity, count = null, subtitle = null, dl, nowMs, control, pickupHora, pickupTimer = null, giroLabel = null, testId = "block-header" }) => {
+export const BlockHeader = ({ identity, count = null, subtitle = null, dl, nowMs, pickupHora, pickupTimer = null, giroLabel = null, member = false, testId = "block-header" }) => {
+  const pickup = !!identity.pickup;
   const st = (dl && dl.state) || "normal";
-  const cd = identity.pickup ? null : countdownLabel(dl && dl.ms, nowMs);
-  const th = stateTheme(st);
   const cell = { minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
   return (
-    <div data-testid={testId} data-state={st} data-pickup={identity.pickup ? "1" : "0"} style={{
-      background: identity.color, color: "#FFFFFF", padding: "6px 9px", height: HEADER_H, boxSizing: "border-box",
+    <div data-testid={testId} data-state={st} data-pickup={pickup ? "1" : "0"} data-member={member ? "1" : undefined} style={{
+      background: identity.color, color: "#FFFFFF", padding: "6px 9px", height: member ? MEMBER_H : HEADER_H, boxSizing: "border-box",
       textShadow: "0 1px 2px rgba(0,0,0,0.35)",   // leggibile anche sulle zone chiare (BUENAVISTA, MARINAS)
       display: "flex", flexDirection: "column", gap: 4, overflow: "hidden", flexShrink: 0,
     }}>
@@ -51,7 +155,7 @@ export const BlockHeader = ({ identity, count = null, subtitle = null, dl, nowMs
           ...cell, flexShrink: 0, maxWidth: "70%", background: identity.color,
           fontSize: 18, fontWeight: 900, letterSpacing: .4, lineHeight: `${ROW1_H}px`,
         }}>
-          {identity.pickup ? "🏪 " : "📍 "}{identity.nome}
+          {pickup ? "🏪 " : "📍 "}{identity.nome}
         </span>
         {count != null && (
           <span data-testid="block-count" style={{ ...cell, fontSize: 13, fontWeight: 800, opacity: .9 }}>
@@ -69,40 +173,7 @@ export const BlockHeader = ({ identity, count = null, subtitle = null, dl, nowMs
           }}>{giroLabel}</span>
         )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, height: ROW2_H, minWidth: 0 }}>
-        {/* ora principale + stato + countdown: un solo gruppo, mai separati */}
-        {identity.pickup ? (
-          <span style={{ flex: 1, minWidth: 0, display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gridTemplateRows: "16px 32px", columnGap: 6, alignItems: "center" }}>
-            <span style={{ ...cell, gridArea: "1 / 1 / 2 / 3", fontSize: 11, fontWeight: 900, letterSpacing: .8, opacity: .85 }}>HORA</span>
-            <span data-testid="pickup-tag" style={{ gridArea: "2 / 1", fontSize: 22, lineHeight: 1 }}>🕐</span>
-            <span data-testid="block-main-time" title="Hora de recogida" style={{
-              ...cell, gridArea: "2 / 2", fontFamily: "'DM Mono',monospace", fontSize: 32, fontWeight: 900, lineHeight: "32px",
-            }}>{pickupHora || "—"}</span>
-            {pickupTimer && (
-              <span data-testid="pickup-prep" style={{ ...cell, gridArea: "1 / 2", justifySelf: "end", fontFamily: "'DM Mono',monospace", fontSize: 12,
-                fontWeight: 900, lineHeight: "16px", background: "rgba(255,255,255,0.22)", borderRadius: 6, padding: "0 6px" }}>{pickupTimer}</span>
-            )}
-          </span>
-        ) : (
-          <span style={{ flex: 1, minWidth: 0, display: "grid", gridTemplateColumns: "minmax(0,auto) auto", justifyContent: "start", gridTemplateRows: "16px 32px", columnGap: 5, alignItems: "center" }}>
-            <span data-testid="block-main-time" title="Hora límite de entrega" style={{
-              ...cell, gridArea: "2 / 1 / 3 / 3", fontFamily: "'DM Mono',monospace", fontSize: 32, fontWeight: 900, lineHeight: "32px",
-            }}>{dl ? dl.hhmm : "—"}</span>
-            <span data-testid="block-state" style={{
-              ...cell, gridArea: "1 / 1", fontSize: 10, fontWeight: 900, letterSpacing: .4, lineHeight: "16px",
-              ...(th ? { background: th.chip, color: th.ink, borderRadius: 5, padding: "0 5px" } : { opacity: .85 }),
-            }}>{STATE_TEXT[st]}</span>
-            {cd && (
-              <span data-testid="block-countdown" style={{
-                whiteSpace: "nowrap", gridArea: "1 / 2", justifySelf: "start",
-                background: cd.late ? "#7F1D1D" : "rgba(255,255,255,0.22)", borderRadius: 6, padding: "0 5px",
-                fontFamily: "'DM Mono',monospace", fontSize: 12, fontWeight: 900, lineHeight: "16px",
-              }}>{cd.text}</span>
-            )}
-          </span>
-        )}
-        {control && <span style={{ flexShrink: 0 }}>{control}</span>}
-      </div>
+      {!member && <TimeCountdown pickup={pickup} dl={dl} nowMs={nowMs} pickupHora={pickupHora} pickupTimer={pickupTimer} height={ROW2_H} />}
     </div>
   );
 };
@@ -156,7 +227,7 @@ export const ItemRow = ({ qty, name, alias = "", ing = "", variant = "", accent 
 // occupa la riga intera e manda a capo INTERNAMENTE: resta un solo box, mai spezzato tra due righe.
 // alignItems "start": una card con un solo prodotto NON si stira all'altezza della più alta — lo spazio
 // verticale recuperato è quello che il pizzaiolo usa per vedere più ordini senza scorrere.
-export const KitchenBlock = ({ cards, width, cols, nowMs, control, children, giroId = null, giroLabel = null, pickupHora = null }) => {
+export const KitchenBlock = ({ cards, width, cols, nowMs, children, giroId = null, giroLabel = null, pickupHora = null, pickupTimer = null }) => {
   const identity = blockIdentity(cards);
   const dl = identity.pickup ? null : blockDeadline(cards, nowMs);
   const inner = Math.max(1, Math.min(width, cards.length));
@@ -165,7 +236,7 @@ export const KitchenBlock = ({ cards, width, cols, nowMs, control, children, gir
       gridColumn: `span ${width}`, border: `3px solid ${identity.color}`, borderRadius: 14, overflow: "hidden",
       background: "#FFFFFF", minWidth: 0, display: "flex", flexDirection: "column",   // fondo libero = bianco
     }}>
-      <BlockHeader identity={identity} count={cards.length} dl={dl} nowMs={nowMs} control={control} pickupHora={pickupHora} giroLabel={giroLabel} />
+      <BlockHeader identity={identity} count={cards.length} dl={dl} nowMs={nowMs} pickupHora={pickupHora} pickupTimer={pickupTimer} giroLabel={giroLabel} />
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${inner},1fr)`, gap: 7, padding: 7, alignItems: "start" }}>
         {children}
       </div>
@@ -173,13 +244,12 @@ export const KitchenBlock = ({ cards, width, cols, nowMs, control, children, gir
   );
 };
 
-// Riga d'identità della card DENTRO il blocco: #id, cliente, stato, e il PROPRIO límite solo quando differisce
-// dall'orario principale del blocco (così non ci sono più tre orari giganti che competono).
+// Riga d'identità della card DENTRO il blocco: #id, cliente e il PROPRIO límite solo quando differisce
+// dall'orario principale del blocco (così non ci sono più tre orari giganti che competono). Nessun badge di stato:
+// URGENTE / TARDE vive una sola volta, piccolo, nell'header del blocco — il segnale forte è il countdown.
 export const CardIdentity = ({ o, zone, blockMs, showZone }) => {
   const own = orderDeadlineMs(o);
   const differs = Number.isFinite(own) && Number.isFinite(blockMs) && own !== blockMs;
-  const st = (o.dl && o.dl.state) || "normal";
-  const th = stateTheme(st);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", rowGap: 3, padding: "5px 9px", background: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
       <span style={{ fontFamily: "'DM Mono',monospace", fontWeight: 900, fontSize: 17, color: "#111827" }}>{o.id}</span>
@@ -197,11 +267,6 @@ export const CardIdentity = ({ o, zone, blockMs, showZone }) => {
           fontFamily: "'DM Mono',monospace", fontSize: 12, fontWeight: 800, color: "#374151",
           background: "#F3F4F6", borderRadius: 5, padding: "1px 6px", whiteSpace: "nowrap",
         }}>límite {formatMadridHHMM(own)}</span>
-      )}
-      {th && (
-        <span data-testid="card-state" style={{
-          background: th.chip, color: th.ink, borderRadius: 5, padding: "1px 7px", fontSize: 11, fontWeight: 900, letterSpacing: .4, whiteSpace: "nowrap",
-        }}>{DEADLINE_LABEL[st]}</span>
       )}
     </div>
   );
