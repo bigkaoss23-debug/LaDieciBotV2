@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-17T09:30:29.226Z",
+  "generatedAt": "2026-09-28T07:14:25.386Z",
   "entries": [
     {
       "file": "migrations/001_delivery_system.sql",
@@ -49,7 +49,7 @@
     {
       "file": "src/api.js",
       "term": "oggi",
-      "count": 18
+      "count": 17
     },
     {
       "file": "src/api.js",
@@ -357,6 +357,11 @@
       "count": 1
     },
     {
+      "file": "src/components/economia/EconomiaPendientes.postCloseCancellation.test.js",
+      "term": "ritiro",
+      "count": 1
+    },
+    {
       "file": "src/components/economiaLedgerGate.test.js",
       "term": "consegna",
       "count": 1
@@ -429,12 +434,12 @@
     {
       "file": "src/components/EconomiaPage.jsx",
       "term": "oggi",
-      "count": 38
+      "count": 37
     },
     {
       "file": "src/components/EconomiaPage.jsx",
       "term": "ordini",
-      "count": 55
+      "count": 54
     },
     {
       "file": "src/components/EconomiaPage.jsx",
@@ -463,11 +468,6 @@
     },
     {
       "file": "src/components/EconomiaPage.jsx",
-      "term": "servizio",
-      "count": 1
-    },
-    {
-      "file": "src/components/EconomiaPage.jsx",
       "term": "settimana",
       "count": 2
     },
@@ -478,18 +478,8 @@
     },
     {
       "file": "src/components/entregas/TabEntregas.jsx",
-      "term": "chiudi",
-      "count": 1
-    },
-    {
-      "file": "src/components/entregas/TabEntregas.jsx",
-      "term": "chiuso",
-      "count": 1
-    },
-    {
-      "file": "src/components/entregas/TabEntregas.jsx",
       "term": "consegna",
-      "count": 16
+      "count": 15
     },
     {
       "file": "src/components/entregas/TabEntregas.jsx",
@@ -504,17 +494,12 @@
     {
       "file": "src/components/entregas/TabEntregas.jsx",
       "term": "ordine",
-      "count": 38
+      "count": 26
     },
     {
       "file": "src/components/entregas/TabEntregas.jsx",
       "term": "ordini",
       "count": 42
-    },
-    {
-      "file": "src/components/entregas/TabEntregas.jsx",
-      "term": "pagamento",
-      "count": 2
     },
     {
       "file": "src/components/entregas/TabEntregas.jsx",
@@ -579,7 +564,7 @@
     {
       "file": "src/components/NuevoPedidoModal.jsx",
       "term": "consegna",
-      "count": 76
+      "count": 75
     },
     {
       "file": "src/components/NuevoPedidoModal.jsx",
@@ -647,11 +632,6 @@
       "count": 1
     },
     {
-      "file": "src/components/ordenes/OrdenCard.jsx",
-      "term": "ordini",
-      "count": 1
-    },
-    {
       "file": "src/components/ordenes/OrdenCard.orderFlow.test.js",
       "term": "consegna",
       "count": 1
@@ -664,7 +644,7 @@
     {
       "file": "src/components/ordenes/TabListos.jsx",
       "term": "consegna",
-      "count": 8
+      "count": 5
     },
     {
       "file": "src/components/ordenes/TabListos.jsx",
@@ -674,12 +654,12 @@
     {
       "file": "src/components/ordenes/TabListos.jsx",
       "term": "ordine",
-      "count": 13
+      "count": 9
     },
     {
       "file": "src/components/ordenes/TabListos.jsx",
       "term": "ordini",
-      "count": 7
+      "count": 6
     },
     {
       "file": "src/components/ordenes/TabListos.jsx",
@@ -694,7 +674,7 @@
     {
       "file": "src/components/ordenes/TabListos.jsx",
       "term": "ritiro",
-      "count": 9
+      "count": 8
     },
     {
       "file": "src/components/ordenes/TabListos.jsx",
@@ -774,7 +754,7 @@
     {
       "file": "src/components/ServicioPage.jsx",
       "term": "chiudi",
-      "count": 48
+      "count": 1
     },
     {
       "file": "src/components/ServicioPage.jsx",
@@ -804,7 +784,7 @@
     {
       "file": "src/components/ServicioPage.jsx",
       "term": "ordini",
-      "count": 17
+      "count": 14
     },
     {
       "file": "src/components/ServicioPage.jsx",
@@ -824,7 +804,7 @@
     {
       "file": "src/components/ServicioPage.jsx",
       "term": "servizio",
-      "count": 8
+      "count": 1
     },
     {
       "file": "src/components/ServicioPage.jsx",
@@ -834,7 +814,7 @@
     {
       "file": "src/components/ServicioPage.jsx",
       "term": "storico",
-      "count": 6
+      "count": 5
     },
     {
       "file": "src/components/ShadowPreviewPanel.jsx",
@@ -1145,11 +1125,6 @@
       "file": "src/printing/normalizeOrderForTicket.js",
       "term": "ritiro",
       "count": 3
-    },
-    {
-      "file": "src/serviceSessionGate.static.test.js",
-      "term": "chiudi",
-      "count": 4
     },
     {
       "file": "src/serviceSessionGate.static.test.js",
