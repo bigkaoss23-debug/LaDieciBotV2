@@ -89,8 +89,10 @@ const PREVIOUS_SERVICE_PENDING = {
 
 // EXACTLY what the pre-close scan returns for a delivery still out: the delivery state and the money owed are two facts.
 const deliveryRow = (o = {}) => ({ kind: 'order', wa_id: '', nombre: '#017', hora: '21:11', stato: 'EN_ENTREGA', entrega: 'SIN_CONFIRMAR', unpaidAmount: 12.5, ...o });
+// R4B -- the scan names the service the modal finalizes; the close is bound to that id.
+const SCANNED_SERVICE = '4e2dd521-745b-4582-84b7-e71d45269180';
 function scan({ orders = 0, tables = 0, attivi = [] } = {}) {
-  return { completati: { [SCAN_DONE_KEY]: 5, conv: 0 }, attivi, blocking: { orders, tables } };
+  return { service_session_id: SCANNED_SERVICE, completati: { [SCAN_DONE_KEY]: 5, conv: 0 }, attivi, blocking: { orders, tables } };
 }
 
 function wireApi({ scans, closeResponse = { success: true, summary: {} } }) {
@@ -188,7 +190,7 @@ describe('the close itself no longer speaks about a trip', () => {
     await openFinalizar(container);
     const confirm = Array.from(container.querySelectorAll('button')).find((b) => b.textContent.includes(CONFIRM_WITH_PENDING));
     await click(confirm);
-    expect(api.get).toHaveBeenCalledWith(CLOSE_ACTION, {});
+    expect(api.get).toHaveBeenCalledWith(CLOSE_ACTION, { serviceSessionId: SCANNED_SERVICE });
   });
 
   test('message mapping: no message tells the operator to wait for the driver; the trip helper is gone', () => {

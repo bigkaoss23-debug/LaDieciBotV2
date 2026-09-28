@@ -100,6 +100,16 @@ const ERROR_MESSAGES = Object.freeze({
   ORDER_ADJUSTMENT_NO_CHANGE: "El importe indicado es igual al actual.",
   MESA_ADJUSTMENT_EXCEEDS_OBLIGATION: "El nuevo importe no puede ser mayor que el actual.",
   MESA_ADJUSTMENT_STALE_OBLIGATION: "El importe cambió mientras tanto. Actualiza y vuelve a intentarlo.",
+  ORDER_ECONOMIC_SERVICE_CLOSED: "El servicio de este pedido ya está cerrado: su importe no se puede corregir. No se guardó nada.",
+  // POST-ASTRA F1 (migration 152) -- a correction of an order whose service is already closed is recorded as a post-close
+  // resolution fact (admin/owner); these are its typed refusals.
+  ORDER_POST_CLOSE_FORBIDDEN: "El servicio de este pedido ya está cerrado: solo un administrador o el propietario puede corregir su importe.",
+  ORDER_POST_CLOSE_STALE_OBLIGATION: "El importe cambió mientras tanto. Actualiza y vuelve a intentarlo.",
+  ORDER_POST_CLOSE_EXCEEDS_OBLIGATION: "El nuevo importe no puede ser mayor que el actual.",
+  ORDER_POST_CLOSE_NO_CHANGE: "El importe indicado es igual al actual.",
+  ORDER_POST_CLOSE_IDEMPOTENCY_CONFLICT: "La corrección no se ha repetido: actualiza y compruébalo.",
+  ORDER_POST_CLOSE_SERVICE_STILL_OPEN: "El servicio de este pedido sigue abierto. Actualiza y vuelve a intentarlo.",
+  ORDER_POST_CLOSE_ORDER_NOT_FOUND: "No se encontró el pedido.",
   MESA_ADJUSTMENT_ORDER_NOT_FOUND: "No se encontró el pedido.",
 });
 

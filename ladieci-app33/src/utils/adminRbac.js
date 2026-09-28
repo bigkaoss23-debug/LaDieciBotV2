@@ -42,6 +42,14 @@ export function canCollectOrderPayment(role) {
   return r === ROLE.ADMIN || r === ROLE.OPERATOR;
 }
 
+// POST-ASTRA F1 -- cancelling a never-handed-over order of a closed service from Economía → Pendientes. UX only: the
+// backend (order_cancel_v1 / order_post_close_obligation_resolution_v1 role gates) decides. Admin and operator: the
+// same audience that takes the money on that surface.
+export function canCancelPendingOrder(role) {
+  const r = normalize(role);
+  return r === ROLE.ADMIN || r === ROLE.OPERATOR;
+}
+
 // Opening the service is the same audience as inspecting the closeout: the
 // person who opens the pizzeria is the operator on shift.
 export function canOpenService(role) {

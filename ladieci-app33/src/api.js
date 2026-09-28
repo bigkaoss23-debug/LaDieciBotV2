@@ -580,6 +580,15 @@ const api = {
   // lo registra il ledger lato server (order_financial_events) e solo lui scrive la
   // colonna. Il parametro resta nella firma per non toccare i call site esistenti, ma
   // è ignorato di proposito — il backend non lo legge più.
+  // POST-ASTRA F1 -- Economía Pendientes "Anular pedido": an order of an already-closed service that was never handed over
+  // (a pickup nobody collected, a failed delivery). The backend routes it to the post-close resolution fact (obligation to 0,
+  // estado ANULADO, one transaction); the display id only locates the row, the permanent orderUid is pinned.
+  anularPedidoPendiente: function(id, orderUid, reason) {
+    return proxyPost({
+      action: 'updateEstado', id, estado: 'ANULADO',
+      reason: reason || '', origin: 'economia_pendientes', expected_order_uid: orderUid,
+    });
+  },
   marcarEntregado: function(id, _cobradoIgnorato, _ordenData, metodo_pago) {
     return proxyPost({
       action: 'marcarEntregado',

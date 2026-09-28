@@ -793,7 +793,8 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
       // NF-1 — an addition bumps the canonical quantity of an identical plain row (never an
       // in-place `q` on the saved row, never a row with different extras/notes/price).
       const merged = replace ? [...(itemsNuevos||[])] : mergeAddedLines(itemsEsistenti, itemsNuevos);
-      const res = await api.post({ action:"updateOrden", id:ordenRef, items:merged, nota:ordenAttuale.nota||"", hora:ordenAttuale.hora||"" });
+      // POST-ASTRA F5 -- expected_items: the list `merged` was computed from; a concurrent committed edit is an explicit conflict.
+      const res = await api.post({ action:"updateOrden", id:ordenRef, items:merged, expected_items:itemsEsistenti, nota:ordenAttuale.nota||"", hora:ordenAttuale.hora||"" });
       if (res && res.success !== false) {
         setOrdenes(prev => prev.map(o => o.id === ordenRef ? {...o, items: merged} : o));
         // Trova il tel del messaggio per bloccare il polling
@@ -905,6 +906,8 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
     endAction(id);
   };
   const modificaOrden = async (o) => {
+    // POST-ASTRA F5 -- the item list the modal was opened with: the edit was computed from it, so the backend must still hold it.
+    const basisItems = ordenModifica && ordenModifica.id === o.id && Array.isArray(ordenModifica.items) ? ordenModifica.items : undefined;
     setOrdenModifica(null);
     logLegacyBypass({
       component: "ServicioPage",
@@ -933,6 +936,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
           api.updateEstado(o.id, o.estado),
           api.post({ action:"updateOrden", id:o.id,
             items: o.items, nota: o.nota, hora: o.hora,
+            ...(basisItems ? { expected_items: basisItems } : {}),
             ...(o.tipo_consegna === "DOMICILIO" ? {
               direccion: o.direccion ?? null,
               zona: o.zona ?? null,
@@ -1221,7 +1225,7 @@ const ServicioPage = ({onBack,onCloseout,ordenes,setOrdenes,waMsgs,setWaMsgs,not
         try {
           let blockedTerminal = null;
           if (nuoviItems && nuoviItems.length > 0) {
-            const resOrden = await api.post({action:"updateOrden", id:ordenId, items:itemsFinali, hora:ordine.hora});
+            const resOrden = await api.post({action:"updateOrden", id:ordenId, items:itemsFinali, expected_items:itemsBase, hora:ordine.hora});
             const parsed = parseOrderWriteRefusal(resOrden);
             if (parsed.blocked) blockedTerminal = parsed;
           }

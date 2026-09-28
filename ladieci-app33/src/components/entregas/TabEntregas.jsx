@@ -7,7 +7,8 @@ import { ORDER_STATES, buildEnEntregaTransition, isDriverOnTheWayState, isWaitin
 import { formatOrderNumber, buildVisibleOrderLabels, resolveVisibleOrderLabel } from '../../utils/orderNumber';
 import { formatClockTime } from '../../components/mesa/mesaFormat';
 import { createCashRequestId } from '../../cash/cashApi';
-import { describeDeliveryConfirmError } from './deliveryConfirmationMessages';
+import { describeDeliveryConfirmError, describeDeliveryConfirmSuccess } from './deliveryConfirmationMessages';
+import { deliveryCollectionView } from './deliveryCollection';
 
 // Helpers tempi: hora consegna ↔ horaForno (= partenza driver = uscita pizza forno)
 const _tm = (t) => { if (!t) return null; const [h,m] = t.split(":").map(Number); return h*60+m; };
@@ -183,6 +184,9 @@ const ZonaOrderRow = ({
   // Sorgente di verità: o.totale (include delivery_fee). Fallback per record legacy.
   const totaleNum = (Number(o.totale) > 0) ? Number(o.totale) : calcTotale(safeItems, o.tipo_consegna || "DOMICILIO");
   const total = totaleNum.toFixed(2);
+  // STALE PAYMENT MIRROR (H2) -- collection is offered from the backend's canonical settlement (financial.outstanding),
+  // never from the cobrado mirror when the settlement is present (see deliveryCollection.js).
+  const collection = deliveryCollectionView(o, totaleNum);
 
   const estadoColor = isEnEntrega ? ORANGE : isListo ? "#22C55E" : isCocina ? "#3B82F6" : "#06B6D4";
   const estadoLabel = isEnEntrega ? "🛵" : isListo ? "✅" : isCocina ? "🔥" : "⏳";
@@ -436,16 +440,16 @@ const ZonaOrderRow = ({
         }}>
           <div style={{ flexBasis: "100%", color: "rgba(255,255,255,0.75)", fontSize: 11.5, lineHeight: 1.4 }}>
             El cliente recibió el pedido.{" "}
-            {o.cobrado
-              ? "El cobro ya está registrado."
-              : `Total ${(Number(o.financial && o.financial.currentObligation) > 0 ? Number(o.financial.currentObligation) : totaleNum).toFixed(2)}€ · aún sin cobrar.`}
+            <span data-testid="entrega-confirmar-cobro" style={collection.tone === "warning" ? { color: "#fbbf24", fontWeight: 700 } : undefined}>
+              {collection.text}
+            </span>
           </div>
           <button data-testid="entrega-confirmar-solo" disabled={isLoading}
             onClick={() => { setConfirmOpen(false); onConfirmarEntrega(o, null); }}
             style={{ padding: "5px 10px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
             Solo entregado
           </button>
-          {!o.cobrado && [["efectivo", "Efectivo"], ["tarjeta", "Tarjeta"], ["bizum", "Bizum"]].map(([method, label]) => (
+          {collection.canCollect && [["efectivo", "Efectivo"], ["tarjeta", "Tarjeta"], ["bizum", "Bizum"]].map(([method, label]) => (
             <button key={method} data-testid={`entrega-confirmar-${method}`} disabled={isLoading}
               onClick={() => { setConfirmOpen(false); onConfirmarEntrega(o, { method }); }}
               style={{ padding: "5px 10px", background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 8, color: "#22C55E", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
@@ -1275,8 +1279,9 @@ const TabEntregas = ({ ordenes = [], notify, setOrdenes }) => {
         setLoadingId(null);
         return;
       }
-      const paidNote = payment ? ` · cobro ${payment.method}` : "";
-      if (notify) notify(`✓ Entrega confirmada${paidNote}`, "#22C55E");
+      // Say what was actually recorded: an already-settled order is delivered WITHOUT a new payment.
+      const outcome = describeDeliveryConfirmSuccess(res, payment);
+      if (notify) notify(`✓ Entrega confirmada${outcome.detail}`, outcome.tone === "warning" ? "#F59E0B" : "#22C55E");
       // The trip stays ACTIVE (a delivery is not the driver's return); only its progress changed.
       reloadTripState();
     } catch (e) {

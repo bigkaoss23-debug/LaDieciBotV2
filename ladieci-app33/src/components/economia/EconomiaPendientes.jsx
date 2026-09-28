@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { C } from '../../constants';
-import { auth } from '../../api';
-import { canCollectOrderPayment } from '../../utils/adminRbac';
+import { auth, api } from '../../api';
+import { canCollectOrderPayment, canCancelPendingOrder } from '../../utils/adminRbac';
 import CheckCashPanel from '../cash/CheckCashPanel';
 import useEconomyPendencies, {
   describeChannel, describeRevisionReason,
@@ -26,6 +26,12 @@ import useEconomyPendencies, {
 //
 // An "Entrega sin confirmar" item (EN_ENTREGA of a closed service) never offers it: a plain collection there would
 // read as a delivery confirmation; its money is collected together with the delivery, in Entregas.
+//
+// POST-ASTRA F1 -- a SECOND action, also only where the backend says so: "Anular pedido" on a Por cobrar item whose
+// `allowedActions` contains 'CANCEL' (a non-Mesa order of an already-closed service that was never handed over: a
+// pickup nobody collected, a delivery that failed after Finalizar). The backend records it as the post-close
+// resolution fact (obligation to 0 + ANULADO, one transaction, the closed service's closeout untouched); the display
+// id only locates the row and the permanent orderUid is pinned. After it, the list is simply re-read.
 //
 // It renders WHATEVER the API returns — the amounts, dates and identities are
 // the reader's, never recomputed or invented here. Presentation-only totals
@@ -108,6 +114,7 @@ function metaOf(item) {
   // finalized while the delivery was still out says so; it is not a statement about the driver.
   if (item.deliveryState === 'SIN_CONFIRMAR') bits.push('Entrega sin confirmar');
   if (item.deliveryState === 'ENTREGADO') bits.push('Entregado');
+  if (item.deliveryState === 'SIN_ENTREGAR') bits.push('Sin entregar');
   const chan = describeChannel(item.channel);
   if (chan && item.channel !== 'MESA') bits.push(chan);
   const phone = realPhone(item);
@@ -144,7 +151,31 @@ const canCollect = (item, role) => Boolean(
   && canCollectOrderPayment(role),
 );
 
-const AmountItem = ({ item, tone, testId, onCollect }) => (
+// "Anular pedido" (POST-ASTRA F1): the backend named the action, the order is not a Mesa, both identities are present
+// (the display id locates the row, the orderUid is pinned) and the role may use it (UX only -- the server decides).
+const canCancel = (item, role) => Boolean(
+  item
+  && Array.isArray(item.allowedActions) && item.allowedActions.includes('CANCEL')
+  && item.channel !== 'MESA'
+  && typeof item.orderUid === 'string' && item.orderUid
+  && item.display && item.display.orderNumber
+  && canCancelPendingOrder(role),
+);
+
+const CANCEL_MESSAGES = Object.freeze({
+  ORDER_IDENTITY_MISMATCH: 'El pedido ya no es el mismo. Recarga la lista.',
+  ORDER_POST_CLOSE_SERVICE_STILL_OPEN: 'El servicio de este pedido sigue abierto: anúlalo desde Pedidos.',
+  ORDER_POST_CLOSE_FORBIDDEN: 'Tu rol no puede anular este pedido.',
+  ORDER_CANCEL_FORBIDDEN: 'Tu rol no puede anular este pedido.',
+  ORDER_POST_CLOSE_IDEMPOTENCY_CONFLICT: 'Este pedido ya se anuló con otro motivo.',
+  ORDER_POST_CLOSE_ORDER_NOT_FOUND: 'Pedido no encontrado.',
+});
+const cancelMessage = (res) => {
+  const code = res && (res.code || res.error);
+  return (code && CANCEL_MESSAGES[code]) || 'No se pudo anular el pedido. No se ha cambiado nada.';
+};
+
+const AmountItem = ({ item, tone, testId, onCollect, onCancel }) => (
   <div data-testid={testId} style={{
     display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0',
     borderBottom: '1px solid rgba(255,255,255,.055)',
@@ -166,6 +197,16 @@ const AmountItem = ({ item, tone, testId, onCollect }) => (
             fontSize: 12, fontWeight: 800, cursor: 'pointer',
           }}>
           Registrar cobro
+        </button>
+      )}
+      {onCancel && (
+        <button type="button" data-testid="pendientes-cancel" onClick={() => onCancel(item)}
+          style={{
+            marginTop: 8, marginLeft: onCollect ? 8 : 0, background: 'transparent', border: '1px solid rgba(255,255,255,.25)',
+            color: LABEL, borderRadius: 999, padding: '6px 14px', minHeight: 34,
+            fontSize: 12, fontWeight: 800, cursor: 'pointer',
+          }}>
+          Anular pedido
         </button>
       )}
     </span>
@@ -239,6 +280,11 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
   const [rawQuery, setRawQuery] = useState('');
   // The pendency whose "Registrar cobro" is open (the Cash V1 surface). null = closed.
   const [collectItem, setCollectItem] = useState(null);
+  // POST-ASTRA F1 -- the pendency whose "Anular pedido" confirmation is open. null = closed.
+  const [cancelItem, setCancelItem] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState('');
   // The value that actually goes on the wire only changes when the operator
   // pauses typing, so the reader is not re-hit on every keystroke.
   const [committedQuery, setCommittedQuery] = useState('');
@@ -264,6 +310,19 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
   const handlePaid = () => {
     reload();
     if (onCollected) { try { onCollected(); } catch (_) { /* the shell's refresh, not the payment */ } }
+  };
+
+  const openCancel = (item) => { setCancelItem(item); setCancelReason(''); setCancelError(''); };
+  const closeCancel = () => { if (!cancelBusy) { setCancelItem(null); setCancelError(''); } };
+  const confirmCancel = async () => {
+    if (!cancelItem || cancelBusy || !cancelReason.trim()) return;
+    setCancelBusy(true); setCancelError('');
+    let res;
+    try { res = await api.anularPedidoPendiente(cancelItem.display.orderNumber, cancelItem.orderUid, cancelReason.trim()); }
+    catch (_) { res = null; }
+    setCancelBusy(false);
+    if (res && res.success === true) { setCancelItem(null); handlePaid(); return; }
+    setCancelError(cancelMessage(res));
   };
 
   return (
@@ -369,7 +428,8 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
                 items={porCobrar} emptyText="Sin saldos pendientes tras cierre operativo."
                 renderItem={(it, i) => (
                   <AmountItem key={it.orderUid || `c-${i}`} item={it} tone={ACCENT} testId="pendientes-item-cobrar"
-                    onCollect={canCollect(it, role) ? setCollectItem : undefined} />
+                    onCollect={canCollect(it, role) ? setCollectItem : undefined}
+                    onCancel={canCancel(it, role) ? openCancel : undefined} />
                 )} />
 
               <Group testId="pendientes-group-devolver" title="Por devolver"
@@ -393,6 +453,41 @@ export default function EconomiaPendientes({ scope = null, scopeLabel = null, on
       {/* ── REGISTRAR COBRO — the existing Cash V1 surface, opened on ONE delivered order. Rendered outside the
           loaded branch on purpose: the list re-reads itself after a payment (loading state) and the panel must not
           unmount under the operator's hands. Delivery, refund and adjustment are OFF: it only records money. */}
+      {/* ── ANULAR PEDIDO (POST-ASTRA F1) — a stated reason is mandatory in the ledger; nothing is sent without one. */}
+      {cancelItem && (
+        <div data-testid="pendientes-cancel-confirm" role="dialog" aria-label="Anular pedido" style={{
+          ...card, borderColor: 'rgba(255,255,255,.2)', marginTop: 10,
+        }}>
+          <div style={{ color: CREAM, fontWeight: 800, fontSize: 13 }}>Anular {identityOf(cancelItem)}</div>
+          <div style={{ color: MUTED, fontSize: 11.5, marginTop: 4, lineHeight: 1.45 }}>
+            El pedido no se entregó. Su importe ({eur(cancelItem.amount)}) deja de estar pendiente; el cierre del servicio no cambia.
+          </div>
+          <input data-testid="pendientes-cancel-reason" type="text" value={cancelReason} maxLength={200}
+            onChange={(e) => setCancelReason(e.target.value)} placeholder="Motivo (obligatorio)" aria-label="Motivo"
+            style={{
+              width: '100%', boxSizing: 'border-box', marginTop: 10, background: 'rgba(255,255,255,.05)',
+              border: '1px solid rgba(255,255,255,.15)', borderRadius: 9, color: CREAM, fontSize: 13, padding: '8px 10px',
+            }} />
+          {cancelError && (
+            <div data-testid="pendientes-cancel-error" style={{ color: C.rosso, fontSize: 12, fontWeight: 700, marginTop: 8 }}>{cancelError}</div>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <button type="button" data-testid="pendientes-cancel-submit" disabled={cancelBusy || !cancelReason.trim()} onClick={confirmCancel}
+              style={{
+                background: 'rgba(232,52,28,.15)', border: '1px solid rgba(232,52,28,.5)', color: '#fff', borderRadius: 999,
+                padding: '6px 14px', minHeight: 34, fontSize: 12, fontWeight: 800,
+                cursor: cancelBusy || !cancelReason.trim() ? 'default' : 'pointer', opacity: cancelBusy || !cancelReason.trim() ? 0.5 : 1,
+              }}>
+              {cancelBusy ? 'Anulando…' : 'Anular pedido'}
+            </button>
+            <button type="button" data-testid="pendientes-cancel-dismiss" disabled={cancelBusy} onClick={closeCancel}
+              style={{ background: 'transparent', border: 'none', color: MUTED, fontSize: 12, fontWeight: 800, cursor: 'pointer', minHeight: 34 }}>
+              Volver
+            </button>
+          </div>
+        </div>
+      )}
+
       {collectItem && (
         <CheckCashPanel
           orderUid={collectItem.orderUid}

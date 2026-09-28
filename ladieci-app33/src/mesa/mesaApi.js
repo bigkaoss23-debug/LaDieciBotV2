@@ -199,6 +199,8 @@ const ERROR_MESSAGES = Object.freeze({
   MESA_TABLE_UNAVAILABLE: "Esta mesa no está disponible.",
   MESA_SESSION_NOT_OPEN: "La cuenta de esta mesa ya no está abierta.",
   MESA_ALREADY_SETTLED: "La cuenta ya está pagada.",
+  // Corrective slice 150 — a comanda marked paid in the old system with no payment recorded in caja.
+  ORDER_PAYMENT_LEGACY_IMPORT_REQUIRED: "Un pedido de esta mesa figura como pagado en el sistema antiguo, pero ese cobro no está registrado en caja. No cobres la mesa: hay que regularizarlo desde administración.",
   MESA_LINE_SELECTION_SETTLED: "Esos productos ya están pagados.",
   MESA_PAYMENT_AMOUNT_INVALID: "El importe no es válido para el saldo pendiente.",
   MESA_LINE_SELECTION_INVALID: "Selecciona productos pendientes de pago.",
@@ -246,6 +248,16 @@ const ERROR_MESSAGES = Object.freeze({
   MESA_ADJUSTMENT_EXCEEDS_OBLIGATION: "Un ajuste solo puede reducir la obligación, nunca aumentarla.",
   MESA_ADJUSTMENT_NO_CHANGE: "El importe es el mismo: no hay ningún ajuste que registrar.",
   MESA_ADJUSTMENT_STALE_OBLIGATION: "La obligación ha cambiado mientras tanto. Actualiza la cuenta y revisa el importe.",
+  ORDER_ECONOMIC_SERVICE_CLOSED: "El servicio de este pedido ya está cerrado: su importe no se puede modificar. No se guardó nada.",
+  // POST-ASTRA F1 (migration 152) -- a correction of an order whose service is already closed is recorded as a post-close
+  // resolution fact (admin/owner); these are its typed refusals.
+  ORDER_POST_CLOSE_FORBIDDEN: "El servicio de este pedido ya está cerrado: solo un administrador o el propietario puede corregir su importe.",
+  ORDER_POST_CLOSE_STALE_OBLIGATION: "El importe cambió mientras tanto. Actualiza y vuelve a intentarlo.",
+  ORDER_POST_CLOSE_EXCEEDS_OBLIGATION: "El nuevo importe no puede ser mayor que el actual.",
+  ORDER_POST_CLOSE_NO_CHANGE: "El importe indicado es igual al actual.",
+  ORDER_POST_CLOSE_IDEMPOTENCY_CONFLICT: "La corrección no se ha repetido: actualiza y compruébalo.",
+  ORDER_POST_CLOSE_SERVICE_STILL_OPEN: "El servicio de este pedido sigue abierto. Actualiza y vuelve a intentarlo.",
+  ORDER_POST_CLOSE_ORDER_NOT_FOUND: "No se encontró el pedido.",
   MESA_ADJUSTMENT_IDEMPOTENCY_CONFLICT: "El ajuste no se ha repetido: actualiza la mesa y compruébalo.",
   MESA_ADJUSTMENT_ORDER_NOT_FOUND: "No se encontró esta comanda. Actualiza la cuenta e inténtalo de nuevo.",
   MESA_ADJUSTMENT_ORDER_MISMATCH: "Esta comanda no pertenece a esta mesa. Actualiza la cuenta.",

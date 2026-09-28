@@ -79,6 +79,17 @@ const normalizeFulfilment = (value) => {
   return normalized;
 };
 
+// STALE PAYMENT MIRROR (H2) -- the customer ticket's PAGADO / PENDIENTE comes from the backend's canonical settlement
+// (financial.payState: the order's current obligation against what the ledger collected) whenever the row carries it.
+// ya_pagado is a mirror a commercial adjustment leaves stale, so it is read only for a row without that settlement (a
+// backend response predating it). Over-collected is 'paid'; a partial payment still leaves the ticket PENDIENTE.
+const CANONICAL_TICKET_PAY_STATUS = Object.freeze({ paid: "PAGADO", partially_paid: "PENDIENTE", unpaid: "PENDIENTE" });
+const ticketPayStatus = (rawOrder) => {
+  const payState = rawOrder.financial && rawOrder.financial.payState;
+  if (Object.prototype.hasOwnProperty.call(CANONICAL_TICKET_PAY_STATUS, payState)) return CANONICAL_TICKET_PAY_STATUS[payState];
+  return rawOrder.ya_pagado === true ? "PAGADO" : "PENDIENTE";
+};
+
 function normalizeItem(item, index, includePrices) {
   if (!item || typeof item !== "object") throw new TypeError(`items[${index}] must be an object`);
   const quantity = positiveInteger(item.quantity ?? item.q ?? item.qty ?? 1, `items[${index}].quantity`);
@@ -179,8 +190,7 @@ export function normalizeOrderForTicket(rawOrder, options = {}) {
       },
       payment: {
         method: isKitchenTicket ? null : optionalText(payment.method ?? rawOrder.metodo_pago),
-        status: isKitchenTicket ? null : (optionalText(payment.status)?.toUpperCase()
-          || (rawOrder.ya_pagado === true ? "PAGADO" : "PENDIENTE")),
+        status: isKitchenTicket ? null : (optionalText(payment.status)?.toUpperCase() || ticketPayStatus(rawOrder)),
       },
       final_message: optionalText(rawOrder.final_message) || "Gracias por elegir La Dieci",
     },

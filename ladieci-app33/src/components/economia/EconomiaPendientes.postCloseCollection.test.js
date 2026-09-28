@@ -347,5 +347,9 @@ test("static · Pendientes reaches money only through CheckCashPanel (the Cash V
   expect(code).toMatch(/allowDelivery=\{false\}/);
   expect(code).toMatch(/canRefund=\{false\}/);
   expect(code).toMatch(/canAdjust=\{false\}/);
-  expect(code).not.toMatch(/cashApi|updateEstado|marcarEntregado|confirmarEntregaOperador|onDelivered|fetch\(|\bapi\./);
+  // POST-ASTRA F1 -- the ONE other backend call this surface makes is the post-close cancellation of a never-handed-over order
+  // (api.anularPedidoPendiente). Everything else stays forbidden: no delivery, trip, service or direct state writer.
+  const withoutCancel = code.split("api.anularPedidoPendiente(").join("");
+  expect(code.split("api.anularPedidoPendiente(").length - 1).toBe(1);
+  expect(withoutCancel).not.toMatch(/cashApi|updateEstado|marcarEntregado|confirmarEntregaOperador|onDelivered|fetch\(|\bapi\./);
 });

@@ -99,7 +99,7 @@ export function groupTicketLines(lines) {
       byKey.set(key, {
         key, label, description: label.primary,
         quantity: 0, amount: 0, remaining: 0,
-        lineIds: [], selectableLineIds: [], selectableUnits: [],
+        lineIds: [], selectableLineIds: [], selectableUnits: [], pendingCount: 0,
       });
       order.push(key);
     }
@@ -121,7 +121,15 @@ export function groupTicketLines(lines) {
       // own remaining, never row.remaining / quantity. Units of the same
       // product can carry different remainings once one of them is partly
       // paid, and dividing would quietly invent a price.
-      if (safeRemaining > 0) {
+      //
+      // R2 (Economy 147) — a line annotated by mesaSettlement.settlementLines() carries
+      // `pending` (its comanda still owes something) and `selectable` (Por productos
+      // may charge it without exceeding the comanda's canonical balance). A line
+      // without the annotation keeps the historical rule: remaining > 0.
+      const pending = typeof line.pending === "boolean" ? line.pending : safeRemaining > 0;
+      const selectable = typeof line.selectable === "boolean" ? line.selectable : safeRemaining > 0;
+      if (pending) row.pendingCount += 1;
+      if (selectable && safeRemaining > 0) {
         row.selectableLineIds.push(id);
         row.selectableUnits.push({ id, remaining: safeRemaining });
       }
@@ -129,7 +137,7 @@ export function groupTicketLines(lines) {
   }
   return order.map((key) => {
     const row = byKey.get(key);
-    return { ...row, paidInFull: row.selectableLineIds.length === 0 };
+    return { ...row, paidInFull: row.pendingCount === 0 };
   });
 }
 

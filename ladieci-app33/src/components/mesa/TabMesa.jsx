@@ -5,6 +5,7 @@ import { normalizeOrderLine } from "../../menu/normalizeOrderLine";
 import OrderLineView from "../order/OrderLineView";
 import HybridFloorScene, { hybridSceneCss } from "./HybridFloorScene";
 import { groupTicketLines, selectionTotals, selectableCount, personShares, amountForPersons } from "./paymentHubTicket";
+import { settlementLines, isCommandPaid, billPendingRows, selectionFitsOutstanding } from "./mesaSettlement";
 import {
   ROOM_Y_MIN, ROOM_Y_MAX, sceneGeometry, tableFootprint, tableGeometry, unprojectScreenPoint,
 } from "./hybridScene";
@@ -1029,7 +1030,7 @@ function DraftItemsList({ items }) {
 // carries `orderId` (table_order_lines.order_id, see mesaService.js's
 // normalizeLinesBySession) and every command already carries its own `id`,
 // `commandNumber`, `state`, `time` and server-authoritative `total`
-// (order.totale, see projectSessionAccount) -- session.commands arrives
+// (the canonical current obligation, see projectSessionAccount) -- session.commands arrives
 // ordered oldest-to-newest (orders queried `order=ts.asc` in mesaDao.js), so
 // the LAST entry is always the most recently sent real comanda. Grouping
 // `session.lines` by `orderId` before calling groupTicketLines() (unchanged,
@@ -1040,15 +1041,17 @@ function DraftItemsList({ items }) {
 //                          one of its lines is actually paidInFull -- never
 //                          "cerrada" for a comanda that is merely not-newest).
 //   RESERVAS            -- unchanged, see ReservasSection below (Fase 7).
-// Money is still never re-derived: command.total is the same order.totale
+// Money is still never re-derived: command.total is the canonical obligation
 // the backend already computed: it is read, not summed from lines.
 function ComandaActualCard({ session, draft, busy, onMarkServed, onAddItems, onSelectLine }) {
   const [expanded, setExpanded] = useState(true);
   const [itemsExpanded, setItemsExpanded] = useState(false);
   const commands = session?.commands || [];
   const current = commands.length > 0 ? commands[commands.length - 1] : null;
+  // R2 — annotated with the comanda's backend settlement (see mesaSettlement.js), so the
+  // detail sheet's "Pagado / Pendiente" follows what the comanda owes, not its old lines.
   const commandLines = current
-    ? (session?.lines || []).filter((line) => String(line.orderId) === String(current.id))
+    ? settlementLines(session, (session?.lines || []).filter((line) => String(line.orderId) === String(current.id)))
     : [];
   const ticketRows = groupTicketLines(commandLines);
   const totalArticles = ticketRows.reduce((sum, row) => sum + row.quantity, 0);
@@ -1178,8 +1181,10 @@ function ResumenComandasSection({ session, busy, onMarkServed }) {
   }
   const rows = [...others].reverse().map((command) => {
     const lines = linesByOrder.get(String(command.id)) || [];
-    const rowsForCommand = groupTicketLines(lines);
-    const paidInFull = lines.length > 0 && rowsForCommand.every((row) => row.paidInFull);
+    // R2 — "Pagada" is the backend's canonical payState for the comanda (a commercial
+    // adjustment never touches its lines); the line rule is only the fallback for a
+    // response without `settlement`.
+    const paidInFull = isCommandPaid(command, lines);
     return { command, paidInFull };
   });
   const othersTotal = others.reduce((sum, command) => sum + (Number(command.total) || 0), 0);
@@ -1296,16 +1301,19 @@ function equalShares(total, covers) {
 //     PENDIENTE          27,50 €       (session.outstanding)
 //
 // Every number is the backend's own, unchanged — buildFloor already computes
-// total/paid/outstanding from table_order_lines minus payment_allocations. This
+// total (canonical obligations) / paid (transactions) / outstanding. This
 // function only decides how they are laid out and labelled; it performs no
 // arithmetic of its own beyond reading `paid > 0`.
 export function buildBillDocument(session, tableNumber) {
-  const lines = (session?.lines || []).filter((line) => Number(line.remaining) > 0);
+  // R2 — the pending rows follow each comanda's backend settlement: a settled comanda
+  // lists nothing, an adjusted comanda that still owes is one row at its canonical
+  // balance, any other comanda lists its pending lines exactly as before.
+  const pendingRows = billPendingRows(session);
   const hasPaid = Number(session?.paid) > 0;
   return {
     title: "CUENTA CLIENTE",
     tableNumber,
-    rows: lines.map((line) => ({ label: line.description, value: euro(line.remaining) })),
+    rows: pendingRows.map((row) => ({ label: row.label, value: euro(row.value) })),
     summary: hasPaid ? [
       { label: "Total consumido", value: euro(session.total) },
       { label: "Ya cobrado", value: euro(session.paid), credit: true },
@@ -1464,7 +1472,10 @@ function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false, canAdjust
   // guarantee (unique key, request_hash, double-tap, network retry) still holds.
   const requestIdRef = useRef(createMesaRequestId("pay"));
 
-  const ticketRows = groupTicketLines(session?.lines);
+  // R2 — lines annotated with each comanda's backend settlement: a settled comanda's
+  // lines are not pending, and only a comanda whose lines owe exactly its balance can be
+  // charged Por productos (the server charges the lines' own remaining).
+  const ticketRows = groupTicketLines(settlementLines(session));
   const outstanding = Number(session?.outstanding) || 0;
   const coversRemaining = Number(session?.coversRemaining) || 0;
   const isOpen = table.status === "open";
@@ -1564,6 +1575,9 @@ function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false, canAdjust
   // coversSettled 0: choosing products says nothing about how many people ate.
   const submitProducts = () => {
     if (selection.lineIds.length === 0) { setError("Selecciona al menos un producto."); return; }
+    if (!selectionFitsOutstanding(selection.amount, outstanding)) {
+      setError("La selección supera lo que queda por pagar en la mesa. Usa Importe libre."); return;
+    }
     return charge({ paymentMethod: method, mode: "item_selection", lineIds: selection.lineIds, coversSettled: 0 });
   };
   // The ONE place covers mean anything: N shares of the outstanding balance,
@@ -1594,7 +1608,7 @@ function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false, canAdjust
   // one away. Down to zero it deselects the row entirely, so nothing here can
   // ever disagree with what selectionTotals() charges.
   const stepRow = (row, delta) => {
-    if (row.paidInFull) return;
+    if (row.paidInFull || selectableCount(row) === 0) return;
     setError("");
     setSelectedKeys((current) => {
       const next = new Map(current);
@@ -1659,6 +1673,9 @@ function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false, canAdjust
                   {row.label.secondary && <small className="mesa-hub-alias">{row.label.secondary}</small>}
                 </span>
                 {row.paidInFull && <span className="mesa-hub-paid-tag" data-testid="mesa-hub-paid-tag">Pagado</span>}
+                {picking && !row.paidInFull && maxUnits === 0 && (
+                  <span className="mesa-hub-pending-tag" data-testid="mesa-hub-by-amount-tag">Cobrar por importe</span>
+                )}
                 {picking && pendingOfOriginal && (
                   <span className="mesa-hub-pending-tag" data-testid="mesa-hub-pending-tag">{maxUnits} pendientes de {row.quantity}</span>
                 )}
@@ -1683,7 +1700,7 @@ function VerCuentaBody({ table, onRefresh, onPrint, canRefund = false, canAdjust
                   data-selected={selected ? "true" : "false"}
                   data-selected-units={String(selectedUnits)}
                   className={`mesa-hub-line selectable${selected ? " selected" : ""}${row.paidInFull ? " paid" : ""}`}
-                  disabled={row.paidInFull} aria-pressed={selected}
+                  disabled={row.paidInFull || maxUnits === 0} aria-pressed={selected}
                   aria-label={`${row.label.primary}. ${selectedUnits} de ${maxUnits} seleccionadas. Toca para sumar una unidad.`}
                   onClick={() => stepRow(row, 1)}>
                   {inner}

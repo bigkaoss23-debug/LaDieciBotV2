@@ -25,6 +25,9 @@ const BY_PAYMENT_CODE = Object.freeze({
   ORDER_PAYMENT_FORBIDDEN: "Tu rol no puede registrar cobros. No se registró nada.",
   ORDER_PAYMENT_ORDER_CANCELLED: "El pedido está anulado. No se registró nada.",
   ORDER_PAYMENT_IDEMPOTENCY_CONFLICT: "Este intento de cobro ya se usó con otros datos. No se registró nada.",
+  // Migration 148: the order says "paid" in the legacy system but the ledger has no such payment. The writer refuses
+  // any new collection until administration imports the historical payment (or reconciles the obligation).
+  ORDER_PAYMENT_LEGACY_IMPORT_REQUIRED: "Figura como pagado en el sistema antiguo, pero ese cobro no está registrado en caja. No se registró nada: no cobres al cliente y avisa a administración para regularizarlo.",
 });
 
 export function describeDeliveryConfirmError(res) {
@@ -33,4 +36,27 @@ export function describeDeliveryConfirmError(res) {
     return BY_PAYMENT_CODE[res.payment_code] || "No se pudo registrar el cobro. No se registró nada.";
   }
   return BY_CODE[code] || "No se pudo confirmar la entrega. Actualiza e inténtalo de nuevo.";
+}
+
+// STALE PAYMENT MIRROR (H2) -- the success toast says what the backend ACTUALLY recorded. The confirmation succeeds
+// without a new payment when the order was already settled (ORDER_PAYMENT_ALREADY_SETTLED is tolerated: e.g. the
+// rider collected first, or an adjustment brought the debt down to what was already paid); saying "cobro efectivo"
+// then told the operator to take money that was never recorded. `payment` is the writer's receipt (null when nothing
+// was collected); a response without that key predates this contract and keeps the previous wording.
+// Returns { detail, message, tone }: `detail` is what follows "✓ Entrega confirmada" (the handler keeps that literal), message is
+// the whole sentence, tone 'ok' | 'warning'.
+const confirmed = (detail, tone) => ({ detail, message: `✓ Entrega confirmada${detail}`, tone });
+export function describeDeliveryConfirmSuccess(res, requestedPayment) {
+  if (!requestedPayment) return confirmed("", "ok");
+  if (!res || !Object.prototype.hasOwnProperty.call(res, "payment")) return confirmed(` · cobro ${requestedPayment.method}`, "ok");
+  const receipt = res.payment;
+  if (receipt && receipt.idempotent !== true) {
+    const amount = Number(receipt.amount);
+    return confirmed(` · cobro ${requestedPayment.method}${Number.isFinite(amount) && amount > 0 ? ` ${amount.toFixed(2)}€` : ""}`, "ok");
+  }
+  if (receipt) return confirmed(" · el cobro ya estaba registrado (no se cobró de nuevo)", "ok");
+  if (res.payment_note === "ORDER_PAYMENT_ALREADY_SETTLED") {
+    return confirmed(" · NO se registró ningún cobro: el pedido ya estaba pagado. No cobres al cliente.", "warning");
+  }
+  return confirmed(" · NO se registró ningún cobro.", "warning");
 }

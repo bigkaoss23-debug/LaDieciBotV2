@@ -107,6 +107,46 @@ function parseOrderItemPayloadRefusal(res) {
   return { blocked: true, message };
 }
 
+// Migration 151 (final concurrency fix) — a FIFTH independent reason, same pattern. The DB refuses any change of the
+// obligation (a total edit, a cancellation) of an order whose service is already closed: that service's closeout is
+// frozen. Nothing was written.
+const ORDER_ECONOMIC_SERVICE_CLOSED = "ORDER_ECONOMIC_SERVICE_CLOSED";
+const ORDER_ECONOMIC_SERVICE_CLOSED_MESSAGE =
+  "El servicio de este pedido ya está cerrado: su importe no se puede modificar. No se guardó nada.";
+
+function parseEconomicServiceClosedRefusal(res) {
+  if (res == null || typeof res !== "object" || Array.isArray(res)) {
+    return { blocked: false, message: "" };
+  }
+  if (res.success === true) return { blocked: false, message: "" };
+  const hit = res.error === ORDER_ECONOMIC_SERVICE_CLOSED
+    || res.code === ORDER_ECONOMIC_SERVICE_CLOSED;
+  if (!hit) return { blocked: false, message: "" };
+  const message = typeof res.message === "string" && res.message.trim()
+    ? res.message.trim()
+    : ORDER_ECONOMIC_SERVICE_CLOSED_MESSAGE;
+  return { blocked: true, message };
+}
+
+// POST-ASTRA F5 / F7 -- two more typed refusals of the order editor, same pattern. ORDER_EDIT_CONFLICT: the order
+// changed between the read the edit was computed from and the write (compare-and-set, migration 154) -- never a silent
+// overwrite. ORDER_WRITE_FAILED: the database did not perform the write -- never a false success. Nothing was written.
+const ORDER_EDIT_CONFLICT = "ORDER_EDIT_CONFLICT";
+const ORDER_EDIT_CONFLICT_MESSAGE =
+  "El pedido cambió mientras lo editabas. Recárgalo y vuelve a aplicar el cambio. No se guardó nada.";
+const ORDER_WRITE_FAILED = "ORDER_WRITE_FAILED";
+const ORDER_WRITE_FAILED_MESSAGE = "No se pudo guardar el pedido. No se guardó nada: recarga e inténtalo de nuevo.";
+
+function parseTypedRefusal(res, code, fallback) {
+  if (res == null || typeof res !== "object" || Array.isArray(res)) return { blocked: false, message: "" };
+  if (res.success === true) return { blocked: false, message: "" };
+  if (res.error !== code && res.code !== code) return { blocked: false, message: "" };
+  const message = typeof res.message === "string" && res.message.trim() ? res.message.trim() : fallback;
+  return { blocked: true, message };
+}
+const parseOrderEditConflictRefusal = (res) => parseTypedRefusal(res, ORDER_EDIT_CONFLICT, ORDER_EDIT_CONFLICT_MESSAGE);
+const parseOrderWriteFailedRefusal = (res) => parseTypedRefusal(res, ORDER_WRITE_FAILED, ORDER_WRITE_FAILED_MESSAGE);
+
 // The one resolver the UI calls after an order write. There are now FOUR independent
 // reasons the backend can refuse, and every call site wants the same thing: "was it
 // refused, and what do I tell the operator?". Terminal state is checked first only because
@@ -121,6 +161,12 @@ function parseOrderWriteRefusal(res) {
   if (basisLocked.blocked) return { blocked: true, message: basisLocked.message, estado: null };
   const itemPayload = parseOrderItemPayloadRefusal(res);
   if (itemPayload.blocked) return { blocked: true, message: itemPayload.message, estado: null };
+  const serviceClosed = parseEconomicServiceClosedRefusal(res);
+  if (serviceClosed.blocked) return { blocked: true, message: serviceClosed.message, estado: null };
+  const editConflict = parseOrderEditConflictRefusal(res);
+  if (editConflict.blocked) return { blocked: true, message: editConflict.message, estado: null };
+  const writeFailed = parseOrderWriteFailedRefusal(res);
+  if (writeFailed.blocked) return { blocked: true, message: writeFailed.message, estado: null };
   return { blocked: false, message: "", estado: null };
 }
 
@@ -129,6 +175,7 @@ module.exports = {
   parsePaidOrderEconomicRefusal,
   parseEconomicBasisLockRefusal,
   parseOrderItemPayloadRefusal,
+  parseEconomicServiceClosedRefusal,
   parseOrderWriteRefusal,
   PAID_ORDER_ECONOMIC_MUTATION_FORBIDDEN,
   PAID_ORDER_ECONOMIC_MESSAGE,
@@ -136,4 +183,12 @@ module.exports = {
   ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE,
   ORDER_ITEM_PAYLOAD_INCONSISTENT,
   ORDER_ITEM_PAYLOAD_INCONSISTENT_MESSAGE,
+  ORDER_ECONOMIC_SERVICE_CLOSED,
+  ORDER_ECONOMIC_SERVICE_CLOSED_MESSAGE,
+  parseOrderEditConflictRefusal,
+  parseOrderWriteFailedRefusal,
+  ORDER_EDIT_CONFLICT,
+  ORDER_EDIT_CONFLICT_MESSAGE,
+  ORDER_WRITE_FAILED,
+  ORDER_WRITE_FAILED_MESSAGE,
 };

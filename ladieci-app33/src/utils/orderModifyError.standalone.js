@@ -322,5 +322,24 @@ check("combined: the four messages are pairwise distinct (no copy collision)",
   ]).size === 4);
 
 console.log("");
+console.log("── migration 151: the order's service is already closed ──");
+{
+  const { parseEconomicServiceClosedRefusal, ORDER_ECONOMIC_SERVICE_CLOSED, ORDER_ECONOMIC_SERVICE_CLOSED_MESSAGE } = require("./orderModifyError");
+  check("151: null / array / success:true → not blocked",
+    eqEco(parseEconomicServiceClosedRefusal(null), NO_ECO) && eqEco(parseEconomicServiceClosedRefusal([{ code: ORDER_ECONOMIC_SERVICE_CLOSED }]), NO_ECO)
+      && eqEco(parseEconomicServiceClosedRefusal({ success: true, code: ORDER_ECONOMIC_SERVICE_CLOSED }), NO_ECO));
+  check("151: code / error → blocked with its own sentence",
+    eqEco(parseEconomicServiceClosedRefusal({ success: false, code: ORDER_ECONOMIC_SERVICE_CLOSED }), { blocked: true, message: ORDER_ECONOMIC_SERVICE_CLOSED_MESSAGE })
+      && eqEco(parseEconomicServiceClosedRefusal({ success: false, error: ORDER_ECONOMIC_SERVICE_CLOSED }), { blocked: true, message: ORDER_ECONOMIC_SERVICE_CLOSED_MESSAGE }));
+  check("151: the backend message wins when present",
+    eqEco(parseEconomicServiceClosedRefusal({ success: false, code: ORDER_ECONOMIC_SERVICE_CLOSED, message: "Mensaje del backend." }), { blocked: true, message: "Mensaje del backend." }));
+  check("151: the combined resolver refuses it (a cancellation or a total edit is never reported as saved), no estado",
+    parseOrderWriteRefusal({ success: false, error: ORDER_ECONOMIC_SERVICE_CLOSED, code: ORDER_ECONOMIC_SERVICE_CLOSED, estado_actual: "EN_COCINA" }).blocked === true
+      && parseOrderWriteRefusal({ success: false, error: ORDER_ECONOMIC_SERVICE_CLOSED }).estado === null);
+  check("151: its sentence is distinct from the four earlier refusals",
+    ![PAID_ORDER_ECONOMIC_MESSAGE, ORDER_ECONOMIC_BASIS_LOCKED_MESSAGE].includes(ORDER_ECONOMIC_SERVICE_CLOSED_MESSAGE));
+}
+
+console.log("");
 console.log("Totale: " + (pass + fail) + " | PASS: " + pass + " | FAIL: " + fail);
 process.exit(fail === 0 ? 0 : 1);

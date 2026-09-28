@@ -23,6 +23,16 @@ export function closeFailureMessage(res) {
     mesa_table_gate_failed: "No se pudo comprobar el estado de las mesas. El servicio sigue abierto; recarga e inténtalo de nuevo.",
     service_active_orders_not_resolved: "Hay pedidos todavía en curso. Complétalos o elige cerrar anulando esos pedidos.",
     service_active_order_gate_failed: "No se pudo comprobar si quedan pedidos activos. El servicio sigue abierto; recarga e inténtalo de nuevo.",
+    // R4B — the close is bound to the service the scan named; the backend never re-targets it.
+    FINALIZAR_SERVICE_IDENTITY_REQUIRED: "No hay un servicio abierto que finalizar. Recarga la página.",
+    FINALIZAR_SERVICE_IDENTITY_INVALID: "No se encontró el servicio que estabas finalizando. Recarga la página.",
+    FINALIZAR_SERVICE_NOT_FOUND: "No se encontró el servicio que estabas finalizando. Recarga la página.",
+    FINALIZAR_SERVICE_IDENTITY_MISMATCH: "El servicio que estabas finalizando ya no es el servicio abierto. No se ha cerrado nada; recarga la página.",
+    SERVICE_LIFECYCLE_V3_TRANSITION_TRANSPORT_ERROR: "No se pudo confirmar el cierre. Vuelve a intentarlo: se finalizará este mismo servicio.",
+    V3_CLOSE_ATTEMPT_NOT_CONFIRMED: "No se pudo confirmar el cierre. Vuelve a intentarlo: se finalizará este mismo servicio.",
+    // Corrective slice 150 — the close is never made from figures the service has since outgrown.
+    V3_CLOSE_EVIDENCE_STALE: "El servicio siguió registrando pedidos o cobros mientras se cerraba. No se ha cerrado nada; vuelve a intentarlo.",
+    V3_CLOSE_COMMITTED_EVIDENCE_STALE: "Este servicio tiene un cierre anterior incompleto y ha tenido actividad después. No se ha cerrado nada; avisa a administración antes de finalizarlo.",
   };
   if (CODES[raw]) return CODES[raw];
   if (/\s/.test(raw)) {

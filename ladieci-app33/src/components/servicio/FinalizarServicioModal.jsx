@@ -8,8 +8,14 @@
 //   2. ServiceExceptionPanel — the PREVIOUS_SERVICE_PENDING recovery surface,
 //      as "Finalizar servicio anterior". The stale service IS the current
 //      service (migration 120 leaves the current-pointer read untouched), so
-//      this flow closes exactly the right one with no id passed — the backend
-//      resolves THE active service, same as before.
+//      the pre-close scan names exactly the right one.
+//
+// R4B — the close is BOUND to the service the scan named. That id is sent with
+// the close and re-sent, unchanged, by every retry of the same flow (a lost
+// response, a network error, a re-render): the backend closes only that
+// service and never re-targets a retry to a service opened meanwhile. The
+// binding lives as long as this flow: it is taken again from a fresh scan
+// only when the modal is opened again, and dropped on dismiss or success.
 //
 // Nothing here is new close logic: the pre-close scan, the non-blocking
 // economic preflight (economyApi.reconciliation) and the confirm call are the
@@ -67,12 +73,16 @@ export default function FinalizarServicioModal({
   onCloseRef.current = onClose;
   const onClosedRef = useRef(onClosed);
   onClosedRef.current = onClosed;
+  // R4B — the service this flow finalizes (from the scan). Set once per open.
+  const closeTargetRef = useRef(null);
 
   const runScan = useCallback(async () => {
+    closeTargetRef.current = null;
     setFlow({ loading: true, completati: null, attivi: [], blocking: { orders: 0, tables: 0 }, reconLoading: true });
     try {
       // language-guard: allow-legacy scanServizio is the existing backend pre-close scan action name (wire string), not new vocabulary
       const scan = await api.get("scanServizio");
+      closeTargetRef.current = (scan && scan.service_session_id) || null;
       setFlow({
         loading: false,
         completati: scan.completati,
@@ -88,7 +98,7 @@ export default function FinalizarServicioModal({
     }
     // J-1 — the economic preflight, fetched separately and NEVER able to block
     // the close: it is information the operator reads before confirming, not a
-    // precondition. No serviceSessionId is sent, so the backend resolves THE
+    // precondition. No serviceSessionId is sent here, so the backend resolves THE
     // active service — the same one Finalizar will close — rather than the
     // frontend guessing an id that could disagree with the action.
     try {
@@ -105,6 +115,7 @@ export default function FinalizarServicioModal({
   }, [open, runScan]);
 
   const dismiss = () => {
+    closeTargetRef.current = null;
     setFlow(null);
     if (onCloseRef.current) onCloseRef.current();
   };
@@ -115,7 +126,12 @@ export default function FinalizarServicioModal({
     // operator sees progress in place.
     const notify = notifyRef.current;
     const onClosed = onClosedRef.current;
-    setFlow(m => m ? { ...m, submitting: true, error: null } : m);
+    const serviceSessionId = closeTargetRef.current;
+    if (!serviceSessionId) {
+      setFlow(m => m ? { ...m, submitting: false, error: "No hay un servicio abierto que finalizar. Recarga la página." } : m);
+      return;
+    }
+    setFlow(m => m ? { ...m, submitting: true, error: null, errorUnconfirmed: false } : m);
     notify("🌙 Finalizando servicio...", C.giallo);
     // N-2 — deleteAttivi was never passed to this call: the backend's V3 close
     // engine (the only path any session can take now) never read it — a
@@ -124,16 +140,18 @@ export default function FinalizarServicioModal({
     // the view; success:false stays a failure.
     try {
       // language-guard: allow-legacy chiudiServizio is the existing backend service-close action name (wire string), not new vocabulary
-      const res = await api.get("chiudiServizio", {});
+      const res = await api.get("chiudiServizio", { serviceSessionId });
       const outcome = classifyCloseOutcome(res);
       if (outcome.kind === "success") {
         const s = res.summary || {};
         const eur = n => `${(Number(n)||0).toFixed(0)}€`;
+        closeTargetRef.current = null;
         setFlow(null);
         // language-guard: allow-legacy the success toast is operator copy lifted verbatim (n_ordini is the backend summary field), not new vocabulary
         notify(`✅ ${s.n_ordini || 0} ordini · ${eur(s.cassa_totale)} archiviati`, C.verde);
         if (onClosed) onClosed(res);
       } else if (outcome.kind === "skipped") {
+        closeTargetRef.current = null;
         setFlow(null);
         notify("ℹ️ Servicio ya cerrado hoy", C.giallo);
         if (onClosed) onClosed(res);
@@ -147,7 +165,10 @@ export default function FinalizarServicioModal({
         console.error("chiudiServizio:", res?.error);
       }
     } catch (err) {
-      setFlow(m => m ? { ...m, submitting: false, error: "Error de red al cerrar el servicio. El servicio sigue abierto." } : m);
+      // The request may have reached the server: the close is NOT known to
+      // have failed. The retry re-sends the same service id, so it completes
+      // (or confirms) this service's close and never touches another one.
+      setFlow(m => m ? { ...m, submitting: false, error: "Error de red: no se pudo confirmar el cierre. Vuelve a intentarlo: se finalizará este mismo servicio.", errorUnconfirmed: true } : m);
       notify("❌ Error de red al cerrar el servicio", C.rosso);
       console.error(err);
     }
@@ -276,7 +297,7 @@ export default function FinalizarServicioModal({
             <div data-testid="close-error" style={{...MS.card(),borderColor:"rgba(232,52,28,.5)",background:"rgba(232,52,28,.1)"}}>
               <div style={{color:MS.ACCENT.danger,fontWeight:900,fontSize:11,letterSpacing:".6px",textTransform:"uppercase",marginBottom:5}}>No se cerró el servicio</div>
               <div style={{color:MS.TEXT.strong,fontSize:13,lineHeight:1.45}}>{flow.error}</div>
-              <div style={{color:MS.TEXT.muted,fontSize:11.5,marginTop:6}}>El servicio sigue abierto.</div>
+              <div style={{color:MS.TEXT.muted,fontSize:11.5,marginTop:6}}>{flow.errorUnconfirmed ? "El cierre no está confirmado." : "El servicio sigue abierto."}</div>
             </div>
           )}
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { C, tot, useWidth, MENU } from '../../constants';
 import { sb, api } from '../../api';
+import { parseOrderWriteRefusal } from '../../utils/orderModifyError';
 import Suoni from '../../sounds';
 // NB: `formatSub` is deliberately no longer imported. It collapsed duplicate tokens but
 // kept the raw "+" prefix and could not tell a supplement from an operator note;
@@ -50,6 +51,8 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
   const [anyadirCat, setAnyadirCat]       = useState("Pizzas");
   const [anyadirItems, setAnyadirItems]   = useState([]);
   const [anyadirSaving, setAnyadirSaving] = useState(false);
+  const [anyadirBasis, setAnyadirBasis]   = useState([]);
+  const [anyadirError, setAnyadirError]   = useState("");
   const [manualGiros, setManualGiros] = useState([]);
   // Override locale ottimistico per ui_offset_min — il polling/WS poi sincronizza
   const [localOffsets, setLocalOffsets] = useState({});
@@ -107,6 +110,9 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
   const openAnyadir = (o) => {
     setAnyadirId(o.id);
     setAnyadirItems([...(o.items||[])]);
+    // POST-ASTRA F5 -- the list this edit starts from; the save pins it (expected_items) so a concurrent edit is refused, not erased.
+    setAnyadirBasis(Array.isArray(o.items) ? o.items : []);
+    setAnyadirError("");
     setAnyadirCat("Pizzas");
     setEditId(null); // chiude eventuale pannello edit
   };
@@ -132,9 +138,16 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
   };
   const saveAnyadir = async () => {
     setAnyadirSaving(true);
-    try { await api.post({action:"updateOrden", id:anyadirId, items:anyadirItems}); }
+    let res = null;
+    try { res = await api.post({action:"updateOrden", id:anyadirId, items:anyadirItems, expected_items:anyadirBasis}); }
     catch(e) { console.error(e); }
     setAnyadirSaving(false);
+    // POST-ASTRA F5 / F7 -- a refused or failed write keeps the panel open with the reason; never a silent close.
+    const refusal = parseOrderWriteRefusal(res);
+    if (refusal.blocked || !res || res.success === false || res._ok === false) {
+      setAnyadirError(refusal.blocked ? refusal.message : "No se pudo guardar el pedido. No se guardó nada: recarga e inténtalo de nuevo.");
+      return;
+    }
     setAnyadirId(null);
   };
   // ────────────────────────────────────────────────────────────────────
@@ -584,6 +597,9 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
                           Totale: {anyadirItems.reduce((s,i)=>s+i.p*i.q,0).toFixed(2)}€
                         </div>
                       </div>
+                    )}
+                    {anyadirError && (
+                      <div data-testid="cocina-anyadir-error" style={{color:"#E8341C",fontSize:12,fontWeight:700,marginBottom:6}}>{anyadirError}</div>
                     )}
                     <div style={{display:"flex",gap:6}}>
                       <button onClick={()=>setAnyadirId(null)}
