@@ -51,9 +51,9 @@ export const pickupCountdown = (t) => {
 
 const CAP_H = 11;
 const NUM_H = 34;
-const PILL_H = 34;
+const PILL_H = 28;   // pillola stretta attorno al numero: si legge il numero, non il rettangolo
 const CH = 0.62;    // larghezza carattere monospace in em (DM Mono 0.6 + margine)
-const TIME_PX = 31, CD_PX = 22, UNIT_PX = 13, MIN_TIME = 24, MIN_CD = 17, GAP = 10, PILL_PAD = 9;
+const TIME_PX = 31, CD_PX = 22, UNIT_PX = 13, MIN_TIME = 24, MIN_CD = 17, GAP = 14, PILL_PAD = 7;   // GAP = distanza MINIMA ora↔countdown (il countdown sta a destra)
 const STATE_TEXT = { normal: "LÍMITE", near: "URGENTE", late: "TARDE" };
 
 // larghezza reale disponibile (ResizeObserver; assente in jsdom → dimensioni base)
@@ -105,7 +105,7 @@ export const TimeCountdown = ({ pickup = false, dl = null, nowMs = null, pickupH
     <span data-testid="block-state" style={{ ...cap, order: -1 }}>{STATE_TEXT[st]}</span>
   );
   return (
-    <div ref={ref} data-testid="block-time-row" style={{ display: "flex", alignItems: "center", gap: GAP, height, minWidth: 0, overflow: "hidden" }}>
+    <div ref={ref} data-testid="block-time-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: GAP, height, minWidth: 0, overflow: "hidden" }}>
       <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 0 }}>
         {pickup && caption}
         <span data-testid="block-main-time" title={pickup ? "Hora de recogida" : "Hora límite de entrega"}
@@ -115,7 +115,7 @@ export const TimeCountdown = ({ pickup = false, dl = null, nowMs = null, pickupH
       {cdNum && (
         <div data-testid="block-countdown-box" data-level={cdt.level}
           title={pickup ? (pk && !pk.conOrario ? "Desde la orden" : "Tiempo hasta la recogida") : "Tiempo hasta la hora límite"} style={{
-          height: PILL_H, marginTop: CAP_H, boxSizing: "border-box", borderRadius: 8, padding: `0 ${PILL_PAD}px`, flexShrink: 0,   // in asse con l'ora
+          height: PILL_H, margin: `${CAP_H + (NUM_H - PILL_H) / 2}px 0 ${(NUM_H - PILL_H) / 2}px`, boxSizing: "border-box", borderRadius: 7, padding: `0 ${PILL_PAD}px`, flexShrink: 0,   // in asse con l'ora
           display: "flex", alignItems: "center", background: cdt.bg, color: cdt.ink,
           textShadow: cdt.shadow ? "0 1px 2px rgba(0,0,0,0.35)" : "none",
         }}>
