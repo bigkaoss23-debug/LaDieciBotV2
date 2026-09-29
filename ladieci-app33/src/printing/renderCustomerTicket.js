@@ -35,14 +35,9 @@ export const customerPaymentLine = (payment = {}) => {
 
 const isActualTableOrder = (order) => Boolean(order.table_number) && order.channel === "BANCO";
 
-// Identification header (PEDIDO + full name right under the business header) exists
-// to avoid swapping two bags. It applies to every DOMICILIO and to every RITIRO that
-// is not a counter pickup. MESA orders and BANCO counter pickups keep the legacy
-// layout (PEDIDO at the bottom, masked "Cliente:" line).
-export const usesCustomerIdentityHeader = (order) => (
-  !isActualTableOrder(order) && !(order.channel === "BANCO" && order.fulfilment_type === "RITIRO")
-);
-
+// Every CUSTOMER ticket (DOMICILIO, RITIRO, BANCO, MESA) opens with the identification
+// header: PEDIDO + full customer name right under the business header, to avoid
+// swapping two bags. The fulfilment/MESA context line stays at the bottom.
 export const EMPTY_CUSTOMER_NAME_LABEL = "CLIENTE SIN NOMBRE";
 // Longest name that still fits a single xlarge line (Courier New 0.6em advance,
 // 1.55em xlarge, printable content width 43 mm on 58 mm paper / 74 mm on 80 mm).
@@ -61,21 +56,17 @@ export function renderCustomerTicket(snapshot) {
   if (snapshot.ticket_type !== TICKET_TYPES.CUSTOMER) throw new TypeError("Only CUSTOMER snapshots can be rendered as customer tickets");
   const profile = getLayoutProfile(snapshot.paper_width);
   const pricing = snapshot.customer.pricing;
-  const identityHeader = usesCustomerIdentityHeader(snapshot.order);
-  const orderNumberBlock = textBlock(`PEDIDO ${formatServiceOrderNumber(snapshot.order.order_number, "—", 3)}`, { align: "center", emphasis: "bold", size: "xlarge" });
   const blocks = [
     imageBlock("/printing/la-dieci-thermal-logo.png", { alt: "La Dieci", role: "business-logo" }),
   ];
   businessHeaderLines().forEach((line) => blocks.push(textBlock(line, { align: "center", role: "secondary" })));
   blocks.push(separatorBlock(profile.separator));
-  if (identityHeader) {
-    const name = customerIdentityName(snapshot.customer.full_name);
-    blocks.push(
-      orderNumberBlock,
-      textBlock(name, { align: "center", emphasis: "bold", size: customerIdentityNameSize(name, snapshot.paper_width) }),
-      separatorBlock(profile.separator),
-    );
-  }
+  const name = customerIdentityName(snapshot.customer.full_name);
+  blocks.push(
+    textBlock(`PEDIDO ${formatServiceOrderNumber(snapshot.order.order_number, "—", 3)}`, { align: "center", emphasis: "bold", size: "xlarge" }),
+    textBlock(name, { align: "center", emphasis: "bold", size: customerIdentityNameSize(name, snapshot.paper_width) }),
+    separatorBlock(profile.separator),
+  );
   snapshot.customer.items.forEach((item) => {
     const productLines = wrapText(item.primary_name || item.name, profile.productColumnWidth);
     blocks.push(columnsBlock([
@@ -102,13 +93,11 @@ export function renderCustomerTicket(snapshot) {
   blocks.push(
     separatorBlock(profile.separator),
     textBlock(`${isActualTableOrder(snapshot.order) ? `MESA ${snapshot.order.table_number}` : snapshot.order.fulfilment_type}${snapshot.order.promised_at ? ` · ${snapshot.order.promised_at}` : ""}`, { align: "center", emphasis: "bold" }),
-    ...(identityHeader ? [] : [orderNumberBlock]),
     textBlock(new Date(snapshot.order.ordered_at).toLocaleString(snapshot.locale, {
       timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
     }), { align: "center", role: "secondary" }),
   );
   if (snapshot.print.is_reprint) blocks.push(textBlock(`REIMPRESIÓN · COPIA ${snapshot.print.copy_number}`, { align: "center", emphasis: "bold" }));
-  if (!identityHeader && snapshot.customer.display_name) blocks.push(textBlock(`Cliente: ${snapshot.customer.display_name}`));
   if (snapshot.customer.masked_phone) blocks.push(textBlock(`Tel: ${snapshot.customer.masked_phone}`, { role: "secondary" }));
   blocks.push(
     separatorBlock(profile.separator),

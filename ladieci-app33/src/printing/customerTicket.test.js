@@ -168,7 +168,7 @@ describe("customer ticket identification header (PEDIDO + full name)", () => {
     ["María Concepción Fernández Rodríguez de la Torre", "MARÍA CONCEPCIÓN FERNÁNDEZ RODRÍGUEZ DE LA TORRE", "large", "large"],
   ])("DOMICILIO and RITIRO print %p as %p (58 mm: %s, 80 mm: %s)", (nombre, printed, size58, size80) => {
     for (const fulfilment_type of ["DOMICILIO", "RITIRO"]) {
-      for (const channel of ["TEL", "WA", "MANUAL"]) {
+      for (const channel of ["TEL", "WA", "MANUAL", "BANCO"]) {
         const on58 = make({ nombre, fulfilment_type, channel }, 58);
         const on80 = make({ nombre, fulfilment_type, channel }, 80);
         expect(nameBlock(on58.document)).toMatchObject({ value: printed, size: size58, align: "center", emphasis: "bold" });
@@ -222,25 +222,40 @@ describe("customer ticket identification header (PEDIDO + full name)", () => {
     expect(count(reprint, "PEDIDO #042")).toBe(1);
   });
 
-  test("BANCO counter pickup and MESA keep the legacy layout (PEDIDO at the bottom, masked Cliente, no full name)", () => {
-    const cases = [
-      make({ nombre: "Juan Pérez", fulfilment_type: "RITIRO", channel: "BANCO" }),
-      make({ nombre: "Juan Pérez", fulfilment_type: "RITIRO", channel: "BANCO", table_number: "T-12" }),
-    ];
-    for (const { document, snapshot } of cases) {
+  test.each([
+    ["BANCO counter pickup", { channel: "BANCO", fulfilment_type: "RITIRO" }, "RITIRO · 20:20"],
+    ["BANCO with delivery", { channel: "BANCO", fulfilment_type: "DOMICILIO" }, "DOMICILIO · 20:20"],
+    ["MESA", { channel: "BANCO", fulfilment_type: "RITIRO", table_number: "T-12" }, "MESA T-12 · 20:20"],
+  ])("%s gets the same identification header (PEDIDO + name once, no masked Cliente line)", (_label, patch, context) => {
+    for (const paperWidth of [58, 80]) {
+      const { document, snapshot } = make({ nombre: "Juan Pérez García", ...patch }, paperWidth);
       const text = ticketDocumentToPlainText(document);
+      expect(nameBlock(document)).toMatchObject({ value: "JUAN PÉREZ GARCÍA", size: "xlarge", align: "center", emphasis: "bold" });
       expect(count(text, "PEDIDO #042")).toBe(1);
-      expect(text.indexOf("Margarita de")).toBeLessThan(text.indexOf("PEDIDO #042"));
-      expect(text).toContain("Cliente: J*** P***");
-      expect(text).not.toContain("JUAN");
-      expect(text).not.toContain("Juan");
-      expect(text).not.toContain("CLIENTE SIN NOMBRE");
-      expect(snapshot.customer.display_name).toBe("J*** P***");
+      expect(count(text, "JUAN PÉREZ GARCÍA")).toBe(1);
+      expect(text.indexOf("PIZZERÍA")).toBeLessThan(text.indexOf("PEDIDO #042"));
+      expect(text.indexOf("JUAN PÉREZ GARCÍA")).toBeLessThan(text.indexOf("Margarita de"));
+      // the context line stays where it was, after the payment line
+      expect(text).toContain(context);
+      expect(text.indexOf("PAGO: PENDIENTE")).toBeLessThan(text.indexOf(context));
+      expect(text).not.toContain("Cliente:");
+      expect(text).not.toContain("J*** P*** G***");
+      expect(text).toContain("Tel: *** *** 456");
+      expect(text).toContain("TICKET NO FISCAL");
+      expect(snapshot.customer.full_name).toBe("Juan Pérez García");
     }
-    expect(ticketDocumentToPlainText(cases[1].document)).toContain("MESA T-12 · 20:20");
   });
 
-  test("BANCO order with delivery still gets the identification header (delivery is where bags get swapped)", () => {
+  test("BANCO and MESA: empty name prints CLIENTE SIN NOMBRE and long names wrap at large", () => {
+    for (const patch of [{ channel: "BANCO", fulfilment_type: "RITIRO" }, { channel: "BANCO", fulfilment_type: "RITIRO", table_number: "T-12" }]) {
+      expect(nameBlock(make({ ...patch, nombre: "" }).document).value).toBe("CLIENTE SIN NOMBRE");
+      const long = make({ ...patch, nombre: "María Concepción Fernández Rodríguez" });
+      expect(nameBlock(long.document)).toMatchObject({ value: "MARÍA CONCEPCIÓN FERNÁNDEZ RODRÍGUEZ", size: "large" });
+      expect(nameBlock(make({ ...patch, nombre: "Nuño Peña Ñáñez" }).document).value).toBe("NUÑO PEÑA ÑÁÑEZ");
+    }
+  });
+
+  test("BANCO order with delivery gets the identification header before the products", () => {
     const text = ticketDocumentToPlainText(make({ nombre: "Juan Pérez", fulfilment_type: "DOMICILIO", channel: "BANCO" }).document);
     expect(text).toContain("JUAN PÉREZ");
     expect(text.indexOf("PEDIDO #042")).toBeLessThan(text.indexOf("Margarita de"));

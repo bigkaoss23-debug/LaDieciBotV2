@@ -130,12 +130,12 @@ describe("customer ticket print-ready content matrix", () => {
     })).toEqual(["PIZZERÍA", "Calle Ejemplo 1"]);
   });
 
-  test("keeps products before totals and operational metadata in the minimal 58 mm order (BANCO counter pickup: legacy layout)", () => {
+  test("keeps the identification header first, then products, totals and the operational context in the minimal 58 mm order", () => {
     const text = ticketDocumentToPlainText(make({ service_order_number: 1 }).document);
+    expect(text.indexOf("PEDIDO #001")).toBeLessThan(text.indexOf("Margarita de"));
     expect(text.indexOf("Margarita de")).toBeLessThan(text.indexOf("TOTAL"));
     expect(text.indexOf("TOTAL")).toBeLessThan(text.indexOf("RITIRO · 20:20"));
-    expect(text.indexOf("RITIRO · 20:20")).toBeLessThan(text.indexOf("PEDIDO #001"));
-    expect(text.indexOf("PEDIDO #001")).toBeLessThan(text.indexOf("Gracias por tu pedido"));
+    expect(text.indexOf("RITIRO · 20:20")).toBeLessThan(text.indexOf("Gracias por tu pedido"));
     expect(text).not.toMatch(/COPIA DEL PEDIDO|Canal:|Estado:|NO VÁLIDA COMO FACTURA/);
   });
 

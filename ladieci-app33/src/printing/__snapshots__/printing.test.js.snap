@@ -5,6 +5,9 @@ exports[`renderers golden customer 58 1`] = `
         Plaza Itálica 8
         Roquetas de Mar
 --------------------------------
+          PEDIDO #111
+       CLIENTE SIN NOMBRE
+--------------------------------
 1×  Margarita de          9,00 €
 prueba
 --------------------------------
@@ -12,7 +15,6 @@ prueba
 PAGADO · TARJETA
 --------------------------------
          RITIRO · 20:20
-          PEDIDO #111
        15/01/2026, 20:00
 --------------------------------
      Gracias por tu pedido
@@ -29,13 +31,15 @@ exports[`renderers golden customer 80 1`] = `
                 Plaza Itálica 8
                 Roquetas de Mar
 ------------------------------------------------
+                  PEDIDO #111
+               CLIENTE SIN NOMBRE
+------------------------------------------------
 1×   Margarita de prueba                9,00 €
 ------------------------------------------------
                                     TOTAL 9,00 €
 PAGADO · TARJETA
 ------------------------------------------------
                  RITIRO · 20:20
-                  PEDIDO #111
                15/01/2026, 20:00
 ------------------------------------------------
              Gracias por tu pedido
