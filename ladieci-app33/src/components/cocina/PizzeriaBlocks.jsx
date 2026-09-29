@@ -25,17 +25,18 @@ export const blockIdentity = (cards = []) => {
 
 // Colore del COUNTDOWN: pura presentazione sui ms rimanenti allo stesso delivery_deadline_at. deadlineState (e
 // quindi LÍMITE / URGENTE / TARDE, ordinamento, finestra del +) NON cambia: qui si sceglie solo il colore della pillola.
-//   > 15 min neutro · ≤ 15 giallo · ≤ 10 rosso · oltre la deadline rosso scuro. Niente bordi, niente glow.
+//   > 15 min neutro · ≤ 15 ambra · ≤ 10 rosso · oltre la deadline rosso scuro. Niente bordi, niente glow.
+// Pillola SOBRIA: fondo tenue, il segnale lo porta il NUMERO (colore del testo), non il rettangolo.
 // È l'UNICO segnale temporale forte: la card non si colora, l'etichetta URGENTE/TARDE resta piccola e testuale.
 export const COUNTDOWN_WARN_MIN = 15;
 export const COUNTDOWN_ALERT_MIN = 10;
 export const countdownTheme = (remainingMs) => {
   if (!Number.isFinite(remainingMs) || remainingMs > COUNTDOWN_WARN_MIN * 60000) {
-    return { level: "normal", bg: "rgba(0,0,0,0.22)", ink: "#FFFFFF", shadow: true };
+    return { level: "normal", bg: "rgba(0,0,0,0.18)", ink: "#FFFFFF", shadow: true };
   }
-  if (remainingMs > COUNTDOWN_ALERT_MIN * 60000) return { level: "warn", bg: "#FACC15", ink: "#1A1200", shadow: false };
-  if (remainingMs >= 0) return { level: "alert", bg: "#DC2626", ink: "#FFFFFF", shadow: false };
-  return { level: "late", bg: "#7F1D1D", ink: "#FFFFFF", shadow: false };
+  if (remainingMs > COUNTDOWN_ALERT_MIN * 60000) return { level: "warn", bg: "#FEF3C7", ink: "#B45309", shadow: false };
+  if (remainingMs >= 0) return { level: "alert", bg: "#FEE2E2", ink: "#B91C1C", shadow: false };
+  return { level: "late", bg: "#FCA5A5", ink: "#7F1D1D", shadow: false };
 };
 
 // RECOGIDA: il countdown è ESATTAMENTE il timer di ritiro già esistente (calcTimer di TabListos, invariato):
@@ -51,9 +52,9 @@ export const pickupCountdown = (t) => {
 
 const CAP_H = 11;
 const NUM_H = 34;
-const PILL_H = 28;   // pillola stretta attorno al numero: si legge il numero, non il rettangolo
+const PILL_H = 30;   // pillola stretta attorno al numero: si legge il numero, non il rettangolo
 const CH = 0.62;    // larghezza carattere monospace in em (DM Mono 0.6 + margine)
-const TIME_PX = 31, CD_PX = 22, UNIT_PX = 13, MIN_TIME = 24, MIN_CD = 17, GAP = 14, PILL_PAD = 7;   // GAP = distanza MINIMA ora↔countdown (il countdown sta a destra)
+const TIME_PX = 31, CD_PX = 24, UNIT_PX = 13, MIN_TIME = 24, MIN_CD = 17, GAP = 14, GAP_WIDE = 24, PILL_PAD = 7;   // GAP = distanza MINIMA ora↔countdown (il countdown sta a destra); GAP_WIDE senza fit (header GIRO Cocina)
 const STATE_TEXT = { normal: "LÍMITE", near: "URGENTE", late: "TARDE" };
 
 // larghezza reale disponibile (ResizeObserver; assente in jsdom → dimensioni base)
@@ -95,7 +96,7 @@ export const TimeCountdown = ({ pickup = false, dl = null, nowMs = null, pickupH
   }
   const num = { whiteSpace: "nowrap", fontFamily: "'DM Mono',monospace", fontWeight: 900, lineHeight: `${NUM_H}px`, letterSpacing: -.5 };
   const cap = { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0,
-    fontSize: 10, fontWeight: 900, letterSpacing: .6, lineHeight: `${CAP_H}px`, height: CAP_H, opacity: st === "normal" ? .8 : 1 };
+    fontSize: 10, fontWeight: 900, letterSpacing: .6, lineHeight: `${CAP_H}px`, height: CAP_H, opacity: .8 };   // sempre secondaria
   // ordine DOM storico: delivery "19:08 URGENTE −43 min", RECOGIDA "HORA 🕐 21:20 07:59"; l'etichetta sale sopra con `order`
   const caption = pickup ? (
     <span style={{ ...cap, display: "flex", alignItems: "center", gap: 4, order: -1, opacity: .8 }}>
@@ -105,7 +106,7 @@ export const TimeCountdown = ({ pickup = false, dl = null, nowMs = null, pickupH
     <span data-testid="block-state" style={{ ...cap, order: -1 }}>{STATE_TEXT[st]}</span>
   );
   return (
-    <div ref={ref} data-testid="block-time-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: GAP, height, minWidth: 0, overflow: "hidden" }}>
+    <div ref={ref} data-testid="block-time-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: fit ? GAP : GAP_WIDE, height, minWidth: 0, overflow: "hidden" }}>
       <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 0 }}>
         {pickup && caption}
         <span data-testid="block-main-time" title={pickup ? "Hora de recogida" : "Hora límite de entrega"}

@@ -52,9 +52,11 @@ describe("countdownTheme — soglie di presentazione", () => {
     expect(countdownTheme(0).level).toBe("alert");
     expect(countdownTheme(-1).level).toBe("late");
     expect(countdownTheme(NaN).level).toBe("normal");
-    expect(countdownTheme(14 * M)).toMatchObject({ bg: "#FACC15", ink: "#1A1200" });
-    expect(countdownTheme(9 * M)).toMatchObject({ bg: "#DC2626", ink: "#FFFFFF" });
-    expect(countdownTheme(-5 * M)).toMatchObject({ bg: "#7F1D1D", ink: "#FFFFFF" });
+    // pillola sobria: fondo tenue, il colore di stato sta sul NUMERO (nessun fondo pieno rosso/giallo)
+    expect(countdownTheme(14 * M)).toMatchObject({ bg: "#FEF3C7", ink: "#B45309" });
+    expect(countdownTheme(9 * M)).toMatchObject({ bg: "#FEE2E2", ink: "#B91C1C" });
+    expect(countdownTheme(-5 * M)).toMatchObject({ bg: "#FCA5A5", ink: "#7F1D1D" });
+    for (const ms of [14 * M, 9 * M, -5 * M]) expect(["#FACC15", "#DC2626", "#7F1D1D"]).not.toContain(countdownTheme(ms).bg);
   });
   test("deadlineState NON cambia: 14 min resta 'normal' (LÍMITE), solo il box è giallo", () => {
     expect(deadlineState(o("#1", "21:14"), NOW).state).toBe("normal");
