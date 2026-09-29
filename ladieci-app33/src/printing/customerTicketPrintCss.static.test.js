@@ -100,14 +100,19 @@ describe("customer ticket print-ready content matrix", () => {
       fulfilment_type: tipo_consegna,
       delivery_fee: tipo_consegna === "DOMICILIO" ? 2.5 : 0,
       payment: { method: status === "PAGADO" ? "TARJETA" : null, status },
+      channel: "TEL",
       tel: "+34 600 123 456",
       nombre: "Ana María",
     });
     const text = ticketDocumentToPlainText(document);
     expect(text).toContain(tipo_consegna);
     expect(text).toContain(status);
-    expect(text).toContain("A*** M***");
+    // Identification header: full name, uppercase, no "Cliente:" line; phone stays masked.
+    expect(text).toContain("ANA MARÍA");
+    expect(text).not.toContain("A*** M***");
+    expect(text).not.toContain("Cliente:");
     expect(text).toContain("*** *** 456");
+    expect(text).not.toContain("600 123");
   });
 
   test("business header supports complete and partial future configuration without blank rows", () => {
@@ -125,7 +130,7 @@ describe("customer ticket print-ready content matrix", () => {
     })).toEqual(["PIZZERÍA", "Calle Ejemplo 1"]);
   });
 
-  test("keeps products before totals and operational metadata in the minimal 58 mm order", () => {
+  test("keeps products before totals and operational metadata in the minimal 58 mm order (BANCO counter pickup: legacy layout)", () => {
     const text = ticketDocumentToPlainText(make({ service_order_number: 1 }).document);
     expect(text.indexOf("Margarita de")).toBeLessThan(text.indexOf("TOTAL"));
     expect(text.indexOf("TOTAL")).toBeLessThan(text.indexOf("RITIRO · 20:20"));
@@ -172,5 +177,50 @@ describe("customer ticket print-ready content matrix", () => {
     const serialized = JSON.stringify(document);
     expect(serialized).toContain("\u00a0€");
     expect(serialized).not.toMatch(/\d €/);
+  });
+});
+
+describe("customer ticket identification header markup", () => {
+  const order = (patch) => ({
+    ...getPrintFixture("12").order, // channel WA, RITIRO
+    service_order_number: 42,
+    tel: "+34 600 123 456",
+    ...patch,
+  });
+
+  test.each([58, 80])("renders PEDIDO + name right under the business header on %i mm", (paperWidth) => {
+    const { document } = createCustomerTicket(
+      order({ channel: "TEL", fulfilment_type: "DOMICILIO", nombre: "Juan Pérez García" }),
+      { createdAt, paperWidth },
+    );
+    const types = document.blocks.map((block) => block.type);
+    const firstSeparator = types.indexOf("separator");
+    expect(document.blocks[firstSeparator + 1]).toMatchObject({ value: "PEDIDO #042", align: "center", emphasis: "bold", size: "xlarge" });
+    expect(document.blocks[firstSeparator + 2]).toMatchObject({ value: "JUAN PÉREZ GARCÍA", align: "center", emphasis: "bold", size: "xlarge" });
+    expect(types[firstSeparator + 3]).toBe("separator");
+    // no ellipsis, name is never cut
+    expect(JSON.stringify(document)).not.toMatch(/…|\.\.\./);
+  });
+
+  test("markup: xlarge for a short name and large for a long name on 58 mm", () => {
+    const short = createCustomerTicket(order({ channel: "TEL", fulfilment_type: "DOMICILIO", nombre: "Juan Pérez García" }), { createdAt, paperWidth: 58 });
+    const long = createCustomerTicket(order({ channel: "TEL", fulfilment_type: "DOMICILIO", nombre: "María Concepción Fernández Rodríguez" }), { createdAt, paperWidth: 58 });
+    const shortMarkup = renderToStaticMarkup(<TicketDocumentView document={short.document} />);
+    const longMarkup = renderToStaticMarkup(<TicketDocumentView document={long.document} />);
+    expect(shortMarkup).toContain('emphasis-bold size-xlarge">JUAN PÉREZ GARCÍA<');
+    expect(longMarkup).toContain('emphasis-bold size-large">MARÍA CONCEPCIÓN FERNÁNDEZ RODRÍGUEZ<');
+    expect(longMarkup).toMatchSnapshot();
+  });
+
+  test("identification blocks match no positional CSS rule (separator/margin selectors stay untouched)", () => {
+    // .align-left.emphasis-bold.size-normal is reserved for the payment line, and
+    // separator + .role-secondary.align-center for the footer: the new blocks are
+    // center/bold/xlarge|large without a role, so neither selector can match them.
+    const { document } = createCustomerTicket(order({ channel: "TEL", nombre: "Juan" }), { createdAt });
+    const [pedido, name] = document.blocks.filter((block) => block.type === "text" && block.size !== "normal" || block.value === "JUAN");
+    for (const block of [pedido, name]) {
+      expect(block.align).toBe("center");
+      expect(block.role).toBeNull();
+    }
   });
 });

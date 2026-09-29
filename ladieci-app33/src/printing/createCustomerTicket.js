@@ -23,6 +23,9 @@ export function createCustomerTicket(order, options = {}) {
     location_name: CUSTOMER_TICKET_BUSINESS_PROFILE.business_name,
     final_message: CUSTOMER_TICKET_BUSINESS_PROFILE.footer_message,
     customer_display_name: maskCustomerName(order.nombre ?? order.customer_name),
+    // Unmasked on purpose, ONLY for the PEDIDO + name identification header (see
+    // usesCustomerIdentityHeader). The phone and every other field stay masked.
+    customer_full_name: order.nombre ?? order.customer_name,
     customer_masked_phone: maskCustomerPhone(order.tel ?? order.phone),
     // The normal customer copy never carries delivery PII, even if a caller
     // accidentally forwards a permissive privacy section from another flow.

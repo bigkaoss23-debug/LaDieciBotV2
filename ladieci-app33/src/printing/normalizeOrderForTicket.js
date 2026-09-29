@@ -169,6 +169,7 @@ export function normalizeOrderForTicket(rawOrder, options = {}) {
     customer: {
       location_name: nonEmpty(rawOrder.location_name ?? "LA DIECI", "customer.location_name"),
       display_name: optionalText(rawOrder.customer_display_name),
+      full_name: optionalText(rawOrder.customer_full_name),
       masked_phone: optionalText(rawOrder.customer_masked_phone),
       items: isKitchenTicket ? [] : customerItems,
       pricing: {

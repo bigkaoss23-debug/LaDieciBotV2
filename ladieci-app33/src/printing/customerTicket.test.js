@@ -148,3 +148,112 @@ describe("customer ticket display helpers", () => {
     expect(maskCustomerPhone("+34 600 123 456")).toBe("*** *** 456");
   });
 });
+
+describe("customer ticket identification header (PEDIDO + full name)", () => {
+  const make = (patch, paperWidth = 58) => createCustomerTicket({
+    ...getPrintFixture("12").order, // channel WA, RITIRO, PENDIENTE
+    service_order_number: 42,
+    tel: "+34 600 123 456",
+    ...patch,
+  }, { createdAt, paperWidth });
+  const nameBlock = (document) => document.blocks[document.blocks.findIndex((block) => block.type === "separator") + 2];
+  const count = (text, needle) => text.split(needle).length - 1;
+
+  test.each([
+    ["Juan", "JUAN", "xlarge", "xlarge"],
+    ["Juan Pérez", "JUAN PÉREZ", "xlarge", "xlarge"],
+    ["Juan Pérez García", "JUAN PÉREZ GARCÍA", "xlarge", "xlarge"],
+    ["Nuño Peña Ñáñez", "NUÑO PEÑA ÑÁÑEZ", "xlarge", "xlarge"],
+    ["María Concepción Fernández", "MARÍA CONCEPCIÓN FERNÁNDEZ", "large", "xlarge"],
+    ["María Concepción Fernández Rodríguez de la Torre", "MARÍA CONCEPCIÓN FERNÁNDEZ RODRÍGUEZ DE LA TORRE", "large", "large"],
+  ])("DOMICILIO and RITIRO print %p as %p (58 mm: %s, 80 mm: %s)", (nombre, printed, size58, size80) => {
+    for (const fulfilment_type of ["DOMICILIO", "RITIRO"]) {
+      for (const channel of ["TEL", "WA", "MANUAL"]) {
+        const on58 = make({ nombre, fulfilment_type, channel }, 58);
+        const on80 = make({ nombre, fulfilment_type, channel }, 80);
+        expect(nameBlock(on58.document)).toMatchObject({ value: printed, size: size58, align: "center", emphasis: "bold" });
+        expect(nameBlock(on80.document)).toMatchObject({ value: printed, size: size80, align: "center", emphasis: "bold" });
+        expect(ticketDocumentToPlainText(on58.document).replace(/\s+/g, " ")).toContain(printed);
+        expect(on58.snapshot.customer.full_name).toBe(nombre);
+      }
+    }
+  });
+
+  test("xlarge/large switch is exactly 19 characters on 58 mm and 30 on 80 mm", () => {
+    const n19 = "A".repeat(19);
+    const n20 = "A".repeat(20);
+    const n30 = "A".repeat(30);
+    const n31 = "A".repeat(31);
+    expect(nameBlock(make({ nombre: n19 }, 58).document).size).toBe("xlarge");
+    expect(nameBlock(make({ nombre: n20 }, 58).document).size).toBe("large");
+    expect(nameBlock(make({ nombre: n30 }, 80).document).size).toBe("xlarge");
+    expect(nameBlock(make({ nombre: n31 }, 80).document).size).toBe("large");
+  });
+
+  test.each([{ nombre: "" }, { nombre: "   " }, { nombre: null }, {}])("empty name %j prints CLIENTE SIN NOMBRE", (patch) => {
+    const { document } = make({ ...patch, fulfilment_type: "DOMICILIO", channel: "TEL" });
+    expect(nameBlock(document)).toMatchObject({ value: "CLIENTE SIN NOMBRE", align: "center", emphasis: "bold" });
+  });
+
+  test("PEDIDO appears exactly once, above the products, and the masked Cliente line is gone", () => {
+    for (const fulfilment_type of ["DOMICILIO", "RITIRO"]) {
+      const { document } = make({ nombre: "Juan Pérez", fulfilment_type, channel: "TEL" });
+      const text = ticketDocumentToPlainText(document);
+      expect(count(text, "PEDIDO #042")).toBe(1);
+      expect(text.indexOf("PEDIDO #042")).toBeLessThan(text.indexOf("JUAN PÉREZ"));
+      expect(text.indexOf("JUAN PÉREZ")).toBeLessThan(text.indexOf("Margarita de"));
+      expect(text.indexOf("PIZZERÍA")).toBeLessThan(text.indexOf("PEDIDO #042"));
+      expect(text).not.toContain("Cliente:");
+      expect(text).not.toContain("J*** P***");
+    }
+  });
+
+  test("keeps the phone masked, the fulfilment line, date, reprint marker and footer", () => {
+    const { document } = make({ nombre: "Juan Pérez", fulfilment_type: "DOMICILIO", channel: "TEL" });
+    const text = ticketDocumentToPlainText(document);
+    expect(text).toContain("Tel: *** *** 456");
+    expect(text).not.toContain("600 123");
+    expect(text).toContain("DOMICILIO · 20:20");
+    expect(text).toContain("TICKET NO FISCAL");
+    const reprint = ticketDocumentToPlainText(createCustomerTicket({
+      ...getPrintFixture("12").order, nombre: "Juan", fulfilment_type: "RITIRO", channel: "TEL", service_order_number: 42,
+    }, { createdAt, isReprint: true, copyNumber: 2 }).document);
+    expect(reprint).toContain("REIMPRESIÓN · COPIA 2");
+    expect(count(reprint, "PEDIDO #042")).toBe(1);
+  });
+
+  test("BANCO counter pickup and MESA keep the legacy layout (PEDIDO at the bottom, masked Cliente, no full name)", () => {
+    const cases = [
+      make({ nombre: "Juan Pérez", fulfilment_type: "RITIRO", channel: "BANCO" }),
+      make({ nombre: "Juan Pérez", fulfilment_type: "RITIRO", channel: "BANCO", table_number: "T-12" }),
+    ];
+    for (const { document, snapshot } of cases) {
+      const text = ticketDocumentToPlainText(document);
+      expect(count(text, "PEDIDO #042")).toBe(1);
+      expect(text.indexOf("Margarita de")).toBeLessThan(text.indexOf("PEDIDO #042"));
+      expect(text).toContain("Cliente: J*** P***");
+      expect(text).not.toContain("JUAN");
+      expect(text).not.toContain("Juan");
+      expect(text).not.toContain("CLIENTE SIN NOMBRE");
+      expect(snapshot.customer.display_name).toBe("J*** P***");
+    }
+    expect(ticketDocumentToPlainText(cases[1].document)).toContain("MESA T-12 · 20:20");
+  });
+
+  test("BANCO order with delivery still gets the identification header (delivery is where bags get swapped)", () => {
+    const text = ticketDocumentToPlainText(make({ nombre: "Juan Pérez", fulfilment_type: "DOMICILIO", channel: "BANCO" }).document);
+    expect(text).toContain("JUAN PÉREZ");
+    expect(text.indexOf("PEDIDO #042")).toBeLessThan(text.indexOf("Margarita de"));
+  });
+
+  test("address, phone and delivery notes never reach the ticket", () => {
+    const { snapshot, document } = make({
+      nombre: "Juan Pérez", fulfilment_type: "DOMICILIO", channel: "TEL",
+      direccion: "CALLE-SECRETA 9", direccion_note: "NOTA-SECRETA",
+    });
+    const searchable = JSON.stringify({ snapshot, document });
+    expect(searchable).not.toContain("CALLE-SECRETA");
+    expect(searchable).not.toContain("NOTA-SECRETA");
+    expect(searchable).not.toContain("+34 600 123 456");
+  });
+});
