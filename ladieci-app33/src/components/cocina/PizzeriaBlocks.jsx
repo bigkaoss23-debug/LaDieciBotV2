@@ -23,25 +23,58 @@ export const blockIdentity = (cards = []) => {
   return z.mixed ? ZONA_MIXTA : z;
 };
 
-// Colore del COUNTDOWN: pura presentazione sui ms rimanenti allo stesso delivery_deadline_at. deadlineState (e
-// quindi LÍMITE / URGENTE / TARDE, ordinamento, finestra del +) NON cambia: qui si sceglie solo il colore della pillola.
-//   > 15 min neutro · ≤ 15 ambra · ≤ 10 rosso · oltre la deadline rosso scuro. Niente bordi, niente glow.
-// Pillola SOBRIA: fondo tenue, il segnale lo porta il NUMERO (colore del testo), non il rettangolo.
+// Livello del COUNTDOWN: pura presentazione sui ms rimanenti allo stesso delivery_deadline_at. deadlineState (e
+// quindi LÍMITE / URGENTE / TARDE, ordinamento, finestra del +) NON cambia: qui si sceglie solo il colore del NUMERO.
+//   > 15 min neutro · ≤ 15 ambra · ≤ 10 rosso · oltre la deadline rosso deciso. Solo testo: niente fondo, box, bordi, glow.
 // È l'UNICO segnale temporale forte: la card non si colora, l'etichetta URGENTE/TARDE resta piccola e testuale.
 export const COUNTDOWN_WARN_MIN = 15;
 export const COUNTDOWN_ALERT_MIN = 10;
 export const countdownTheme = (remainingMs) => {
-  if (!Number.isFinite(remainingMs) || remainingMs > COUNTDOWN_WARN_MIN * 60000) {
-    return { level: "normal", bg: "rgba(0,0,0,0.18)", ink: "#FFFFFF", shadow: true };
+  if (!Number.isFinite(remainingMs) || remainingMs > COUNTDOWN_WARN_MIN * 60000) return { level: "normal" };
+  if (remainingMs > COUNTDOWN_ALERT_MIN * 60000) return { level: "warn" };
+  if (remainingMs >= 0) return { level: "alert" };
+  return { level: "late" };
+};
+
+// Colore del testo: tinta di stato fissa (ambra / rosso), si muove SOLO la luminosità finché il numero raggiunge
+// 4.5:1 sul colore reale dell'header (zona / RECOGIDA / GIRO). Ambra e <10 preferiscono schiarire (sobri accanto
+// all'ora bianca), TARDE preferisce scurire (più deciso); se sul lato preferito 4.5 non è raggiungibile si passa
+// all'altro. <10 e TARDE non coincidono mai. Neutro = bianco come l'ora.
+export const INK_TARGET = 4.5;
+const INK_STATE = { warn: [45, 0.96, 0.65, "light"], alert: [0, 0.93, 0.82, "light"], late: [0, 0.90, 0.70, "dark"] };
+const hsl = (h, s, l) => { const k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  return [0, 8, 4].map((n) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))))); };
+const lum = ([r, g, b]) => { const f = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+export const contrastRatio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+export const hexToRgb = (h) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(h || "")); if (!m) return null; const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const inkSide = ([h, s, pref], bg, side) => {
+  for (let i = 0; i <= 200; i++) { const l = side === "light" ? pref + (1 - pref) * i / 200 : pref - pref * i / 200;
+    if (l > 0.97 || l < 0.04) break; if (contrastRatio(hsl(h, s, l), bg) >= INK_TARGET) return l; }
+  return null;
+};
+const inkPick = (st, bg) => { const d = INK_STATE[st], other = d[3] === "light" ? "dark" : "light";
+  for (const side of [d[3], other]) { const l = inkSide(d, bg, side); if (l != null) return { side, l }; }
+  return [{ side: "light", l: 0.97 }, { side: "dark", l: 0.04 }].reduce((a, c) => (contrastRatio(hsl(d[0], d[1], c.l), bg) > contrastRatio(hsl(d[0], d[1], a.l), bg) ? c : a));
+};
+export const inkOn = (level, bg) => {
+  const bgRgb = Array.isArray(bg) ? bg : hexToRgb(bg);
+  if (!INK_STATE[level]) return { ink: "#FFFFFF", rgb: [255, 255, 255], dark: false };
+  if (!bgRgb) { const d = INK_STATE[level], rgb = hsl(d[0], d[1], d[2]); return { ink: `rgb(${rgb})`, rgb, dark: false }; }
+  let p = inkPick(level, bgRgb);
+  if (level === "alert" || level === "late") {
+    const a = inkPick("alert", bgRgb), t = inkPick("late", bgRgb);
+    if (a.side === t.side && Math.abs(a.l - t.l) < 0.08) {
+      if (a.side === "light") a.l = Math.min(0.97, t.l + 0.08); else t.l = Math.max(0.04, a.l - 0.08);
+    }
+    p = level === "alert" ? a : t;
   }
-  if (remainingMs > COUNTDOWN_ALERT_MIN * 60000) return { level: "warn", bg: "#FEF3C7", ink: "#B45309", shadow: false };
-  if (remainingMs >= 0) return { level: "alert", bg: "#FEE2E2", ink: "#B91C1C", shadow: false };
-  return { level: "late", bg: "#FCA5A5", ink: "#7F1D1D", shadow: false };
+  const rgb = hsl(INK_STATE[level][0], INK_STATE[level][1], p.l);
+  return { ink: `rgb(${rgb})`, rgb, dark: lum(rgb) < 0.2 };
 };
 
 // RECOGIDA: il countdown è ESATTAMENTE il timer di ritiro già esistente (calcTimer di TabListos, invariato):
 // stesso testo "MM:SS" ("-MM:SS" = oltre l'orario), qui solo reso leggibile. I ms rimanenti servono SOLO al colore
-// della pillola (stesse soglie del delivery); senza orario il timer conta dall'ordine → nessuna soglia, TARDE se scaduto.
+// del numero (stesse soglie del delivery); senza orario il timer conta dall'ordine → nessuna soglia, TARDE se scaduto.
 export const pickupCountdown = (t) => {
   if (!t) return null;
   const text = `${t.scaduto && t.conOrario ? "-" : ""}${String(t.mm).padStart(2, "0")}:${String(t.ss).padStart(2, "0")}`;
@@ -52,9 +85,9 @@ export const pickupCountdown = (t) => {
 
 const CAP_H = 11;
 const NUM_H = 34;
-const PILL_H = 30;   // pillola stretta attorno al numero: si legge il numero, non il rettangolo
+const CD_H = 34;     // riga del countdown = riga dell'ora (solo testo, nessun contenitore)
 const CH = 0.62;    // larghezza carattere monospace in em (DM Mono 0.6 + margine)
-const TIME_PX = 31, CD_PX = 24, UNIT_PX = 13, MIN_TIME = 24, MIN_CD = 17, GAP = 14, GAP_WIDE = 24, PILL_PAD = 7;   // GAP = distanza MINIMA ora↔countdown (il countdown sta a destra); GAP_WIDE senza fit (header GIRO Cocina)
+const TIME_PX = 31, CD_PX = 29, UNIT_PX = 14, MIN_TIME = 24, MIN_CD = 17, GAP = 14, GAP_WIDE = 24;   // GAP = distanza MINIMA ora↔countdown (il countdown sta a destra); GAP_WIDE senza fit (header GIRO Cocina)
 const STATE_TEXT = { normal: "LÍMITE", near: "URGENTE", late: "TARDE" };
 
 // larghezza reale disponibile (ResizeObserver; assente in jsdom → dimensioni base)
@@ -72,15 +105,17 @@ const useWidthOf = () => {
 };
 
 // Riga orari (header blocco / card Cocina / header GIRO Cocina):   LÍMITE            ← etichetta piccola
-//                                                                  18:08  [ −19 min ] ← ora 31px · countdown 22px
-// La pillola sta ACCANTO all'ora ed è chiaramente secondaria; i numeri scalano sulla larghezza reale (mai tagliati).
+//                                                                  18:08        −19 min ← ora 31px · countdown 29px
+// ORA a sinistra, COUNTDOWN (solo testo) a destra; i numeri scalano sulla larghezza reale (mai tagliati).
 // `fit={false}` (header GIRO Cocina, spazio abbondante): niente adattamento — la riga misurerebbe solo se stessa.
-export const TimeCountdown = ({ pickup = false, dl = null, nowMs = null, pickupHora = null, pickupTimer = null, height = 48, fit = true }) => {
+// `bg` = colore dell'header su cui sta la riga: serve solo a scegliere un colore del numero leggibile (inkOn).
+export const TimeCountdown = ({ pickup = false, dl = null, nowMs = null, pickupHora = null, pickupTimer = null, height = 48, fit = true, bg = null }) => {
   const st = (dl && dl.state) || "normal";
   const cd = pickup ? null : countdownLabel(dl && dl.ms, nowMs);
   const pk = pickup ? pickupTimer : null;
   const cdt = countdownTheme(pickup ? (pk ? pk.ms : NaN) : (dl && Number.isFinite(dl.ms) && Number.isFinite(nowMs) ? dl.ms - nowMs : NaN));
   const [ref, w] = useWidthOf();
+  const ink = inkOn(cdt.level, bg);
 
   const timeText = pickup ? (pickupHora || "—") : (dl ? dl.hhmm : "—");
   const cdNum = pickup ? (pk ? pk.text : "") : (cd ? cd.text.replace(/ min$/, "") : "");
@@ -88,10 +123,10 @@ export const TimeCountdown = ({ pickup = false, dl = null, nowMs = null, pickupH
   let timePx = TIME_PX, cdPx = CD_PX;
   if (fit && Number.isFinite(w) && w > 0) {
     const tChars = Math.max(5, timeText.length), cChars = Math.max(3, cdNum.length);
-    const pillW = (px) => (cdNum ? 2 * PILL_PAD + cChars * CH * px + unitW : 0);
+    const cdW = (px) => (cdNum ? cChars * CH * px + unitW : 0);
     const room = w - tChars * CH * TIME_PX - (cdNum ? GAP : 0);
-    if (cdNum && pillW(CD_PX) > room) cdPx = Math.max(MIN_CD, Math.floor((room - 2 * PILL_PAD - unitW) / (cChars * CH)));
-    const left = w - pillW(cdPx) - (cdNum ? GAP : 0);
+    if (cdNum && cdW(CD_PX) > room) cdPx = Math.max(MIN_CD, Math.floor((room - unitW) / (cChars * CH)));
+    const left = w - cdW(cdPx) - (cdNum ? GAP : 0);
     if (tChars * CH * TIME_PX > left) timePx = Math.max(MIN_TIME, Math.floor(left / (tChars * CH)));
   }
   const num = { whiteSpace: "nowrap", fontFamily: "'DM Mono',monospace", fontWeight: 900, lineHeight: `${NUM_H}px`, letterSpacing: -.5 };
@@ -116,13 +151,13 @@ export const TimeCountdown = ({ pickup = false, dl = null, nowMs = null, pickupH
       {cdNum && (
         <div data-testid="block-countdown-box" data-level={cdt.level}
           title={pickup ? (pk && !pk.conOrario ? "Desde la orden" : "Tiempo hasta la recogida") : "Tiempo hasta la hora límite"} style={{
-          height: PILL_H, margin: `${CAP_H + (NUM_H - PILL_H) / 2}px 0 ${(NUM_H - PILL_H) / 2}px`, boxSizing: "border-box", borderRadius: 7, padding: `0 ${PILL_PAD}px`, flexShrink: 0,   // in asse con l'ora
-          display: "flex", alignItems: "center", background: cdt.bg, color: cdt.ink,
-          textShadow: cdt.shadow ? "0 1px 2px rgba(0,0,0,0.35)" : "none",
+          height: CD_H, marginTop: CAP_H, boxSizing: "border-box", padding: 0, flexShrink: 0,   // in asse con l'ora — nessun fondo, nessun box
+          display: "flex", alignItems: "center", background: "none", color: ink.ink,
+          textShadow: ink.dark ? "none" : "0 1px 2px rgba(0,0,0,0.35)",
         }}>
-          <span data-testid={pickup ? "pickup-prep" : "block-countdown"} style={{ ...num, lineHeight: `${PILL_H}px` }}>
+          <span data-testid={pickup ? "pickup-prep" : "block-countdown"} style={{ ...num, lineHeight: `${CD_H}px` }}>
             <span style={{ fontSize: cdPx }}>{cdNum}</span>
-            {unitW > 0 && <span style={{ fontSize: UNIT_PX, letterSpacing: 0 }}> min</span>}
+            {unitW > 0 && <span style={{ fontSize: UNIT_PX, letterSpacing: 0, opacity: .75 }}> min</span>}
           </span>
         </div>
       )}
@@ -131,9 +166,9 @@ export const TimeCountdown = ({ pickup = false, dl = null, nowMs = null, pickupH
 };
 
 // Header del blocco (Pizzeria e Cocina): ALTEZZA FISSA, identica per zona, GIRO e RECOGIDA — mai va a capo.
-//   riga 1 (24px):  📍 CENTRO · 3 pedidos / #id · cliente        [GIRO G1]      ← DOVE / TIPO
+//   riga 1 (24px):  📍 CENTRO · 3 pedidos · GIRO G1  /  #id · cliente             ← DOVE / TIPO (un solo blocco)
 //   riga 2 (48px):  LÍMITE                                                      ← QUANTO / QUANDO
-//                   18:08  [ −19 min ]
+//                   18:08                                        −19 min
 // Il controllo di priorità NON sta nell'header: è il bottone 🕐 nel footer della card, accanto a LISTO.
 // `member` (card dentro un GIRO in Cocina): SOLO riga 1 (zona + #id · cliente) — ora, countdown e stato vivono una
 // volta sola, nell'header del giro; il proprio límite, se diverso, è una mini-riga nella card (TabCocina).
@@ -163,18 +198,17 @@ export const BlockHeader = ({ identity, count = null, subtitle = null, dl, nowMs
             · {count} pedido{count !== 1 ? "s" : ""}
           </span>
         )}
+        {giroLabel && (   // un solo blocco con la zona: "CENTRO · 2 pedidos · GIRO G1" (testo, nessuna pillola)
+          <span data-testid="block-giro" style={{ fontSize: 13, fontWeight: 900, letterSpacing: .4, whiteSpace: "nowrap", flexShrink: 0 }}>
+            · {giroLabel}
+          </span>
+        )}
         {subtitle && (
           <span style={{ ...cell, fontSize: 13, fontWeight: 800, opacity: .95 }}>{subtitle}</span>
         )}
         <span style={{ flex: 1, minWidth: 0 }} />
-        {giroLabel && (
-          <span data-testid="block-giro" style={{
-            background: "rgba(0,0,0,0.28)", border: "1.5px solid rgba(255,255,255,0.7)", borderRadius: 7,
-            padding: "1px 7px", fontSize: 12, fontWeight: 900, letterSpacing: .6, whiteSpace: "nowrap", flexShrink: 0,
-          }}>{giroLabel}</span>
-        )}
       </div>
-      {!member && <TimeCountdown pickup={pickup} dl={dl} nowMs={nowMs} pickupHora={pickupHora} pickupTimer={pickupTimer} height={ROW2_H} />}
+      {!member && <TimeCountdown pickup={pickup} dl={dl} nowMs={nowMs} pickupHora={pickupHora} pickupTimer={pickupTimer} height={ROW2_H} bg={identity.color} />}
     </div>
   );
 };

@@ -19,7 +19,9 @@ jest.mock("../sounds", () => ({ __esModule: true, default: { campanellaDieci: ()
 
 import TabCocina from "../components/cocina/TabCocina";
 import PanelCocina from "../components/cocina/PanelCocina";
-import { countdownTheme, pickupCountdown } from "../components/cocina/PizzeriaBlocks";
+import { countdownTheme, pickupCountdown, inkOn, contrastRatio, hexToRgb, INK_TARGET, PICKUP } from "../components/cocina/PizzeriaBlocks";
+import { ZONE_DELIVERY } from "../zones";
+import { ZONA_MIXTA, GIRO_COLORS } from "../components/cocina/kitchenVisual";
 import { calcTimer } from "../components/ordenes/TabListos";
 import { deadlineState } from "../components/cocina/manualGiroCocina";
 
@@ -52,11 +54,22 @@ describe("countdownTheme — soglie di presentazione", () => {
     expect(countdownTheme(0).level).toBe("alert");
     expect(countdownTheme(-1).level).toBe("late");
     expect(countdownTheme(NaN).level).toBe("normal");
-    // pillola sobria: fondo tenue, il colore di stato sta sul NUMERO (nessun fondo pieno rosso/giallo)
-    expect(countdownTheme(14 * M)).toMatchObject({ bg: "#FEF3C7", ink: "#B45309" });
-    expect(countdownTheme(9 * M)).toMatchObject({ bg: "#FEE2E2", ink: "#B91C1C" });
-    expect(countdownTheme(-5 * M)).toMatchObject({ bg: "#FCA5A5", ink: "#7F1D1D" });
-    for (const ms of [14 * M, 9 * M, -5 * M]) expect(["#FACC15", "#DC2626", "#7F1D1D"]).not.toContain(countdownTheme(ms).bg);
+  });
+  // TEXT ONLY: il colore del NUMERO si adatta al fondo reale dell'header, sempre ≥ 4.5:1, tinta di stato invariata
+  const HEADER_BGS = [...ZONE_DELIVERY.map((z) => z.colore), PICKUP.color, ZONA_MIXTA.color, ...GIRO_COLORS];
+  test.each(HEADER_BGS)("numero leggibile (≥ 4.5:1) su %s per ambra / <10 / TARDE; <10 ≠ TARDE", (bg) => {
+    const rgb = hexToRgb(bg);
+    for (const lv of ["warn", "alert", "late"]) expect(contrastRatio(inkOn(lv, bg).rgb, rgb)).toBeGreaterThanOrEqual(INK_TARGET);
+    expect(inkOn("alert", bg).ink).not.toBe(inkOn("late", bg).ink);
+    expect(inkOn("normal", bg).ink).toBe("#FFFFFF");                                   // neutro = bianco come l'ora
+  });
+  test("tinta di stato preservata: ambra resta ambra, <10 / TARDE restano rossi (si muove solo la luminosità)", () => {
+    const hue = ([r, g, b]) => { const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (!d) return null;
+      const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return (h * 60 + 360) % 360; };
+    for (const bg of HEADER_BGS) {
+      expect(hue(inkOn("warn", bg).rgb)).toBeGreaterThanOrEqual(35); expect(hue(inkOn("warn", bg).rgb)).toBeLessThanOrEqual(55);
+      for (const lv of ["alert", "late"]) { const h = hue(inkOn(lv, bg).rgb); expect(h === 0 || h < 8 || h > 352).toBe(true); }
+    }
   });
   test("deadlineState NON cambia: 14 min resta 'normal' (LÍMITE), solo il box è giallo", () => {
     expect(deadlineState(o("#1", "21:14"), NOW).state).toBe("normal");
@@ -91,8 +104,12 @@ describe.each([
       expect(row.querySelector('[data-testid="block-countdown"]')).toBeTruthy();
       expect(parseFloat(row.querySelector('[data-testid="block-main-time"]').style.fontSize)).toBeGreaterThanOrEqual(30);
       const cdPx = parseFloat(row.querySelector('[data-testid="block-countdown"]').firstChild.style.fontSize);
-      expect(cdPx).toBeGreaterThanOrEqual(20);                                        // leggibile…
-      expect(cdPx).toBeLessThanOrEqual(24);                                           // …ma secondario rispetto all'ora
+      expect(cdPx).toBeGreaterThanOrEqual(26);                                        // quasi importante quanto l'ora…
+      expect(cdPx).toBeLessThanOrEqual(30);                                           // …ma mai più grande
+      const box = row.querySelector('[data-testid="block-countdown-box"]');
+      expect(["", "none"]).toContain(box.style.background);                             // TEXT ONLY: nessun fondo / box
+      expect(box.style.border || "").toBe("");
+      expect(box.style.color).toMatch(/^(rgb|#)/);
       expect(cdPx).toBeLessThan(parseFloat(row.querySelector('[data-testid="block-main-time"]').style.fontSize));
       expect(row.closest('[data-state]').style.height).toBe("88px");
     }
@@ -148,5 +165,52 @@ describe("Cocina GIRO — un solo allarme per giro", () => {
     expect(members).toHaveLength(2);
     for (const m of members) expect(m.querySelector('[data-testid="block-countdown-box"]')).toBeNull();
     expect(grp.querySelectorAll('[data-testid="priority-clock"]')).toHaveLength(1);
+  });
+
+  test("GIRO multi-zona: header = VARIAS ZONAS · GIRO G1 (nessuna zona inventata); ogni membro tiene la sua zona", async () => {
+    const { api } = require("../api");
+    api.getManualGiros.mockResolvedValue([{ id: "mg_260921_1", seq: 1, dissolved_at: null }]);
+    const g = [o("#1", "21:09", { manual_giro_id: "mg_260921_1" }), o("#2", "21:30", { manual_giro_id: "mg_260921_1", zona: "Q4" })];
+    const el = await mount(<TabCocina ordenes={g} onListo={() => {}} />);
+    const head = el.querySelector('[data-testid="giro-group"]').firstElementChild;
+    const title = head.querySelector('[data-testid="giro-title"]');
+    expect(title.querySelector('[data-testid="giro-zone"]').getAttribute("data-zone")).toBe("MIXTA");
+    expect(title.textContent).toMatch(/VARIAS ZONAS/);
+    expect(title.textContent).toMatch(/GIRO G1/);
+    expect(title.textContent).toMatch(/2 pedidos/);
+    expect(title.contains(head.querySelector('[data-testid="block-countdown-box"]'))).toBe(false);   // countdown fuori dal blocco zona, a destra
+    const zones = [...el.querySelectorAll('[data-testid="deadline-header"] [data-testid="zone-badge"]')].map((z) => z.getAttribute("data-zone")).sort();
+    expect(zones).toEqual(["Q1", "Q4"]);
+  });
+
+  test("GIRO mono-zona: header = CENTRO · GIRO G1 (zona reale del giro); membri invariati (§7 zona sempre visibile)", async () => {
+    const { api } = require("../api");
+    api.getManualGiros.mockResolvedValue([{ id: "mg_260921_1", seq: 1, dissolved_at: null }]);
+    const g = [o("#1", "21:09", { manual_giro_id: "mg_260921_1" }), o("#2", "21:30", { manual_giro_id: "mg_260921_1" })];
+    const el = await mount(<TabCocina ordenes={g} onListo={() => {}} />);
+    const title = el.querySelector('[data-testid="giro-title"]');
+    expect(title.querySelector('[data-testid="giro-zone"]').getAttribute("data-zone")).toBe("Q1");
+    expect(title.textContent).toMatch(/CENTRO/);
+    expect(title.textContent).not.toMatch(/VARIAS/);
+    expect(title.textContent).toMatch(/GIRO G1 · 2 pedidos/);
+    expect(el.querySelectorAll('[data-testid="deadline-header"] [data-testid="zone-badge"]')).toHaveLength(2);
+  });
+});
+
+describe("Pizzeria GIRO — zona + pedidos + giro in un solo blocco a sinistra", () => {
+  test("riga 1 = 📍 CENTRO · 2 pedidos · GIRO G1 (testo, nessuna pillola); ora + countdown restano nella riga 2", async () => {
+    const { api } = require("../api");
+    api.getManualGiros.mockResolvedValue([{ id: "mg_260921_1", seq: 1, dissolved_at: null }]);
+    const g = [o("#1", "21:09", { manual_giro_id: "mg_260921_1" }), o("#2", "21:30", { manual_giro_id: "mg_260921_1" })];
+    const el = await mount(<PanelCocina ordenes={g} onListo={() => {}} onClose={() => {}} />);
+    const giro = el.querySelector('[data-testid="block-giro"]');
+    expect(giro.textContent).toMatch(/GIRO G1/);
+    expect(giro.style.background || "").toBe("");
+    expect(giro.style.border || "").toBe("");
+    const row1 = giro.parentElement;
+    const kids = [...row1.children];
+    expect(kids.indexOf(giro)).toBe(kids.indexOf(row1.querySelector('[data-testid="block-count"]')) + 1);   // subito dopo "· 2 pedidos"
+    expect(row1.textContent.replace(/\s+/g, " ")).toMatch(/CENTRO\s*· 2 pedidos\s*· GIRO G1/);   // gli spazi tra gli span sono il gap flex
+    expect(row1.querySelector('[data-testid="block-countdown-box"]')).toBeNull();
   });
 });

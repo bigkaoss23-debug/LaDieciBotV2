@@ -84,16 +84,32 @@ export const DeadlineHeader = ({ o, zone, light, right = null }) => {
 // Contenitore del giro: occupa `cols` colonne (= min(colonne griglia, membri)), così ogni membro è largo
 // quanto una card singola; i membri restano card con la propria zona.
 // [KDS] `time` = ORA + countdown del membro più urgente (stesso blockDeadline della Pizzeria): unico allarme del giro.
-export const GiroGroup = ({ giro, label, count, cols, light, control = null, time = null, children }) => {
+// [KDS] `zone` = identità del giro (blockIdentity, la stessa della Pizzeria): mono-zona → la zona, zone diverse →
+// "VARIAS ZONAS" (nessuna zona inventata). Un solo blocco compatto a sinistra, su due righe per non andare mai a capo
+// (il countdown resta a destra anche a 768):   📍 CENTRO
+//                                              GIRO G1 · 2 pedidos
+export const GiroGroup = ({ giro, label, count, cols, light, control = null, time = null, zone = null, children }) => {
   const col = giroColor(giro);
   return (
     <div data-testid="giro-group" data-giro={label} style={{
       gridColumn: `span ${cols}`, border: `4px solid ${col}`, borderRadius: 18, overflow: "hidden",
       background: light ? `${col}0F` : `${col}33`,
     }}>
-      <div style={{ background: col, color: "#FFFFFF", padding: "8px 12px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 22, fontWeight: 900, letterSpacing: .5 }}>{label}</span>
-        <span style={{ fontSize: 13, fontWeight: 800, opacity: .85 }}>Giro · {count} pedidos</span>
+      <div style={{ background: col, color: "#FFFFFF", padding: "8px 12px", display: "flex", alignItems: "center", gap: 12, flexWrap: zone ? "nowrap" : "wrap" }}>
+        {zone ? (
+          <span data-testid="giro-title" style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: "0 1 auto", whiteSpace: "nowrap" }}>
+            <span data-testid="giro-zone" data-zone={zone.id} style={{ fontSize: 20, fontWeight: 900, letterSpacing: .4, lineHeight: "24px", overflow: "hidden", textOverflow: "ellipsis" }}>📍 {zone.nome}</span>
+            <span style={{ fontSize: 13, lineHeight: "18px", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <span style={{ fontWeight: 900, letterSpacing: .4 }}>GIRO {label}</span>
+              <span style={{ fontWeight: 800, opacity: .9 }}> · {count} pedidos</span>
+            </span>
+          </span>
+        ) : (
+          <>
+            <span style={{ fontSize: 22, fontWeight: 900, letterSpacing: .5 }}>{label}</span>
+            <span style={{ fontSize: 13, fontWeight: 800, opacity: .85 }}>Giro · {count} pedidos</span>
+          </>
+        )}
         <span style={{ flex: 1 }} />
         {time}
         {control}

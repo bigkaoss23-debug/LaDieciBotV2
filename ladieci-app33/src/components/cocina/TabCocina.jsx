@@ -5,8 +5,8 @@ import Suoni from '../../sounds';
 import { lookupMenu, calcTimer, formatSub, FASE_CONFIG, notaCucina } from '../ordenes/TabListos';
 import { ZONE_DELIVERY, tempoAndata } from '../../zones';
 import PriorityControl from '../ui/PriorityControl';
-import { KitchenVisualStyles, GiroGroup, zoneMeta } from './kitchenVisual';
-import { BlockHeader, ItemRow, PICKUP, pickupCountdown, TimeCountdown } from './PizzeriaBlocks';
+import { KitchenVisualStyles, GiroGroup, giroColor, zoneMeta } from './kitchenVisual';
+import { BlockHeader, ItemRow, PICKUP, blockIdentity, pickupCountdown, TimeCountdown } from './PizzeriaBlocks';
 import { blockDeadline } from './kitchenPacking';
 import { ORDER_STATES } from '../../core/orders';
 import { isDessertPizza } from '../../menu/dessertPizza';
@@ -445,8 +445,8 @@ const TabCocina = ({ordenes,onListo,loadingIds=new Set(),msgsPreguntas=[],pizzeF
           {groupKitchenSegments(activos).map((seg) => seg.type === "giro" ? (
             <GiroGroup key={"g:" + seg.giroId} giro={seg.cards[0].manualGiro || { id: seg.giroId }}
               label={formatManualGiroLabel(seg.cards[0].manualGiro || { id: seg.giroId })} count={seg.cards.length}
-              cols={Math.min(cols, Math.max(1, seg.cards.length))} light={false}
-              time={<TimeCountdown dl={blockDeadline(seg.cards, now)} nowMs={now} fit={false} />}>
+              cols={Math.min(cols, Math.max(1, seg.cards.length))} light={false} zone={blockIdentity(seg.cards)}
+              time={<TimeCountdown dl={blockDeadline(seg.cards, now)} nowMs={now} fit={false} bg={giroColor(seg.cards[0].manualGiro || { id: seg.giroId })} />}>
               {/* un solo controllo per giro: sulla prima card (seg.cards[0], a cui va l'offset di tutto il blocco) */}
               {seg.cards.map((o, i) => renderCard(o, i === 0
                 ? <PriorityControl variant="clock" orden={seg.cards[0]} windowOrders={seg.cards} onUpdate={handleOffsetChange} light={false} nowMs={now}
