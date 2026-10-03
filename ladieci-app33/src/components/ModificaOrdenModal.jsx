@@ -5,6 +5,7 @@ import PizzaCustomBuilder from './PizzaCustomBuilder';
 import { ZONE_DELIVERY, zonaBadgeStyle } from '../zones';
 import { api } from '../api';
 import CustomerTicketPrintModal from '../printing/components/CustomerTicketPrintModal';
+import { addItemExtra, removeItemExtra, setItemNote, getItemExtras, getItemNote, isBareCatalogLine } from '../menu/itemExtras';
 
 const ModificaOrdenModal = ({orden, onClose, onSave}) => {
   // Normalizza items: può essere array, stringa JSON, o undefined
@@ -84,15 +85,19 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
   const w = useWidth();
   const cols = w >= 768 ? 4 : 2;
 
+  // Merge (q+1) SOLO dentro una riga "prodotto nudo di catalogo": mai dentro una riga con
+  // extra/nota o con prezzo diverso dal catalogo (ne erediterebbe supplemento e configurazione).
   const tap = (p) => setItems(prev => {
-    const ex = prev.find(i=>i.id===p.id);
-    if(ex) return prev.map(i=>i.id===p.id?{...i,q:i.q+1}:i);
+    const exIdx = prev.findIndex(i=>String(i.id)===String(p.id) && isBareCatalogLine(i));
+    if(exIdx>=0) return prev.map((i,j)=>j===exIdx?{...i,q:i.q+1}:i);
     // `sub` è il campo note/extras dell'ordine, NON il nome classico del catalogo:
     // ereditarlo da MENU stamperebbe "Margherita Classica" come variazione.
     return [...prev,{...p,q:1,sub:""}];
   });
-  const adj = (id,d) => setItems(prev=>
-    prev.map(i=>i.id===id?{...i,q:Math.max(0,i.q+d)}:i).filter(i=>i.q>0));
+  // Per INDICE di riga: più righe dello stesso prodotto (una con extra, una nuda) sono
+  // righe diverse; agire per `id` ne cambiava le quantità tutte insieme.
+  const adj = (idx,d) => setItems(prev=>
+    prev.map((i,j)=>j===idx?{...i,q:Math.max(0,i.q+d)}:i).filter(i=>i.q>0));
   // Totale = sum(items) + delivery_fee (per DOMICILIO). Sorgente unica: calcTotale.
   const total = calcTotale(items, orden.tipo_consegna).toFixed(2);
 
@@ -138,7 +143,8 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
             {cat !== "⭐ Custom" ? (
               <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:8}}>
                 {MENU.filter(m=>m.cat===cat).map(p=>{
-                  const s = items.find(i=>String(i.id)===String(p.id));
+                  const qProd = items.filter(i=>String(i.id)===String(p.id)).reduce((a,i)=>a+(parseInt(i.q)||0),0);
+                  const s = qProd>0 ? {q:qProd} : null;
                   const lbl = pizzaLabel(p);
                   return (
                     <button key={p.id} onClick={()=>tap(p)} style={{
@@ -186,21 +192,20 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                   const itEmoji = (it.e && String(it.e).length<=4) ? it.e : "🍕";
                   const itP = parseFloat(it.p)||0;
                   const itQ = parseInt(it.q)||1;
-                  const itId = it.id ?? idx;
                   return (
-                  <div key={itId} style={{marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${C.fumo}`}}>
+                  <div key={`${it.id ?? "x"}-${idx}`} style={{marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${C.fumo}`}}>
                     {/* Riga qty */}
                     <div style={{display:"flex",alignItems:"center",gap:7}}>
                       <span style={{fontSize:15}}>{itEmoji}</span>
                       <span style={{color:C.bianco,fontSize:13,flex:1,
                         overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.n}</span>
-                      <button onClick={()=>adj(itId,-1)} style={{background:C.fumo,
+                      <button onClick={()=>adj(idx,-1)} style={{background:C.fumo,
                         color:C.bianco,border:"none",borderRadius:6,width:26,height:26,
                         fontSize:15,fontWeight:700,display:"flex",alignItems:"center",
                         justifyContent:"center"}}>−</button>
                       <span style={{color:C.bianco,fontWeight:800,minWidth:18,
                         textAlign:"center",fontFamily:"'DM Mono',monospace"}}>{itQ}</span>
-                      <button onClick={()=>adj(itId,+1)} style={{background:C.fumo,
+                      <button onClick={()=>adj(idx,+1)} style={{background:C.fumo,
                         color:C.bianco,border:"none",borderRadius:6,width:26,height:26,
                         fontSize:15,fontWeight:700,display:"flex",alignItems:"center",
                         justifyContent:"center"}}>+</button>
@@ -208,21 +213,21 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                         fontFamily:"'DM Mono',monospace"}}>{(itP*itQ).toFixed(2)}€</span>
                     </div>
                     {/* Campo variazioni */}
+                    {/* Solo la NOTA: gli extra sono i chip qui sotto e si cambiano solo coi bottoni */}
                     <input
-                      value={it.sub||""}
-                      onChange={e=>setItems(prev=>prev.map((x,j)=>j===idx?{...x,sub:e.target.value}:x))}
+                      value={getItemNote(it)}
+                      onChange={e=>setItems(prev=>prev.map((x,j)=>j===idx?setItemNote(x,e.target.value):x))}
                       placeholder="Variaciones (sin cebolla, extra picante...)"
                       style={{width:"100%",marginTop:5,background:"rgba(232,52,28,0.08)",
-                        border:`1px solid ${it.sub?"#E8341C88":C.fumo}`,
-                        borderRadius:7,color:it.sub?"#E8341C":C.grigio,
-                        padding:"5px 9px",fontSize:12,fontWeight:it.sub?700:400,
+                        border:`1px solid ${getItemNote(it)?"#E8341C88":C.fumo}`,
+                        borderRadius:7,color:getItemNote(it)?"#E8341C":C.grigio,
+                        padding:"5px 9px",fontSize:12,fontWeight:getItemNote(it)?700:400,
                         boxSizing:"border-box"}}
                     />
                     {/* Riepilogo extras */}
                     {(()=>{
-                      const matches=(it.sub||"").match(/\+[^,]+/g)||[];
                       const counts={};
-                      matches.forEach(m=>{const name=m.replace(/^\+/,"").trim();counts[name]=(counts[name]||0)+1;});
+                      getItemExtras(it).forEach(name=>{counts[name]=(counts[name]||0)+1;});
                       const extras=Object.entries(counts).map(([name,qty])=>{
                         const ing=findExtra(name);
                         return{name,qty,prezzo:ing?Math.round(ing.prezzo*qty*100)/100:0,e:ing?ing.e:"➕"};
@@ -238,18 +243,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                               <span style={{color:"#ccc",flex:1}}>{ex.e} {ex.qty}× {ex.name}</span>
                               <span style={{color:"#a855f7",fontWeight:700,fontFamily:"'DM Mono',monospace"}}>+{ex.prezzo.toFixed(2)}€</span>
                               <button onClick={()=>{
-                                const ing=findExtra(ex.name);
-                                setItems(prev=>prev.map((x,j)=>{
-                                  if(j!==idx) return x;
-                                  const parts=(x.sub||"").split(",").map(s=>s.trim()).filter(Boolean);
-                                  let rimosso=false;
-                                  const newParts=parts.filter(p=>{
-                                    if(!rimosso&&p==="+"+ex.name){rimosso=true;return false;}
-                                    return true;
-                                  });
-                                  const newP=ing?Math.round((x.p-ing.prezzo)*100)/100:x.p;
-                                  return{...x,sub:newParts.join(", "),p:Math.max(0,newP)};
-                                }));
+                                setItems(prev=>prev.map((x,j)=>j===idx?removeItemExtra(x,ex.name):x));
                               }} style={{background:"rgba(232,52,28,0.15)",border:"1px solid rgba(232,52,28,0.4)",
                                 borderRadius:5,color:"#E8341C",fontSize:10,fontWeight:800,
                                 padding:"2px 6px",cursor:"pointer",flexShrink:0}}>✕</button>
@@ -274,11 +268,7 @@ const ModificaOrdenModal = ({orden, onClose, onSave}) => {
                         {(esDulce(it)?EXTRAS_DULCES:INGREDIENTI).filter(ing=>ing.tipo!=="base").map(ing=>(
                           <button key={ing.id}
                             onClick={()=>{
-                              setItems(prev=>prev.map((x,j)=>j===idx?{
-                                ...x,
-                                p:Math.round((x.p+ing.prezzo)*100)/100,
-                                sub:[x.sub,`+${ing.n}`].filter(Boolean).join(", ")
-                              }:x));
+                              setItems(prev=>prev.map((x,j)=>j===idx?addItemExtra(x,ing):x));
                               setShowIngPanel(null);
                             }}
                             style={{background:"rgba(168,85,247,0.1)",border:"1px solid rgba(168,85,247,0.35)",

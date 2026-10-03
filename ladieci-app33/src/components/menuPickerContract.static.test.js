@@ -53,9 +53,13 @@ describe("ItemPickerModal — contratto menu", () => {
   });
 
   test("prezzo/emoji extra risolti con findExtra (copre anche i dolci)", () => {
-    expect(picker).toContain("findExtra(ingName)");
+    // Il prezzo dell'extra non è più calcolato qui: add/remove passano da menu/itemExtras,
+    // che risolve per nome con findExtra (catalogo salato + dolce). Il picker lo usa per i chip.
     expect(picker).toContain("findExtra(name)");
+    expect(picker).toMatch(/addItemExtra|removeItemExtra/);
     expect(picker).not.toMatch(/INGREDIENTI\.find\(g\s*=>\s*g\.n\s*===/);
+    const module = require("fs").readFileSync(require("path").join(__dirname, "..", "menu", "itemExtras.js"), "utf8");
+    expect(module).toContain("findExtra(");
   });
 });
 

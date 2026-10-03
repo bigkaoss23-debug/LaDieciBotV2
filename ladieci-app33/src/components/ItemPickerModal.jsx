@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { C, MENU, CATS, INGREDIENTI, EXTRAS_DULCES, genId, pizzaLabel, esDulce, findExtra } from '../constants';
 import PizzaCustomBuilder from './PizzaCustomBuilder';
+import { addItemExtra, removeItemExtra, setItemNote, getItemExtras, getItemNote, cloneBasePrice } from '../menu/itemExtras';
 
 // Filtro visuale del pannello extra: etichetta → valore del campo `gruppo`
 // già presente in INGREDIENTI. "Todos" non filtra nulla.
@@ -55,10 +56,12 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
 
   const handleCat = (c) => { setCat(c); setExtrasOpen(null); setExtrasOpen(null); };
 
-  // Ogni tap crea sempre una riga separata — mai merge
+  // Ogni tap crea sempre una riga separata — mai merge.
+  // La riga nuova è un prodotto NUDO: prezzo dal catalogo (o base derivata), mai il `p`
+  // — extra compresi — della riga da cui si clona (bug "prezzo fantasma", ex tasto +).
   const increment = (p) => {
     const uid = genId();
-    setCart(prev => ({ ...prev, [uid]: { ...p, q: 1, sub: "", _uid: uid } }));
+    setCart(prev => ({ ...prev, [uid]: { ...p, p: cloneBasePrice(p), q: 1, sub: "", _uid: uid } }));
   };
 
   // Decrementa — rimuove se arriva a 0
@@ -80,47 +83,27 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
   const qtyOf = (productId) =>
     Object.values(cart).filter(i => String(i.id) === String(productId)).reduce((s, i) => s + i.q, 0);
 
+  // Extra e nota: unica logica in menu/itemExtras.js — `p` e `sub` si muovono insieme.
   // Aggiunge extra a una pizza nel carrello
   const addExtra = (uid, ing) => {
-    setCart(prev => {
-      if (!prev[uid]) return prev;
-      return {
-        ...prev,
-        [uid]: {
-          ...prev[uid],
-          p: Math.round((prev[uid].p + ing.prezzo) * 100) / 100,
-          sub: [prev[uid].sub, `+${ing.n}`].filter(Boolean).join(", ")
-        }
-      };
-    });
+    setCart(prev => prev[uid] ? { ...prev, [uid]: addItemExtra(prev[uid], ing) } : prev);
     setExtrasOpen(null);
   };
 
   // Rimuove extra da una pizza nel carrello
   const removeExtra = (uid, ingName) => {
-    const ing = findExtra(ingName);
-    setCart(prev => {
-      if (!prev[uid]) return prev;
-      const parts = (prev[uid].sub || "").split(",").map(s => s.trim()).filter(Boolean);
-      let rimosso = false;
-      const newParts = parts.filter(p => {
-        if (!rimosso && p === "+" + ingName) { rimosso = true; return false; }
-        return true;
-      });
-      return {
-        ...prev,
-        [uid]: {
-          ...prev[uid],
-          p: ing ? Math.max(0, Math.round((prev[uid].p - ing.prezzo) * 100) / 100) : prev[uid].p,
-          sub: newParts.join(", ")
-        }
-      };
-    });
+    setCart(prev => prev[uid] ? { ...prev, [uid]: removeItemExtra(prev[uid], ingName) } : prev);
   };
 
-  // Aggiorna nota libera
+  // Aggiorna nota libera. Pizze/dolci: scrive SOLO la nota (mai `p`, mai gli extra).
+  // Altri prodotti: nota libera nel campo `sub`, nessun extra da proteggere.
   const setNota = (uid, val) => {
-    setCart(prev => prev[uid] ? { ...prev, [uid]: { ...prev[uid], sub: val } } : prev);
+    setCart(prev => {
+      const it = prev[uid];
+      if (!it) return prev;
+      const conExtra = it.cat === "Pizzas" || esDulce(it);
+      return { ...prev, [uid]: conExtra ? setItemNote(it, val) : { ...it, sub: val } };
+    });
   };
 
   // Totale items nel carrello
@@ -274,19 +257,18 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                     En el pedido
                   </div>
                   {cartItems.map(item => {
+                    // Chip = SOLO gli extra riconosciuti (stessa regola che prezza la riga).
+                    const conExtra = item.cat === "Pizzas" || esDulce(item);
                     const extrasAttuali = (() => {
-                      if (!item.sub) return [];
-                      const matches = item.sub.match(/\+[^,]+/g) || [];
+                      if (!conExtra) return [];
                       const counts = {};
-                      matches.forEach(m => {
-                        const name = m.replace(/^\+/, "").trim();
-                        counts[name] = (counts[name] || 0) + 1;
-                      });
+                      getItemExtras(item).forEach(name => { counts[name] = (counts[name] || 0) + 1; });
                       return Object.entries(counts).map(([name, qty]) => {
                         const ing = findExtra(name);
                         return { name, qty, prezzo: ing ? Math.round(ing.prezzo * qty * 100) / 100 : 0, e: ing?.e || "➕" };
                       });
                     })();
+                    const nota = conExtra ? getItemNote(item) : (item.sub || "");
                     const isOpen = extrasOpen === item._uid;
 
                     return (
@@ -340,17 +322,17 @@ const ItemPickerModal = ({ visible, onClose, onAdd, onUpdate, itemEsistente }) =
                         {/* Campo variazioni libero — pizze e pizze dolci */}
                         {(item.cat === "Pizzas" || esDulce(item)) && (
                           <input
-                            value={item.sub || ""}
+                            value={nota}
                             onChange={e => setNota(item._uid, e.target.value)}
                             placeholder="Variaciones (sin cebolla, extra picante...)"
                             style={{
                               width: "100%", marginTop: 6,
                               background: "rgba(232,52,28,0.08)",
-                              border: `1px solid ${item.sub ? "#E8341C88" : C.fumo}`,
+                              border: `1px solid ${nota ? "#E8341C88" : C.fumo}`,
                               borderRadius: 7,
-                              color: item.sub ? "#E8341C" : C.grigio,
+                              color: nota ? "#E8341C" : C.grigio,
                               padding: "5px 9px", fontSize: 12,
-                              fontWeight: item.sub ? 700 : 400,
+                              fontWeight: nota ? 700 : 400,
                               boxSizing: "border-box"
                             }}
                           />

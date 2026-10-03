@@ -30,8 +30,12 @@ describe("D-02 · WADettaglio risolve anche gli extra dolci", () => {
   });
 
   test("il riepilogo e la rimozione usano findExtra", () => {
+    // Riepilogo: findExtra(name) per prezzo/emoji del chip. Rimozione: removeItemExtra
+    // (menu/itemExtras), che risolve il prezzo con findExtra — anche per i dolci.
     expect(src).toContain("findExtra(name)");
-    expect(src).toContain("findExtra(ex.name)");
+    expect(src).toContain("removeItemExtra(x, ex.name)");
+    const module = fs.readFileSync(path.join(__dirname, "..", "menu", "itemExtras.js"), "utf8");
+    expect(module).toContain("findExtra(name)");
   });
 
   test("il pannello propone EXTRAS_DULCES sulle pizze dessert", () => {

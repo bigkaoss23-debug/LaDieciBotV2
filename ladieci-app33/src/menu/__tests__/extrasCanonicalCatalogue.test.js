@@ -247,13 +247,16 @@ describe("Pizza a tu gusto — stesso catalogo, stessi prezzi", () => {
     });
   });
 
-  test("i nomi con parentesi sono escapati nel contatore di WADettaglio", () => {
+  test("i nomi con parentesi sono contati esattamente nel contatore di WADettaglio", () => {
+    // Prima il contatore era una RegExp con escape; ora legge gli extra riconosciuti
+    // (menu/itemExtras) con confronto esatto sul nome: stesso risultato, niente regex.
     const src = read("components/wa/WADettaglio.jsx");
-    expect(src).toMatch(/const ingRe = ing\.n\.replace\(/);
-    const esc = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const sub = "+Prosciutto cotto (Jamón cocido), +Coppa, +Coppa";
-    expect((sub.match(new RegExp(`\\+${esc("Prosciutto cotto (Jamón cocido)")}`, "g")) || []).length).toBe(1);
-    expect((sub.match(new RegExp(`\\+${esc("Coppa")}`, "g")) || []).length).toBe(2);
+    expect(src).toMatch(/getItemExtras\(editItems\[showIngPanel\] \|\| \{\}\)\.filter\(n => n === ing\.n\)\.length/);
+    expect(src).not.toMatch(/new RegExp\(`\\\\\+\$\{ingRe\}`/);
+    const { getItemExtras } = require("../itemExtras");
+    const it = { sub: "+Prosciutto cotto (Jamón cocido), +Coppa, +Coppa" };
+    expect(getItemExtras(it).filter((n) => n === "Prosciutto cotto (Jamón cocido)")).toHaveLength(1);
+    expect(getItemExtras(it).filter((n) => n === "Coppa")).toHaveLength(2);
   });
 });
 

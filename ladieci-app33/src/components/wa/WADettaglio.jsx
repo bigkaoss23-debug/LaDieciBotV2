@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { C, MENU, CATS, tot, genId, INGREDIENTI, EXTRAS_DULCES, esDulce, findExtra, calcTotale as calcTotaleHelper } from '../../constants';
 import { sb, api, auth } from '../../api';
 import ItemPickerModal from '../ItemPickerModal';
+import { addItemExtra, removeItemExtra, setItemNote, getItemExtras, getItemNote, isBareCatalogLine } from '../../menu/itemExtras';
 import Chip from '../ui/Chip';
 import IaPill from '../ui/IaPill';
 import Av from '../ui/Av';
@@ -581,22 +582,21 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                     fontFamily:"'DM Mono',monospace"}}>{(it.p*it.q).toFixed(2)}€</span>
                 </div>
                 {/* Modifiche per item — sempre editabile */}
+                {/* Solo la NOTA: gli extra sono i chip qui sotto e si cambiano solo coi bottoni */}
                 <input
-                  value={it.sub||""}
-                  onChange={e => setEditItems(prev => prev.map((x,j) => j===i ? {...x, sub:e.target.value} : x))}
+                  value={getItemNote(it)}
+                  onChange={e => setEditItems(prev => prev.map((x,j) => j===i ? setItemNote(x, e.target.value) : x))}
                   placeholder="Modificaciones (sin cebolla, extra picante...)"
                   style={{width:"100%",marginTop:6,background:"rgba(232,52,28,0.08)",
-                    border:`1px solid ${it.sub ? "#E8341C88" : C.fumo}`,
-                    borderRadius:7,color: it.sub ? "#E8341C" : C.grigio,
-                    padding:"5px 9px",fontSize:12,fontWeight:it.sub?700:400,
+                    border:`1px solid ${getItemNote(it) ? "#E8341C88" : C.fumo}`,
+                    borderRadius:7,color: getItemNote(it) ? "#E8341C" : C.grigio,
+                    padding:"5px 9px",fontSize:12,fontWeight:getItemNote(it)?700:400,
                     boxSizing:"border-box"}}
                 />
                 {/* Riepilogo extras aggiunti via bottone */}
                 {(()=>{
-                  const matches = (it.sub||"").match(/\+[^,]+/g)||[];
                   const counts = {};
-                  matches.forEach(m=>{
-                    const name=m.replace(/^\+/,"").trim();
+                  getItemExtras(it).forEach(name=>{
                     counts[name]=(counts[name]||0)+1;
                   });
                   const extras=Object.entries(counts).map(([name,qty])=>{
@@ -617,20 +617,8 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                             fontFamily:"'DM Mono',monospace"}}>+{ex.prezzo.toFixed(2)}€</span>
                           <button
                             onClick={()=>{
-                              const ing=findExtra(ex.name);
-                              setEditItems(prev=>prev.map((x,j)=>{
-                                if(j!==i) return x;
-                                // Rimuove una sola occorrenza di "+NomeIngrediente" dal sub
-                                const parts=(x.sub||"").split(",").map(s=>s.trim()).filter(Boolean);
-                                let rimosso=false;
-                                const newParts=parts.filter(p=>{
-                                  if(!rimosso && p==="+"+ex.name){rimosso=true;return false;}
-                                  return true;
-                                });
-                                const newSub=newParts.join(", ");
-                                const newP=ing?Math.round((x.p - ing.prezzo)*100)/100:x.p;
-                                return{...x, sub:newSub, p:Math.max(0,newP)};
-                              }));
+                              // Rimuove una sola occorrenza dell'extra: p e sub insieme (menu/itemExtras)
+                              setEditItems(prev=>prev.map((x,j)=>j===i ? removeItemExtra(x, ex.name) : x));
                             }}
                             style={{background:"rgba(232,52,28,0.15)",border:"1px solid rgba(232,52,28,0.4)",
                               borderRadius:5,color:"#E8341C",fontSize:10,fontWeight:800,
@@ -683,20 +671,13 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                   <div style={{overflowY:"auto",padding:"12px 14px",flex:1}}>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                       {(esDulce(editItems[showIngPanel])?EXTRAS_DULCES:INGREDIENTI).filter(ing=>ing.tipo!=="base").map(ing=>{
-                        const currentSub = editItems[showIngPanel]?.sub || "";
-                        // I nomi della carta contengono parentesi — vanno escapati, altrimenti
-                        // diventerebbero gruppi di cattura e il contatore resterebbe a 0.
-                        const ingRe = ing.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                        const count = (currentSub.match(new RegExp(`\\+${ingRe}`, "g")) || []).length;
+                        // Contatore dagli extra riconosciuti (nomi con parentesi inclusi: confronto esatto).
+                        const count = getItemExtras(editItems[showIngPanel] || {}).filter(n => n === ing.n).length;
                         const sel = count > 0;
                         return (
                         <button key={ing.id}
                           onClick={()=>{
-                            setEditItems(prev=>prev.map((x,j)=>j===showIngPanel?{
-                              ...x,
-                              p: Math.round((x.p + ing.prezzo)*100)/100,
-                              sub: [x.sub, `+${ing.n}`].filter(Boolean).join(", ")
-                            }:x));
+                            setEditItems(prev=>prev.map((x,j)=>j===showIngPanel ? addItemExtra(x, ing) : x));
                           }}
                           style={{background: sel ? "rgba(168,85,247,0.2)" : "#222",
                             border: `1px solid ${sel ? "#a855f7" : "#333"}`,
@@ -738,8 +719,8 @@ const WADettaglio = ({msg,onConfirm,onManual,onBack,onElimina,onRispondi,allMsgs
                 editDirtyRef.current = true;
                 const newItems = (() => {
                   const prev = editItems;
-                  const idx = prev.findIndex(i => String(i.id) === String(item.id) && !item.sub);
-                  if (idx >= 0 && !item.sub) {
+                  const idx = item.sub ? -1 : prev.findIndex(i => String(i.id) === String(item.id) && isBareCatalogLine(i));
+                  if (idx >= 0) {
                     const u = [...prev]; u[idx] = { ...u[idx], q: u[idx].q + 1 }; return u;
                   }
                   return [...prev, { id: item.id, n: item.n, q: item.q || 1, p: item.p, e: item.e, sub: item.sub || "", alg: item.alg || "", cat: item.cat, ing: item.ing || "" }];
